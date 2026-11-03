@@ -91,7 +91,7 @@ const worker = {
     }
   },
 
-  /** The events, tasks and dead-letter queues of the event-driven pipeline (docs/analysis-events.md). */
+  /** The events, tasks and dead-letter queues of the event-driven pipeline. */
   async queue(batch: MessageBatch<unknown>, env: AnalysisEnv) {
     await handlePipelineQueue(batch, await companyPolicyEnvironment(env));
   },

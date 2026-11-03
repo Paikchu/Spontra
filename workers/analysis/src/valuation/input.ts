@@ -29,8 +29,7 @@ import type { LibraryDocumentSummary } from "../../../../shared/analysis-contrac
 import type { GuidancePublication } from "../../../../shared/analysis-contract/guidance.ts";
 
 /**
- * The material pack a valuation run starts from (docs/valuation-assessment-design.md §4, docs/valuation-methodology-optimization.md
- * §4, §7): typed facts resolved from the same stored projections the findings verify against, the company's own history
+ * The material pack a valuation run starts from: typed facts resolved from the same stored projections the findings verify against, the company's own history
  * of each driver, the diagnostics every dimension must answer, and the catalogue of filings, guidance and calls the agent
  * may read. No model call, no SEC fetch. Everything here is deterministic, so the fingerprint says what a run would write from.
  */
@@ -264,7 +263,7 @@ export function buildDistributions(snapshot: SecHistorySnapshot | null, data: Fi
 
 const metric = (key: string, label: string, value: number | null, unit: DiagnosticMetric["unit"], periodEnd: string | null, note: string | null = null): DiagnosticMetric => ({ key, label, value: value != null && Number.isFinite(value) ? value : null, unit, periodEnd, note });
 
-/** The figures every dimension has to answer to, from the facts alone (docs/valuation-methodology-optimization.md §7). */
+/** The figures every dimension has to answer to, from the facts alone. */
 export function buildDiagnostics(facts: ValuationFact[], snapshot: SecHistorySnapshot | null, data: FindingData, periodEnd: string): DiagnosticMetric[] {
   const by = (id: string) => facts.find(f => f.id === id)?.value ?? null;
   const revenue = by("revenue_ttm"), net = by("net_income_ttm"), cfo = by("cfo_ttm"), capex = by("capex_ttm") != null ? Math.abs(by("capex_ttm")!) : null;

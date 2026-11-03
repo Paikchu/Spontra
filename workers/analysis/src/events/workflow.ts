@@ -4,9 +4,9 @@ import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository, filingIndexInsert } from "../sec/d1.ts";
-import { throttledSecReader } from "../financial-data/provider.ts";
+import { edgarListings } from "../sec-archive/index.ts";
 import { parseSecSubmissions, type SecFilingFeed, type SecFilingSummary } from "../sec/sec.ts";
-import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { recordRailInsiders } from "./insider-ledger.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
@@ -130,12 +130,12 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   const cik = feed?.payload.company?.cik ?? feed?.payload.filings[0]?.cik ?? await knownCik(db, ticker);
   if (!cik) return { published: false, insiderReads: 0, exhibitReads: 0, pending: 0, progressed: false };
   const cikNumber = Number(cik);
-  const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
+  const listings = edgarListings(env, { fetcher, delayMs: 200 });
   const listDue = options.forceList || !publication || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
-    const submissions = await (await reader.read(secSubmissionsUrl(cik))).json();
+    const submissions = await listings.submissions(cik);
     raw = parseEventSubmissions(submissions, cikNumber, now);
     // The filings list is indexed from the same read, so a company without the report summaries still lists its filings.
     await indexFilings(db, ticker, cik, submissions, now.toISOString(), options.causeId ?? null);
@@ -164,7 +164,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
         insiderReads++;
         try {
           let parsed: InsiderTransaction | null = null;
-          try { parsed = parseForm4(await (await reader.read(form4XmlUrl(archiveRoot, filing.primaryDocument))).text()); }
+          try { parsed = parseForm4(await listings.ownershipXml(form4XmlUrl(archiveRoot, filing.primaryDocument))); }
           catch (error) { if (secAccessPaused(error)) throw error; /* A document SEC does not serve is unreadable, as before. */ }
           const foreign = parsed && !sameIssuer(parsed, cikNumber);
           await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), foreign ? { otherIssuer: parsed!.issuerCik! } : parsed ?? { unreadable: true }, now.toISOString());
@@ -188,7 +188,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       else if (exhibitReads < LIMITS.exhibitReads) {
         exhibitReads++;
         try {
-          const indexHtml = await (await reader.read(secArchiveDocumentUrl(archiveRoot, `${filing.accessionNumber}-index.htm`))).text();
+          const indexHtml = await listings.filingIndex(cikNumber, filing.accessionNumber);
           exhibits = parseExhibitIndex(indexHtml, archiveRoot);
           const indexed = indexPrimaryDescription(indexHtml);
           if (indexed) description = indexed;

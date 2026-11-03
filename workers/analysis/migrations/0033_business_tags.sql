@@ -1,4 +1,4 @@
--- Two-level business tags and the peers they lead to (docs/peer-similarity-design.md). A unit is one disclosed revenue
+-- Two-level business tags and the peers they lead to. A unit is one disclosed revenue
 -- node of a company with the business links under it; its sector tags are its links' verified categories. Business
 -- tags are written under one sector and cite the passages that support them; their vectors live in the Vectorize
 -- index `business-tags`. A pair is two units of different companies sharing a sector, with each facet's best match and

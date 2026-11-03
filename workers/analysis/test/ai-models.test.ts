@@ -36,7 +36,7 @@ test("a tool runs on the admin's model and effort, else the deployment default f
   assert.equal(reasoningFor(env, "tree"), "medium");
   assert.equal(modelFor(env, "findings"), "deepseek-v4-pro");
   assert.equal(modelFor(env, "translate"), "deepseek-flash");
-  assert.equal(modelFor({}, "web"), "deepseek-flash");
+  assert.equal(modelFor({}, "stage"), "deepseek-flash");
   // Before the migration the table is missing and everything follows the deployment.
   const unmigrated = await aiToolEnvironment({ ...base, DB: fakeDb(null) });
   assert.equal(reasoningFor(unmigrated, "tree"), "max");
@@ -50,12 +50,14 @@ test("the admin stores, lists and clears a tool's model settings", async () => {
     method: body === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${token}` }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }), env);
   const listed = await (await call("/admin/ai/models")).json() as { tools: Array<{ tool: string; model: string | null; defaultModel: string }> };
-  assert.ok(listed.tools.some(t => t.tool === "web" && t.defaultModel === "deepseek-v4-pro" && t.model === null));
-  const saved = await (await call("/admin/ai/models/web", { model: "deepseek-flash", effort: "low" })).json() as typeof listed;
-  assert.equal(saved.tools.find(t => t.tool === "web")!.model, "deepseek-flash");
-  assert.equal((await call("/admin/ai/models/web", { model: "gpt-9", effort: null })).status, 400);
+  assert.ok(listed.tools.some(t => t.tool === "stage" && t.defaultModel === "deepseek-v4-pro" && t.model === null));
+  assert.equal(listed.tools.some(t => t.tool === "web"), false);
+  assert.equal((await call("/admin/ai/models/web", { model: null, effort: null })).status, 404);
+  const saved = await (await call("/admin/ai/models/stage", { model: "deepseek-flash", effort: "low" })).json() as typeof listed;
+  assert.equal(saved.tools.find(t => t.tool === "stage")!.model, "deepseek-flash");
+  assert.equal((await call("/admin/ai/models/stage", { model: "gpt-9", effort: null })).status, 400);
   assert.equal((await call("/admin/ai/models/nope", { model: null, effort: null })).status, 404);
-  await call("/admin/ai/models/web", { model: null, effort: null });
+  await call("/admin/ai/models/stage", { model: null, effort: null });
   assert.equal(rows.length, 0);
   assert.equal((await handleAiModelsAdminRequest(new Request("https://p.internal/admin/ai/models"), env)).status, 401);
 });

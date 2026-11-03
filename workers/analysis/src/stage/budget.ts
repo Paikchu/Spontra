@@ -1,5 +1,5 @@
 /**
- * The stage's daily allowances (docs/stage-agent-design.md §3.3), counted per UTC day: one per reader id, one per
+ * The stage's daily allowances, counted per UTC day: one per reader id, one per
  * hashed address, and global caps in `feature_budget`. A unit is one model call, one conversation, one identity.
  */
 export const STAGE_LIMITS = {

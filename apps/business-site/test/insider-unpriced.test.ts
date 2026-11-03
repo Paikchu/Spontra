@@ -5,12 +5,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import type { CompanyEvent } from "../../../shared/analysis-contract/events.ts";
-import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
+import { insiderCadence, readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
-import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
-import { dollars, eventTitle, insiderLens, insiderTotalDollars, partialDollars } from "../src/events-model.ts";
+import { dollars, eventTitle, insiderRailTitle, insiderTotalDollars, partialDollars } from "../src/events-model.ts";
 import { netValueUnknown } from "../src/insiders-model.ts";
-import { RailStream } from "../src/RailStream.tsx";
+import { PersonHistory } from "../src/InsiderHistory.tsx";
 
 const publication = readEventsPublication(JSON.parse(readFileSync(new URL("./fixtures/nvda-events.json", import.meta.url), "utf8")), "NVDA")!;
 const byId = (id: string) => publication.events.find(e => e.id === id)!;
@@ -24,10 +23,9 @@ function unpriced(e: CompanyEvent): CompanyEvent {
   return { ...e, insider: { ...t, lines: t.lines.map(l => l.code === "S" ? { ...l, price: null } : l), sold: { shares: t.sold!.shares, proceeds: null, averagePrice: null, pricedShares: 0 } } };
 }
 
-const renderRail = (events: CompanyEvent[]) => renderToStaticMarkup(createElement(RailStream, {
-  rail: { recent: railEntries(null, { ...publication, events }), earlier: [], quiet: 0, since: "2025-01-01" },
-  findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: null,
-  onFocusItem: () => {}, onFocusFinding: () => {}, filter: "insiders",
+/** The person's history as the stage shows it under their Form 4, from these filings alone. */
+const renderRail = (events: CompanyEvent[]) => renderToStaticMarkup(createElement(PersonHistory, {
+  event: events[0]!, publication: { ...publication, events }, ticker: "NVDA", updates: 0, onFocusEvent: () => {},
 }));
 
 test("a sale with null proceeds shows no amount in its title and an unknown amount as —", () => {
@@ -35,14 +33,15 @@ test("a sale with null proceeds shows no amount in its title and an unknown amou
   for (const locale of ["zh-CN", "en"] as const) {
     setLocale(locale);
     assert.equal(eventTitle(sale), locale === "zh-CN" ? "Kress Colette · 卖出 3.49万股" : "Kress Colette · Sale 34.9K shares");
+    assert.equal(insiderRailTitle(sale), locale === "zh-CN" ? "Kress Colette 卖出" : "Kress Colette sold");
     assert.equal(dollars(null), "—");
   }
-  // The lens's own sale is in the cadence with unknown proceeds, so the 12-month total is no precise figure.
+  // The sale is in the cadence with unknown proceeds, so the 12-month total is no precise figure.
   setLocale("en");
-  const model = insiderLens({ ...publication, events: publication.events.map(e => e.id === sale.id ? sale : e) }, sale)!;
-  assert.equal(model.cadence.totalProceeds, null);
-  assert.ok(model.cadence.sales.some(s => s.id === sale.id && s.proceeds == null));
-  assert.match(partialDollars(model.cadence.sales.map(s => s.proceeds)), /^≥ \$/);
+  const cadence = insiderCadence(publication.events.map(e => e.id === sale.id ? sale : e), sale.insider!.ownerCik, sale.eventDate);
+  assert.equal(cadence.totalProceeds, null);
+  assert.ok(cadence.sales.some(s => s.id === sale.id && s.proceeds == null));
+  assert.match(partialDollars(cadence.sales.map(s => s.proceeds)), /^≥ \$/);
 });
 
 test("a person total with one priced and one unpriced filing is partial, never a precise sum", () => {
@@ -105,7 +104,7 @@ test("a legacy aggregate without pricedShares still reads and shows its reported
     setLocale(locale);
     assert.equal(eventTitle(legacy), locale === "zh-CN" ? "Kress Colette · 卖出 6.26万股 · 1096万美元" : "Kress Colette · Sale 62.6K shares · $10.96M");
   }
-  const model = insiderLens(publication, legacy)!;
-  assert.ok(model.cadence.totalProceeds != null && model.cadence.totalProceeds > 0);
-  assert.ok(!partialDollars(model.cadence.sales.map(s => s.proceeds)).startsWith("≥"));
+  const cadence = insiderCadence(publication.events, legacy.insider!.ownerCik, legacy.eventDate);
+  assert.ok(cadence.totalProceeds != null && cadence.totalProceeds > 0);
+  assert.ok(!partialDollars(cadence.sales.map(s => s.proceeds)).startsWith("≥"));
 });

@@ -2,7 +2,7 @@ import type { LensChart } from "@/shared/analysis-contract/lens";
 import type { NoticeCode, SceneBlock, SceneDocument, SceneRow } from "@/shared/analysis-contract/scene";
 
 /**
- * The page side of the stage (docs/stage-agent-design.md §5): what the agent sends and the overlay's states, as pure
+ * The page side of the stage: what the agent sends and the overlay's states, as pure
  * functions the tests drive without a browser.
  */
 export type Locale = "en" | "zh-CN";

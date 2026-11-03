@@ -1,35 +1,60 @@
 # Spontra Analysis
 
-独立部署为 `spontra-analysis`，代码最初迁自 `Paikchu/earning-report-analysis`。
+Worker `spontra-analysis`: SEC discovery and archiving, deterministic financial collection, every AI analysis, and the read APIs for the business map and the admin. It owns the analysis D1 `earning-report-analysis-sec-web` and the R2 bucket `earning-report-analysis-sec-filings`.
 
-## 责任边界
+## Entry points
 
-- `src/`：SEC 发现、AI 分析、公司分析、Memory、Yahoo 基本面、地图读取接口和 Cron。
-- `migrations/`：分析数据库的完整历史；文件名和内容与来源保持一致。
-- `shared/analysis-contract/`（仓库根目录）：供分析后端使用的共享类型。
-- 业务地图通过 `SPONTRA_ANALYSIS` Service Binding 的 `MapReads` 命名入口读取结果；admin 绑定默认入口。
+| Entry | Who reaches it | What it serves |
+| --- | --- | --- |
+| `MapReads` | Business map, Service Binding `SPONTRA_ANALYSIS` | Read API only, fixed identity `business-map` |
+| `StageGateway` | Business map, Service Binding `SPONTRA_STAGE` | The stage: identities, conversations, `StageAgent` sockets |
+| `AdminGateway` | Admin, Service Binding `SPONTRA_ANALYSIS` | `/admin/*` routes with a fresh admin session per request |
+| Default `fetch` | Public internet | Read API; `/admin/*` needs a signed session |
+| `scheduled` (`*/10`) | Cron | SEC discovery and reference closes only |
+| `queue` | `spontra-pipeline-events`, `-tasks`, `-dlq` | Every other task |
 
-个股「业务拆解」由公司分析 Workflow 在 SEC Memory 更新后生成。它读取最多四期已发布 SEC 报告、复用 Web Search 的网页检索与网页读取，最多执行九次取证工具调用，完成逐段引用核查后发布到原公司分析读取 API；旧版「业务前瞻」仍可读取。生成只需模型密钥 `DEEPSEEK_API_KEY`，不依赖 Yahoo 目标季度就绪。旧版报告每次 Cron 最多自动升级两家公司；也可经授权的 `POST /company-analysis/{ticker}` 手动排队。公开 GET 只读，不触发生成。
+A named entrypoint is unreachable from the public internet, so the binding is the credential.
 
-业务脑图由 `BusinessTreeWorkflow`（`src/business-tree/`）生成：每项财报披露业务一轮 ReAct（think → search / read / add / revise / remove / finish），每个节点须引用把它归入上级的原文，再经独立审校后存入 `business-tree:v1:{ticker}`，读取接口 `/api/v1/companies/:t/business-tree` 只读 D1。公司名单为 `BUSINESS_TREE_TICKERS`，`BUSINESS_TREE_ENABLED=false` 暂停扫描。设计见 `docs/business-tree.md`。
+## Source layout
 
-## 验证与部署
+| Path | Role |
+| --- | --- |
+| `src/sec-archive/` | The only EDGAR reader ([docs/sec-archive.md](../../docs/sec-archive.md)); everything else reads archived filings from D1 + R2 |
+| `src/sec/`, `src/financial-data/`, `src/filing-library/` | Filing parsing, deterministic statements ([financial-data.md](financial-data.md)), the parsed filing library |
+| `src/pipeline/`, `src/events/` | Event routing and task registry; SEC events (8-K, Form 4) |
+| `src/findings/`, `lens/`, `analyst/`, `checkup/`, `items/` | Findings, their lens documents, analyst dossiers, three-statement checks, per-filing analysis |
+| `src/business-explainer/`, `business-tree/`, `business-tags/`, `peers/` | Business dossiers, the mind map, two-level tags and peers |
+| `src/guidance/`, `transcripts/`, `valuation/`, `fundamentals/`, `translation/` | Guidance, the transcript library, valuation, fundamentals, Chinese translations |
+| `src/stage/` | The stage agent and reader reports |
+| `src/web-search/` | Cached web search and page reads ([docs/web-search.md](../../docs/web-search.md)) |
+| `src/read-api/`, `src/admin/` | Read routes and admin routes |
+| `src/agent-loop.ts`, `tool-loop.ts`, `tools/`, `compose/`, `model-*.ts`, `ai-config.ts` | The shared model, tool and agent loop layer; `ai-config.ts` lists every model use and its reasoning level |
+| `migrations/` | The full D1 migration history |
+| `scripts/` | Hand-run ops scripts ([scripts/README.md](scripts/README.md)) |
+| `test/` | Node test runner suites (`npm run test:analysis`) |
 
-在仓库根目录执行：
+Workflows (16) are declared in `wrangler.jsonc` and exported from `src/index.ts`. Companies come only from the admin whitelist and feature switches in D1; no Wrangler variable lists companies. All model calls go to DeepSeek through its Anthropic-compatible endpoint with `DEEPSEEK_API_KEY`.
 
-```sh
-npm ci
-npm run check:analysis:boundary
-npm run analysis:typecheck
-npm run analysis:check
-npm run analysis:check:migrations
-npm run analysis:deploy
+Imports are limited to this directory, `shared/analysis-contract/` and `shared/analysis-runtime/` (`npm run check:analysis:boundary`).
+
+## Local development
+
+```bash
+npx wrangler dev --config workers/analysis/wrangler.jsonc
 ```
 
-`analysis:deploy` 先应用并核对远端 migrations，再以显式配置部署并保留运行时变量。
-生成分析迁移使用 `npm run analysis:db:generate`。
+Copy [`.dev.vars.example`](.dev.vars.example) to `.dev.vars`; real `.dev.vars*` files are ignored by Git.
 
-保留生产 Worker 名、四个 Workflow 名、D1 ID、R2 bucket、Cron 和 Secrets。
-不要用无 `--config` 的 Wrangler 命令部署 Spontra Analysis，前端构建会生成自己的部署配置。
+## Validation
 
-原 API 契约和设计背景见 [来源文档](https://github.com/Paikchu/earning-report-analysis/blob/7dba791f18bf9740924bbbba6efbf4c3a202f382/docs/analysis-backend.md)。
+From the repository root:
+
+```bash
+npm run check:analysis:boundary
+npm run analysis:typecheck     # type check plus test:analysis
+npm run analysis:check         # deploy dry run
+```
+
+## Release
+
+Push to `origin/main` (see AGENTS.md); never deploy locally. CI runs `analysis:deploy`, which applies and verifies the D1 migrations before publishing the Worker with `--keep-vars`. Always pass `--config workers/analysis/wrangler.jsonc` to Wrangler for this Worker.

@@ -1,4 +1,4 @@
--- Read notes of new filings (docs/agent-interpretation-design.md): where each published line sits in one filing and
+-- Read notes of new filings: where each published line sits in one filing and
 -- which period it reports, so the filing is read once. `labels` keeps each placed row's printed label for the next
 -- filing to reuse; `route` says how the note was found (reuse, period, full). Additive only.
 CREATE TABLE filing_read_notes (

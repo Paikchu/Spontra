@@ -5,7 +5,7 @@ import { readValuationPublication } from "../../../../shared/analysis-runtime/va
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /**
- * Where valuation reports live (docs/valuation-assessment-implementation.md §7): immutable versions keyed by content hash,
+ * Where valuation reports live: immutable versions keyed by content hash,
  * the evidence snapshots they cite, and one row per company naming the version readers see, the newest attempt and the
  * request generation a run must still hold to publish. Nothing here is pruned with the AI run log.
  */

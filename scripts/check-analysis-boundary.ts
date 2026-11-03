@@ -22,6 +22,7 @@ export function checkSourceBoundary(file: string, source: string): string[] {
     if (contract && !contractTarget && !(typeOnly && runtimeTarget)) errors.push(`${file}: contract imports ${specifier}`);
     if (runtime && !contractTarget && !runtimeTarget && specifier !== "zod") errors.push(`${file}: shared runtime imports ${specifier}`);
     if (analysis && target && !target.startsWith("workers/analysis/") && !target.startsWith("shared/analysis-contract/") && !target.startsWith("shared/analysis-runtime/")) errors.push(`${file}: Spontra Analysis imports ${specifier}`);
+    if (analysis && !file.startsWith("workers/analysis/src/sec-archive/") && target === "workers/analysis/src/sec-archive/gateway.ts" && !typeOnly) errors.push(`${file}: imports the EDGAR gateway; use sec-archive/index.ts`);
     if (web && target?.startsWith("workers/analysis/")) errors.push(`${file}: Web imports Spontra Analysis ${specifier}`);
   }
   function visit(node: ts.Node) {
@@ -50,6 +51,13 @@ export function checkSourceBoundary(file: string, source: string): string[] {
   while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) tokens.push(scanner.getTokenText());
   const executable = tokens.join(" ");
   if (analysis && /WEB_APP_ORIGIN|\/api\/internal\//.test(executable)) errors.push(`${file}: Spontra Analysis retains a Web callback`);
+  // EDGAR is read in one module (docs/sec-archive.md): its listing endpoints and its download reader exist nowhere else, and
+  // every other feature reads filings from the archive. Document URLs under /Archives/ stay data every module may hold.
+  const archiveModule = file.startsWith("workers/analysis/src/sec-archive/");
+  const analysisSource = analysis && file.startsWith("workers/analysis/src/");
+  if (analysisSource && !archiveModule && /https:\/\/(?:data\.sec\.gov|www\.sec\.gov\/(?:files|cgi-bin|include))/.test(executable)) errors.push(`${file}: reads EDGAR outside sec-archive`);
+  if (analysisSource && !archiveModule && /\b(?:secSubmissionsUrl|secSubmissionsPageUrl|secCompanyFactsUrl|SEC_EXCHANGE_DIRECTORY_URL|SEC_TICKERS_URL)\b/.test(executable)) errors.push(`${file}: names an EDGAR listing endpoint outside sec-archive`);
+  if (analysisSource && !archiveModule && /\b(?:throttledSecReader|streamSecSubmissionParts|edgarDocumentReader|pacedEdgarRequest)\b/.test(executable)) errors.push(`${file}: builds an EDGAR reader outside sec-archive`);
   if (contract && /\b(?:D1Database|D1PreparedStatement|Workflow|R2Bucket)\b/.test(source)) errors.push(`${file}: contract contains platform state`);
   return errors;
 }
@@ -65,7 +73,7 @@ export async function checkArchitecture(): Promise<string[]> {
   return (await Promise.all(paths.map(async (file) => checkSourceBoundary(file, await readFile(file, "utf8"))))).flat();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // The event graph (docs/analysis-events.md) is checked here too, because this script runs in Spontra Analysis build:
+  // The event graph is checked here too, because this script runs in Spontra Analysis build:
   // every subscribed event has an emitter, every name is known, and no task can trigger itself through others.
   // Product code names no issuer (check-issuer-literals.ts); the business build runs the same check on its own.
   const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `analysis events: ${error}`), ...selfTest(), ...await checkProductCode()];

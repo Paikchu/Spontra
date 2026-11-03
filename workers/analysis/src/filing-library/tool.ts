@@ -99,7 +99,7 @@ export function alternate(found: FoundSection[]): FoundSection[] {
 export async function libraryFindAcross(env: AnalysisEnv, request: {
   tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; question?: string;
   category?: IndustryCategory; businessKey?: string; limit?: number;
-  /** Comparable units (docs/peer-similarity-design.md): only the sections of the businesses under them. */
+  /** Comparable units: only the sections of the businesses under them. */
   units?: string[];
   /** Several categories at once: the sections of every verified link in any of them. */
   categories?: IndustryCategory[];

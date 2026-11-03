@@ -1,5 +1,5 @@
 import { fundamentalsBehind } from "../../../../shared/analysis-runtime/fundamentals-freshness.ts";
-import { secCompanyFactsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { edgarListings } from "../sec-archive/index.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import type { SecHistorySnapshot } from "../sec/analysis.ts";
@@ -60,12 +60,15 @@ export async function refreshSecFundamentals(env: Env, ticker: string, fetcher: 
   const published = await publishedQuarter(db, ticker);
   if (!published) return { status: "no-publication", published: null, stored: null, facts: null };
   const stored = (await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(ticker)))?.payload ?? null;
-  const response = await fetcher(secCompanyFactsUrl(published.cik), {
-    cache: "no-store", headers: { accept: "application/json", "user-agent": env.SEC_USER_AGENT }, signal: AbortSignal.timeout(30_000),
+  // An answer SEC gave (no facts for the issuer, access paused) leaves the stored facts as they are; a read that failed
+  // on the way (timeout, network) propagates, so the task retries it instead of dropping the refresh.
+  const companyFacts = await edgarListings(env, { fetcher }).companyFacts(published.cik).catch((error: unknown) => {
+    if (error instanceof Error && ["SEC_SOURCE_UNAVAILABLE", "SEC_ACCESS_PAUSED"].includes(error.message)) return null;
+    throw error;
   });
   const base = { published: published.periodEnd, stored: snapshotQuarter(stored) };
-  if (!response.ok) return { ...base, status: "no-facts", facts: null };
-  const history = normalizeCompanyFacts(ticker, await response.json());
+  if (companyFacts === null) return { ...base, status: "no-facts", facts: null };
+  const history = normalizeCompanyFacts(ticker, companyFacts);
   const facts = snapshotQuarter(history);
   // Newer when it reaches a later quarter, or is read by a newer registry; never replaced by an older read.
   const newer = !!facts && (!base.stored || facts > base.stored || (facts === base.stored && stored?.registryVersion !== history.registryVersion));

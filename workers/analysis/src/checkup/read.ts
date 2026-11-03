@@ -1,7 +1,7 @@
 import type { CheckupNotes, FindingMaterial, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
-/** Where a company's checkup notes are kept (docs/three-statement-analysis-design.md). */
+/** Where a company's checkup notes are kept. */
 export const checkupCacheKey = (ticker: string) => `checkup:v1:${ticker}`;
 /** The input of the last run that wrote nothing; the same input is not written again until it changes. */
 export const emptyCheckupKey = (ticker: string) => `checkup:empty:v1:${ticker}`;

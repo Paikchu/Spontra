@@ -45,7 +45,7 @@ async function conversationFor(ticker: string, reader: boolean, fresh: boolean):
 }
 
 /**
- * The overlay and its socket (docs/stage-agent-design.md §5.4–5.5): the reader's questions in words over the input.
+ * The overlay and its socket: the reader's questions in words over the input.
  * Results never appear here; they take the stage. The conversation's id goes into the address so a reload comes back
  * to it; the reader's id never does.
  */

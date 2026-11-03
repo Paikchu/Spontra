@@ -1,4 +1,4 @@
--- Valuation inputs an admin maintains per company (docs/valuation-v2-SPEC.md §3a–§3b): the comparable set the
+-- Valuation inputs an admin maintains per company: the comparable set the
 -- forward-multiple cross-check tries first, and management's cited public targets. They lived as JSON beside the
 -- code; the rows below carry them over unchanged, and the admin edits them from here on.
 -- peers_json: JSON array of tickers, or NULL to let the business-tag pairs choose.

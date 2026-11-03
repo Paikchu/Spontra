@@ -1,8 +1,7 @@
 import type { ValuationPriceGuide } from "./price-guide.ts";
 
 /**
- * The valuation assessment (docs/valuation-assessment-design.md, docs/valuation-assessment-implementation.md,
- * docs/valuation-methodology-optimization.md): five researched dimensions, one calculated model over three scenarios
+ * The valuation assessment: five researched dimensions, one calculated model over three scenarios
  * that share a discount rate, the market-implied path, and the evidence every claim rests on. Every number in a
  * publication was produced by the calculator or copied from a registered fact; the model only chooses, reasons and
  * assumes. Amounts are in the valuation currency's base unit; shares in base units; rates as 0–1 decimals.
@@ -29,11 +28,11 @@ export type ValuationModelType = typeof VALUATION_MODEL_TYPES[number];
 
 export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote", "stale_quote", "identity_mismatch", "conflicting_sources", "unverified_consensus", "unreadable_source", "research_budget_exhausted",
   "assumption_out_of_history_range", "tv_share_high", "reinvestment_inconsistent", "discount_rate_unsourced", "calculation_rejected",
-  // valuation.calc.v2 gates (docs/valuation-v2-SPEC.md): flagged, never forced.
+  // valuation.calc.v2 gates: flagged, never forced.
   "cited_input_mismatch", "consensus_divergence", "method_dispersion", "rpo_floor_breached", "negative_scenario", "terminal_growth_high", "implied_multiple_outside_history", "peers_unavailable",
   // The base path against management's cited targets: a discount or premium beyond the limit is named, never forced.
   "management_target_gap",
-  // valuation.calc.v4 (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario"): a method the model weighted
+  // valuation.calc.v4: a method the model weighted
   // could not be applied, a usable method was given no weight, or no consensus target could be cited.
   "method_unavailable", "method_zero_weight", "review_incomplete", "unresolved_counter_evidence"] as const;
 export type GapCode = typeof GAP_CODES[number];
@@ -148,7 +147,7 @@ export type ValuationRange = {
   low: number; high: number; base: number; expected: number | null;
   price: number | null; marginOfSafety: number | null; downsideCoverage: number | null; expectedUpside: number | null; baseUpside: number | null;
 };
-/* ---- valuation.calc.v2: cross-checks, gates and anchors (docs/valuation-v2-SPEC.md). All optional; a v1 payload still reads. ---- */
+/* ---- valuation.calc.v2: cross-checks, gates and anchors. All optional; a v1 payload still reads. ---- */
 
 export const VALUATION_METHODS = ["dcf", "ev_ebitda_forward", "pe_forward"] as const;
 export type ValuationMethodKey = typeof VALUATION_METHODS[number];

@@ -6,7 +6,7 @@
 
 每个业绩事件对应一个 `GuidanceWorkflow` 实例（`workers/analysis/src/guidance/`）。业绩事件是 8-K Item 2.02 业绩发布；没有这类 8-K 的公司（以 6-K 报季度的外国发行人、随 10-Q 发布业绩的公司），[Transcript 全文库](transcripts.md) 存下的每份电话会文字稿自成一个事件，键为 Transcript 库发现该期所用申报的 accession，日期为其申报日：
 
-1. **事件**：`*/10` Cron 的 `runGuidanceSweep` 只读取已缓存的 SEC filings feed（不发 SEC 请求），登记 400 天内的业绩 8-K 到 `earnings_events`，每次最多启动 2 个实例（新的优先）。实例 id 含 accession 与提取器版本，同一事件同一版本只处理一次。
+1. **事件**：`guidance` 任务由业绩 8-K 的 `filing.archived`、`filings.indexed` 与 `transcript.stored` 事件触发，只读取已归档的申报，登记 400 天内的业绩 8-K 到 `earnings_events`。实例 id 含 accession 与提取器版本，同一事件同一版本只处理一次。
 2. **材料**：8-K/6-K 事件读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。以 10-Q/10-K/20-F 为键的事件不读附件。电话会文字稿只来自 Transcript 库，指引不调用 Alpha Vantage：库存下一份（`transcript.stored`）时，指引任务把它挂到报告该季度的业绩发布（期末后 100 天内的第一份 8-K Item 2.02），没有则另建事件；已处理过的事件重新排队，新实例只提取未提取过的材料。标签与财期顺序不符的库记录不挂，等库按纠正后的季度重取。已报告季度优先取 Transcript 库按财期顺序纠正后的标签，其次业绩分组关联的 SEC DEI 财期，再次新闻稿标题；不根据发布日期猜自然季度，也不从前瞻指引取季度。全部发言按顺序保存，包含分析师问答；不截断。材料日期沿用业绩事件日期。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
 3. **预筛**（`locate.ts`）：只保留前瞻词 + 数字/方向词的段落；Outlook/Guidance 标题下的表格整段保留；safe harbor 等样板剔除；电话会与 deck 带前后各一段上下文。6,000 字符以内的短文档整篇发送。
 4. **提取**（`extract.ts`）：每份文档一次 DeepSeek 调用（JSON、`max_tokens` 8192），system prompt 字节固定以命中前缀缓存。
@@ -30,7 +30,7 @@
 
 ## 用量控制
 
-- 来源按成本排序：SEC（免费）→ Alpha Vantage（免费额度内、零搜索）→ Tavily 仅作 deck 兜底，每日 ≤6 次，搜索与正文均走 `web_search_cache`。
+- 来源按成本排序：SEC（免费）→ Transcript 库已存的电话会（指引本身不调用 Alpha Vantage）→ 网页检索（[Web Search](web-search.md)）仅作 deck 兜底，每日 ≤6 次，搜索与正文均走 `web_search_cache`。
 - 内容哈希去重 + 提取缓存：重跑、重试、重复发现都不会再次调用模型。
 - 预筛压缩输入；一文档一调用；确定性核验替代模型复核；repair 最多一次且只带失败条目。
 - 每日模型调用上限 `GUIDANCE_DAILY_MODEL_CALLS`（默认 40），用尽后实例休眠到次日 UTC 继续。
@@ -54,7 +54,7 @@ Spontra Analysis `MapReads` 入口的 `/api/v1/companies/{ticker}/guidance` → 
 
 ## 未覆盖
 
-- PDF 附件不在 Worker 内解析；SEC 附件中的 PDF deck 记为 unsupported，IR deck 依赖 Tavily extract 的文本。
+- PDF 附件不在 Worker 内解析；SEC 附件中的 PDF deck 记为 unsupported，IR deck 依赖网页读取得到的文本。
 - 仅支持美元金额指引。
 - 结构化指引尚未回流到 SEC 报告的 synthesis 输入。
 
@@ -65,6 +65,6 @@ npm run analysis:typecheck && npm run check:analysis:boundary && npm run analysi
 npm run business-site:typecheck
 ```
 
-测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/Alpha Vantage/Tavily 响应与模型，不消耗配额。
+测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/网页检索响应与模型，不消耗配额。
 
 接口参考：[Alpha Vantage Earnings Call Transcript](https://www.alphavantage.co/documentation/#earnings-call-transcript)。

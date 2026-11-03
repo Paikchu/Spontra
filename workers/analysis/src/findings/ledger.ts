@@ -14,7 +14,7 @@ import type { DerivedMetric } from "../../../../shared/analysis-contract/finding
  */
 export type LedgerRow = { ref: FindingRef; periodEnd: string; span: FindingSpan; label: string; value: string; yoy: string | null; qoq: string | null };
 /**
- * A rule of the three-statement checkup (docs/three-statement-analysis-design.md) the report trips, as the page shows it
+ * A rule of the three-statement checkup the report trips, as the page shows it
  * beside the findings: the metric, its value written as the page writes it, the rule as a formula, and the quarter the
  * run began. `ref` is the metric's reference, whose ledger rows carry the numbers a finding may quote.
  */
@@ -56,7 +56,7 @@ const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
   ["multiple", { capital: "debt" }, { capital: "equity" }],
   ["multiple", { capital: "cash" }, { capital: "debt" }],
   ["multiple", { capital: "rpo" }, { metric: "revenue" }],
-  // Capital intensity, funding and obligations: what the analyst lines of inquiry read first (docs/analyst-agent-design.md).
+  // Capital intensity, funding and obligations: what the analyst lines of inquiry read first.
   ["multiple", { capital: "capex" }, { capital: "depreciation" }],
   ["percent", { capital: "stockCompensation" }, { metric: "revenue" }],
   ["percent", { capital: "interestPaid" }, { capital: "operatingCashFlow" }],
@@ -64,7 +64,7 @@ const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
   ["multiple", { capital: "leases" }, { capital: "debt" }],
   ["percent", { capital: "customerAdvances" }, { metric: "revenue" }],
   ["multiple", { capital: "productive" }, { metric: "revenue" }],
-  // The checkup's returns, leverage and funding (docs/three-statement-analysis-design.md), over its derived figures.
+  // The checkup's returns, leverage and funding, over its derived figures.
   ["percent", { metric: "net" }, { derived: "averageEquity" }],
   ["percent", { derived: "nopat" }, { derived: "averageInvestedCapital" }],
   ["multiple", { metric: "revenue" }, { derived: "averageAssets" }],

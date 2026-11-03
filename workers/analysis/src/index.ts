@@ -122,7 +122,7 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<AnalysisEnv, Busine
 
 /** Index cards for one company's recent library sections; each batch of sections is a durable step. */
 /** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
-/** The valuation assessment of one company (docs/valuation-assessment-design.md); its run and versions are recorded for the admin. */
+/** The valuation assessment of one company; its run and versions are recorded for the admin. */
 export class ValuationWorkflow extends WorkflowEntrypoint<AnalysisEnv, ValuationWorkflowParams | ValuationEvaluationParams> {
   async run(event: WorkflowEvent<ValuationWorkflowParams | ValuationEvaluationParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
@@ -239,7 +239,7 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, Com
  */
 export { StageAgent } from "./stage/agent.ts";
 
-/** A report a reader of the stage asked for (docs/stage-agent-design.md §6.3), started by their StageAgent. */
+/** A report a reader of the stage asked for, started by their StageAgent. */
 export class ReportWorkflow extends WorkflowEntrypoint<AnalysisEnv, ReportParams> {
   async run(event: WorkflowEvent<ReportParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
@@ -248,7 +248,7 @@ export class ReportWorkflow extends WorkflowEntrypoint<AnalysisEnv, ReportParams
 }
 
 /**
- * The stage's door (docs/stage-agent-design.md §3.1): the business map reaches it over its own Service Binding to
+ * The stage's door: the business map reaches it over its own Service Binding to
  * this named entrypoint, never from the public internet.
  */
 export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {

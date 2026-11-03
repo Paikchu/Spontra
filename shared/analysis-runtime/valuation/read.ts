@@ -30,7 +30,7 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: finite, recurringCost: finite, growth: numbers, terminalGrowth: finite }),
 ]) satisfies z.ZodType<ModelDrivers>;
 const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional(), capex: finite.nonnegative().optional(), depreciation: finite.nonnegative().optional(), workingCapitalChange: finite.optional() });
-// valuation.calc.v2 additions, all optional so a v1 payload still reads (docs/valuation-v2-SPEC.md).
+// valuation.calc.v2 additions, all optional so a v1 payload still reads.
 const gateStatus = z.enum(GATE_STATUSES);
 const quartiles = z.object({ p25: finite, median: finite, p75: finite, count: z.number() });
 const method = z.object({ method: z.enum(VALUATION_METHODS), label: z.string(), low: nullableFinite, base: nullableFinite, high: nullableFinite, weight: finite, basis: z.string(), notes: strings });
@@ -46,7 +46,7 @@ const reference = z.object({
 });
 const consensus = z.object({ mean: finite, low: nullableFinite, high: nullableFinite, count: z.number().nullable(), asOf: z.string().nullable(), evidenceId: z.string().nullable() });
 const scenarioResult = z.object({ perShare: finite, equityValue: finite, enterpriseValue: nullableFinite, pvExplicit: nullableFinite, pvTerminal: nullableFinite, terminalShare: nullableFinite, yearly: z.array(yearRow), notes: strings });
-// valuation.calc.v4 additions, all optional (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario").
+// valuation.calc.v4 additions, all optional.
 const judgement = z.object({ rationale: z.string(), evidenceIds: strings });
 const pathAssumptions = z.object({ revenue: judgement, margin: judgement, capex: judgement });
 const methodRecord = <T extends z.ZodType>(value: T) => z.object(Object.fromEntries(VALUATION_METHODS.map(k => [k, value])) as Record<typeof VALUATION_METHODS[number], T>);

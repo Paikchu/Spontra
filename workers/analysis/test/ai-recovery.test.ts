@@ -99,13 +99,32 @@ test("a request the provider rejects on its own merits stays final", async () =>
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 1);
 });
 
+test("a release the archive does not hold yet waits queued, and its guidance starts once the wait is over", async () => {
+  const db = database();
+  const workflows = binding({});
+  const env = { DB: db, GUIDANCE_ENABLED: "true", GUIDANCE_WORKFLOW: workflows } as unknown as AnalysisEnv;
+  const t0 = new Date("2026-10-17T10:00:00.000Z");
+  await db.prepare("INSERT INTO earnings_events (ticker, accession, event_date, status, updated_at) VALUES ('ORCL', '0001-26-000009', '2026-10-16', 'queued', ?)").bind(t0.toISOString()).run();
+  const run = (now: Date) => SEC_TASKS.guidance.run(env, "ORCL", { causeId: "m1", now, trigger: "e1" });
+
+  const waiting = await run(t0);
+  assert.equal(workflows.created.length, 0, "no run reads an empty archive");
+  assert.deepEqual(waiting.status === "later" && waiting.detail, { recorded: 0, transcripts: [], started: [], retried: 0, republished: false, waiting: ["0001-26-000009"] });
+  assert.equal(waiting.status === "later" && waiting.afterMs, 6 * 3_600_000, "looked at again without a filing.archived");
+  assert.equal((await db.prepare("SELECT status FROM earnings_events WHERE accession = '0001-26-000009'").first<{ status: string }>())!.status, "queued");
+
+  await run(new Date("2026-10-18T00:00:00.000Z"));
+  assert.equal(workflows.created.length, 1, "after two days it runs with whatever it has");
+});
+
 test("a guidance run that errored leaves no event stuck: it is marked failed and retried under a new instance id", async () => {
   const db = database();
   const statuses: Record<string, { status: string; error?: unknown }> = {};
   const workflows = binding(statuses);
   const env = { DB: db, GUIDANCE_ENABLED: "true", GUIDANCE_WORKFLOW: workflows } as unknown as AnalysisEnv;
   const t0 = new Date("2026-10-17T10:00:00.000Z");
-  await db.prepare("INSERT INTO earnings_events (ticker, accession, event_date, status, updated_at) VALUES ('ORCL', '0001-26-000009', '2026-10-16', 'queued', ?)").bind(t0.toISOString()).run();
+  // A release past its wait for the archive: the run starts with whatever materials there are.
+  await db.prepare("INSERT INTO earnings_events (ticker, accession, event_date, status, updated_at) VALUES ('ORCL', '0001-26-000009', '2026-10-14', 'queued', ?)").bind(t0.toISOString()).run();
   const run = (now: Date) => SEC_TASKS.guidance.run(env, "ORCL", { causeId: "m1", now, trigger: "e1" });
 
   const started = await run(t0);
@@ -169,4 +188,94 @@ test("a Workflow still running a day after it started is stopped and retried lik
   assert.equal(terminated, 1);
   assert.deepEqual([outcome.status, (outcome.detail as { retry?: number }).retry], ["later", 1]);
   assert.equal((await readFailed(db, "findings", "NET"))?.attempts, 1);
+});
+
+test("a filing over the archive's size cap is recorded as unsupported, and the older filings behind it are still stored", async () => {
+  const { ARCHIVE_TASKS, archiveCompleteKey } = await import("../src/sec-archive/task.ts");
+  const db = database();
+  const objects = new Map<string, string>();
+  const SEC_FILINGS = {
+    async put(key: string, value: string) { objects.set(key, value); },
+    async get(key: string) { const text = objects.get(key); return text === undefined ? null : { text: async () => text }; },
+    async head(key: string) { return objects.has(key) ? {} : null; },
+  };
+  const env = { DB: db, SEC_FILINGS, SEC_USER_AGENT: "Spontra test contact@example.com" } as unknown as AnalysisEnv;
+  const root = "https://www.sec.gov/Archives/edgar/data/1341439";
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind("sec:discovery:v1:ORCL", JSON.stringify({
+    cik: "0001341439", accessions: [], checkedAt: "2026-10-17T00:00:00.000Z",
+    current: [
+      { accession: "0001193125-26-000002", form: "8-K", items: "7.01", filingDate: "2026-10-16", reportDate: "2026-10-16", document: "huge.htm" },
+      { accession: "0001193125-26-000001", form: "8-K", items: "5.02", filingDate: "2026-10-15", reportDate: "2026-10-15", document: "d1.htm" },
+      { accession: "0001193125-26-000000", form: "8-K", items: "8.01", filingDate: "2026-10-14", reportDate: "2026-10-14", document: "notice.txt" },
+    ],
+  }), "2026-10-17T00:00:00.000Z").run();
+  const small = `<html><body><p>Item 5.02 ${"A director joined the board. ".repeat(20)}</p></body></html>`;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url === `${root}/000119312526000002/huge.htm`) return new Response("x", { headers: { "content-length": "30000000" } });
+    if (url === `${root}/000119312526000001/d1.htm`) return new Response(small);
+    if (url === `${root}/000119312526000000/notice.txt`) return new Response(`ITEM 8.01 OTHER EVENTS\n${"The company announced a plain-text notice. ".repeat(20)}`, { headers: { "content-type": "text/plain" } });
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  try {
+    const result = await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1", now: new Date("2026-10-17T00:00:00.000Z"), trigger: null });
+    assert.deepEqual(result, { status: "later", afterMs: 1000, detail: { archived: ["0001193125-26-000001"], unsupported: ["0001193125-26-000002"], remaining: 1 } }, "two per run; the plain-text notice follows");
+    assert.deepEqual(await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1b", now: new Date("2026-10-17T00:00:30.000Z"), trigger: null }), { status: "done", detail: { archived: ["0001193125-26-000000"] } }, "a plain-text body is archived like an HTML one");
+    const marker = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind(archiveCompleteKey("ORCL", "0001193125-26-000002")).first<{ payload: string }>())!.payload);
+    assert.equal(marker.unsupported, "SEC_DOCUMENT_TOO_LARGE");
+    assert.deepEqual(await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c2", now: new Date("2026-10-17T00:01:00.000Z"), trigger: null }), { status: "done", detail: { archived: 0 } }, "neither is tried again");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("the archive task finishes a filing whose exhibit failed to store, instead of passing it over once its body is in", async () => {
+  const { ARCHIVE_TASKS } = await import("../src/sec-archive/task.ts");
+  const { archiveHolds, archivedExhibits } = await import("../src/sec-archive/index.ts");
+  const db = database();
+  const objects = new Map<string, string>();
+  // The store fails once on the exhibit (each document writes three objects), after the body is already in.
+  let failNextPut = false, puts = 0;
+  const SEC_FILINGS = {
+    async put(key: string, value: string) { if (failNextPut && ++puts === 4) { failNextPut = false; throw new Error("R2 unavailable"); } objects.set(key, value); },
+    async get(key: string) { const text = objects.get(key); return text === undefined ? null : { text: async () => text }; },
+    async head(key: string) { return objects.has(key) ? {} : null; },
+  };
+  const env = { DB: db, SEC_FILINGS, SEC_USER_AGENT: "Spontra test contact@example.com" } as unknown as AnalysisEnv;
+  const folder = "https://www.sec.gov/Archives/edgar/data/1341439/000119312526000001";
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind("sec:discovery:v1:ORCL", JSON.stringify({
+    cik: "0001341439", accessions: [], checkedAt: "2026-10-17T00:00:00.000Z",
+    current: [{ accession: "0001193125-26-000001", form: "8-K", items: "7.01,9.01", filingDate: "2026-10-16", reportDate: "2026-10-16", document: "d1.htm" }],
+  }), "2026-10-17T00:00:00.000Z").run();
+  const body = `<html><body><p>Item 7.01 Regulation FD Disclosure</p><table><tr><td>99.1</td><td><a href="ex99.htm">Investor presentation</a></td></tr></table></body></html>`;
+  const exhibit = `<html><body><p>${"Oracle cloud infrastructure backlog grew in the quarter. ".repeat(20)}</p></body></html>`;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url === `${folder}/d1.htm`) return new Response(body);
+    if (url === `${folder}/ex99.htm`) return new Response(exhibit);
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const run = (minutesLater = 0) => ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1", now: new Date(Date.parse("2026-10-17T00:00:00.000Z") + minutesLater * 60_000), trigger: null });
+  const stored = async () => (await db.prepare("SELECT COUNT(*) AS n FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:%'").first<{ n: number }>())!.n;
+  try {
+    failNextPut = true;
+    // The failed store is a failure of this filing alone: counted, tried again after a pause, never the batch's.
+    assert.deepEqual(await run(), { status: "later", afterMs: 15 * 60_000, detail: { archived: [], failed: ["0001193125-26-000001"] } });
+    assert.equal(await stored(), 1, "the body alone was stored");
+    // Until its delay is out the filing waits, and the run says how long; it is not tried again at once.
+    assert.deepEqual(await run(1), { status: "later", afterMs: 14 * 60_000, detail: { archived: 0, deferred: 1 } });
+    // A body whose exhibit is not stored yet is not a filing the report or guidance may read.
+    assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), false, "half a filing is not held");
+    assert.equal(await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`), null, "its exhibits read as not archived");
+    const resumed = await run(16);
+    assert.deepEqual(resumed, { status: "done", detail: { archived: ["0001193125-26-000001"] } }, "the filing is still pending after its body was stored");
+    assert.ok(await stored() >= 2, "the exhibit is stored too");
+    assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), true, "the whole filing is held");
+    assert.equal((await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`))?.length, 1);
+    assert.deepEqual(await run(17), { status: "done", detail: { archived: 0 } });
+  } finally {
+    globalThis.fetch = original;
+  }
 });

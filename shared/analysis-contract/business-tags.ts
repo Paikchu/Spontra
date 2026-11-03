@@ -1,7 +1,7 @@
 import type { IndustryCategory } from "./filing-library.ts";
 
 /**
- * Two-level business tags (docs/peer-similarity-design.md). A comparable unit is one disclosed revenue node of a
+ * Two-level business tags. A comparable unit is one disclosed revenue node of a
  * company; its sector tags (level one) are the categories of its verified business links, its business tags (level
  * two) are written by a model under one sector, each tied to the filing passages that support it. Peers are chosen
  * by a shared sector first, then by how close their business tags are.

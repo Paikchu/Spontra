@@ -1,7 +1,5 @@
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
-import type { InsiderPersonSummary } from "@/shared/analysis-contract/insiders";
 import { eventImportance } from "@/shared/analysis-runtime/events";
-import { insiderPersonKey } from "@/shared/analysis-runtime/insiders";
 import { getLocale } from "@/packages/web/src/i18n";
 import { insiderCompactMoney as formatInsiderMoney } from "./insider-money";
 import type { Locale } from "@/shared/analysis-runtime/locale";
@@ -82,7 +80,7 @@ export type NoiseRow =
   | { kind: "item"; id: string; date: string; item: RailItem }
   | { kind: "routine"; id: string; date: string; items: RailItem[] };
 
-/** The rows of a reading: routine 6-Ks fold by month; everything else lists as itself. Insider trades list by person (`streamRows`). */
+/** The rows of a reading: routine 6-Ks fold by month; everything else, each Form 4 included, lists as itself at its date. */
 export function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
   const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
   const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items)).sort((a, b) => b.date.localeCompare(a.date));
@@ -135,28 +133,12 @@ export function timelineIds(items: readonly RailItem[], filter: EventFilter): Se
   return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row).map(item => item.id)));
 }
 
-/** The readings that list insider trades: one row per person, among the other rows. */
-const INSIDERS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "all", "insiders"]);
-
-export type InsiderFiling = RailItem & { kind: "event" };
-
-/**
- * Every Form 4 on the rail, of any age, newest first. None of them lists as its own row: they reach the rail through their
- * people (from Spontra Analysis's ledger, or grouped from these filings until it answers), each with their whole history.
- */
-export function insiderFilings(items: readonly RailItem[]): InsiderFiling[] {
-  return items.filter((item): item is InsiderFiling => item.kind === "event" && item.event.class === "insider").sort((a, b) => b.date.localeCompare(a.date));
-}
-
 const isEarningsRow = (row: NoiseRow) => row.kind === "item" && (row.item.kind === "report"
   || (row.item.event.class === "earnings" && (row.item.event.items.includes("2.02") || !row.item.event.form.startsWith("8-K"))));
 
-/** The rail's order for a reading: every row newest first, reports included, without the insider filings, which list through their people. */
-export function railLayout(items: readonly RailItem[], filter: EventFilter): { insiders: InsiderFiling[]; rows: NoiseRow[]; items: readonly RailItem[] } {
-  const insiders = INSIDERS_IN.has(filter) ? insiderFilings(items) : [];
-  const held = new Set(insiders.map(item => item.id));
-  // Matching runs over every filing (an insider row's importance reads the person's other trades); only the rows drop.
-  return { insiders, rows: noiseRows(items, filter).filter(row => row.kind !== "item" || !held.has(row.item.id)), items };
+/** The rail's order for a reading: every row newest first, reports and Form 4s included, each at its own date. */
+export function railLayout(items: readonly RailItem[], filter: EventFilter): { rows: NoiseRow[]; items: readonly RailItem[] } {
+  return { rows: noiseRows(items, filter), items };
 }
 
 /** Quarter ends this close are one quarter: a 52/53-week year ends its quarters on a weekday near the month's end. */
@@ -195,52 +177,68 @@ export function releasedPeriod(release: RailItem, items: readonly RailItem[], an
   return earlier ? null : quarter;
 }
 
-/**
- * Whether a row is the filing a findings set was written from: a report of that period, or the earnings release that
- * reports that quarter. A release of any other quarter never carries them.
- */
-export function reportsPeriod(row: NoiseRow, periodEnd: string | null, items: readonly RailItem[]): boolean {
-  if (!periodEnd || row.kind !== "item") return false;
-  const item = row.item;
-  if (item.kind === "report") return item.report.periodEnd === periodEnd;
-  if (!isEarningsRow(row)) return false;
-  const quarter = releasedPeriod(item, items, periodEnd);
-  return quarter != null && sameQuarter(quarter, periodEnd);
+/** The tabs over the rail's filings, under the findings. Either or both can be on; both are by default. */
+export const RAIL_TABS = ["reports", "management"] as const;
+export type RailTab = (typeof RAIL_TABS)[number];
+
+/** Reads `?tabs=` (comma separated). Absent, empty or unknown values leave every tab on. */
+export function readRailTabs(search: string): ReadonlySet<RailTab> {
+  const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("tabs") ?? "";
+  const picked = raw.split(",").filter((tab): tab is RailTab => RAIL_TABS.includes(tab as RailTab));
+  return new Set(picked.length ? picked : RAIL_TABS);
 }
 
-/** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
-const FINDINGS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "earnings", "all"]);
+/** Writes the tabs into a query; the default, every tab on, leaves the parameter out. */
+export function withRailTabs(search: string, tabs: ReadonlySet<RailTab>): string {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (RAIL_TABS.every(tab => tabs.has(tab))) params.delete("tabs");
+  else params.set("tabs", RAIL_TABS.filter(tab => tabs.has(tab)).join(","));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 
-export type StreamRow<F> = { kind: "noise"; id: string; date: string; row: NoiseRow } | { kind: "finding"; id: string; date: string; finding: F }
-  | { kind: "person"; id: string; date: string; person: InsiderPersonSummary; items: InsiderFiling[] };
+/** Management: officer and director changes and every insider trade. Everything else filed is a report. */
+const MANAGEMENT = new Set(["executive", "insider"]);
+export const itemTab = (item: RailItem): RailTab => item.kind === "event" && MANAGEMENT.has(item.event.class) ? "management" : "reports";
+const rowTab = (row: NoiseRow): RailTab => row.kind === "item" ? itemTab(row.item) : "reports";
 
-export const personRowId = (key: string) => `insider:${key}`;
-/** The person a rail filing belongs to, by the ledger's own rule. */
-const personKeyOf = (event: CompanyEvent): string | null => event.insider ? insiderPersonKey(event.insider) : null;
+/** The ids the time axis draws for a reading and a set of tabs. */
+export function tabTimelineIds(items: readonly RailItem[], filter: EventFilter, tabs: ReadonlySet<RailTab>): Set<string> {
+  return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row)).filter(item => tabs.has(itemTab(item))).map(item => item.id));
+}
+
+export type StreamBlock =
+  | { kind: "row"; id: string; row: NoiseRow }
+  | { kind: "quarter"; id: string; periodEnd: string; rows: NoiseRow[] };
+
+/** The quarter a row is about: a report's period, or the quarter an earnings release reports. */
+function rowPeriod(row: NoiseRow, items: readonly RailItem[], anchor: string | null): string | null {
+  if (row.kind !== "item") return null;
+  const item = row.item;
+  if (item.kind === "report") return item.report.periodEnd ?? null;
+  return isEarningsRow(row) ? releasedPeriod(item, items, anchor) : null;
+}
 
 /**
- * The rail's rows in order: newest first, reports among the events, each insider at the date of their latest trade, and
- * the findings beneath the filing of their quarter. When no row is that filing they are left out, never put under another
- * quarter's filing. A rail with no rows at all lists them alone.
- * `persons` are the people of the reading's insider filings; a reading without those lists none.
+ * The rows of the tabs that are on, with the filings about one fiscal quarter (its earnings release, its 10-Q or
+ * 10-K) framed together. A frame stands where its newest row would; rows about no quarter keep their own place.
+ * `known` is a quarter end that dates the releases; without it the latest listed report's period does.
  */
-export function streamRows<F extends { id: string }>(layout: ReturnType<typeof railLayout>, findings: readonly F[], periodEnd: string | null, filter: EventFilter, persons: readonly InsiderPersonSummary[] = []): StreamRow<F>[] {
-  const rows: StreamRow<F>[] = layout.rows.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
-  if (layout.insiders.length) {
-    for (const person of persons) {
-      const date = person.lastTradeAt ?? person.latest?.date ?? "";
-      const row: StreamRow<F> = { kind: "person", id: personRowId(person.key), date, person, items: layout.insiders.filter(item => personKeyOf(item.event) === person.key) };
-      // Before the first older row, so the rows already listed keep their order and a person follows rows of the same day.
-      const at = rows.findIndex(r => r.date < date);
-      rows.splice(at < 0 ? rows.length : at, 0, row);
+export function streamBlocks(rows: readonly NoiseRow[], tabs: ReadonlySet<RailTab>, items: readonly RailItem[], known: string | null = null): StreamBlock[] {
+  const anchor = known ?? items.reduce<string | null>((latest, item) => item.kind === "report" && item.report.periodEnd && (!latest || item.report.periodEnd > latest) ? item.report.periodEnd : latest, null);
+  const blocks: StreamBlock[] = [];
+  const frames: Array<Extract<StreamBlock, { kind: "quarter" }>> = [];
+  for (const row of rows) {
+    if (!tabs.has(rowTab(row))) continue;
+    const period = rowPeriod(row, items, anchor);
+    if (!period) { blocks.push({ kind: "row", id: row.id, row }); continue; }
+    let frame = frames.find(f => sameQuarter(f.periodEnd, period));
+    if (!frame) {
+      frame = { kind: "quarter", id: `quarter:${period}`, periodEnd: period, rows: [] };
+      frames.push(frame);
+      blocks.push(frame);
     }
+    frame.rows.push(row);
   }
-  if (findings.length && FINDINGS_IN.has(filter)) {
-    const at = rows.findIndex(row => row.kind === "noise" && reportsPeriod(row.row, periodEnd, layout.items));
-    if (at >= 0 || !rows.length) {
-      const date = at >= 0 ? rows[at]!.date : periodEnd ?? "";
-      rows.splice(at + 1, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
-    }
-  }
-  return rows;
+  return blocks;
 }

@@ -1,5 +1,5 @@
 /**
- * Anonymous reader ids (docs/stage-agent-design.md §3.1). The server signs them, so a script cannot mint ids of its
+ * Anonymous reader ids. The server signs them, so a script cannot mint ids of its
  * own and spend a fresh allowance with each one; issuing one is itself limited per address. The signing key is derived
  * from the admin secret under its own label, so no new secret has to be provisioned.
  */

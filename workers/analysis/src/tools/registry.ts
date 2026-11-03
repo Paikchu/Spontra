@@ -1,15 +1,17 @@
 import { z } from "zod";
-import { toolResult, type AgentBlock, type AgentSchema, type AgentTool, type ToolCall } from "../tool-loop.ts";
+import { nativeSearchTool } from "../web-search/native.ts";
+import { toolResult, type AgentBlock, type AgentSchema, type AgentTool, type AgentClientTool, type ToolCall } from "../tool-loop.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
- * The tool contract every agent shares (docs/stage-agent-design.md §4), after DeepSeek Harness's `ToolDefinition`:
+ * The tool contract every agent shares, after DeepSeek Harness's `ToolDefinition`:
  * typed parameters checked before the call, a decision before it runs (allow, deny, or ask the reader) and after
  * (accept, or block with feedback the model reads), and an observation written for the model. `S` is the run's own
  * state (materials read, numbers resolved, the last compile) that the tools of one run share.
  */
 export type ToolDefinition<A, R, S> = {
   name: string;
+  nativeSearch?: { remaining(state: S): number; excluded?: string[] };
   description: string;
   parameters: z.ZodType<A>;
   /** Strict schemas close every object; a tool taking a whole document leaves it open and the harness checks it. */
@@ -46,7 +48,7 @@ export type ToolPolicy = {
 export type ToolOutcome = { observation: string; error?: boolean; value?: unknown; asked?: string };
 
 /** The model-facing schema of a tool, from its zod parameters. */
-export function toolSchema<S>(tool: AnyTool<S>): AgentTool {
+export function toolSchema<S>(tool: AnyTool<S>): AgentClientTool {
   const json = z.toJSONSchema(tool.parameters, { target: "draft-7", io: "input" }) as Record<string, unknown>;
   const rest = omit(json, "$schema");
   const input_schema = { type: "object", properties: {}, required: [], ...(tool.strict === false ? rest : closed(rest)) } as AgentSchema;
@@ -73,8 +75,12 @@ function closed(node: unknown): Record<string, unknown> {
   return out;
 }
 
-export function schemasFor<S>(tools: AnyTool<S>[], policy: ToolPolicy): AgentTool[] {
-  return tools.filter(t => policy.allow.includes(t.name)).map(toolSchema);
+export function schemasFor<S>(tools: AnyTool<S>[], policy: ToolPolicy, state?: S): AgentTool[] {
+  return tools.filter(t => policy.allow.includes(t.name)).flatMap((t): AgentTool[] => {
+    if (!t.nativeSearch) return [toolSchema(t)];
+    const remaining = state === undefined ? 0 : t.nativeSearch.remaining(state);
+    return remaining > 0 ? [nativeSearchTool(remaining, t.nativeSearch.excluded)] : [];
+  });
 }
 
 /**

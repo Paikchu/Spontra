@@ -21,7 +21,7 @@ import { checkupCacheKey, emptyCheckupKey, type CheckupRecord } from "./read.ts"
 export { checkupCacheKey, emptyCheckupKey, readCheckupRecord } from "./read.ts";
 
 /**
- * Checkup notes (docs/three-statement-analysis-design.md): for every metric the report's checkup flags, a written
+ * Checkup notes: for every metric the report's checkup flags, a written
  * analysis read against the current and the earlier filings. Runs when the flags, the filings in the library or the
  * prompt change; publishes one record per company that the findings read route serves with the findings.
  */

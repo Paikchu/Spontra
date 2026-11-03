@@ -25,7 +25,7 @@ export type StageHost = {
 };
 
 /**
- * The stage for one company page (docs/stage-agent-design.md §5): nothing loads and nothing connects until the reader
+ * The stage for one company page: nothing loads and nothing connects until the reader
  * opens the overlay; the socket client and the stage's renderer are their own chunks. Once the reader asks, the
  * overlay fades and the stage takes the question: its turn while it runs, then its result. The map's own view is
  * untouched while the stage is closed or unreachable, and the reader's own picks on the map always win.

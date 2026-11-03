@@ -1,8 +1,9 @@
+import { nativeSearches, NATIVE_SEARCH_INSTRUCTION } from "./web-search/native.ts";
 import { CALLS_PER_TURN, FAILED_REPLIES, replyFailure, replyText, toolCalls, type AgentAct, type AgentBlock, type AgentMessage, type ToolCall } from "./tool-loop.ts";
 import { resultBlock, runTool, schemasFor, type AnyTool, type ToolOutcome, type ToolPolicy } from "./tools/registry.ts";
 
 /**
- * One agent's loop, shared by every recipe (docs/stage-agent-design.md §2.1): the model replies, the harness runs the
+ * One agent's loop, shared by every recipe: the model replies, the harness runs the
  * calls it makes through the tool pipeline, and the results go back until a terminal tool settles the run or the
  * budget runs out. The exchange only grows: each reply goes back exactly as it came, thinking included.
  */
@@ -45,8 +46,8 @@ export type LoopOutcome<O> = { output: O; reason: "finished" | "budget" | "faile
  */
 export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, state: S, messages: AgentMessage[], act: AgentAct, host: LoopHost): Promise<LoopOutcome<O>> {
   const tools = recipe.tools(state);
-  const schemas = schemasFor(tools, recipe.policy);
-  const system = recipe.system(input);
+  const native = tools.find(t => t.nativeSearch && recipe.policy.allow.includes(t.name));
+  const system = recipe.system(input) + (native ? `\n${NATIVE_SEARCH_INSTRUCTION}` : "");
   const started = host.now();
   let failed = 0, quiet = 0, turn = 0;
   const finish = (reason: LoopOutcome<O>["reason"], asked: string | null = null): LoopOutcome<O> => ({ output: recipe.settle(state, reason), reason, turns: turn, asked });
@@ -55,7 +56,7 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
     if (host.now() - started > recipe.budget.wallMs) return finish("budget");
     if (!await host.reserve()) return finish("budget");
     turn++;
-    const reply = await act(`${recipe.id}-t${turn}`, system, schemas, messages);
+    const reply = await act(`${recipe.id}-t${turn}`, system, schemasFor(tools, recipe.policy, state), messages);
     const failure = replyFailure(reply);
     if (failure !== null || "error" in reply) {
       host.record({ turn, thought: "", action: "invalid", input: "", observation: String(failure).slice(0, 1000) });
@@ -64,8 +65,17 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
     }
     failed = 0;
     messages.push({ role: "assistant", content: reply.content });
+    const webNotes: AgentBlock[] = [];
+    if (native) for (const batch of nativeSearches(reply.content)) {
+      const outcome = await runTool(tools, recipe.policy, { name: native.name, input: batch }, { state, signal: host.signal, recipe: recipe.id, stage: (name, work) => host.stage ? host.stage(`${recipe.id}-t${turn}-native-${name}`, work) : work() });
+      host.record({ turn, thought: "", action: "web_search", input: batch.query, observation: outcome.observation.slice(0, 4000) });
+      webNotes.push({ type: "text", text: outcome.observation });
+    }
     const said = replyText(reply.content).slice(0, 600);
     const calls = toolCalls(reply.content);
+    if (!calls.length && webNotes.length) {
+      quiet = 0; messages.push({ role: "user", content: [...webNotes, { type: "text", text: recipe.nudge }] }); continue;
+    }
     if (!calls.length) {
       host.record({ turn, thought: said, action: "none", input: "", observation: "The reply called no tool." });
       if (++quiet >= 2) return finish("failed");
@@ -91,7 +101,7 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
       host.record({ turn, thought: i ? "" : said, action: call.name.slice(0, 40), input: JSON.stringify(call.input ?? {}).slice(0, 4000), observation: outcome.observation.slice(0, 4000) });
       results.push(resultBlock(call, { ...outcome, observation: outcome.observation.slice(0, 12_000) }, budgetLine));
     });
-    messages.push({ role: "user", content: results });
+    messages.push({ role: "user", content: [...results, ...webNotes] });
     if (asked) return finish("finished", asked);
     if (recipe.settled(state)) return finish("finished");
   }

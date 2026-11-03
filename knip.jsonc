@@ -9,9 +9,8 @@
         "workers/analysis/test/*.test.ts",        // npm run test:analysis
         "packages/web/test/*.test.ts",            // npm run test:web
         // Hand-run ops scripts with documented usage:
-        "scripts/sec-report-reliability.ts",      // docs/sec-generation-reliability.md:43
-        "workers/analysis/scripts/snapshot-current-reports.ts", // docs/sec-business-report.md:57
-        "workers/analysis/scripts/clean-foreign-insider.ts"     // referenced by workers/analysis/src/events/workflow.ts:84
+        "scripts/sec-report-reliability.ts",      // docs/sec-generation-reliability.md
+        "workers/analysis/scripts/*.ts"           // workers/analysis/scripts/README.md
       ],
       "project": ["workers/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}", "shared/**/*.{ts,tsx}", "scripts/**/*.{ts,mjs}"]
     },

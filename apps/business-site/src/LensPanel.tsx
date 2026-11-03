@@ -89,7 +89,7 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
  * A finding's lens document as rows of cells; a chart's hover lights the evidence rows of the same period. The finding
  * page and the stage both draw a finding through it. `layout` overrides the finding's own (a stage scene's layout).
  */
-export function LensBlocks({ finding, data, sources, materials, record, ticker, nodeColor, compact, layout }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean; layout?: LensDocumentShape }) {
+export function LensBlocks({ finding, data, sources, materials, record, ticker, nodeColor, compact, layout, children }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean; layout?: LensDocumentShape; children?: ReactNode }) {
   const colorOf = useCallback((ref: FindingRef) => "nodeId" in ref ? nodeColor(ref.nodeId) : "ratio" in ref && "nodeId" in ref.ratio.numerator ? nodeColor(ref.ratio.numerator.nodeId) : null, [nodeColor]);
   // Earlier watches other than this finding's own, scored against the data as it stands; only those that can be read.
   const scored = useMemo(() => (record ?? []).filter(e => e.findingId !== finding.id || e.periodEnd !== finding.periodEnd).map(e => ({ entry: e, result: watchVerdict(data, e.watch, e.periodEnd) })), [record, data, finding]);
@@ -154,6 +154,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       {row.title && <h3 className="lens-row-title" lang={langOf(row.title)}>{row.title}</h3>}
       {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
     </div>)}
+    {children}
   </div>;
 }
 

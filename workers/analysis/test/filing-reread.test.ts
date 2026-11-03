@@ -26,11 +26,14 @@ function cacheDb() {
   });
   return { rows, db: { prepare: (sql: string) => statement(sql) } as unknown as D1Database };
 }
-const reader = (document: string): SecReader => ({ async read(url) {
-  if (url === `https://data.sec.gov/submissions/CIK${CIK}.json`) return new Response(JSON.stringify(submissions));
-  if (url === `${FOLDER}coreweave4q25earningspress.htm`) return new Response(document);
-  throw new Error("unavailable");
-} });
+const reader = (document: string): SecReader => ({
+  submissions: async () => submissions,
+  issuerDirectory: async () => ({ fields: [], data: [] }),
+  async read(url) {
+    if (url === `${FOLDER}coreweave4q25earningspress.htm`) return new Response(document);
+    throw new Error("unavailable");
+  },
+});
 const quarter = (start: string, end: string, revenue: number, accession: string, form: string): RevenueHistoryQuarter => {
   const url = `https://www.sec.gov/Archives/edgar/data/1769628/${accession.replaceAll("-", "")}/doc.htm`;
   return { periodStart: start, periodEnd: end, currency: "USD", scale: 1, revenue: String(millions(revenue)), basis: "reported",

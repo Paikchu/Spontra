@@ -1,5 +1,5 @@
 /**
- * Translated publications (docs/i18n-design.md, phase 2). Every publication is generated and verified in English;
+ * Translated publications. Every publication is generated and verified in English;
  * a Spontra Analysis task then translates its reader-facing strings once, string by string, into a table keyed by the English
  * text. The read API applies that table to the English payload, so the page receives the same structure with the
  * prose in the reader's language, and any string not yet translated stays English.

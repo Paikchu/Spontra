@@ -1,14 +1,15 @@
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
+import { archivedForm } from "./filing-forms.ts";
 /**
- * The pipeline's event graph (docs/analysis-events.md): the events that exist, which tasks subscribe to each, and
+ * The pipeline's event graph: the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
  * (`scripts/check-analysis-boundary.ts`). Adding a downstream task is a row here plus its implementation in
  * `tasks.ts`; no queue, marker or Cron.
  */
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
-  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
+  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
@@ -22,7 +23,7 @@ export const EVENT_TYPES = [
 export type EventType = typeof EVENT_TYPES[number];
 
 export const TASK_NAMES = [
-  "collect", "history", "reproject", "maintenance", "transcript",
+  "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "fundamentals", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
@@ -38,7 +39,7 @@ export type PipelineEvent = { type: EventType; ticker: string; cik?: string | nu
 
 /**
  * Which companies a task runs for when its version changes: every data company, the companies one reader-facing feature
- * is switched on for (docs/whitelist-feature-switches-design.md), or once globally.
+ * is switched on for, or once globally.
  */
 export type TaskScope = "data" | Feature | "global";
 export type TaskMeta = {
@@ -53,6 +54,9 @@ const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
 export const TASKS: Record<TaskName, TaskMeta> = {
   // Collects a company's latest complete statements from EDGAR and publishes them.
   "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  // Stores the current reports collection does not read (8-Ks without Item 2.02), so every filing the SEC report
+  // analyses is in the archive (docs/sec-archive.md); no model.
+  "archive": { emits: ["filing.archived", "archive.superseded", "archive.unsupported"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Brings the company's quarterly revenue history up to date after a publication.
   "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Re-projects archived filings whose capital projection predates the current version.
@@ -113,7 +117,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
   // arithmetic decides), then collects the issuer again through a maintenance task.
   "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
-  // The valuation assessment (docs/valuation-assessment-design.md): five researched dimensions and a calculated model,
+  // The valuation assessment: five researched dimensions and a calculated model,
   // rewritten when the figures, filings, guidance or calls it reads from change (Workflow; model at the reasoning tier).
   "valuation": { emits: ["valuation.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
 };
@@ -126,17 +130,26 @@ export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => bo
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
+    // Every current report (and 40-F) is archived by its own task; collection stores only some of them, and a stored
+    // document is not downloaded again. The SEC report follows `filing.archived`.
+    { task: "archive", when: e => archivedForm(form(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
   "company.added": [{ task: "events" }, { task: "presentation" }],
+  // A company's baseline lists current reports no `filing.discovered` announced.
+  "archive.requested": [{ task: "archive" }],
+  // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
+  "archive.unsupported": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
-  "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
+  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" },
+    // With the library off, an item's eligibility follows the archive; with it on, the run finds its fingerprint unchanged.
+    { task: "items", when: e => archivedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
   "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],
@@ -163,7 +176,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "fundamentals.updated": [{ task: "findings" }, { task: "peers" }, { task: "valuation" }],
   "analysis.published": [{ task: "findings" }],
   "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
-  // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
+  // Every publication with reader-facing prose is translated once it lands.
   "dossier.published": [{ task: "translate" }],
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
@@ -190,7 +203,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
-  "sec-discovery": ["company.added", "filing.discovered", "collection.requested"],
+  "sec-discovery": ["company.added", "filing.discovered", "collection.requested", "archive.requested"],
   "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
 };

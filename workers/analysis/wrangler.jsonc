@@ -117,7 +117,7 @@
         "limit": 2
       }
     },
-    // Reports readers ask the stage for (docs/stage-agent-design.md §6.3), started by their StageAgent.
+    // Reports readers ask the stage for, started by their StageAgent.
     {
       "name": "spontra-report",
       "binding": "REPORT_WORKFLOW",
@@ -133,18 +133,18 @@
       "bucket_name": "earning-report-analysis-sec-filings"
     }
   ],
-  // The filing library's recall layer (docs/sec-filing-library.md): one AI Search instance with built-in storage,
+  // The filing library's recall layer: one AI Search instance with built-in storage,
   // created by the Worker on first use inside the account's `default` namespace. It holds copies of library
   // sections for semantic search only; D1 stays the source of every text and number.
   "ai_search_namespaces": [
     { "binding": "AI_SEARCH", "namespace": "default" }
   ],
-  // Business tags (docs/peer-similarity-design.md): Workers AI embeds each tag with @cf/baai/bge-m3, and the Vectorize
+  // Business tags: Workers AI embeds each tag with @cf/baai/bge-m3, and the Vectorize
   // index holds the vectors, one namespace per sector and facet. The index was created once by hand (1024 dimensions,
   // cosine); D1 stays the source of every tag and pair.
   "ai": { "binding": "AI" },
   // Browser Rendering: the lens agent's html pictures are drawn and measured here, so the model reads what a reader
-  // would see (docs/finding-lens-agent.md).
+  // would see.
   "browser": { "binding": "BROWSER" },
   "vectorize": [
     { "binding": "TAGS_INDEX", "index_name": "business-tags" }
@@ -174,7 +174,7 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
-  // Event-driven pipeline (docs/analysis-events.md). The three queues were created once by hand; Wrangler does not
+  // Event-driven pipeline. The three queues were created once by hand; Wrangler does not
   // create queues on deploy. Events are routed in large batches so a company's triggers collapse into one run; tasks
   // run one per invocation so a heavy run never shares its CPU and memory with another.
   "queues": {
@@ -188,7 +188,7 @@
       { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
     ]
   },
-  // The stage (docs/stage-agent-design.md): one StageAgent per reader conversation, an Agents SDK Agent and so a
+  // The stage: one StageAgent per reader conversation, an Agents SDK Agent and so a
   // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
   // turning the stage off is the feature switch, not a revert.
   "durable_objects": {
@@ -196,7 +196,7 @@
   },
   "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
-  // The only schedule: SEC filing discovery, because EDGAR pushes nothing (docs/analysis-events.md). Everything a
+  // The only schedule: SEC filing discovery, because EDGAR pushes nothing. Everything a
   // filing leads to runs on the queues above.
   "triggers": {
     "crons": ["*/10 * * * *"]

@@ -3,7 +3,7 @@ import { financeLeaseAmount } from "./lease-basis.ts";
 import { rpoRevenueFloor, type CalcRequest, type Lifecycle } from "./calculator.ts";
 
 /**
- * The deterministic prior (docs/valuation-v2-SPEC.md §2): a first pass from the company's own history, its RPO and its
+ * The deterministic prior: a first pass from the company's own history, its RPO and its
  * capex cycle, with no model involved. The workflow hands it to the assumptions phase as a starting point to revise, and
  * the dry run uses it as the whole answer when no model is available. Pure: the same inputs give the same request.
  */

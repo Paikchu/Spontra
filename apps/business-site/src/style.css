@@ -142,13 +142,13 @@ button { cursor: pointer; }
 }
 .company { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .company-logo { position: relative; display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: #fff; box-shadow: inset 0 0 0 1px #0b1f1a14; }
-.company-logo img { position: absolute; inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; }
+.company-logo img { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); object-fit: contain; }
 .company-logo-fallback { font-size: 13px; font-weight: 680; letter-spacing: -.02em; color: #13231f; }
 .company-logo:not([data-failed]) .company-logo-fallback { opacity: 0; }
 .company-logo[data-failed] { background: var(--fill); box-shadow: inset 0 0 0 1px var(--hairline); }
 .company-logo[data-failed] .company-logo-fallback { color: var(--foreground); }
 .company-logo--sm { width: 32px; height: 32px; border-radius: 9px; }
-.company-logo--sm img { inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); }
+.company-logo--sm img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
@@ -875,20 +875,34 @@ button { cursor: pointer; }
 .stream-mark[data-quiet] { color: var(--faint); }
 .stream-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .stream-title { min-width: 0; font-size: 14px; font-weight: 500; line-height: 1.35; color: color-mix(in srgb, var(--foreground) 88%, transparent); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-.stream-title.insider-title { display: flex; flex-direction: column; -webkit-line-clamp: unset; overflow: visible; }
-.insider-name, .insider-content, .insider-tags { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.insider-transaction { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 5px; min-width: 0; }
-.insider-tags { color: var(--muted-foreground); font-size: 11px; }
-.insider-amount { flex: none; margin-left: auto; text-align: right; white-space: nowrap; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+/* A filing in the rail is two lines at most: its title and its particulars. */
+.stream-row:not(.finding-row) .stream-title { -webkit-line-clamp: 1; }
 .stream-row:hover .stream-title, .stream-row[aria-checked="true"] .stream-title { color: var(--foreground); }
 .stream-row[aria-checked="true"] .stream-title { font-weight: 600; }
 .stream-meta { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.3; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.insider-title + .stream-meta { display: block; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .stream-row[aria-checked="true"] .stream-meta { color: var(--brand); }
 /* Quiet the rows that are not in focus by color, not opacity: a 0.62 fade put 12px dates under 4.5:1. */
 .stream[data-focus] .stream-row:not([aria-checked="true"]) .stream-title { color: var(--muted-foreground); }
 .stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
 .stream-end { height: 1px; }
+/* The tabs: any of findings, reports and management at once. They stay at the top of the rail while it scrolls. */
+.stream-tabs { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; padding: 8px 6px 8px; background: var(--surface); }
+.stream-tab { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 13px; font-weight: 500; white-space: nowrap; transition: background .16s, border-color .16s, color .16s; }
+.stream-tab:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--foreground) 24%, transparent); }
+.stream-tab[aria-pressed="true"] { background: color-mix(in srgb, var(--brand) 14%, transparent); border-color: color-mix(in srgb, var(--brand) 45%, transparent); color: var(--foreground); }
+.stream-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+/* One fiscal quarter's findings and filings, framed together. */
+.quarter-frame { display: flex; flex-direction: column; min-width: 0; margin: 6px 2px; padding: 2px 0 4px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--foreground) 2.5%, transparent); }
+.quarter-frame-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 9px 12px 5px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quarter-frame-title { flex: none; font-size: 13px; font-weight: 650; color: var(--foreground); }
+.quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
+/* The findings, the standing read of the company, between the businesses and the tabs. */
+.guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.guidance-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 28px; margin: 2px 0 0 36px; padding: 0 10px; border-radius: 999px; color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
+.guidance-more:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
+.guidance-more .fold-chevron { margin-top: 0; transform: rotate(90deg); }
+.guidance-more[aria-expanded="true"] .fold-chevron { transform: rotate(-90deg); }
+@media (max-width: 960px) { .stream-tabs { position: static; } }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
 /* A finding's severity as an icon in the level colours: 3 a filled red triangle, 2 an amber circled "!", 1 a grey "i".
@@ -966,11 +980,9 @@ button { cursor: pointer; }
 /* A finding, flag, report or filed event in focus holds the whole stage: tiles, chart, time axis and legend step aside, the document scrolls in their place. */
 .stage[data-focus="lens"] { grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
 .stage[data-focus] .lens-stage > .lens { grid-template-rows: auto minmax(0, 1fr); }
-/* A digest's chart in a document cell: the ladder takes the height a lens chart would. */
 /* While a row's analysis is read: a thin bar where the document will be. */
 .lens-loading { display: block; height: 2px; margin-top: 18px; border-radius: 2px; background: color-mix(in srgb, var(--brand) 18%, transparent); overflow: hidden; position: relative; }
 .lens-loading::after { content: ""; position: absolute; inset: 0; width: 30%; background: var(--brand); animation: ask-progress 1.2s ease-in-out infinite; }
-.lens-doc-cell > .insider-ladder { height: clamp(220px, calc(100cqw * .42), min(320px, 42vh)); }
 .stage[data-focus] .lens, .stage[data-focus] .lens-stage[data-split] .lens { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
 .stage[data-focus] .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
 .lens-doc { container: lens-doc / inline-size; display: grid; align-content: start; gap: 18px 0; min-height: 0; overflow-y: auto; padding: 4px 6px 8px 0; font-size: 14px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -1092,7 +1104,7 @@ button { cursor: pointer; }
 .home-quick a { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 4px 12px 4px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); }
 .home-quick a:hover { color: var(--foreground); border-color: var(--border); }
 .home .company-logo--sm { width: 22px; height: 22px; border-radius: 999px; }
-.home .company-logo--sm img { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+.home .company-logo--sm img { inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); }
 .home .company-logo--sm .company-logo-fallback { font-size: 12px; }
 
 .home-watch, .home-companies { margin-top: 48px; }
@@ -1226,31 +1238,22 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
 .event-fold-inner .stream-row { padding-left: 40px; }
-/* Insider trades by person, among the other rows: a row is the person's latest trade and net position; open, their history. */
-.insider-person { min-width: 0; }
-.insider-person-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.insider-new { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); font-family: var(--sans); font-size: 11px; font-weight: 600; line-height: 16px; white-space: nowrap; }
-.insider-new svg { width: 10px; height: 10px; fill: currentColor; }
-.insider-amount .insider-arrow { margin-right: 2px; vertical-align: -1px; }
-.insider-person-row .stream-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; white-space: normal; overflow: visible; text-overflow: clip; }
-.insider-person-row[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
-.insider-arrow { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.insider-arrow[data-direction="sell"] { color: var(--loss); }
-.insider-arrow[data-direction="buy"] { color: var(--up); }
-.insider-history-more { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 8px 40px; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); }
-.insider-history-more:hover { color: var(--foreground); }
-/* The history: one line per transaction, newest first; a line the rail lists is a button to its event. */
-.insider-history { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 2px 10px 8px 40px; list-style: none; }
-.insider-history li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
-.insider-history-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; text-align: left; overflow-wrap: anywhere; }
-.insider-history button[aria-pressed="true"] { color: var(--accent); }
-.insider-history a { color: var(--muted-foreground); text-decoration: underline; }
-.insider-history-code { display: inline-flex; align-items: baseline; gap: 4px; }
-.insider-history-code b { padding: 0 4px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); font-family: var(--mono); font-size: 11px; font-weight: 600; }
+/* A Form 4 on the stage closes with its filer's every transaction, newest first; a line of a listed filing opens it. */
+.insider-history .lens-row-title small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-foreground); }
+.insider-history-scroll { min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.insider-history .lens-table th, .insider-history .lens-table td { white-space: nowrap; }
+.insider-history .lens-table th[scope="col"]:nth-child(2), .insider-history .lens-table td.insider-history-code { text-align: left; }
+.insider-history .lens-table tr[data-lit] > * { background: color-mix(in srgb, var(--brand) 8%, transparent); }
+.insider-history .lens-table a { color: var(--muted-foreground); text-decoration: underline; }
+.insider-history .lens-table a:hover { color: var(--foreground); }
+.insider-history-open { padding: 0; border: 0; background: none; color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; font: inherit; }
+.insider-history-new { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); font-size: 11px; font-style: normal; font-weight: 600; line-height: 16px; }
+.insider-history-code b { margin-right: 4px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); font-family: var(--mono); font-size: 11px; font-weight: 600; }
 .insider-history-code[data-side="sell"] b { color: var(--loss); }
 .insider-history-code[data-side="buy"] b { color: var(--up); }
-.insider-history-after, .insider-history-tags { color: var(--muted-foreground); }
-.insider-history-state { margin: 0 10px 8px 40px; font-size: 12px; color: var(--muted-foreground); }
+.insider-history-more { justify-self: start; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); text-decoration: underline; }
+.insider-history-more:hover { color: var(--foreground); }
+.insider-history-state { font-size: 12px; color: var(--muted-foreground); }
 .insider-history-state button { margin-left: 6px; color: var(--foreground); text-decoration: underline; }
 /* The class legend doubles as the filter: the class mark, its name and count. */
 .section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
@@ -1361,35 +1364,14 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .event-footnotes { margin: 0 0 10px; font-size: 12px; color: var(--muted-foreground); }
 .event-footnotes summary { cursor: pointer; color: var(--faint); }
 .event-footnotes ol { margin: 6px 0 0; padding-left: 18px; }
-.event-verdict b { display: inline-block; margin-right: 8px; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--background); background: var(--muted-foreground); }
-.event-verdict[data-verdict="attention"] b { background: var(--loss); }
-.event-verdict[data-verdict="planned"] b { background: var(--up); }
-.event-verdict[data-verdict="routine"] b { background: var(--muted-foreground); }
-.event-cluster { margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--muted-foreground); }
-.event-cluster li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
 
 /* The staircase: each filing's held-after figure is a step; sales are dots sized by proceeds, hollow under a 10b5-1 plan, the focused one lit. */
-.insider-ladder { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
-.ladder-plot { position: relative; min-height: 0; }
-.insider-ladder svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.ladder-grid { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
-.ladder-path { fill: none; stroke: var(--class-insider); stroke-width: 1.6; stroke-linejoin: round; animation: fade-in .6s ease both; }
-.ladder-marks { position: absolute; inset: 0; pointer-events: none; }
-.ladder-marks .ladder-dot { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; }
-.ladder-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--class-insider); border: 1.5px solid var(--class-insider); box-sizing: border-box; transition: box-shadow .2s; }
-.ladder-dot[data-planned], .ladder-dot--planned { background: transparent; }
-.ladder-dot[data-focus] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--class-insider) 30%, transparent), 0 0 12px var(--class-insider); z-index: 1; }
-.ladder-step { width: 12px !important; height: 2px !important; border-radius: 1px !important; background: var(--class-insider); }
-.insider-ladder .lens-legend { grid-row: 1; }
 .lens-axis { position: relative; height: 14px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
-.insider-ladder .lens-axis { grid-row: 3; }
-.ladder-scale { position: absolute; inset: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
-.ladder-scale span { position: absolute; left: 0; transform: translateY(-50%); }
 @media (max-width: 960px) {
   .timeline-track { margin: 0 22px; }
-  .stream-rows, .event-rows, .event-fold, .insider-person { width: 100%; max-width: 100%; }
+  .stream-rows, .event-rows, .event-fold { width: 100%; max-width: 100%; }
 }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
@@ -1443,7 +1425,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 @keyframes row-arrive { from { opacity: 0; transform: translateY(-10px) scale(.98); } }
 @keyframes row-glow { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
 
-/* ---------- Three-statement analysis, inside the statements (docs/three-statement-analysis-design.md) ---------- */
+/* ---------- Three-statement analysis, inside the statements ---------- */
 /* One colour and one shape per level: an alert reads as a loss, a watch as a cost, a note as growth. */
 .map, .home { --level-alert: var(--loss); --level-watch: var(--flow-expense); --level-note: var(--up); }
 [data-level="alert"] { --level: var(--level-alert); } [data-level="watch"] { --level: var(--level-watch); } [data-level="note"] { --level: var(--level-note); }
@@ -1631,10 +1613,9 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .map--loading .stats > .stat { min-width: 0; }
 }
 
-/* ---------- Routine 6-K folds and insider histories on narrow screens ---------- */
+/* ---------- Routine 6-K folds on narrow screens ---------- */
 @media (max-width: 960px) {
   .event-fold-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-  .insider-history, .insider-history li { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
   .event-fold-panel { transition: none; }

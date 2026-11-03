@@ -21,7 +21,8 @@ import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { libraryExhibits } from "../filing-library/exhibits.ts";
-import { findIrDeck, readSecExhibits, reportedTranscriptRef, type FoundMaterial, type TranscriptRef } from "./sources.ts";
+import { archivedExhibits } from "../sec-archive/index.ts";
+import { findIrDeck, reportedTranscriptRef, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { transcriptForEvent } from "../transcripts/library.ts";
@@ -49,12 +50,18 @@ export type GuidanceDeps = {
   runId?: string;
   model?: GuidanceModelCall;
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
-  secExhibits?: typeof readSecExhibits;
+  /** The release's exhibits, as the archive holds them (a test's stand-in); null when the archive has none. */
+  secExhibits?: (ticker: string, accession: string, filingDate: string, primaryUrl?: string) => Promise<FoundMaterial[] | null>;
+  /** The current time in ms (a test's clock); the release's wait for the archive is measured from it. */
+  now?: () => number;
 };
 
 class BudgetExhausted extends Error {}
 
 /** Earnings releases are 8-K Item 2.02 filings; the guidance in them is what this feature tracks. */
+/** How long an earnings release waits for the archive (docs/sec-archive.md) before guidance runs with what it has. */
+export const RELEASE_ARCHIVE_WAIT_MS = 2 * 86_400_000;
+
 export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Array<{ accession: string; eventDate: string }> {
   const since = new Date(now - EVENT_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
   return (feed?.filings ?? []).filter(f => f.form === "8-K" && /(^|,)\s*2\.02\b/.test(f.items) && f.filingDate >= since)
@@ -167,7 +174,6 @@ export async function publishGuidance(env: AnalysisEnv, ticker: string, now: str
  */
 export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, step: GuidanceStep, env: AnalysisEnv, deps: GuidanceDeps = {}) {
   assertTrackedTicker(env, params.ticker);
-  const fetcher = deps.fetcher ?? fetch;
   const store = () => new GuidanceStore(requireDb(env), env.SEC_FILINGS);
   const time = (name: string) => step.do(`guidance-time-${name}`, async () => new Date().toISOString());
 
@@ -186,6 +192,8 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       : period && [1, 2, 3, 4].includes(quarter) ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
     return {
       cikNumber: filing?.cikNumber ?? null,
+      // The filing's own body as EDGAR lists it, so archived exhibits are told apart from it whatever their file names.
+      primaryUrl: filing?.documentUrl ?? null,
       // A periodic report's exhibits are not a release; an event standing under one reads only its stored call.
       exhibits: !!filing && /^(?:8-K|6-K)(?:\/A)?$/.test(filing.form),
       companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? feed?.company?.name ?? params.ticker)[0]!, ref,
@@ -200,15 +208,22 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   };
   // A re-extraction under a new extractor version also takes every material an earlier run stored for this
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
-  const { materials: sec, ref } = await step.do("guidance-sec", async () => {
-    // The filing library already holds the release as text; EDGAR is read only when it does not.
+  const { materials: sec, ref, waiting } = await step.do("guidance-sec", async () => {
+    // The filing library holds the release as split text; before it is split, the archived documents are read as
+    // they were filed. EDGAR itself is never read here (docs/sec-archive.md).
+    const exhibits = deps.secExhibits ?? ((ticker, accession, date, primaryUrl) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date, primaryUrl));
     const found = !context.exhibits || context.cikNumber === null ? []
       : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-        ?? await (deps.secExhibits ?? readSecExhibits)({ cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
-    const saved = await saveAll(found);
+        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined);
+    // The release is not archived yet (the filing list is indexed before collection stores it): the event goes back to
+    // the queue, and the release's `filing.archived` starts a new run; completing now would lose its guidance for good.
+    // Past RELEASE_ARCHIVE_WAIT_MS it runs with what it has, as the guidance task starts it.
+    if (found === null && (deps.now ?? Date.now)() - Date.parse(params.eventDate) < RELEASE_ARCHIVE_WAIT_MS) { await store().updateEvent(params.ticker, params.accession, { status: "queued" }, new Date().toISOString()); return { materials: [], ref: null, waiting: "archive" as const }; }
+    const saved = await saveAll(found ?? []);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
-    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
+    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found ?? [], params.eventDate), waiting: null };
   });
+  if (waiting) return { status: "waiting", waiting, materials: 0, transcript: "pending" as const };
 
   const materials = [...sec];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && researchSearchConfigured(env) ? researchSearch(env) : null;

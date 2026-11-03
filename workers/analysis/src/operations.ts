@@ -8,7 +8,6 @@ export { readModelContent } from "./model-stream.ts";
 export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
-import { secCompanyFactsUrl } from "../../../shared/analysis-runtime/sec-sources.ts";
 import { normalizeEditorialIssues, editorialRequirements, editorialGate } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
@@ -41,6 +40,7 @@ import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, 
 import { coverAmendmentNote, coverAmendmentSummary, type CoverAmendment } from "./sec/amendment.ts";
 import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type ManagerReview, type SecHistorySnapshot } from "./sec/analysis.ts";
 import { normalizeCompanyFacts } from "./sec/history.ts";
+import { archivedFiling, archiveHolds, archiveUnsupported, edgarListings, type EdgarListings } from "./sec-archive/index.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
@@ -83,7 +83,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
   ANALYST_DAILY_TURNS?: string;
-  /** The checkup notes Workflow (docs/three-statement-analysis-design.md); runs with the analyst switch. */
+  /** The checkup notes Workflow; runs with the analyst switch. */
   CHECKUP_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** Model turns per UTC day for checkup notes across all companies (default 240). */
   CHECKUP_DAILY_TURNS?: string;
@@ -92,7 +92,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
   READ_NOTE_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  /** The valuation assessment Workflow (docs/valuation-assessment-design.md). */
+  /** The valuation assessment Workflow. */
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
@@ -118,7 +118,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses writing business tags; unset or anything else runs it. */
   BUSINESS_TAGS_ENABLED?: string;
-  /** Workers AI, for embedding business tags (docs/peer-similarity-design.md) and turning fetched pages into Markdown. */
+  /** Workers AI, for embedding business tags and turning fetched pages into Markdown. */
   AI?: TagEmbedder & Partial<MarkdownConverter>;
   /** The Vectorize index of business tags, one namespace per sector and facet. */
   TAGS_INDEX?: TagIndex;
@@ -153,7 +153,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
-  /** Event routing and task runs (docs/analysis-events.md). Optional so a partial environment simply emits nothing. */
+  /** Event routing and task runs. Optional so a partial environment simply emits nothing. */
   PIPELINE_EVENTS?: Queue<EventMessage>;
   PIPELINE_TASKS?: Queue<TaskMessage>;
   /** Which deployment is running; task versions only ever move forward to a newer one. */
@@ -187,6 +187,15 @@ async function discoveryCacheKey(env: AnalysisEnv, reference: PreparedFilingRefe
 
 export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch = fetch, workflowInstanceId = "standalone"): AnalysisOperations {
   const repository = () => new D1SecRepository(requireDb(env));
+  // EDGAR is read for listings only; every filing's text comes from the archive (docs/sec-archive.md).
+  const listings = (): EdgarListings => edgarListings(env, { fetcher });
+  const archive = () => ({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT });
+  // A filing is prepared only once the archive holds it whole: half a filing (its body before its exhibits) would
+  // classify and cache wrongly, and `shouldAnalyze` runs after the classification.
+  const prepared_ = async (filing: SecFiling) => {
+    const stored = await archivedFiling(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber, filing.documentUrl);
+    return prepareSecFiling(filing, stored?.complete ? stored : null);
+  };
   const modelFor = (execution?: SecModelExecution): SecModelCall => {
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {
@@ -284,11 +293,13 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return { plan: summary.plan, nodes: summary.nodes.filter(n => n.id !== "historical-judgment-review"), review: artifact.managerReview, rounds: summary.repairRounds ?? 0 };
     },
     classifyEarnings: async (filing, execution) => {
+      // A filing the archive gave up on (over the size cap, never served) heads no group: its period's readable
+      // release reports on its own instead of being merged into a report that can never be prepared.
+      if (await archiveUnsupported(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber)) return null;
       if (isPeriodic(filing.form)) return filing.reportDate || null;
       const cached = await repository().getCache<{ periodEnd: string | null }>(classificationKey(filing));
       if (cached) return cached.payload.periodEnd;
-      const prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
-      const periodEnd = await identifyEarningsPeriod(prepared, modelFor(execution));
+      const periodEnd = await identifyEarningsPeriod(await prepared_(filing), modelFor(execution));
       await repository().setCache(classificationKey(filing), { periodEnd }, new Date().toISOString());
       return periodEnd;
     },
@@ -307,7 +318,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       await repository().saveEarningsGroups(grouped);
       return grouped;
     },
-    discover: (ticker) => discoverSecTicker(ticker, { userAgent: env.SEC_USER_AGENT, fetcher }),
+    discover: (ticker) => discoverSecTicker(ticker, { listings: listings() }),
     publishFeed: async (feed) => {
       const typedFeed = feed as SecFilingFeed;
       const ticker = cleanSecTicker(typedFeed.ticker);
@@ -319,7 +330,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       // One Company Facts read gives each periodic filing's fiscal focus and the fundamentals. Retried on every
       // discovery sweep: Company Facts can arrive after the filing index.
       const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;
-      const facts = cik ? await fetchCompanyFacts(cik, env.SEC_USER_AGENT, fetcher).catch((error) => {
+      const facts = cik ? await listings().companyFacts(cik).catch((error) => {
         console.warn("SEC Company Facts read failed", { ticker, error: error instanceof Error ? error.message : String(error) });
         return null;
       }) : null;
@@ -357,6 +368,8 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       const ticker = cleanSecTicker(filing.ticker);
       if (!ticker) throw new Error("Invalid SEC job lookup.");
       assertTrackedTicker(env, ticker);
+      // A filing the archive does not hold yet is analysed by the run its `filing.archived` event starts.
+      if (!await archiveHolds(archive(), ticker, filing.accessionNumber, filing.documentUrl)) return false;
       if (filing.earningsGroup) {
         const summary = await repository().getSummary(ticker, filing.accessionNumber);
         if (summary?.earningsGroup?.inputKey !== filing.earningsGroup.inputKey) {
@@ -387,18 +400,24 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return { ...context, history: finalHistory, marketSnapshot };
     },
     prepare: async (filing) => {
-      let prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
+      let prepared = await prepared_(filing);
       if (filing.earningsGroup) {
-        const supplements: PreparedSecFiling[] = [];
+        const supplements: PreparedSecFiling[] = [], left: string[] = [];
         for (const source of filing.earningsGroup.sources) {
-          if (source.accessionNumber !== filing.accessionNumber) supplements.push(await prepareSecFiling(source, { userAgent: env.SEC_USER_AGENT, fetcher }));
+          if (source.accessionNumber === filing.accessionNumber) continue;
+          // A source the archive gave up on (over the size cap, never served) is left out, named; one not archived yet
+          // still fails the run, which comes back once it is.
+          const reason = await archiveUnsupported(archive(), cleanSecTicker(filing.ticker), source.accessionNumber);
+          if (reason) { left.push(`${source.form} ${source.accessionNumber}: ${reason}`); continue; }
+          supplements.push(await prepared_(source));
         }
         prepared = combineEarningsDocuments(prepared, supplements);
+        if (left.length) prepared.materialWarnings = [...(prepared.materialWarnings ?? []), ...left.map(l => `Earnings source not read: ${l}.`)];
         prepared.outline = buildSecOutline(prepared.document);
       }
       prepared.fiscalSourceExcerpts = fiscalPeriodInput(prepared.document.text);
       prepared.reportedFiscalPeriod = env.DB ? await readFiscalPeriod(repository(), filing).catch(() => null) : null;
-      const history = await fetchCompanyHistory(filing.cik, filing.ticker, env.SEC_USER_AGENT, fetcher).catch(() => EMPTY_HISTORY);
+      const history = await fetchCompanyHistory(filing.cik, filing.ticker, listings()).catch(() => EMPTY_HISTORY);
       const key = preparedKey(filing.ticker, filing.accessionNumber);
       const { blocks, document, ...meta } = prepared;
       await Promise.all([
@@ -692,20 +711,8 @@ function summaryIdentity(summary: SecFilingSummary) {
   };
 }
 
-async function fetchCompanyHistory(cik: string, ticker: string, userAgent: string, fetcher: typeof fetch) {
-  return normalizeCompanyFacts(ticker, await fetchCompanyFacts(cik, userAgent, fetcher));
-}
-
-async function fetchCompanyFacts(cik: string, userAgent: string, fetcher: typeof fetch): Promise<unknown> {
-  const response = await fetcher(secCompanyFactsUrl(cik), {
-    cache: "no-store",
-    headers: { accept: "application/json", "user-agent": userAgent },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`SEC Company Facts HTTP ${response.status}`);
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (contentLength > 20_000_000) throw new Error("SEC Company Facts payload exceeds 20 MB");
-  return response.json();
+async function fetchCompanyHistory(cik: string, ticker: string, listings: EdgarListings) {
+  return normalizeCompanyFacts(ticker, await listings.companyFacts(cik));
 }
 
 async function putArtifact(bucket: R2BucketLike, reference: PreparedFilingReference, name: string, value: unknown): Promise<string> {
@@ -861,6 +868,7 @@ export async function callWorkerToolModel(
       model,
       system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
       tools: request.tools,
+      thinking: { type: "adaptive" },
       messages: request.messages,
       // The exchange is cached up to its newest turn, so each turn reads every earlier one from the cache.
       cache_control: { type: "ephemeral" },

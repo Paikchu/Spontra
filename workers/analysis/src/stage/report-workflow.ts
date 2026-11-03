@@ -19,7 +19,7 @@ export type ReportOutcome = { runId: string; reportId: string | null; reason: st
 type StageEnv = AnalysisEnv & { StageAgent?: DurableObjectNamespace };
 
 /**
- * One reader's report (docs/stage-agent-design.md §6.3): the report recipe run by the shared loop with every model
+ * One reader's report: the report recipe run by the shared loop with every model
  * call and every outside read a durable step, so a restart replays what was done instead of paying for it again. The
  * report is saved under the run's id and the reader's conversation is told, as the last two steps.
  */

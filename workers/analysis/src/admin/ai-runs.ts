@@ -31,7 +31,7 @@ type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
   return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
-/** Each kind runs for the companies its feature is switched on for (docs/whitelist-feature-switches-design.md). */
+/** Each kind runs for the companies its feature is switched on for. */
 const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" || kind === "checkup" ? "findings" : kind === "explainer" ? "tree" : kind;
 function enabled(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
   return featureTickersFor(env, featureOf(kind)).includes(ticker);

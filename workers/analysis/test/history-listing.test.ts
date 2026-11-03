@@ -39,11 +39,20 @@ test("the history listing continues into EDGAR's older submission pages until th
     [`https://data.sec.gov/submissions/CIK${CIK}-submissions-001.json`]: columns([["10-K", "2025-02-14", "0000019617-25-000270"], ["8-K", "2025-01-15", "0000019617-25-000040", "2.02,9.01"], ["424B2", "2025-01-10", "0001213900-25-000002"]]),
     [`https://data.sec.gov/submissions/CIK${CIK}-submissions-002.json`]: columns([["10-Q", "2024-11-01", "0000019617-24-000600"], ["10-Q", "2023-08-03", "0000019617-23-000500"], ["10-Q", "2023-05-03", "0000019617-23-000400"]]),
   };
-  const reader: SecReader = { async read(url) {
-    read.push(url);
-    if (url in responses) return new Response(JSON.stringify(responses[url]));
-    throw new Error("unavailable");
-  } };
+  const reader: SecReader = {
+    async submissions(cik, page) {
+      const url = `https://data.sec.gov/submissions/${page ?? `CIK${cik}.json`}`;
+      read.push(url);
+      if (url in responses) return responses[url];
+      throw new Error("unavailable");
+    },
+    issuerDirectory: async () => ({ fields: [], data: [] }),
+    async read(url) {
+      read.push(url);
+      if (url in responses) return new Response(JSON.stringify(responses[url]));
+      throw new Error("unavailable");
+    },
+  };
   const { rows, db } = cacheDb();
   await runHistoryStep(db, reader, { ticker: "JPM", cik: CIK }, new Date("2026-10-16T00:00:00Z"), 0);
   const cursor = JSON.parse(rows.get(`sec:revenue-history-cursor:v1:${CIK}`)!.payload) as { documents: Array<{ accession: string; form: string }> };
@@ -61,8 +70,10 @@ test("a document that killed its step is read alone, and given up on after three
   const marks: Array<string | undefined> = [];
   const { rows, db } = cacheDb();
   const markKey = `sec:revenue-history-reading:v1:${CIK}`;
-  const reader: SecReader = { async read(url) {
-    if (url in listing) return new Response(JSON.stringify(listing[url as keyof typeof listing]));
+  const reader: SecReader = {
+    async submissions(cik, page) { return listing[`https://data.sec.gov/submissions/${page ?? `CIK${cik}.json`}` as keyof typeof listing]; },
+    async issuerDirectory() { throw new Error("unexpected"); },
+    async read(url) {
     // The mark names the document before it is read, so a step killed here leaves it behind.
     marks.push(rows.get(markKey)?.payload);
     throw new Error("unavailable");

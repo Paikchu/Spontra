@@ -1,4 +1,4 @@
--- Event-driven pipeline (docs/analysis-events.md). Every event is written here in the same batch as the data it
+-- Event-driven pipeline. Every event is written here in the same batch as the data it
 -- reports, then sent to the events queue and deleted.
 CREATE TABLE pipeline_outbox (
  id TEXT PRIMARY KEY, type TEXT NOT NULL, ticker TEXT NOT NULL, cik TEXT, task TEXT, detail TEXT, cause_id TEXT,

@@ -12,7 +12,7 @@ import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { compactMoney, multiple, perShare, points, type Locale } from "./locale.ts";
 
 /**
- * The three-statement checkup over the data a page already holds (docs/three-statement-analysis-design.md). Pure:
+ * The three-statement checkup over the data a page already holds. Pure:
  * the same call in Spontra Analysis and in the browser gives the same metrics, the same flags and the same bridge, so
  * what a model is told matches what the reader sees. Every figure is resolved through the findings runtime and
  * nothing is assumed zero; a metric the data cannot answer is left out and counted as uncovered.

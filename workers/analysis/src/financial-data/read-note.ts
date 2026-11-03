@@ -5,7 +5,7 @@ import {daysBetween as days} from '../../../../shared/analysis-runtime/dates.ts'
 import {omit} from '../../../../shared/analysis-runtime/omit.ts';
 
 /**
- * A new filing read by a read note (docs/agent-interpretation-design.md): the note says where each amount of the newest
+ * A new filing read by a read note: the note says where each amount of the newest
  * published quarter sits in the filing's tables and which period a column covers; code reads the amounts at those places
  * and accepts the quarter only when everything reconciles: every total the completeness gate knows, and the revenue row's
  * columns code finds repeating an already published quarter against that quarter. The note carries places, signs and a quoted date,

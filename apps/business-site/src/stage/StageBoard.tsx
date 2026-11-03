@@ -12,7 +12,7 @@ const m = messages({
 });
 
 /**
- * The stage while the reader talks with it (docs/stage-agent-design.md §5): the latest question's turn as it runs, then
+ * The stage while the reader talks with it: the latest question's turn as it runs, then
  * its result in the stage's own space. A scene, or a report the reader started, is drawn from the agent's state; an
  * answer, a proposed report or a failure is laid out here. Each result enters as its own piece, so a new one replaces
  * the last with the stage's rise.

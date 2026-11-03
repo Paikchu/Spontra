@@ -12,7 +12,7 @@
     "test": "npm run test:analysis && npm run test:business-site && npm run test:web && npm run test:admin",
     "build": "npm run check:i18n && npm run check:issuer-literals && npm run business-site:build && npm run admin:build",
     "check:i18n": "node --experimental-strip-types --no-warnings scripts/check-i18n.ts",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist",
     "typecheck": "tsc --noEmit",
     "deploy:cloudflare": "node --experimental-strip-types scripts/deploy-cloudflare-ci.mjs",
     "analysis:check:migrations": "node --experimental-strip-types workers/analysis/scripts/check-migrations.ts",

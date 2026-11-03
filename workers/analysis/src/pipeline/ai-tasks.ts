@@ -128,7 +128,7 @@ export const AI_TASKS = {
 
   /**
    * The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change
-   * (docs/valuation-assessment-design.md). A method change alone (prompt, calculator or input version) reassesses only
+   *. A method change alone (prompt, calculator or input version) reassesses only
    * the companies the admin marked to reassess (valuation/reassess.ts); the others keep their report until new
    * material arrives or an admin starts a run.
    */

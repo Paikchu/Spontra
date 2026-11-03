@@ -6,7 +6,7 @@ import type { StageAgent, StageProps } from "./agent.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
- * The stage's only door (docs/stage-agent-design.md §3.1), reached from the business map over a Service Binding to this
+ * The stage's only door, reached from the business map over a Service Binding to this
  * named entrypoint, so the binding is the credential. The map passes the reader's signed token (from its HttpOnly
  * cookie) and a hash of the address; everything that decides who the reader is and what they may spend happens here.
  * Only StageAgent is routable, and only for a conversation registered to the reader: an unknown name is a 404 that

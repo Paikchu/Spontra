@@ -1,7 +1,7 @@
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 
 /**
- * The admin's feature switches as stored (`business_feature_settings`, docs/whitelist-feature-switches-design.md). One
+ * The admin's feature switches as stored (`business_feature_settings`). One
  * switch per company and feature: on generates the feature and shows it, off stops generating and hides what was written
  * (it stays stored). Generation is resolved into the environment by company-policy.ts; reads here are the display side.
  * A company without a row is off. Query failures propagate so stored choices cannot be replaced by defaults.

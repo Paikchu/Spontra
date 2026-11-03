@@ -2,7 +2,7 @@ import { CALCULATOR_VERSION } from "../../../../shared/analysis-runtime/valuatio
 import type { ValuationPublication } from "../../../../shared/analysis-contract/valuation.ts";
 
 /**
- * Whether a method change alone may reassess a company (docs/valuation-v2-SPEC.md §6). A new prompt, calculator or
+ * Whether a method change alone may reassess a company. A new prompt, calculator or
  * input version changes every switched-on company's fingerprint at once; without a limit each would spend a full run on
  * unchanged material the moment the code deploys. The admin marks the companies that may (`valuation_company_inputs.reassess`,
  * 估值输入); everyone else keeps the report written under the old method until new material arrives (a later financial
