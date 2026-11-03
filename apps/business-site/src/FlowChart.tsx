@@ -224,9 +224,9 @@ const qoq = (): CompareBasis => ({ change: qoqLabel(getLocale()), prior: m.lastQ
 
 export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, basis = qoq(), brackets, pills }: {
   businessDetails?: ReactNode;
-  /** The picked business broken down into product lines, products and how each earns; when present it replaces the written details. */
+  /** The picked business broken down into product lines, products and how each earns, drawn beside the written details. */
   mindMap?: MindMapInput | null;
-  /** The breakdown node whose explanation is open below the chart; picking it again closes it. */
+  /** The breakdown node whose explanation is open in the details beside the map; picking it again closes it. */
   mindPick?: string | null;
   onMindPick?: (item: MindItem | null) => void;
   /** The comparable amount of a node in the comparison quarter, drawn as a tick on its bar; null when the two quarters cannot be compared. */
@@ -281,7 +281,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const mind = useMemo(() => mindMap && fitted && productBusiness
     ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
-  const expanded = Boolean(productTarget) && !mind;
+  const expanded = Boolean(productTarget);
   const world: World = useMemo(() => worldOf(mind, layout), [mind, layout]);
   const worldW = world.x1 - world.x0, worldH = world.y1 - world.y0;
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
