@@ -202,6 +202,22 @@ test("a stored call joins the earnings release that reports its quarter, and a r
   assert.equal(created.length, 1);
 });
 
+test("an earnings release the archive does not hold yet sends its event back to the queue instead of completing with nothing", async () => {
+  const db = database(), files = bucket(), { created, binding } = workflows();
+  await cache(db, "sec:filings:ORCL", { company: { name: "Oracle Corporation" }, filings: [filing("8-K", "0001193125-26-387905", "2026-09-10", "2.02,9.01")] });
+  const env = guidanceEnv(db, files, "ORCL", binding);
+  await SEC_TASKS.guidance.run(env, "ORCL", { now, causeId: "c1", trigger: null });
+  assert.equal(created.length, 1);
+  const step = { do: async <T>(_name: string, fn: (ctx: { attempt: number }) => Promise<T>) => fn({ attempt: 1 }), sleep: async () => {} };
+  let modelCalls = 0;
+  // null: neither the library nor the archive holds the filing (an empty list would mean "archived, nothing readable").
+  const result = await executeGuidanceWorkflow(created[0]!.params, step as never, env, { model: async () => { modelCalls++; return { items: [] }; }, deckSearch: null, secExhibits: async () => null });
+  assert.equal(result.status, "waiting");
+  assert.equal(modelCalls, 0);
+  const event = await db.prepare("SELECT status FROM earnings_events WHERE ticker='ORCL'").bind().first<{ status: string }>();
+  assert.equal(event?.status, "queued", "the release's filing.archived starts the event again");
+});
+
 test("a company with no earnings 8-K gets an event of its own for each stored call, and the Workflow extracts and publishes it", async () => {
   const db = database(), files = bucket(), { created, binding } = workflows();
   await cache(db, "sec:filings:NBIS", { company: { name: "Nebius Group N.V." }, filings: [filing("6-K", "0001104659-26-080000", "2026-08-07")] });

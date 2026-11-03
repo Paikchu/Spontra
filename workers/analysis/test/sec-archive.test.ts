@@ -71,6 +71,8 @@ test("the SEC report follows the archive: it starts on filing.archived, and curr
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K", items: "5.02" } }), true);
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K", items: "2.02,9.01" } }), false, "an earnings release is collected, not archived twice");
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "10-Q" } }), false);
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K/A", items: "2.02,9.01" } }), true, "collection reads only an unamended earnings 8-K; the amendment is archived here");
+  assert.ok(SUBSCRIPTIONS["filing.archived"]!.some(s => s.task === "guidance" && s.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } })), "a release's archive starts guidance again");
   const report = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "sec-report")!;
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true);
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "4" } }), false);

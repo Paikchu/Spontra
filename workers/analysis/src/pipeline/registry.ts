@@ -129,8 +129,9 @@ export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => bo
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    // A current report collection does not read is archived on its own; the SEC report follows `filing.archived`.
-    { task: "archive", when: e => /^8-K/.test(form(e)) && !earnings(e) },
+    // A current report collection does not read (collection reads only an unamended earnings 8-K) is archived on its
+    // own; the SEC report follows `filing.archived`.
+    { task: "archive", when: e => /^8-K/.test(form(e)) && !(form(e) === "8-K" && earnings(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
@@ -141,7 +142,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
-  "filing.archived": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
   "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],

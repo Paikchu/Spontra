@@ -203,17 +203,21 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   };
   // A re-extraction under a new extractor version also takes every material an earlier run stored for this
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
-  const { materials: sec, ref } = await step.do("guidance-sec", async () => {
+  const { materials: sec, ref, waiting } = await step.do("guidance-sec", async () => {
     // The filing library holds the release as split text; before it is split, the archived documents are read as
     // they were filed. EDGAR itself is never read here (docs/sec-archive.md).
     const exhibits = deps.secExhibits ?? ((ticker, accession, date, primaryUrl) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date, primaryUrl));
     const found = !context.exhibits || context.cikNumber === null ? []
       : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined) ?? [];
+        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined);
+    // The release is not archived yet (the filing list is indexed before collection stores it): the event goes back to
+    // the queue, and the release's `filing.archived` starts a new run. Completing now would lose its guidance for good.
+    if (found === null) { await store().updateEvent(params.ticker, params.accession, { status: "queued" }, new Date().toISOString()); return { materials: [], ref: null, waiting: "archive" as const }; }
     const saved = await saveAll(found);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
-    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
+    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate), waiting: null };
   });
+  if (waiting) return { status: "waiting", waiting, materials: 0, transcript: "pending" as const };
 
   const materials = [...sec];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && researchSearchConfigured(env) ? researchSearch(env) : null;
