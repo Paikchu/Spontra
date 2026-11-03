@@ -142,13 +142,13 @@ button { cursor: pointer; }
 }
 .company { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .company-logo { position: relative; display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: #fff; box-shadow: inset 0 0 0 1px #0b1f1a14; }
-.company-logo img { position: absolute; inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; }
+.company-logo img { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); object-fit: contain; }
 .company-logo-fallback { font-size: 13px; font-weight: 680; letter-spacing: -.02em; color: #13231f; }
 .company-logo:not([data-failed]) .company-logo-fallback { opacity: 0; }
 .company-logo[data-failed] { background: var(--fill); box-shadow: inset 0 0 0 1px var(--hairline); }
 .company-logo[data-failed] .company-logo-fallback { color: var(--foreground); }
 .company-logo--sm { width: 32px; height: 32px; border-radius: 9px; }
-.company-logo--sm img { inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); }
+.company-logo--sm img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
@@ -1092,7 +1092,7 @@ button { cursor: pointer; }
 .home-quick a { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 4px 12px 4px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); }
 .home-quick a:hover { color: var(--foreground); border-color: var(--border); }
 .home .company-logo--sm { width: 22px; height: 22px; border-radius: 999px; }
-.home .company-logo--sm img { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+.home .company-logo--sm img { inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); }
 .home .company-logo--sm .company-logo-fallback { font-size: 12px; }
 
 .home-watch, .home-companies { margin-top: 48px; }
