@@ -51,7 +51,7 @@ export type GuidanceDeps = {
   model?: GuidanceModelCall;
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
   /** The release's exhibits, as the archive holds them (a test's stand-in); null when the archive has none. */
-  secExhibits?: (ticker: string, accession: string, filingDate: string) => Promise<FoundMaterial[] | null>;
+  secExhibits?: (ticker: string, accession: string, filingDate: string, primaryUrl?: string) => Promise<FoundMaterial[] | null>;
 };
 
 class BudgetExhausted extends Error {}
@@ -187,6 +187,8 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       : period && [1, 2, 3, 4].includes(quarter) ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
     return {
       cikNumber: filing?.cikNumber ?? null,
+      // The filing's own body as EDGAR lists it, so archived exhibits are told apart from it whatever their file names.
+      primaryUrl: filing?.documentUrl ?? null,
       // A periodic report's exhibits are not a release; an event standing under one reads only its stored call.
       exhibits: !!filing && /^(?:8-K|6-K)(?:\/A)?$/.test(filing.form),
       companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? feed?.company?.name ?? params.ticker)[0]!, ref,
@@ -204,10 +206,10 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   const { materials: sec, ref } = await step.do("guidance-sec", async () => {
     // The filing library holds the release as split text; before it is split, the archived documents are read as
     // they were filed. EDGAR itself is never read here (docs/sec-archive.md).
-    const exhibits = deps.secExhibits ?? ((ticker, accession, date) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date));
+    const exhibits = deps.secExhibits ?? ((ticker, accession, date, primaryUrl) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date, primaryUrl));
     const found = !context.exhibits || context.cikNumber === null ? []
       : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-        ?? await exhibits(params.ticker, params.accession, params.eventDate) ?? [];
+        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined) ?? [];
     const saved = await saveAll(found);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
     return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };

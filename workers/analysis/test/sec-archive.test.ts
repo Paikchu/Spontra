@@ -32,6 +32,14 @@ test("a filing is prepared from the archive alone: the body first, exhibits afte
   assert.match(prepared.document.text, /fiscal first quarter results[\s\S]*Total quarterly revenues/);
 });
 
+test("an exhibit with an ordinary file name is still an exhibit: EDGAR's listed body decides the roles", async () => {
+  // The archive's own guess called the plainly named release a body; the filing's listed primary document corrects it.
+  const release = { url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/coreweave4q25earningspress.htm", filename: "coreweave4q25earningspress.htm", role: "primary" as const, type: "8-K", html: archived.documents[1]!.html };
+  const prepared = await prepareSecFiling(filing, { ...archived, documents: [release, archived.documents[0]!] });
+  assert.deepEqual(prepared.sourceMaterials.map(m => [m.type, m.filename]), [["8-K", "d1.htm"], ["EX-99", "coreweave4q25earningspress.htm"]]);
+  assert.ok(prepared.blocks.filter(b => b.source === "exhibit").length > 0, "the release's blocks are exhibit evidence, not body");
+});
+
 test("a filing the archive does not hold is SEC_ARCHIVE_MISSING, never downloaded", async () => {
   await assert.rejects(prepareSecFiling(filing, null), new RegExp(SEC_ARCHIVE_MISSING));
   await assert.rejects(prepareSecFiling(filing, { ...archived, accession: "0001193125-26-000001" }), new RegExp(SEC_ARCHIVE_MISSING));

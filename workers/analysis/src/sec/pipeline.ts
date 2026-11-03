@@ -1,5 +1,5 @@
 import type { EdgarListings } from "../sec-archive/gateway.ts";
-import type { ArchivedFiling } from "../sec-archive/archive.ts";
+import { exhibitType as exhibitTypeOf, type ArchivedFiling } from "../sec-archive/archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
@@ -117,7 +117,10 @@ type ArchivedPart = { type: string; filename: string; text: string };
  */
 export async function prepareSecFiling(filing: SecFiling, archived: ArchivedFiling | null): Promise<PreparedSecFiling> {
   if (!archived || archived.accession !== filing.accessionNumber) throw new Error(SEC_ARCHIVE_MISSING);
-  const parts: ArchivedPart[] = archived.documents.map(d => ({ type: d.role === "primary" ? filing.form : d.type, filename: d.filename, text: d.html }));
+  // EDGAR's own listing says which document is the body; the archive's roles stand when the listed body is not archived.
+  const listed = archived.documents.some(d => d.url === filing.documentUrl);
+  const role = (d: ArchivedFiling["documents"][number]) => listed ? (d.url === filing.documentUrl ? "primary" : "exhibit") : d.role;
+  const parts: ArchivedPart[] = archived.documents.map(d => ({ type: role(d) === "primary" ? filing.form : d.role === "primary" ? exhibitTypeOf(d.filename) : d.type, filename: d.filename, text: d.html }));
   if (!parts.some((part) => part.type.toUpperCase() === filing.form.toUpperCase())) throw new Error("SEC archive holds no body for the filing");
   // Body first, exhibits in archive order — keeps existing "document order" semantics.
   const ordered = [...parts].sort((left, right) => {

@@ -25,6 +25,8 @@ export type ArchivedFiling = { ticker: string; accession: string; form: string; 
 const MIN_EXHIBIT_TEXT = 400;
 const fileOf = (url: string) => decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
 const exhibitLike = (file: string) => /ex[-_]?\d|exhibit|\b99\b/i.test(file);
+/** A filing body opens with its cover: the form named, then the commission file number or an item. Exhibits do not. */
+const coverPage = (html: string) => { const head = html.slice(0, 60_000).replace(/<[^>]+>/g, " ").replace(/\s+/g, " "); return /\bform\s+(?:8-k|6-k|10-q|10-k|20-f|40-f)\b/i.test(head) && /commission file number|\bitem\s*\d\.\d{2}\b|pursuant to (?:section|rule)/i.test(head); };
 /** `EX-99.1` from `orcl-ex99_1.htm`, `ex991.htm`, `exhibit99-1.htm`; `EX-99` when the file names no sub-number. */
 export function exhibitType(file: string): string {
   const match = /ex(?:hibit)?[-_]?(\d{1,2})(?:[-_.]?(\d))?(?=\D|$)/i.exec(file);
@@ -51,30 +53,38 @@ export async function archiveHolds(env: ArchiveEnv, ticker: string, accession: s
 /**
  * The filing as archived, or null when the archive holds nothing for the accession yet (the collector or the archive
  * task stores it; the caller waits for `filing.archived`). Documents come back as filed, the body first.
+ *
+ * `primaryUrl` is the filing's own primary document as EDGAR lists it: with it, that document is the body and every
+ * other one an exhibit, whatever their file names (an earnings release can be `coreweave4q25earningspress.htm`).
+ * Without it, the body is the document that opens with the filing's cover page, else the one not named as an exhibit.
  */
-export async function archivedFiling(env: ArchiveEnv, ticker: string, accession: string): Promise<ArchivedFiling | null> {
+export async function archivedFiling(env: ArchiveEnv, ticker: string, accession: string, primaryUrl?: string): Promise<ArchivedFiling | null> {
   const records = await pointers(env, ticker, accession);
   if (!records.length) return null;
-  const documents: ArchivedDocument[] = [];
+  const read: Array<{ url: string; file: string; form: string; html: string }> = [];
   for (const record of records) {
     const object = await env.SEC_FILINGS.get(record.rawKey);
     if (!object) continue;
-    const file = fileOf(record.source.documentUrl);
-    const exhibit = exhibitLike(file);
-    documents.push({ url: record.source.documentUrl, filename: file, role: exhibit ? "exhibit" : "primary", type: exhibit ? exhibitType(file) : record.source.form, html: canonicalSecHtml(await object.text()) });
+    read.push({ url: record.source.documentUrl, file: fileOf(record.source.documentUrl), form: record.source.form, html: canonicalSecHtml(await object.text()) });
   }
-  if (!documents.length) return null;
+  if (!read.length) return null;
+  const listed = primaryUrl && read.some(d => d.url === primaryUrl) ? primaryUrl : null;
+  const covered = listed ? null : read.find(d => coverPage(d.html))?.url ?? null;
+  const body = listed ?? covered ?? read.find(d => !exhibitLike(d.file))?.url ?? read[0]!.url;
+  const documents: ArchivedDocument[] = read.map(d => d.url === body
+    ? { url: d.url, filename: d.file, role: "primary", type: d.form, html: d.html }
+    : { url: d.url, filename: d.file, role: "exhibit", type: exhibitType(d.file), html: d.html });
   documents.sort((a, b) => Number(a.role === "exhibit") - Number(b.role === "exhibit") || a.url.localeCompare(b.url));
-  const body = records.find(r => r.source.documentUrl === documents[0]!.url) ?? records[0]!;
-  return { ticker, accession, form: body.source.form, filedAt: body.source.filedAt ?? "", reportDate: body.source.reportDate ?? "", documents };
+  const bodyRecord = records.find(r => r.source.documentUrl === body) ?? records[0]!;
+  return { ticker, accession, form: bodyRecord.source.form, filedAt: bodyRecord.source.filedAt ?? "", reportDate: bodyRecord.source.reportDate ?? "", documents };
 }
 
 /**
  * An earnings filing's Exhibit 99 documents as archived, in the shape guidance reads: text, or why there is none.
  * Null when the archive holds nothing for the accession.
  */
-export async function archivedExhibits(env: ArchiveEnv, ticker: string, accession: string, filingDate: string): Promise<FoundMaterial[] | null> {
-  const filing = await archivedFiling(env, ticker, accession);
+export async function archivedExhibits(env: ArchiveEnv, ticker: string, accession: string, filingDate: string, primaryUrl?: string): Promise<FoundMaterial[] | null> {
+  const filing = await archivedFiling(env, ticker, accession, primaryUrl);
   if (!filing) return null;
   return filing.documents.filter(d => d.role === "exhibit").slice(0, 4).map((d): FoundMaterial => {
     const base = { sourceKind: "sec" as const, url: d.url, publishedAt: filingDate };

@@ -94,7 +94,7 @@ async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubjec
     // The filing's text comes from the archive alone; one not archived yet is analysed when the library holds it.
     if (cik) {
       const archive = event.documentUrl.slice(0, event.documentUrl.lastIndexOf("/"));
-      blocks = await archivedFiling({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, event.id)
+      blocks = await archivedFiling({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, event.id, event.documentUrl)
         .then(stored => prepareSecFiling({ ticker, cik, cikNumber: Number(cik), companyName: ticker, form: event.form, filingDate: event.filedAt, reportDate: event.eventDate, accessionNumber: event.id,
           primaryDocument: event.documentUrl.slice(event.documentUrl.lastIndexOf("/") + 1), description: event.description, items: event.items.join(","), documentUrl: event.documentUrl, indexUrl: `${archive}/${event.id}-index.htm` }, stored))
         .then(p => p.blocks).catch(() => null);
