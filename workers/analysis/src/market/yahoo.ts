@@ -45,8 +45,11 @@ export async function readYahooChart(url: URL, fetcher: typeof fetch, now: Date)
   let formatter: Intl.DateTimeFormat;
   try { formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }); } catch { formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }); }
   const today = formatter.format(now);
+  const regularEnd = record(record(meta.currentTradingPeriod).regular).end;
+  const currentDailySessionClosed = url.searchParams.get("interval") === "1d" && positive(regularEnd)
+    && regularEnd * 1000 <= now.getTime() && formatter.format(new Date(regularEnd * 1000)) === today;
   const seen = new Set<string>();
   const points = times.flatMap((t, i) => positive(t) && t * 1000 <= now.getTime() && positive(values[i]) ? [{ date: formatter.format(new Date(t * 1000)), close: values[i] as number }] : [])
-    .filter(p => { if (p.date >= today || seen.has(p.date)) return false; seen.add(p.date); return true; }).sort((a, b) => a.date.localeCompare(b.date));
+    .filter(p => { if (p.date > today || (p.date === today && !currentDailySessionClosed) || seen.has(p.date)) return false; seen.add(p.date); return true; }).sort((a, b) => a.date.localeCompare(b.date));
   return { symbol: text(meta.symbol), currency: text(meta.currency), instrumentType: text(meta.instrumentType), timeZone, points, url: url.href };
 }

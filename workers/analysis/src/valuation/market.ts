@@ -17,7 +17,7 @@ const MARKETS: Record<string, { index: string; yield: string; yieldLabel: string
 
 const chart = (symbol: string, range: string, interval: "1d" | "1wk", fetcher: typeof fetch, now: Date) => readYahooChart(yahooChartUrl(symbol, { range, interval }), fetcher, now);
 
-/** The last completed close before today; `usable` says whether the spec lets it enter a comparison. */
+/** The latest completed daily close; `usable` says whether the spec lets it enter a comparison. */
 export async function fetchReferenceQuote(ticker: string, currency: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<ReferenceQuote | null> {
   const symbol = yahooSymbol(ticker);
   const read = await chart(symbol, "1mo", "1d", fetcher, now);
