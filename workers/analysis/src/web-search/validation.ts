@@ -3,7 +3,8 @@ import { WebSearchError, type ContentRequest, type SearchRequest } from "./types
 const invalid = () => { throw new WebSearchError("invalid_request"); };
 /** True for any page on EDGAR's hosts: a filing's text reaches an agent only from the SEC archive, never from the web. */
 export function isEdgarUrl(url: string): boolean {
-  try { const host = new URL(url).hostname.toLowerCase(); return host === SEC_DOMAIN || host.endsWith(`.${SEC_DOMAIN}`); } catch { return false; }
+  // A terminal DNS dot (`www.sec.gov.`) names the same host; it is dropped before the comparison.
+  try { const host = new URL(url).hostname.toLowerCase().replace(/\.+$/, ""); return host === SEC_DOMAIN || host.endsWith(`.${SEC_DOMAIN}`); } catch { return false; }
 }
 
 export function publicUrl(value: string): string {

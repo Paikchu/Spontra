@@ -66,6 +66,9 @@ test("the web search drops EDGAR hits from its results, cached ones included", a
 test("the web search refuses EDGAR pages: SEC documents come from the archive", async () => {
   assert.ok(isEdgarUrl("https://www.sec.gov/Archives/edgar/data/1/0001-26-000001/a.htm"));
   assert.ok(!isEdgarUrl("https://investor.oracle.com/q1.pdf"));
+  assert.ok(isEdgarUrl("https://www.sec.gov./Archives/edgar/data/1/0001-26-000001/a.htm"), "a trailing DNS dot names the same host");
+  assert.ok(isEdgarUrl("https://WWW.SEC.GOV/Archives/edgar/data/1/0001-26-000001/a.htm"));
+  assert.ok(!isEdgarUrl("https://sec.gov.example.com/a.htm"));
   let fetched = 0;
   const service = new WebSearchService({ id: "test", search: async () => { throw new Error("unused"); }, fetchContent: async () => { fetched++; throw new Error("unused"); } } as never, {} as never);
   await assert.rejects(service.fetchContent({ url: "https://www.sec.gov/Archives/edgar/data/1/0001-26-000001/a.htm" }, { scope: "test" }), (e: unknown) => e instanceof WebSearchError && e.code === "archive_only");
