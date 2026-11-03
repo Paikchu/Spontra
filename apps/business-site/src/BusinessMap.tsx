@@ -665,10 +665,14 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const [mindPicked, setMindPicked] = useState<{ business: string; item: MindItem } | null>(null);
   const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
   const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
-  // A mention returns to the profile on the section that holds it.
+  // A mention returns to the profile of the business that wrote it (a leaf, when a parent is picked), on the section that holds it.
   const [profileSection, setProfileSection] = useState<{ business: string; title: string } | null>(null);
   const openSection = profileSection && profileSection.business === current?.key ? profileSection.title : null;
-  const backToProfile = (title: string) => { if (current) setProfileSection({ business: current.key, title }); setMindItem(null); };
+  const backToProfile = (business: Item, title: string) => {
+    setProfileSection({ business: business.key, title });
+    setMindItem(null);
+    if (business.key !== current?.key) pickBusiness(business.id);
+  };
   // The written profile and the breakdown share one panel: a sentence naming a node opens it, and a node lists the sentences naming it.
   const nodeLinks = mindMap ? (text: string): ReactNode => {
     const named = mindMap.branches.flatMap(branch => namedNodes(branch, text).map(node => ({ branch, node })));
@@ -682,7 +686,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     const branch = mindMap?.branches.find(b => b.node === mindItem?.anchor);
     if (!node || !explained || !branch) return [];
     return explained.sections.flatMap(section => section.items.filter(i => namedNodes(branch, i.claim.text).some(n => n.id === node.id))
-      .map(i => ({ section: section.title, where: i.label ? `${section.title} · ${i.label}` : section.title, text: i.claim.text })));
+      .map(i => ({ business, section: section.title, where: i.label ? `${section.title} · ${i.label}` : section.title, text: i.claim.text })));
   }, [mindItem, mindMap, items, explainer]);
   // The breakdown is on the stage only in the income view's flow chart, not merely when its data exists.
   const breakdownShown = Boolean(mindMap && quarter && proportional && layout && !moduleErrors.includes("company") && !((view === "cash" || view === "balance") && funding));
@@ -848,7 +852,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
                 ? <MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)}>
-                  {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
+                  {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.business, c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
                 </MindLens>
                 : <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} links={nodeLinks} section={openSection} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
