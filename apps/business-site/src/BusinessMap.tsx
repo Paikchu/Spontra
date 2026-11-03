@@ -688,8 +688,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     return explained.sections.flatMap(section => section.items.filter(i => namedNodes(branch, i.claim.text).some(n => n.id === node.id))
       .map(i => ({ business, section: section.title, where: i.label ? `${section.title} · ${i.label}` : section.title, text: i.claim.text })));
   }, [mindItem, mindMap, items, explainer]);
-  // The breakdown is on the stage only in the income view's flow chart, not merely when its data exists.
-  const breakdownShown = Boolean(mindMap && quarter && proportional && layout && !moduleErrors.includes("company") && !((view === "cash" || view === "balance") && funding));
+  // The breakdown is on the stage only in the income view's flow chart, not merely when its data exists; narrow panes show the compact list instead.
+  const narrowPane = useMedia("(max-width: 960px)");
+  const breakdownShown = Boolean(mindMap && !narrowPane && quarter && proportional && layout && !moduleErrors.includes("company") && !((view === "cash" || view === "balance") && funding));
 
   const pickPeriod = (id: string | null) => {
     if (id && id !== quarter?.id) track("chart_period_change", { ticker });
