@@ -48,7 +48,7 @@ import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { eventTitle, timelinePoints } from "./events-model";
-import { defaultEventFilter, timelineIds, withEventFilter } from "./event-noise";
+import { defaultEventFilter, readRailTabs, tabTimelineIds, withRailTabs, type RailTab } from "./event-noise";
 import { railItems, reportTitle, timelineFromFilings, type RailItem } from "./reports-model";
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
@@ -361,6 +361,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const [now] = useState(() => new Date());
   const rail = useMemo(() => railItems(filings, events, now), [filings, events, now]);
   const railList = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
+  const [railTabs, setRailTabs] = useState<ReadonlySet<RailTab>>(() => readRailTabs(location.search));
   const { filter: eventFilter, fallback: eventFallback } = defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now);
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
@@ -369,10 +370,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
   const points = useMemo(() => {
     const all = filings ? timelineFromFilings(filings, events, 24, now, quarters, ticker) : timelinePoints(quarters, events, 24, now);
-    const ids = timelineIds(railList, eventFilter);
-    const quartersOnAxis = eventFilter === "key" || eventFilter === "earnings" || eventFilter === "all";
+    const ids = tabTimelineIds(railList, eventFilter, railTabs);
+    const quartersOnAxis = railTabs.has("reports") && (eventFilter === "key" || eventFilter === "earnings" || eventFilter === "all");
     return all.filter(point => point.id.startsWith("report:") ? quartersOnAxis : ids.has(point.id));
-  }, [filings, quarters, events, now, eventFilter, railList, ticker]);
+  }, [filings, quarters, events, now, eventFilter, railList, ticker, railTabs]);
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -474,10 +475,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
     if (focusedCheck) url.searchParams.set("check", focusedCheck.id); else url.searchParams.delete("check");
     if (view !== homeView) url.searchParams.set("view", view); else url.searchParams.delete("view");
-    const next = withEventFilter(url.search, eventFilter);
+    url.searchParams.delete("events");
+    const next = withRailTabs(url.search, railTabs);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [quarter, quarters, current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, homeView, eventFilter]);
+  }, [quarter, quarters, current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, homeView, railTabs]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
@@ -768,7 +770,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {moduleErrors.filter(r => ["findings", "events", "filings"].includes(r)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
-        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback}
+        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
         onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>

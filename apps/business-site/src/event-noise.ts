@@ -211,3 +211,71 @@ export function streamRows<F extends { id: string }>(layout: ReturnType<typeof r
   }
   return rows;
 }
+
+/** The rail's tabs under the businesses. Any set of them can be on at once; all three are on by default. */
+export const RAIL_TABS = ["findings", "reports", "management"] as const;
+export type RailTab = (typeof RAIL_TABS)[number];
+
+/** Reads `?tabs=` (comma separated). Absent, empty or unknown values leave every tab on. */
+export function readRailTabs(search: string): ReadonlySet<RailTab> {
+  const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("tabs") ?? "";
+  const picked = raw.split(",").filter((tab): tab is RailTab => RAIL_TABS.includes(tab as RailTab));
+  return new Set(picked.length ? picked : RAIL_TABS);
+}
+
+/** Writes the tabs into a query; the default, every tab on, leaves the parameter out. */
+export function withRailTabs(search: string, tabs: ReadonlySet<RailTab>): string {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (RAIL_TABS.every(tab => tabs.has(tab))) params.delete("tabs");
+  else params.set("tabs", RAIL_TABS.filter(tab => tabs.has(tab)).join(","));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+/** Management: officer and director changes and every insider trade. Everything else filed is a report. */
+const MANAGEMENT = new Set(["executive", "insider"]);
+export const itemTab = (item: RailItem): RailTab => item.kind === "event" && MANAGEMENT.has(item.event.class) ? "management" : "reports";
+const rowTab = (row: StreamRow<unknown>): RailTab => row.kind === "finding" ? "findings" : row.row.kind === "item" ? itemTab(row.row.item) : "reports";
+
+/** The ids the time axis draws for a reading and a set of tabs. */
+export function tabTimelineIds(items: readonly RailItem[], filter: EventFilter, tabs: ReadonlySet<RailTab>): Set<string> {
+  return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row)).filter(item => tabs.has(itemTab(item))).map(item => item.id));
+}
+
+export type StreamBlock<F> =
+  | { kind: "row"; id: string; row: StreamRow<F> }
+  | { kind: "quarter"; id: string; periodEnd: string; rows: StreamRow<F>[] };
+
+/** The quarter a row is about: a report's period, the quarter an earnings release reports, the findings' period. */
+function rowPeriod(row: StreamRow<unknown>, items: readonly RailItem[], periodEnd: string | null, anchor: string | null): string | null {
+  if (row.kind === "finding") return periodEnd;
+  if (row.row.kind !== "item") return null;
+  const item = row.row.item;
+  if (item.kind === "report") return item.report.periodEnd ?? null;
+  return isEarningsRow(row.row) ? releasedPeriod(item, items, anchor) : null;
+}
+
+/**
+ * The rows of the tabs that are on, with the rows about one fiscal quarter (its findings, its earnings release, its
+ * 10-Q or 10-K) framed together. A frame stands where its newest row would; inside it the findings come first, then the
+ * filings newest first. Rows about no quarter keep their own place.
+ */
+export function streamBlocks<F extends { id: string }>(rows: readonly StreamRow<F>[], tabs: ReadonlySet<RailTab>, items: readonly RailItem[], periodEnd: string | null): StreamBlock<F>[] {
+  const anchor = periodEnd ?? items.reduce<string | null>((latest, item) => item.kind === "report" && item.report.periodEnd && (!latest || item.report.periodEnd > latest) ? item.report.periodEnd : latest, null);
+  const blocks: StreamBlock<F>[] = [];
+  const frames: Array<Extract<StreamBlock<F>, { kind: "quarter" }>> = [];
+  for (const row of rows) {
+    if (!tabs.has(rowTab(row))) continue;
+    const period = rowPeriod(row, items, periodEnd, anchor);
+    if (!period) { blocks.push({ kind: "row", id: row.id, row }); continue; }
+    let frame = frames.find(f => sameQuarter(f.periodEnd, period));
+    if (!frame) {
+      frame = { kind: "quarter", id: `quarter:${period}`, periodEnd: period, rows: [] };
+      frames.push(frame);
+      blocks.push(frame);
+    }
+    frame.rows.push(row);
+  }
+  for (const frame of frames) frame.rows.sort((a, b) => (a.kind === "finding" ? 0 : 1) - (b.kind === "finding" ? 0 : 1));
+  return blocks;
+}

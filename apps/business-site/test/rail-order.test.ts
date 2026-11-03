@@ -8,7 +8,7 @@ import type { VerifiedFinding } from "../../../shared/analysis-runtime/findings.
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
-import { railLayout, releasedPeriod, rowLeaves, streamRows, type EventFilter } from "../src/event-noise.ts";
+import { RAIL_TABS, railLayout, readRailTabs, releasedPeriod, rowLeaves, streamBlocks, streamRows, withRailTabs, type EventFilter, type RailTab } from "../src/event-noise.ts";
 import { RailStream } from "../src/RailStream.tsx";
 
 // The rail reads the clock, so the CRWV-like fixture is dated from today.
@@ -104,7 +104,7 @@ test("one old filing lists at its own date, below the newer rows", () => {
   assert.deepEqual(streamRows(railLayout(items, "all"), [], null, "all").map(r => r.id), ["deal", "earnings-8k", "intrator-old"]);
 });
 
-test("the earnings 8-K lists at its date and carries its findings beneath it with severity icons", () => {
+test("the earnings 8-K lists at its date and shares one quarter frame with its findings, findings first, with severity icons", () => {
   for (const filter of ["key", "all"] as const) {
     const trades = filter === "key" ? KEY_TRADES : ["intrator-1", "magnetar-1", "agarwal-1", "intrator-2", "mcveety-exercise", "intrator-3"];
     assert.deepEqual(listed(filter, FINDINGS, PERIOD_END), [...trades, "earnings-8k", "f-backlog", "f-capex", ...OLDER_IDS], filter);
@@ -112,7 +112,8 @@ test("the earnings 8-K lists at its date and carries its findings beneath it wit
   setLocale("en");
   const html = render("key", null, FINDINGS, PERIOD_END);
   const at = (text: string) => html.indexOf(text);
-  assert.ok(at("Agarwal Nitin") < at("Q2 results") && at("Q2 results") < at("Backlog concentration") && at("Backlog concentration") < at("Capex outruns cash"));
+  assert.ok(at("Agarwal Nitin") < at('class="quarter-frame"') && at('class="quarter-frame"') < at("Backlog concentration") && at("Backlog concentration") < at("Capex outruns cash") && at("Capex outruns cash") < at("Q2 results"));
+  assert.equal(html.split('class="quarter-frame"').length - 1, 1);
   assert.ok(html.includes('class="severity-icon" data-severity="3" viewBox="0 0 16 16" role="img" aria-label="Severity: Major (highest of 3)"'));
   assert.ok(html.includes('data-severity="2"'));
 });
@@ -173,4 +174,30 @@ test("findings follow their own quarter's release, not the later one above it", 
   const report = { accessionNumber: "q2-10q", form: "10-Q", date: "2026-08-12", periodEnd: "2026-06-30", headline: "Q2", sources: [] } as unknown as PublicFilingDigest;
   const items = railEntries({ filings: [report], nextCursor: null } as unknown as PublicFilingDigestPage, readEventsPublication({ schemaVersion: "events.v1", ticker: "CRWV", checkedAt: FIXED.toISOString(), pendingInsider: 0, events: [q2] }, "CRWV"));
   assert.equal(releasedPeriod(items.find(item => item.id === "q2-release")!, items, null), "2026-06-30");
+});
+
+/** The ids each block shows under a set of tabs: a frame as its member ids in a list, a row as its id. */
+const blocks = (tabs: RailTab[], findings: VerifiedFinding[] = FINDINGS, periodEnd: string | null = PERIOD_END) =>
+  streamBlocks(streamRows(railLayout(ALL, "key"), findings, periodEnd, "key"), new Set(tabs), ALL, periodEnd)
+    .map(b => b.kind === "quarter" ? b.rows.map(r => r.id) : b.row.id);
+
+test("the tabs pick findings, reports and management in any combination, and a quarter's rows share one frame", () => {
+  assert.deepEqual(blocks([...RAIL_TABS]), [...KEY_TRADES, ["f-backlog", "f-capex", "earnings-8k"], ...OLDER_IDS]);
+  assert.deepEqual(blocks(["reports"]), [["earnings-8k"]]);
+  assert.deepEqual(blocks(["findings"]), [["f-backlog", "f-capex"]]);
+  assert.deepEqual(blocks(["management"]), [...KEY_TRADES, ...OLDER_IDS]);
+  // An officer change is management, not a report.
+  const change = event({ id: "exec-502", form: "8-K", class: "executive", filedAt: ago(40), items: ["5.02"] });
+  const items = rail([...WINDOW, EARNINGS, change]);
+  const ids = (tabs: RailTab[]) => streamBlocks(streamRows(railLayout(items, "key"), [], null, "key"), new Set(tabs), items, null).flatMap(b => b.kind === "quarter" ? b.rows.map(r => r.id) : [b.row.id]);
+  assert.ok(ids(["management"]).includes("exec-502"));
+  assert.ok(!ids(["reports"]).includes("exec-502"));
+});
+
+test("the tabs read from and write to ?tabs=, every tab on being the default left out of the address", () => {
+  assert.deepEqual([...readRailTabs("")], [...RAIL_TABS]);
+  assert.deepEqual([...readRailTabs("?tabs=nope")], [...RAIL_TABS]);
+  assert.deepEqual([...readRailTabs("?tabs=management,findings")], ["management", "findings"]);
+  assert.equal(withRailTabs("?view=cash", new Set(RAIL_TABS)), "?view=cash");
+  assert.equal(withRailTabs("?view=cash&tabs=reports", new Set<RailTab>(["management", "reports"])), "?view=cash&tabs=reports%2Cmanagement");
 });

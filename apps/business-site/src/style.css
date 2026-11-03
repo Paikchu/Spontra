@@ -885,6 +885,19 @@ button { cursor: pointer; }
 .stream[data-focus] .stream-row:not([aria-checked="true"]) .stream-title { color: var(--muted-foreground); }
 .stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
 .stream-end { height: 1px; }
+/* The tabs: any of findings, reports and management at once. They stay at the top of the rail while it scrolls. */
+.stream-tabs { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; padding: 8px 6px 8px; background: var(--surface); }
+.stream-tab { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 13px; font-weight: 500; white-space: nowrap; transition: background .16s, border-color .16s, color .16s; }
+.stream-tab:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--foreground) 24%, transparent); }
+.stream-tab[aria-pressed="true"] { background: color-mix(in srgb, var(--brand) 14%, transparent); border-color: color-mix(in srgb, var(--brand) 45%, transparent); color: var(--foreground); }
+.stream-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+/* One fiscal quarter's findings and filings, framed together. */
+.quarter-frame { display: flex; flex-direction: column; min-width: 0; margin: 6px 2px; padding: 2px 0 4px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--foreground) 2.5%, transparent); }
+.quarter-frame-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 9px 12px 5px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quarter-frame-title { flex: none; font-size: 13px; font-weight: 650; color: var(--foreground); }
+.quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
+.quarter-frame-holds { flex: none; margin-left: auto; color: var(--faint); }
+@media (max-width: 960px) { .stream-tabs { position: static; } }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
 /* A finding's severity as an icon in the level colours: 3 a filled red triangle, 2 an amber circled "!", 1 a grey "i".

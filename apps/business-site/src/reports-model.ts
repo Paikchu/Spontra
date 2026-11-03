@@ -59,6 +59,12 @@ export function filingQuarterLabel(ticker: string, filing: Pick<PublicFilingDige
   return labels.primary ?? labels.unknown;
 }
 
+/** A quarter frame's heading: the fiscal quarter ("FY26 Q4") and its end ("截至 2026.09.27"), or the end alone when the fiscal quarter is unknown. */
+export function quarterHeading(ticker: string, source: { periodEnd: string; fiscalYear?: number | null; fiscalQuarter?: number | null; fiscalYearEndMonth?: number | null; labelSource?: PublicFilingDigest["labelSource"] | null }): { title: string; end: string | null } {
+  const labels = periodLabel({ ticker, ...source }, getLocale());
+  return labels.primary ? { title: labels.primary, end: labels.secondary } : { title: labels.unknown, end: null };
+}
+
 /** Everything on the time axis: reports from the filings, events from the publication, merged current reports once. Oldest first. */
 export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date(), quarters: BusinessFlowQuarter[] = [], ticker = ""): TimelinePoint[] {
   const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
