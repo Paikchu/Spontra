@@ -43,7 +43,7 @@ test("in the Key reading each Form 4 is its own row of the rail, with no person 
   const html = render(null, "key");
   assert.ok(!html.includes("insider-person") && !html.includes("insider-history") && !html.includes("aria-expanded"));
   assert.ok(html.includes('aria-checked="false" data-class="insider"'));
-  assert.ok(html.includes('<span class="insider-name" lang="en">STEVENS MARK A</span>'));
+  assert.ok(html.includes(">STEVENS MARK A sold</span>"));
   assert.ok(!html.includes("Net sold"));
   // A focused sale is the checked row, not an opened person.
   const focused = render(sales[0]!.id, "insiders");
@@ -51,7 +51,7 @@ test("in the Key reading each Form 4 is its own row of the rail, with no person 
   assert.ok(!focused.includes("insider-history"));
 });
 
-test("single insider titles include localized transaction amounts, and the person row tags no ESPP purchase as a sale", () => {
+test("the stage title carries the localized amount, the rail row only the name and direction, and no ESPP purchase reads as a sale", () => {
   const sale = publication.events.find(e => e.id === "0001588670-26-000014")!;
   const buy = { ...sale, insider: { ...sale.insider!, ownerName: "Roks Edwin", sold: null, bought: { shares: 10_000, cost: 1_120_000, averagePrice: 112 } } };
   for (const locale of ["zh-CN", "en"] as const) {
@@ -64,9 +64,8 @@ test("single insider titles include localized transaction amounts, and the perso
       onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key",
     }));
     assert.ok(html.includes('aria-checked="false" data-class="insider"'));
-    assert.ok(html.includes('<span class="insider-name" lang="en">Kress Colette</span>'));
-    assert.ok(html.includes('class="insider-amount"'));
-    assert.ok(html.includes(locale === "zh-CN" ? "765万美元" : "$7.65M"));
+    assert.ok(html.includes(locale === "zh-CN" ? ">Kress Colette 卖出</span>" : ">Kress Colette sold</span>"));
+    assert.ok(!html.includes(locale === "zh-CN" ? ">Kress Colette · 卖出" : ">Kress Colette · Sale"), "the figures are on the stage, not in the row");
     assert.ok(!html.includes("ESPP") && !html.includes("员工持股计划代买"));
     const unknown = { ...buy, insider: { ...buy.insider, bought: { ...buy.insider.bought, cost: 0 } } };
     assert.ok(!eventTitle(unknown).includes("$"));

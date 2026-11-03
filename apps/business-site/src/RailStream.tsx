@@ -7,7 +7,7 @@ import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/shared/analysis-runtime/events";
 import { normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
-import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
+import { eventTitle, insiderRailTitle, eventTitleLang, shortDate } from "./events-model";
 import { railLayout, rowLeaves, streamRows, type EventFilter, type NoiseRow, type StreamRow as Row } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
@@ -19,7 +19,6 @@ import { useMedia } from "./side-scroll";
 const m = messages({
   title: "Findings, reports and events",
   report: "Report",
-  plan: "10b5-1 plan", espp: "ESPP purchase",
   routine: (n: number) => `Routine 6-K filings × ${n}`,
   fallback: "No key events in the last 90 days — showing all",
   empty: "Nothing in this category yet",
@@ -29,7 +28,6 @@ const m = messages({
 }, {
   title: "要点、财报与事件",
   report: "财报",
-  plan: "计划内", espp: "员工持股计划代买",
   routine: (n: number) => `6-K 例行文件 × ${n}`,
   fallback: "近 90 天没有重要事件，已显示全部",
   empty: "这一类暂时没有内容",
@@ -215,17 +213,6 @@ function ReportRow({ report, ticker, checked, onClick, arrive, motion, tip }: Ro
   </RailRow>;
 }
 
-function InsiderTitle({ name, content, amount, tags, full }: { name: string; content: string; amount: string | null; tags: string; full: string }) {
-  return <span className="stream-title insider-title" title={full}>
-    <span className="insider-name" lang="en">{name}</span>
-    <span className="insider-transaction">
-      <span className="insider-content">{content}</span>
-      {amount && <span className="insider-amount">{amount}</span>}
-    </span>
-    {tags && <span className="insider-tags">{tags}</span>}
-  </span>;
-}
-
 function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & { event: CompanyEvent }) {
   const locale = getLocale();
   const insider = event.insider;
@@ -234,14 +221,13 @@ function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & {
   const role = insider ? insider.title ?? (insider.isDirector ? m.director : insider.isTenPercentOwner ? m.tenPercent : null) : null;
   const meta = join([shortDate(event.filedAt), eventClassLabel(event.class, locale), role, formName(event.form)]);
   const title = eventTitle(event);
-  const parts = insiderTitleParts(event);
+  const shown = insiderRailTitle(event) ?? title;
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row" data-class={event.class} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
     {...tip(title, eventTitleLang(event), meta)} aria-label={`${eventClassLabel(event.class, locale)} ${shortDate(event.filedAt)} ${title}`}>
     <Mark cls={event.class} direction={direction} quiet={planned || espp} />
     <span className="stream-body">
-      {parts ? <InsiderTitle {...parts} tags={join([planned && m.plan, espp && m.espp])} full={join([title, planned && m.plan, espp && m.espp])} />
-        : <span className="stream-title" lang={eventTitleLang(event)} title={title}>{title}</span>}
+      <span className="stream-title" lang={eventTitleLang(event)} title={title}>{shown}</span>
       <span className="stream-meta" title={meta}>{meta}</span>
     </span>
   </RailRow>;
