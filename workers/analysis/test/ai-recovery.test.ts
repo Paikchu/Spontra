@@ -206,6 +206,7 @@ test("a filing over the archive's size cap is recorded as unsupported, and the o
     current: [
       { accession: "0001193125-26-000002", form: "8-K", items: "7.01", filingDate: "2026-10-16", reportDate: "2026-10-16", document: "huge.htm" },
       { accession: "0001193125-26-000001", form: "8-K", items: "5.02", filingDate: "2026-10-15", reportDate: "2026-10-15", document: "d1.htm" },
+      { accession: "0001193125-26-000000", form: "8-K", items: "8.01", filingDate: "2026-10-14", reportDate: "2026-10-14", document: "notice.txt" },
     ],
   }), "2026-10-17T00:00:00.000Z").run();
   const small = `<html><body><p>Item 5.02 ${"A director joined the board. ".repeat(20)}</p></body></html>`;
@@ -214,11 +215,13 @@ test("a filing over the archive's size cap is recorded as unsupported, and the o
     const url = String(input instanceof Request ? input.url : input);
     if (url === `${root}/000119312526000002/huge.htm`) return new Response("x", { headers: { "content-length": "30000000" } });
     if (url === `${root}/000119312526000001/d1.htm`) return new Response(small);
+    if (url === `${root}/000119312526000000/notice.txt`) return new Response(`ITEM 8.01 OTHER EVENTS\n${"The company announced a plain-text notice. ".repeat(20)}`, { headers: { "content-type": "text/plain" } });
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
   try {
     const result = await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1", now: new Date("2026-10-17T00:00:00.000Z"), trigger: null });
-    assert.deepEqual(result, { status: "done", detail: { archived: ["0001193125-26-000001"], unsupported: ["0001193125-26-000002"] } });
+    assert.deepEqual(result, { status: "later", afterMs: 1000, detail: { archived: ["0001193125-26-000001"], unsupported: ["0001193125-26-000002"], remaining: 1 } }, "two per run; the plain-text notice follows");
+    assert.deepEqual(await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1b", now: new Date("2026-10-17T00:00:30.000Z"), trigger: null }), { status: "done", detail: { archived: ["0001193125-26-000000"] } }, "a plain-text body is archived like an HTML one");
     const marker = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind(archiveCompleteKey("ORCL", "0001193125-26-000002")).first<{ payload: string }>())!.payload);
     assert.equal(marker.unsupported, "SEC_DOCUMENT_TOO_LARGE");
     assert.deepEqual(await ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c2", now: new Date("2026-10-17T00:01:00.000Z"), trigger: null }), { status: "done", detail: { archived: 0 } }, "neither is tried again");

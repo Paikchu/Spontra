@@ -40,7 +40,8 @@ export const ARCHIVE_TASKS = {
       // Pending: not stored yet, and not waiting out a failed read's retry delay; a filing waiting is tried after it.
       const pending = [], deferred: string[] = [];
       for (const filing of state.current) {
-        if (!/^[A-Za-z0-9_.-]+\.html?$/.test(filing.document) || await repository.getCache(archiveCompleteKey(ticker, filing.accession))) continue;
+        // HTML and plain-text bodies are readable (an older or a short filing is often `.txt`); a PDF or image body is not.
+        if (!/^[A-Za-z0-9_.-]+\.(?:html?|txt)$/i.test(filing.document) || await repository.getCache(archiveCompleteKey(ticker, filing.accession))) continue;
         const tried = (await repository.getCache<Attempts>(archiveAttemptsKey(ticker, filing.accession)))?.payload;
         if (tried && Date.parse(tried.retryAt) > now.getTime()) { deferred.push(tried.retryAt); continue; }
         pending.push(filing);
