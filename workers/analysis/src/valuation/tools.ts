@@ -1,3 +1,4 @@
+import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
 import { DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusNote, type ConsensusTarget, type DiscountRate, type DiscountRateSources, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
@@ -502,13 +503,13 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         const id = await registerEvidence(ctx.state, { passageId: `transcript:${meta.id}`, documentId: `transcript:${meta.id}`, title: meta.title, form: "transcript", filedAt: meta.filedAt, url: meta.sourceUrl, path: ["earnings call", `FY${meta.fiscalYear} Q${meta.fiscalQuarter}`], text, table: null }, "sec", meta.filedAt);
         return `[${id}] ${meta.title}\n${text}`;
       }, observe: (_a, v) => v }),
-    tool({ name: "search_evidence", description: "Search the web for one specific gap (a guidance change, a launch date, an official statistic). Hits h<n> can be read with read_web_evidence.", parameters: z.object({ gap: z.string().max(200), query: z.string().min(3).max(300), domains: z.array(z.string().max(80)).max(4).optional() }),
-      execute: async ({ query, domains }, ctx) => {
-        if (!search) throw new Error("web search is not configured; use the filings");
-        if (ctx.state.used.searches >= RESEARCH_BUDGET.searches) throw new Error("no searches left");
+    tool({ name: "search_evidence", description: "Register native search results as source IDs for page reads.", parameters: nativeSearchSchema,
+      nativeSearch: { remaining: state => RESEARCH_BUDGET.searches - state.used.searches, excluded: EXCLUDED_HOSTS },
+      execute: async ({ query, hits, error }, ctx) => {
         ctx.state.used.searches++;
+        if (error) return error;
         const endDate = ctx.state.researchAsOf.slice(0, 10), startDate = `${Number(endDate.slice(0, 4)) - 1}${endDate.slice(4)}`;
-        const found = await ctx.stage("search", () => search.search({ query, maxResults: 5, depth: "advanced", topic: "general", startDate, endDate, ...(domains?.length ? { includeDomains: domains } : { excludeDomains: EXCLUDED_HOSTS }) }, { scope: `spontra:valuation:${ctx.state.input.ticker}`, maxAgeMs: 6 * 60 * 60_000 }).then(r => r.data.results).catch(() => [] as SearchHit[]));
+        const found = datedHits(hits, startDate, endDate).slice(0, 6);
         for (const h of found) if (!ctx.state.hits.some(x => x.url === h.url)) ctx.state.hits.push(h);
         return found.map(h => `[h${ctx.state.hits.findIndex(x => x.url === h.url) + 1}] ${h.title.slice(0, 160)} (${hostOf(h.url)} · ${h.publishedAt?.slice(0, 10) ?? "undated"})\n${untrusted(hostOf(h.url), h.snippet.replace(/\s+/g, " ").slice(0, 240))}`).join("\n") || `Search "${query}" returned nothing; a snippet is never evidence, only a read page is.`;
       }, observe: (_a, v) => v }),

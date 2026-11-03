@@ -1,3 +1,4 @@
+import { nativeSearches, nativeSearchTool, datedHits, NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
 import type { FindingMaterial, FindingPassage, FindingRecordEntry, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import { LIBRARY_CANONICALS, type IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LENS_LIMITS, type LensDocument } from "../../../../shared/analysis-contract/lens.ts";
@@ -77,11 +78,6 @@ export const ANALYST_TOOLS: AgentTool[] = [
     name: "similar_businesses", strict: true,
     description: "Find tracked companies' businesses whose business tags are nearest a description: query is plain English for what is sold, to whom, how it is charged or what it runs on; facet narrows to one of offering, customers, contract, cost; sector to one sector tag. Returns up to 8 units with the matching tag, its score and a documentId and sectionId to read. Counts against finds.",
     input_schema: closedObject({ query: { type: "string" }, facet: { type: "string", enum: [...TAG_FACETS] }, sector: { type: "string", enum: Object.keys(INDUSTRY_CATEGORIES) } }, ["query"]),
-  },
-  {
-    name: "search", strict: true,
-    description: "Web search; returns up to 6 dated hits [h<n>]. since is YYYY-MM-DD (by default twelve months before the finding's period); domains limits the hosts. Counts against the searches budget.",
-    input_schema: closedObject({ query: { type: "string" }, topic: { type: "string", enum: ["news", "general"] }, since: { type: "string" }, domains: STRINGS }, ["query"]),
   },
   {
     name: "read_web", strict: true,
@@ -295,7 +291,7 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
   let failedReplies = 0, quietReplies = 0;
   for (let turn = 1; turn <= plan.budget.turns; turn++) {
     if (!await input.reserveTurn()) { turns.push({ turn, thought: "", action: "budget", input: "", observation: "The day's model budget is spent; the run finishes with the last clean document." }); break; }
-    const reply = await input.stage(`${finding.id}-t${turn}-act`, () => input.model.act(`analyst-${finding.id}-${turn}`, SYSTEM, ANALYST_TOOLS, messages));
+    const reply = await input.stage(`${finding.id}-t${turn}-act`, () => input.model.act(`analyst-${finding.id}-${turn}`, `${SYSTEM}\n${NATIVE_SEARCH_INSTRUCTION}`, [...ANALYST_TOOLS, ...(search && used.searches < plan.budget.searches ? [nativeSearchTool(plan.budget.searches - used.searches, EXCLUDED_HOSTS)] : [])], messages));
     // No usable reply (the provider failed, Claude declined, or the reply was cut off): nothing joins the exchange and the
     // next turn asks again. Several in a row end the finding with what it has.
     const failure = replyFailure(reply);
@@ -306,8 +302,18 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
     }
     failedReplies = 0;
     messages.push({ role: "assistant", content: reply.content });
+    const webNotes: AgentBlock[] = [];
+    for (const batch of nativeSearches(reply.content)) {
+      used.searches++;
+      const found = datedHits(batch.hits, yearBefore);
+      hits.push(...found.filter(h => !hits.some(x => x.url === h.url)));
+      const observation = batch.error ?? found.map(h => `[h${hits.findIndex(x => x.url === h.url) + 1}] ${h.title} (${h.url})`).join("\n");
+      webNotes.push({ type: "text", text: `Native search sources (read before citing):\n${observation}` });
+      turns.push({ turn, thought: "", action: "web_search", input: batch.query, observation });
+    }
     const said = replyText(reply.content).slice(0, 600);
     const calls = toolCalls(reply.content);
+    if (!calls.length && webNotes.length) { quietReplies = 0; messages.push({ role: "user", content: webNotes }); continue; }
     if (!calls.length) {
       // A reply with no call is asked once to go on; a second in a row ends the finding with what it has.
       turns.push({ turn, thought: said, action: "none", input: "", observation: "The reply called no tool." });
@@ -327,7 +333,7 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
       results.push(toolResult(call, `${observation}\n\n${budget(turn)}`, outcome.error));
     }
     if (state.accepted) break;
-    messages.push({ role: "user", content: results });
+    messages.push({ role: "user", content: [...results, ...webNotes] });
   }
   if (!state.accepted && state.last && state.last.errors === 0) state.accepted = state.last.document;
   const review: string[] = [];
@@ -371,19 +377,6 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
         let target = documentId, lead = "";
         if (args.previous === true) { target = (await readLibraryDocument(db, documentId))?.previousDocumentId ?? documentId; if (target === documentId) lead = "No previous document; reading the one named.\n"; }
         return { observation: lead + await input.stage(`${step}-read`, () => readPassages(target, text("sectionId"), terms("focus"))) };
-      }
-      case "search": {
-        if (!search) return { observation: "Web search is not configured for this run; use the filings.", error: true };
-        if (used.searches >= plan.budget.searches) return { observation: "No searches left; read what you have or compile.", error: true };
-        const query = text("query", 300);
-        if (!query) return { observation: "search needs a query.", error: true };
-        used.searches++;
-        const topic = args.topic === "news" ? "news" : "general";
-        const since = typeof args.since === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.since) ? args.since : yearBefore;
-        const domains = terms("domains")?.slice(0, 6);
-        const found = await input.stage(`${step}-search`, () => search.search({ query, maxResults: 6, depth: "advanced", topic, startDate: since, excludeDomains: EXCLUDED_HOSTS, ...(domains?.length ? { includeDomains: domains } : {}) }, WEB_SCOPE(ticker)).then(r => r.data.results).catch(() => [] as SearchHit[]));
-        hits.push(...found.filter(h => !hits.some(x => x.url === h.url)));
-        return { observation: found.length ? found.map(h => `[h${hits.findIndex(x => x.url === h.url) + 1}] ${h.title.slice(0, 160)} (${hostOf(h.url)} · ${h.publishedAt ? h.publishedAt.slice(0, 10) : "undated"})\n${h.snippet.replace(/\s+/g, " ").slice(0, 300)}`).join("\n") : `Search "${query}" returned nothing.` };
       }
       case "read_web": {
         if (!search) return { observation: "Web reading is not configured for this run.", error: true };

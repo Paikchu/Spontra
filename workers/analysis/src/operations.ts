@@ -868,6 +868,7 @@ export async function callWorkerToolModel(
       model,
       system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
       tools: request.tools,
+      thinking: { type: "adaptive" },
       messages: request.messages,
       // The exchange is cached up to its newest turn, so each turn reads every earlier one from the cache.
       cache_control: { type: "ephemeral" },

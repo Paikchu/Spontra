@@ -42,8 +42,6 @@ export const AI_TOOLS = {
   "read-note": { label: "读表说明", reasoning: "low", model: "reasoning" },
   /** Translating published English into Chinese; every translation is checked against its source. */
   translate: { label: "中文翻译", reasoning: "low", model: "analysis" },
-  /** Runs one web search or reads one page for the research agents; the agents do the reading. */
-  web: { label: "网页检索", reasoning: "low", model: "analysis" },
   /** The stage: one reader's turn, reading stored data and laying out a scene. */
   stage: { label: "舞台对话", reasoning: "low", model: "analysis" },
 } as const satisfies Record<string, { label: string; reasoning: ReasoningEffort; model: "analysis" | "reasoning" }>;

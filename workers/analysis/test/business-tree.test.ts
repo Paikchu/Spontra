@@ -11,7 +11,22 @@ const libraryOf = (search: TreeSearch, filings: Array<{ url: string; title: stri
   read: async (url, terms, maxChars) => pageExcerpt((await search.fetchContent({ url, depth: "advanced" }, { scope: "test", maxAgeMs: 0 })).data.text, terms, maxChars),
   businessSection: async () => null,
 });
-const runBusinessTree: typeof runTreeAgent = input => runTreeAgent({ ...input, filingLibrary: input.filingLibrary ?? libraryOf(input.search, input.filings ?? []) });
+const runBusinessTree: typeof runTreeAgent = input => runTreeAgent({ ...input, filingLibrary: input.filingLibrary ?? libraryOf(input.search, input.filings ?? []), model: {
+  ...input.model,
+  act: async (...args) => {
+    const reply = await input.model.act(...args);
+    if ("error" in reply) return reply;
+    const content: TreeBlock[] = [];
+    for (const block of reply.content) {
+      if (block.type !== "tool_use" || block.name !== "search") { content.push(block); continue; }
+      const fixture = input.search as TreeSearch & { search(): Promise<{ data: { results: Array<{ url: string; title: string; snippet: string }> } }> };
+      const hits = (await fixture.search()).data.results;
+      content.push({ ...block, type: "server_tool_use", name: "web_search" }, { type: "web_search_tool_result", tool_use_id: block.id, content: hits.map(h => ({ type: "web_search_result", url: h.url, title: h.title, page_age: null })) },
+        { type: "text", text: "Search leads", citations: hits.map(h => ({ type: "web_search_result_location", url: h.url, cited_text: h.snippet })) });
+    }
+    return { ...reply, content };
+  },
+} });
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
@@ -47,7 +62,7 @@ const run = (businesses: Array<{ flowNodeId: string; name: string }>, model: Tre
     businesses: businesses.map(b => ({ ...b, children: [] })), filings: [FILING], search: search(page, hits), model });
 
 test("every action is a strict tool whose objects admit no other field", () => {
-  assert.deepEqual(TREE_TOOLS.map(t => t.name), ["search", "read", "add", "revise", "remove", "finish"]);
+  assert.deepEqual(TREE_TOOLS.map(t => t.name), ["read", "add", "revise", "remove", "finish"]);
   const closed = (schema: unknown): boolean => {
     if (!schema || typeof schema !== "object") return true;
     const s = schema as Record<string, unknown>;
@@ -244,7 +259,7 @@ test("the exchange only grows: each reply goes back exactly as returned, thinkin
     "1-5": { stopReason: "end_turn", content: [{ type: "text", text: "Still done." }] },
   };
   const model: TreeModel = {
-    act: async (stage, system, tools, messages) => { sent.push(structuredClone(messages)); assert.equal(tools, TREE_TOOLS); assert.doesNotMatch(system, /thought|Return only JSON/i); return replies[stage.replace("business-tree-", "")] ?? call("finish"); },
+    act: async (stage, system, tools, messages) => { sent.push(structuredClone(messages)); assert.deepEqual(tools.map(t => t.name), [...TREE_TOOLS.map(t => t.name), "web_search"]); assert.doesNotMatch(system, /thought|Return only JSON/i); return replies[stage.replace("business-tree-", "")] ?? call("finish"); },
     judge: async () => ({ issues: [] }),
   };
   // Nothing is added, so the run ends without a tree; the exchange is what is checked.
@@ -259,8 +274,8 @@ test("the exchange only grows: each reply goes back exactly as returned, thinkin
   assert.match(String(results[0]!.content), /XBOX[\s\S]*Budget left: 15 turns, 6 searches, 5 reads/);
   // Two calls in one reply, the second named in another case, each get their result.
   const both = sent[3]!.at(-1)!.content as TreeBlock[];
-  assert.deepEqual(both.map(b => b.type), ["tool_result", "tool_result"]);
-  assert.match(String(both[1]!.content), /^\[b1-s1\]/);
+  assert.deepEqual(both.map(b => b.type), ["tool_result", "text"]);
+  assert.match(String(both[0]!.content), /^\[b1-s1\]/);
   // A reply calling no tool is asked once to go on; the second ends the business.
   assert.deepEqual(sent[4]!.at(-1), { role: "user", content: "Continue the breakdown by calling the tools; call finish when it is complete." });
   assert.equal(sent.length, 5);

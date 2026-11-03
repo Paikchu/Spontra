@@ -85,7 +85,7 @@ export async function readPageDirect(url: string, depth: "basic" | "advanced", o
 
 /**
  * Searches through `inner` and reads pages in the Worker, so a page's text never passes through a model; only a page
- * that cannot be read here (a block, a script-only page, an unsupported type) goes to `inner.fetchContent`. Page reads
+ * that cannot be read here (a block, a script-only page, an unsupported type) goes to the raw Fetch API. Page reads
  * carry their own cache version, so changing how pages are read leaves the search cache intact.
  */
 export class DirectPageProvider implements SearchProvider {

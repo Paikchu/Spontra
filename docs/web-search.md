@@ -1,29 +1,33 @@
-# Web Search 模块
+# 网页检索与证据读取
 
-入口：`workers/analysis/src/web-search/research-search.ts` 的 `researchSearch(env)`。业务解读、业务脑图、指引、分析师、估值与公司分析的 Agent 都经它检索网页和读网页，结果缓存在 D1 + R2。只需要模型密钥 `DEEPSEEK_API_KEY`；`researchSearchConfigured(env)` 判断是否可用。
+Spontra Analysis 的网页搜索不再运行独立的中间模型，也不再有 `web` 模型配置。
 
-## 组成
+## 主 Agent 工具循环
 
-| 文件 | 职责 |
-| --- | --- |
-| `claude.ts` | `ClaudeWebProvider`：经 DeepSeek 的 Anthropic 兼容接口调用 Messages API 服务端工具 `web_search` / `web_fetch`，只取证据、不要生成的回答；搜索结果的摘录是模型逐字引用的段落，PDF 在这里抽取文字。每次调用记入 `ai_usage` |
-| `page.ts` | `DirectPageProvider`：网页先由 Worker 直接读取（有 Workers AI `toMarkdown` 时转 Markdown），读不到才回退到模型的 `web_fetch`，因此读一页通常不花 token |
-| `service.ts` | `WebSearchService`：校验请求、查缓存、占用与发布 |
-| `store.ts` | `D1R2SearchStore`：D1 存指针与占用，R2 存结果体 |
-| `validation.ts` | 请求规范化、公开 URL 校验、`isEdgarUrl` |
+估值研究、分析师、业务脑图、公司分析，以及使用共享 compose 工具的文件分析、财务体检和研究报告，直接向 DeepSeek Messages API 提供原生 `web_search_20250305` 工具。
 
-## SEC 原文不经网页模块
+- 主 Agent 在思考中选择查询；服务端执行搜索并继续同一次模型回复。
+- 完整 assistant 内容（thinking、server_tool_use、web_search_tool_result、引用）保留在后续请求中。
+- `web-search/native.ts` 读取服务端结果。Harness 在本地为有效结果登记来源编号，并把编号作为下一条 user 消息的文本交给 Agent，不伪造客户端工具调用或工具结果。
+- 原生搜索每轮最多一次；用完该流程的总搜索预算后，不再提供工具。搜索失败也占用一次预算。
+- 搜索结果只是线索。原有网页读取工具继续读取正文、保存可核验的摘录和来源，然后生成证据 ID。估值与分析中的引用校验继续使用这些登记的证据。
+- 归档文件工具保持不变。所有搜索工具排除 SEC 域名；返回结果仍经过 SEC 地址过滤。SEC 原文只能通过 `sec-archive` 和文件库读取。
+- 历史快照估值、研究收尾等不允许联网的阶段，不提供原生搜索工具。
 
-搜索结果中的 EDGAR 链接一律剔除（缓存命中也剔除），`fetchContent` 遇到 EDGAR 地址直接报 `archive_only`。SEC 原文只从归档读取，见 [SEC 归档](sec-archive.md)。
+共享循环在 `agent-loop.ts` 中处理搜索登记；业务脑图和分析师自己的循环遵循相同协议。公司分析已从 JSON action 调度改为连续工具消息，保留思考上下文。
 
-## 缓存语义
+## 程序检索与网页读取
 
-缓存键包含版本、供应商、scope、操作类型及全部标准化查询条件。`scope` 由可信后端选择；公开资料使用统一 scope。只规范化域名排序/去重和首尾空白，保留查询大小写及内部空白。URL 保留 query 参数、去掉 fragment。
+业务解读的预先资料收集、业绩指引的演示文稿发现等固定程序检索，通过 `DeepSeekWebProvider` 直接访问 `POST /v1/tools/search`。这是不带 model 或 messages 的原始 API，不启动搜索代理。查询遵守该接口的 128 字符限制，返回结果仍按域名和日期过滤。
 
-默认搜索 1 小时、读网页 24 小时；空搜索最多 5 分钟。调用方可指定 0 至 30 天的最大缓存年龄，0 表示不复用；`refresh: true` 跳过旧值但仍受并发占用约束。命中须同时满足存储期限与本次 maxAge，不返回过期资料。供应商失败不作为空结果缓存，失败刷新保留原有正文。
+网页正文优先由 Worker 直接下载并转换；不能直接读取时，调用 `POST /v1/tools/fetch`，不调用模型的 `web_fetch`。SEC 地址和跳转到 SEC 的请求继续拒绝。
 
-D1 原子占用两分钟；竞争方得到可重试的 `busy`，由所在 Workflow 延迟重试。R2 先写 owner 唯一对象，再按 owner 和未过期 lease 更新 D1 指针，旧 owner 无法覆盖后续结果。进程崩溃或网络不确定失败可能造成重复外部请求，不保证 exactly-once。
+这些程序检索和页面读取沿用 `WebSearchService`、D1/R2 缓存与并发租约。原生搜索发生在主模型请求内部，不经过独立的搜索缓存；其消息随 Workflow 的模型步骤持久化，已读取网页的证据保存流程不变。
 
-每次返回 `provider`、`fetchedAt`、`expiresAt`、`cacheKey` 和 `cache: hit|miss`，Agent 可以追溯资料时效。网页正文是不可信证据，模型不执行其中的指令。
+## 用量与后台设置
 
-迁移：`workers/analysis/migrations/0011_web_search_cache.sql`。
+- 原生搜索的 `usage.server_tool_use.web_search_requests` 计入主 Agent 那条 `ai_usage` 记录，保留公司、模型、阶段和运行 ID。
+- 原始 Search/Fetch 请求单独记录接口用量，标记 `search-fetch-api`，不虚构模型 token。
+- `AI_TOOLS` 已移除 `web`。后台列表不再显示该配置，更新旧配置的请求返回 404；数据库里已有的旧 `web` 设置不再参与模型解析。无须数据库迁移。
+
+官方接口：[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/)、[Anthropic 格式](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api/)、[Search/Fetch](https://api-docs.deepseek.com/zh-cn/guides/search/)。

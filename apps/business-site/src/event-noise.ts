@@ -177,43 +177,8 @@ export function releasedPeriod(release: RailItem, items: readonly RailItem[], an
   return earlier ? null : quarter;
 }
 
-/**
- * Whether a row is the filing a findings set was written from: a report of that period, or the earnings release that
- * reports that quarter. A release of any other quarter never carries them.
- */
-export function reportsPeriod(row: NoiseRow, periodEnd: string | null, items: readonly RailItem[]): boolean {
-  if (!periodEnd || row.kind !== "item") return false;
-  const item = row.item;
-  if (item.kind === "report") return item.report.periodEnd === periodEnd;
-  if (!isEarningsRow(row)) return false;
-  const quarter = releasedPeriod(item, items, periodEnd);
-  return quarter != null && sameQuarter(quarter, periodEnd);
-}
-
-/** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
-const FINDINGS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "earnings", "all"]);
-
-export type StreamRow<F> = { kind: "noise"; id: string; date: string; row: NoiseRow } | { kind: "finding"; id: string; date: string; finding: F };
-
-/**
- * The rail's rows in order: newest first, reports among the events, and the findings beneath the filing of their
- * quarter. When no row is that filing they are left out, never put under another quarter's filing. A rail with no rows
- * at all lists them alone.
- */
-export function streamRows<F extends { id: string }>(layout: ReturnType<typeof railLayout>, findings: readonly F[], periodEnd: string | null, filter: EventFilter): StreamRow<F>[] {
-  const rows: StreamRow<F>[] = layout.rows.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
-  if (findings.length && FINDINGS_IN.has(filter)) {
-    const at = rows.findIndex(row => row.kind === "noise" && reportsPeriod(row.row, periodEnd, layout.items));
-    if (at >= 0 || !rows.length) {
-      const date = at >= 0 ? rows[at]!.date : periodEnd ?? "";
-      rows.splice(at + 1, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
-    }
-  }
-  return rows;
-}
-
-/** The rail's tabs under the businesses. Any set of them can be on at once; all three are on by default. */
-export const RAIL_TABS = ["findings", "reports", "management"] as const;
+/** The tabs over the rail's filings, under the findings. Either or both can be on; both are by default. */
+export const RAIL_TABS = ["reports", "management"] as const;
 export type RailTab = (typeof RAIL_TABS)[number];
 
 /** Reads `?tabs=` (comma separated). Absent, empty or unknown values leave every tab on. */
@@ -235,38 +200,37 @@ export function withRailTabs(search: string, tabs: ReadonlySet<RailTab>): string
 /** Management: officer and director changes and every insider trade. Everything else filed is a report. */
 const MANAGEMENT = new Set(["executive", "insider"]);
 export const itemTab = (item: RailItem): RailTab => item.kind === "event" && MANAGEMENT.has(item.event.class) ? "management" : "reports";
-const rowTab = (row: StreamRow<unknown>): RailTab => row.kind === "finding" ? "findings" : row.row.kind === "item" ? itemTab(row.row.item) : "reports";
+const rowTab = (row: NoiseRow): RailTab => row.kind === "item" ? itemTab(row.item) : "reports";
 
 /** The ids the time axis draws for a reading and a set of tabs. */
 export function tabTimelineIds(items: readonly RailItem[], filter: EventFilter, tabs: ReadonlySet<RailTab>): Set<string> {
   return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row)).filter(item => tabs.has(itemTab(item))).map(item => item.id));
 }
 
-export type StreamBlock<F> =
-  | { kind: "row"; id: string; row: StreamRow<F> }
-  | { kind: "quarter"; id: string; periodEnd: string; rows: StreamRow<F>[] };
+export type StreamBlock =
+  | { kind: "row"; id: string; row: NoiseRow }
+  | { kind: "quarter"; id: string; periodEnd: string; rows: NoiseRow[] };
 
-/** The quarter a row is about: a report's period, the quarter an earnings release reports, the findings' period. */
-function rowPeriod(row: StreamRow<unknown>, items: readonly RailItem[], periodEnd: string | null, anchor: string | null): string | null {
-  if (row.kind === "finding") return periodEnd;
-  if (row.row.kind !== "item") return null;
-  const item = row.row.item;
+/** The quarter a row is about: a report's period, or the quarter an earnings release reports. */
+function rowPeriod(row: NoiseRow, items: readonly RailItem[], anchor: string | null): string | null {
+  if (row.kind !== "item") return null;
+  const item = row.item;
   if (item.kind === "report") return item.report.periodEnd ?? null;
-  return isEarningsRow(row.row) ? releasedPeriod(item, items, anchor) : null;
+  return isEarningsRow(row) ? releasedPeriod(item, items, anchor) : null;
 }
 
 /**
- * The rows of the tabs that are on, with the rows about one fiscal quarter (its findings, its earnings release, its
- * 10-Q or 10-K) framed together. A frame stands where its newest row would; inside it the findings come first, then the
- * filings newest first. Rows about no quarter keep their own place.
+ * The rows of the tabs that are on, with the filings about one fiscal quarter (its earnings release, its 10-Q or
+ * 10-K) framed together. A frame stands where its newest row would; rows about no quarter keep their own place.
+ * `known` is a quarter end that dates the releases; without it the latest listed report's period does.
  */
-export function streamBlocks<F extends { id: string }>(rows: readonly StreamRow<F>[], tabs: ReadonlySet<RailTab>, items: readonly RailItem[], periodEnd: string | null): StreamBlock<F>[] {
-  const anchor = periodEnd ?? items.reduce<string | null>((latest, item) => item.kind === "report" && item.report.periodEnd && (!latest || item.report.periodEnd > latest) ? item.report.periodEnd : latest, null);
-  const blocks: StreamBlock<F>[] = [];
-  const frames: Array<Extract<StreamBlock<F>, { kind: "quarter" }>> = [];
+export function streamBlocks(rows: readonly NoiseRow[], tabs: ReadonlySet<RailTab>, items: readonly RailItem[], known: string | null = null): StreamBlock[] {
+  const anchor = known ?? items.reduce<string | null>((latest, item) => item.kind === "report" && item.report.periodEnd && (!latest || item.report.periodEnd > latest) ? item.report.periodEnd : latest, null);
+  const blocks: StreamBlock[] = [];
+  const frames: Array<Extract<StreamBlock, { kind: "quarter" }>> = [];
   for (const row of rows) {
     if (!tabs.has(rowTab(row))) continue;
-    const period = rowPeriod(row, items, periodEnd, anchor);
+    const period = rowPeriod(row, items, anchor);
     if (!period) { blocks.push({ kind: "row", id: row.id, row }); continue; }
     let frame = frames.find(f => sameQuarter(f.periodEnd, period));
     if (!frame) {
@@ -276,6 +240,5 @@ export function streamBlocks<F extends { id: string }>(rows: readonly StreamRow<
     }
     frame.rows.push(row);
   }
-  for (const frame of frames) frame.rows.sort((a, b) => (a.kind === "finding" ? 0 : 1) - (b.kind === "finding" ? 0 : 1));
   return blocks;
 }

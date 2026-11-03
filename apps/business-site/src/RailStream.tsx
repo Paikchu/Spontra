@@ -8,7 +8,7 @@ import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/sha
 import { normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { eventTitle, insiderRailTitle, eventTitleLang, shortDate } from "./events-model";
-import { RAIL_TABS, railLayout, rowLeaves, streamBlocks, streamRows, type EventFilter, type NoiseRow, type RailTab, type StreamBlock, type StreamRow as Row } from "./event-noise";
+import { RAIL_TABS, railLayout, rowLeaves, streamBlocks, type EventFilter, type NoiseRow, type RailTab, type StreamBlock as Block } from "./event-noise";
 import { filingQuarterLabel, quarterHeading, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
@@ -26,9 +26,10 @@ const m = messages({
   director: "Director", tenPercent: "10% owner",
   watchOutcome: "Watch outcome",
   tabs: "Show in the list",
-  tabFindings: "Findings", tabReports: "Reports", tabManagement: "Management",
-  frameFindings: (n: number) => n === 1 ? "1 finding" : `${n} findings`,
-  frameFilings: (n: number) => n === 1 ? "1 filing" : `${n} filings`,
+  tabReports: "Reports", tabManagement: "Management",
+  findings: "Findings",
+  moreFindings: (n: number) => `${n} more`,
+  fewerFindings: "Show fewer",
 }, {
   title: "要点、财报与事件",
   report: "财报",
@@ -39,17 +40,17 @@ const m = messages({
   director: "董事", tenPercent: "10% 股东",
   watchOutcome: "跟踪结果",
   tabs: "列表显示内容",
-  tabFindings: "要点", tabReports: "财报", tabManagement: "管理层动态",
-  frameFindings: (n: number) => `${n} 条要点`,
-  frameFilings: (n: number) => `${n} 份文件`,
+  tabReports: "财报", tabManagement: "管理层动态",
+  findings: "要点",
+  moreFindings: (n: number) => `另外 ${n} 条`,
+  fewerFindings: "收起",
 });
 
 /** Older rows join this many at a time. */
 const PAGE = 12;
+/** The findings show this many before the rest are asked for. */
+const FEW = 3;
 
-type StreamRow = Row<VerifiedFinding>;
-type Block = StreamBlock<VerifiedFinding>;
-const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : [];
 const rowsOf = (b: Block) => b.kind === "row" ? [b.row] : b.rows;
 const blockDate = (b: Block) => rowsOf(b).reduce((latest, r) => r.date > latest ? r.date : latest, "");
 /** The fiscal fields a quarter frame's heading reads. */
@@ -60,15 +61,15 @@ export type QuarterSource = Parameters<typeof quarterHeading>[1];
  * mark (the event's class, or the finding's severity icon), a title, and a line of particulars that
  * starts with the date. Each Form 4 lists at its own date, and opens its filer's whole history on the stage; routine
  * 6-Ks fold by month.
- * Tabs above the list pick which of findings, reports and management show, any number at once; the rows about one
- * fiscal quarter are framed together.
+ * The findings lead, undated: the standing read of the company, most severe first. Below them two tabs pick reports,
+ * management or both, and the filings about one fiscal quarter are framed together.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
 export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
-  /** The period the findings were written about: they follow that report in the stream. */
+  /** The period the findings were written about. */
   findingsPeriodEnd: string | null;
   /** Pass or fail of each finding's scored watch, by finding id, once its period reported. */
   verdicts?: Record<string, "pass" | "fail">;
@@ -93,10 +94,13 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
 }) {
   useLocale();
   const all = rail ? [...rail.recent, ...rail.earlier] : [];
-  const rows = streamRows(railLayout(all, filter), findings, findingsPeriodEnd, filter);
-  const blocks = streamBlocks(rows, tabs, all, findingsPeriodEnd);
+  const rows = railLayout(all, filter).rows;
+  const blocks = streamBlocks(rows, tabs, all, findingsPeriodEnd ?? quarters[0]?.periodEnd ?? null);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
-  const hosts = (id: string | null) => id ? rows.find(r => r.id === id || leavesOf(r).some(item => item.id === id)) ?? null : null;
+  const [allFindings, setAllFindings] = useState(false);
+  const focusAt = findings.findIndex(f => f.id === focus);
+  const findingsShown = allFindings || focusAt >= FEW ? findings : findings.slice(0, FEW);
+  const hosts = (id: string | null) => id ? rows.find(r => r.id === id || rowLeaves(r).some(item => item.id === id)) ?? null : null;
   const focusedRow = hosts(focus);
   const focusedBlock = focusedRow ? blocks.find(b => rowsOf(b).includes(focusedRow)) ?? null : null;
   // The recent blocks open the list; each time the end comes into view another page of older ones joins, and the block
@@ -119,7 +123,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
     observer.observe(el);
     return () => observer.disconnect();
   }, [more, shown.length, flat]);
-  const ids = shown.flatMap(rowsOf).flatMap(r => [r.id, ...leavesOf(r).map(item => item.id)]);
+  const ids = [...findingsShown.map(f => f.id), ...shown.flatMap(rowsOf).flatMap(r => [r.id, ...rowLeaves(r).map(item => item.id)])];
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
   const tip = useRailTip();
@@ -127,7 +131,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   const [previousFocus, setPreviousFocus] = useState<string | null>(null);
   if (previousFocus !== focus) {
     setPreviousFocus(focus);
-    if (focusedRow?.kind === "noise" && focusedRow.row.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
+    if (focusedRow && focusedRow.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
   }
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   // A tab turns off only while another stays on, so the list always reads something.
@@ -136,14 +140,18 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
     if (next.has(tab)) next.delete(tab); else next.add(tab);
     if (next.size) onTabs?.(next);
   };
-  const renderRow = (r: StreamRow) => r.kind === "finding"
-    ? <FindingRow key={r.id} finding={r.finding} date={r.date} verdict={verdicts?.[r.id]} checked={focus === r.id} arrive={arrived.get(r.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === r.id ? null : r.id)} />
-    : <NoiseBlock key={r.id} row={r.row} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
+  const renderRow = (r: NoiseRow) => <NoiseBlock key={r.id} row={r} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
+    {findings.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
+      {findingsShown.map(f => <FindingRow key={f.id} finding={f} verdict={verdicts?.[f.id]} checked={focus === f.id} arrive={arrived.get(f.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === f.id ? null : f.id)} />)}
+      {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="guidance-more" aria-expanded={allFindings} onClick={() => setAllFindings(v => !v)}>
+        {allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)}<Chevron />
+      </Button>}
+    </div>}
     <div className="stream-tabs" role="group" aria-label={m.tabs}>
       {RAIL_TABS.map(tab => <Button key={tab} variant="unstyled" type="button" className="stream-tab" aria-pressed={tabs.has(tab)} onClick={() => toggleTab(tab)}>
         {tabs.has(tab) && <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>}
-        {tab === "findings" ? m.tabFindings : tab === "reports" ? m.tabReports : m.tabManagement}
+        {tab === "reports" ? m.tabReports : m.tabManagement}
       </Button>)}
     </div>
     {phase === "loading" ? <StreamSkeleton /> : phase === "error" ? <div className="event-state">
@@ -174,18 +182,15 @@ function StreamSkeleton() {
   </>;
 }
 
-/** One fiscal quarter's rows in one frame, headed by the quarter, its end and what it holds. */
+/** One fiscal quarter's filings in one frame, headed by the quarter and its end. */
 function QuarterFrame({ frame, ticker, quarters, motion: rowMotion, children }: { frame: Extract<Block, { kind: "quarter" }>; ticker: string; quarters: readonly QuarterSource[]; motion: RowMotion; children: ReactNode }) {
-  const report = frame.rows.flatMap(r => r.kind === "noise" && r.row.kind === "item" && r.row.item.kind === "report" ? [r.row.item.report] : [])[0];
+  const report = frame.rows.flatMap(r => r.kind === "item" && r.item.kind === "report" ? [r.item.report] : [])[0];
   const known = quarters.find(q => q.periodEnd === frame.periodEnd);
   const heading = quarterHeading(ticker, { ...(report ?? known), periodEnd: frame.periodEnd });
-  const found = frame.rows.filter(r => r.kind === "finding").length, filed = frame.rows.length - found;
-  const holds = [found && m.frameFindings(found), filed && m.frameFilings(filed)].filter(Boolean).join(" · ");
   return <motion.div className="quarter-frame" role="group" aria-label={heading.title} layout={rowMotion.layout} layoutDependency={rowMotion.layoutDependency}>
     <div className="quarter-frame-head" aria-hidden="true">
       <span className="quarter-frame-title">{heading.title}</span>
       {heading.end && <span className="quarter-frame-end">{heading.end}</span>}
-      <span className="quarter-frame-holds">{holds}</span>
     </div>
     {children}
   </motion.div>;
@@ -289,10 +294,10 @@ function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & {
   </RailRow>;
 }
 
-function FindingRow({ finding, date, verdict, checked, onClick, arrive, motion, tip }: RowProps & { finding: VerifiedFinding; date: string; verdict?: "pass" | "fail" }) {
+function FindingRow({ finding, verdict, checked, onClick, arrive, motion, tip }: RowProps & { finding: VerifiedFinding; verdict?: "pass" | "fail" }) {
   const title = normalizeDisplayText(finding.title);
   const severity = `${KIND_LABEL[finding.kind]} · ${severityLabel(finding.severity)}`;
-  const meta = join([date && shortDate(date), KIND_LABEL[finding.kind], VIEW_LABEL[finding.anchors.view]]);
+  const meta = join([KIND_LABEL[finding.kind], VIEW_LABEL[finding.anchors.view]]);
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row finding-row" data-kind={finding.kind} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
     {...tip(title, langOf(finding.title), severity)}>

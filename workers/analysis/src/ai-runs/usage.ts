@@ -39,7 +39,7 @@ export function aiUsageKind(stage: string): string {
 
 /** Messages API usage. After a server-side fallback, `iterations` lists every attempt and the top level only the last. */
 type TokenUsage = { input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown };
-type ProviderUsage = TokenUsage & { iterations?: unknown };
+type ProviderUsage = TokenUsage & { iterations?: unknown; server_tool_use?: { web_search_requests?: unknown } };
 const count = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 /** Input is everything the model read, cached or not; cached is the part read from the prompt cache. */
 const tokens = (usage: TokenUsage) => ({
@@ -71,7 +71,7 @@ export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, c
     reasoningTokens: null,
     durationMs: Math.max(0, Math.round(call.durationMs)),
     outcome: error === null ? "ok" : error.startsWith("model-timeout:") ? "timeout" : "error",
-    searchCalls: call.searchCalls ?? 0,
+    searchCalls: call.searchCalls ?? count(usage.server_tool_use?.web_search_requests) ?? 0,
     ...(call.userHash ? { userHash: call.userHash } : {}),
     ...(call.conversationId ? { conversationId: call.conversationId } : {}),
   };

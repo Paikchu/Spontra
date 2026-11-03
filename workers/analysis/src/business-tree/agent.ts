@@ -1,15 +1,16 @@
+import { nativeSearches, nativeSearchTool, NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
+import type { AgentTool } from "../tool-loop.ts";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel, type TreeSource, type TreeStep } from "../../../../shared/analysis-contract/business-tree.ts";
 import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasContent, issuerNames, lineAliases, namedIn, namesAncestor, plainText, properName, quotedIn, quoteProblem, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
-import type { SearchHit } from "../web-search/types.ts";
 import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** A disclosed business as the flow draws it, with the children the statement itself discloses under it. */
 export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{ flowNodeId: string; name: string }> };
 /** A filing the published flow itself was read from. */
 export type TreeFiling = { url: string; title: string; publishedAt: string | null };
-export type TreeSearch = Pick<WebSearchService, "search" | "fetchContent">;
+export type TreeSearch = Pick<WebSearchService, "fetchContent">;
 /**
  * The filing library: the company's SEC documents already split into verbatim passages.
  * Reading an SEC source through it is a D1 lookup; null means the library does not hold the document.
@@ -32,7 +33,7 @@ export type TreeTool = { name: string; description: string; strict: true; input_
 export type TreeReply = { content: TreeBlock[]; stopReason: string | null; refusalCategory?: string | null } | { error: string };
 export type TreeModel = {
   /** One turn of the loop, taken through the tools. `messages` is the whole exchange so far; it only ever grows. */
-  act(stage: string, system: string, tools: TreeTool[], messages: TreeMessage[]): Promise<TreeReply>;
+  act(stage: string, system: string, tools: AgentTool[], messages: TreeMessage[]): Promise<TreeReply>;
   /** One JSON object, for the review; an empty object when the reply was not one. */
   judge(stage: string, system: string, payload: unknown): Promise<Record<string, unknown>>;
 };
@@ -44,7 +45,7 @@ export const TREE_BUDGET = { turns: 16, searches: 6, reads: 6 } as const;
 const FAILED_REPLIES = 3;
 /** Tool calls one reply may make that the harness runs; the rest are answered "not run". */
 const CALLS_PER_TURN = 8;
-const READ_CHARS = 6_000, SNIPPET_CHARS = 400;
+const READ_CHARS = 6_000;
 /** Forums, video and quote aggregators describe nothing a filing or vendor page would not. */
 const EXCLUDED = ["reddit.com", "youtube.com", "quora.com", "x.com", "twitter.com", "facebook.com", "tiktok.com", "ycharts.com", "macrotrends.net", "stocktwits.com"];
 /** Words that match every paragraph of a filing, so they cannot tell the model's focus apart from boilerplate. */
@@ -82,7 +83,7 @@ const REVENUE = { type: "array", items: object({ type: { type: "string", enum: [
 const SUMMARY = { anyOf: [CLAIM, { type: "null" }] };
 /** The loop's actions as Claude tools. Strict: the arguments always match the schema, so the harness checks only what they say. */
 export const TREE_TOOLS: TreeTool[] = [
-  { name: "search", description: "English web search; returns titles and snippets, each with a source ID. Make the query specific to the company and this business.", input_schema: object({ query: { type: "string" } }) },
+
   { name: "read", description: "Read a source's text: the harness returns its passages about focus. source is a source ID; focus is the English keywords you are looking for.", input_schema: object({ source: { type: "string" }, focus: { type: "string" } }) },
   {
     name: "add", description: `Add nodes under parent ("root" or an existing node ID), at most 8 at a time. The harness checks each one, gives an ID to each that passes and says why each other one failed. summary may be null and revenue empty.`,
@@ -221,7 +222,6 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   let rootSummary: TreeClaim | null = null;
   const steps: TreeStep[] = [];
   const used = { searches: 0, reads: 0 };
-  const queries = new Set<string>();
   let refusedFinish = false, askedDepth = false, failedReplies = 0, quietReplies = 0, turn = 0;
   // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
   let annualReport: string | null = null;
@@ -258,7 +258,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     ...(annualReport ? { annualReport } : {}),
   }) }];
   for (turn = 1; turn <= TREE_BUDGET.turns; turn++) {
-    const reply = await stage(`${prefix}-t${turn}-act`, () => ctx.model.act(`business-tree-${index + 1}-${turn}`, SYSTEM, TREE_TOOLS, messages));
+    const reply = await stage(`${prefix}-t${turn}-act`, () => ctx.model.act(`business-tree-${index + 1}-${turn}`, `${SYSTEM}\n${NATIVE_SEARCH_INSTRUCTION}`, [...TREE_TOOLS, ...(used.searches < TREE_BUDGET.searches ? [nativeSearchTool(TREE_BUDGET.searches - used.searches, EXCLUDED)] : [])], messages));
     // No usable reply (the provider failed, Claude declined, or the reply was cut off): nothing joins the exchange and the
     // next turn asks again. Several in a row stop the run with the provider's own words, so it is retried later.
     const failure = "error" in reply ? reply.error
@@ -271,8 +271,17 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     }
     failedReplies = 0;
     messages.push({ role: "assistant", content: reply.content });
+    const webNotes: TreeBlock[] = [];
+    for (const batch of nativeSearches(reply.content)) {
+      used.searches++;
+      const listed = batch.hits.flatMap(hit => { const m = library.register(hit); return m ? [`[${m.id}] ${m.title} (${m.url})`] : []; });
+      const observation = batch.error ?? `Native search sources (read these before citing):\n${listed.join("\n")}`;
+      webNotes.push({ type: "text", text: observation });
+      steps.push({ thought: "", action: "web_search", input: batch.query, observation });
+    }
     const said = reply.content.flatMap(b => b.type === "text" && typeof b.text === "string" ? [b.text] : []).join(" ").trim().slice(0, 600);
     const calls = reply.content.filter((b): b is ToolCall => b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string");
+    if (!calls.length && webNotes.length) { quietReplies = 0; messages.push({ role: "user", content: webNotes }); continue; }
     if (!calls.length) {
       // A reply with no call is asked once to go on; a second in a row ends this business with what it has.
       steps.push({ thought: said, action: "none", input: "", observation: "The reply called no tool." });
@@ -292,7 +301,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
       results.push({ type: "tool_result", tool_use_id: call.id, content: `${outcome.observation}\n\n${budget()}`, ...(outcome.error ? { is_error: true } : {}) });
     }
     if (done) break;
-    messages.push({ role: "user", content: results });
+    messages.push({ role: "user", content: [...results, ...webNotes] });
   }
 
   // The review sees each node with the passages its citations point to, and may only remove.
@@ -362,17 +371,6 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   /** Runs one tool call. Searches and reads are durable steps under `step`; the tree edits are pure. */
   async function perform(name: string, input: Record<string, unknown>, step: string): Promise<Outcome> {
     switch (name) {
-      case "search": {
-        const query = searchQuery(ctx.companyName, input.query);
-        if (!query) return { observation: "query is empty or too short; give a specific English query.", error: true };
-        if (used.searches >= TREE_BUDGET.searches) return { observation: "No searches left; read an existing source, or add / finish.", error: true };
-        if (queries.has(query.toLowerCase())) return { observation: "This query was already run; try another angle." };
-        queries.add(query.toLowerCase()); used.searches++;
-        const found = await stage(`${step}-search`, () => runSearch(ctx, query));
-        if ("error" in found) return { observation: `Search failed (${found.error}); try another query or use the sources you have.`, error: true };
-        const listed = found.hits.flatMap(hit => { const m = library.register(hit); return m ? [`[${m.id}] ${m.title} (${hostname(m.url)}${m.publishedAt ? ` · ${m.publishedAt.slice(0, 10)}` : ""})\n${hit.snippet.replace(/\s+/g, " ").slice(0, SNIPPET_CHARS)}`] : []; });
-        return { observation: listed.length ? `Search "${query}" returned ${listed.length} results:\n${listed.join("\n")}` : `Search "${query}" returned no results.` };
-      }
       case "read": {
         const material = library.get(input.source);
         if (!material) return { observation: `There is no source ${String(input.source)}; source must be a source ID.`, error: true };
@@ -735,21 +733,6 @@ function sourceList(library: Library) {
   return [...read, ...rest].map(m => ({ id: m.id, title: m.title.slice(0, 120), host: hostname(m.url), read: m.read }));
 }
 
-function searchQuery(company: string, raw: unknown): string | null {
-  const query = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim().slice(0, 200) : "";
-  if (query.length < 6) return null;
-  const token = company.toLowerCase().split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? company.toLowerCase();
-  return query.toLowerCase().includes(token) ? query : `${company} ${query}`;
-}
-
-async function runSearch(ctx: BranchContext, query: string): Promise<{ hits: SearchHit[] } | { error: string }> {
-  try {
-    const result = await ctx.search.search({ query, maxResults: 6, depth: "advanced", excludeDomains: EXCLUDED }, ctx.scope);
-    // A sec.gov hit is dropped: SEC text reaches the agent only from the library, never as a search provider's excerpt.
-    return { hits: result.data.results.filter(h => isHttps(h.url) && !isSecUrl(h.url)).slice(0, 6).map(h => ({ ...h, title: h.title.slice(0, 300), snippet: h.snippet.slice(0, 1_500) })) };
-  } catch (error) { return { error: error instanceof Error ? error.message.slice(0, 120) : "unknown" }; }
-}
-
 async function readPage(ctx: BranchContext, url: string, terms: string[]): Promise<{ text: string } | { error: string }> {
   try {
     const page = await ctx.search.fetchContent({ url, depth: "advanced" }, { ...ctx.scope, maxAgeMs: 30 * 24 * 60 * 60_000 });
@@ -809,5 +792,4 @@ function canonical(value: string): string | null {
 function validDate(value: string | null): string | null {
   return value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
 }
-function isHttps(value: string): boolean { return canonical(value) !== null; }
 function hostname(value: string): string { try { return new URL(value).hostname.toLowerCase(); } catch { return ""; } }
