@@ -5,63 +5,50 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
-import { insiderPersonKey, personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { personRowId } from "../src/event-noise.ts";
+import { PersonHistory } from "../src/InsiderHistory.tsx";
 import { RailStream } from "../src/RailStream.tsx";
 
 const publication = readEventsPublication(JSON.parse(readFileSync(new URL("./fixtures/nvda-events.json", import.meta.url), "utf8")), "NVDA")!;
 const sales = publication.events.filter(e => e.insider?.ownerName === "STEVENS MARK A" && e.filedAt.startsWith("2026-09"));
-const stevens = insiderPersonKey(sales[0]!.insider!);
 const render = (focus: string | null = sales[0]!.id, filter: "insiders" | "key" = "insiders") => renderToStaticMarkup(createElement(RailStream, {
   rail: { recent: railEntries(null, publication), earlier: [], quiet: 0, since: "2026-01-01" },
   findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus,
   onFocusItem: () => {}, onFocusFinding: () => {}, filter,
 }));
 
-test("a focused sale opens its person's row, with the history's bilingual labels and SEC links", () => {
+const history = (event = sales[0]!) => renderToStaticMarkup(createElement(PersonHistory, { event, publication, ticker: publication.ticker, updates: 0, onFocusEvent: () => {} }));
+
+test("a Form 4 on the stage lists its filer's every transaction, with bilingual labels and SEC links", () => {
   setLocale("zh-CN");
-  const zh = render();
-  assert.ok(!zh.includes("内部人交易"));
-  assert.ok(zh.includes('<span class="insider-name" lang="en">STEVENS MARK A</span>'));
-  // The person's row is open (the focused trade is theirs) and lists their lines from the rail: sale label, price, SEC link.
-  assert.ok(zh.includes(`aria-expanded="true" aria-controls="insider-${stevens}-panel"`));
-  assert.ok(zh.includes("卖出"));
-  assert.ok(zh.includes("美元"));
-  assert.ok(zh.includes("交易后持股"));
-  assert.ok(zh.includes('target="_blank" rel="noopener noreferrer"'));
-  assert.ok(zh.includes("SEC 文件 ↗"));
-  assert.ok(zh.includes(`aria-pressed="true"`));
-  assert.ok(zh.includes("净卖出"));
+  const zh = history();
+  assert.ok(zh.includes('<span lang="en">STEVENS MARK A</span>'));
+  assert.ok(zh.includes('aria-label="STEVENS MARK A：全部 Form 4 交易"'));
+  assert.ok(zh.includes("净卖出") && zh.includes("卖出") && zh.includes("美元") && zh.includes("交易后持股"));
+  assert.ok(zh.includes('target="_blank" rel="noopener noreferrer"') && zh.includes("SEC 文件 ↗"));
+  // The lines of the filing on stage are lit; a line of another listed filing opens it.
+  assert.ok(zh.includes("data-lit"));
+  assert.ok(zh.includes('class="insider-history-open" type="button" aria-label="打开 '));
+  // Every September filing of the person is in the history, not only the one on stage.
+  for (const sale of sales) assert.ok(zh.includes(`href="${sale.documentUrl}"`) || zh.includes(sale.insider!.lines[0]!.date), sale.id);
   setLocale("en");
-  const en = render();
-  assert.ok(!en.includes("Insider trades"));
-  assert.ok(en.includes("Net sold"));
-  assert.ok(en.includes("Owned after"));
-  assert.ok(en.includes("SEC filing ↗"));
-  // Nothing focused: every person is closed and no history is rendered.
-  const closed = render(null);
-  assert.ok(!closed.includes('aria-expanded="true"'));
-  assert.ok(!closed.includes("insider-history"));
+  const en = history();
+  assert.ok(en.includes("Net sold") && en.includes("Owned after") && en.includes("SEC filing ↗"));
+  assert.ok(en.includes('aria-label="STEVENS MARK A: every Form 4 transaction"'));
 });
 
-test("in the Key reading every person is a row of the rail, with no group row and no Show all", () => {
+test("in the Key reading each Form 4 is its own row of the rail, with no person rows and nothing to expand", () => {
   setLocale("en");
   const html = render(null, "key");
-  // The rail leaves out Form 4s with nothing traded, so the people are those of the rail's filings.
-  const persons = personsFromEvents(railEntries(null, publication).flatMap(item => item.kind === "event" && item.event.insider ? [item.event] : []), new Date());
-  assert.ok(persons.length > 5);
-  assert.ok(!html.includes("Show all") && !html.includes("people"));
-  assert.ok(!html.includes("insider-card"));
-  // One collapsed row per person, each its own row of the rail, latest trade first; older people join as the rail pages.
-  const shown = html.split('class="insider-person" data-class="insider"').length - 1;
-  assert.ok(shown >= 5 && shown <= persons.length);
-  const at = persons.slice(0, shown).map(person => html.indexOf(`lang="en">${person.name}</span>`));
-  assert.ok(at.every((i, n) => i >= 0 && (n === 0 || at[n - 1]! < i)));
-  // No Form 4 lists as its own event row.
-  assert.ok(!html.includes('class="stream-row" data-class="insider"'));
-  assert.equal(personRowId("123"), "insider:123");
+  assert.ok(!html.includes("insider-person") && !html.includes("insider-history") && !html.includes("aria-expanded"));
+  assert.ok(html.includes('aria-checked="false" data-class="insider"'));
+  assert.ok(html.includes('<span class="insider-name" lang="en">STEVENS MARK A</span>'));
+  assert.ok(!html.includes("Net sold"));
+  // A focused sale is the checked row, not an opened person.
+  const focused = render(sales[0]!.id, "insiders");
+  assert.ok(focused.includes('aria-checked="true" data-class="insider"'));
+  assert.ok(!focused.includes("insider-history"));
 });
 
 test("single insider titles include localized transaction amounts, and the person row tags no ESPP purchase as a sale", () => {
@@ -76,7 +63,7 @@ test("single insider titles include localized transaction amounts, and the perso
       findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: null,
       onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key",
     }));
-    assert.ok(html.includes('class="insider-person" data-class="insider"'));
+    assert.ok(html.includes('aria-checked="false" data-class="insider"'));
     assert.ok(html.includes('<span class="insider-name" lang="en">Kress Colette</span>'));
     assert.ok(html.includes('class="insider-amount"'));
     assert.ok(html.includes(locale === "zh-CN" ? "765万美元" : "$7.65M"));

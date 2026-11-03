@@ -6,9 +6,9 @@ import { labels, messages } from "@/packages/web/src/i18n";
 import { fetchInsiderHistory, fetchInsiders } from "./company-data";
 
 /**
- * Insider trades by person on the rail. The people and their history come from Spontra Analysis's ledger, which holds
- * every Form 4 of the company; until it answers (or when it cannot), the rail's own filings are grouped here by the
- * same rules, so the rows read the same either way, only fewer.
+ * Insider trades by person, under a Form 4 on the stage. The people and their history come from Spontra Analysis's
+ * ledger, which holds every Form 4 of the company; until it answers (or when it cannot), the events publication's own
+ * filings are grouped here by the same rules, so the history reads the same either way, only shorter.
  */
 
 const m = messages({
@@ -43,27 +43,23 @@ export function netValueUnknown(person: Pick<InsiderPersonSummary, "key" | "late
     && e.insider.lines.some(l => l.price == null && tradeSide(l.code, l.acquiredDisposed, l.derivative) !== "other"));
 }
 
-/** The rail's filings grouped as the ledger groups them, for the rows before the backend answers. */
+/** The filings grouped as the ledger groups them, for the history before the backend answers. */
 export function fallbackInsiders(ticker: string, events: readonly CompanyEvent[], now: Date): InsidersPublication {
   return { schemaVersion: "insiders.v1", ticker, source: "events", newDays: INSIDER_NEW_DAYS, asOf: now.toISOString(), persons: personsFromEvents(events, now) };
 }
 
-/**
- * The people of the company: the backend's answer once it comes, the rail's own grouping before and without it. Read only
- * while `enabled`: a reading that lists no insider filing asks for none.
- */
-export function useInsiders(ticker: string, updates: number, enabled: boolean, fallback: () => InsidersPublication): InsidersPublication {
+/** The people of the company: the backend's answer once it comes, the filings' own grouping before and without it. */
+export function useInsiders(ticker: string, updates: number, fallback: () => InsidersPublication): InsidersPublication {
   const [read, setRead] = useState<{ key: string; publication: InsidersPublication | null } | null>(null);
   const key = `${ticker}:${updates}`;
   useEffect(() => {
-    if (!enabled) return;
     const controller = new AbortController();
     fetchInsiders(ticker, controller.signal)
       .then(publication => { if (!controller.signal.aborted) setRead({ key, publication }); })
       .catch(() => { if (!controller.signal.aborted) setRead({ key, publication: null }); });
     return () => controller.abort();
-  }, [ticker, key, enabled]);
-  return enabled && read?.key === key && read.publication ? read.publication : fallback();
+  }, [ticker, key]);
+  return read?.key === key && read.publication ? read.publication : fallback();
 }
 
 export type InsiderHistory = { items: InsiderTransactionRow[]; nextCursor: string | null; phase: "idle" | "loading" | "ready" | "error"; more: () => void };
@@ -71,16 +67,15 @@ export type InsiderHistory = { items: InsiderTransactionRow[]; nextCursor: strin
 type HistoryState = { key: string; items: InsiderTransactionRow[]; nextCursor: string | null; phase: "idle" | "ready" | "error"; pending: boolean };
 
 /**
- * One person's history, read a page at a time once their row is open. From the ledger when the people came from it;
- * paged from the rail's filings when they did not, so the row opens either way. `more` asks for the page after the
- * cursor, or tries again after a failure.
+ * One person's history, read a page at a time. From the ledger when the people came from it; paged from the filings
+ * when they did not, so it lists either way. `more` asks for the page after the cursor, or tries again after a failure.
  */
-export function useInsiderHistory(ticker: string, personKey: string, open: boolean, source: InsidersPublication["source"], events: readonly CompanyEvent[], now: Date): InsiderHistory {
+export function useInsiderHistory(ticker: string, personKey: string, source: InsidersPublication["source"], events: readonly CompanyEvent[], now: Date): InsiderHistory {
   const key = `${ticker}:${personKey}:${source}`;
   const [state, setState] = useState<HistoryState>({ key, items: [], nextCursor: null, phase: "idle", pending: false });
   const current: HistoryState = state.key === key ? state : { key, items: [], nextCursor: null, phase: "idle", pending: false };
-  // The first page is pending from the moment the row opens; later ones when asked for. Pending holds through the read.
-  const pending = source === "ledger" && (current.pending || (open && current.phase === "idle"));
+  // The first page is pending from the start; later ones when asked for. Pending holds through the read.
+  const pending = source === "ledger" && (current.pending || current.phase === "idle");
   useEffect(() => {
     if (!pending) return;
     const cursor = current.nextCursor;
@@ -92,9 +87,9 @@ export function useInsiderHistory(ticker: string, personKey: string, open: boole
     fetchInsiderHistory(ticker, personKey, cursor, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
   }, [key, pending]); // eslint-disable-line react-hooks/exhaustive-deps
-  // From the rail's own filings the pages are derived, never fetched: one more page each time `more` is asked.
+  // From the filings the pages are derived, never fetched: one more page each time `more` is asked.
   const [pages, setPages] = useState(1);
-  const fallback = useMemo(() => source === "ledger" || !open ? null : pageRows(rowsFromEvents(events, now).filter(r => r.personKey === personKey), null, pages * INSIDER_HISTORY_PAGE), [source, open, events, now, personKey, pages]);
+  const fallback = useMemo(() => source === "ledger" ? null : pageRows(rowsFromEvents(events, now).filter(r => r.personKey === personKey), null, pages * INSIDER_HISTORY_PAGE), [source, events, now, personKey, pages]);
   if (fallback) return { items: fallback.items, nextCursor: fallback.nextCursor, phase: "ready", more: () => setPages(n => n + 1) };
   const more = () => { if (current.phase === "error" || (current.phase === "ready" && current.nextCursor)) setState({ ...current, pending: true }); };
   return { items: current.items, nextCursor: current.nextCursor, phase: pending ? "loading" : current.phase, more };

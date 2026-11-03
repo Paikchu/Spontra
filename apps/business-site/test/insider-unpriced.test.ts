@@ -7,10 +7,9 @@ import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import type { CompanyEvent } from "../../../shared/analysis-contract/events.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
-import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { dollars, eventTitle, insiderLens, insiderTotalDollars, partialDollars } from "../src/events-model.ts";
 import { netValueUnknown } from "../src/insiders-model.ts";
-import { RailStream } from "../src/RailStream.tsx";
+import { PersonHistory } from "../src/InsiderHistory.tsx";
 
 const publication = readEventsPublication(JSON.parse(readFileSync(new URL("./fixtures/nvda-events.json", import.meta.url), "utf8")), "NVDA")!;
 const byId = (id: string) => publication.events.find(e => e.id === id)!;
@@ -24,10 +23,9 @@ function unpriced(e: CompanyEvent): CompanyEvent {
   return { ...e, insider: { ...t, lines: t.lines.map(l => l.code === "S" ? { ...l, price: null } : l), sold: { shares: t.sold!.shares, proceeds: null, averagePrice: null, pricedShares: 0 } } };
 }
 
-const renderRail = (events: CompanyEvent[]) => renderToStaticMarkup(createElement(RailStream, {
-  rail: { recent: railEntries(null, { ...publication, events }), earlier: [], quiet: 0, since: "2025-01-01" },
-  findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: null,
-  onFocusItem: () => {}, onFocusFinding: () => {}, filter: "insiders",
+/** The person's history as the stage shows it under their Form 4, from these filings alone. */
+const renderRail = (events: CompanyEvent[]) => renderToStaticMarkup(createElement(PersonHistory, {
+  event: events[0]!, publication: { ...publication, events }, ticker: "NVDA", updates: 0, onFocusEvent: () => {},
 }));
 
 test("a sale with null proceeds shows no amount in its title and an unknown amount as —", () => {

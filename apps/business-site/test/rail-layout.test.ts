@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CompanyEvent, EventsPublication } from "../../../shared/analysis-contract/events.ts";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "../../../shared/analysis-contract/filings.ts";
-import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
-import { insiderFilings, personRowId, railLayout, rowLeaves, streamRows } from "../src/event-noise.ts";
+import { eventImportance, readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
+import { railLayout, rowLeaves, streamRows } from "../src/event-noise.ts";
+import type { RailItem } from "../src/reports-model.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 
 const NOW = new Date("2026-11-01T00:00:00Z");
@@ -43,7 +44,10 @@ const trades = [
   trade("old", "2026-07-01", MCBEE, "sell", 9_000_000),
 ];
 
-test("every insider filing of any age is held for its person, and the people group them, latest trade first", () => {
+const insiderFilings = (all: readonly RailItem[]) => all.flatMap(item => item.kind === "event" && item.event.class === "insider" ? [item] : []).sort((a, b) => b.date.localeCompare(a.date));
+const ids = (all: readonly RailItem[], filter: Parameters<typeof railLayout>[1]) => streamRows(railLayout(all, filter), [], null, filter).map(r => r.id);
+
+test("the people of the filings group them by the ledger's rule, latest trade first", () => {
   const filings = insiderFilings(items(trades));
   assert.deepEqual(filings.map(item => item.id), ["i1", "m1", "a1", "i2", "c1", "b1", "old"]);
   const persons = personsFromEvents(filings.map(item => item.event), NOW);
@@ -57,65 +61,26 @@ test("every insider filing of any age is held for its person, and the people gro
   assert.equal(persons.filter(p => p.planned).length, 2);
 });
 
-test("no insider filings, no people", () => {
-  const earnings = items([event({ id: "e", form: "8-K", class: "earnings", filedAt: "2026-10-01", items: ["2.02"] })]);
-  assert.deepEqual(insiderFilings(earnings), []);
-  assert.deepEqual(railLayout([], "key").insiders, []);
-  // People handed to a reading without insider filings never list.
-  const persons = personsFromEvents(items(trades).flatMap(item => item.kind === "event" ? [item.event] : []), NOW);
-  assert.deepEqual(streamRows(railLayout(earnings, "key"), [], null, "key", persons).map(r => r.id), ["e"]);
-});
-
-test("each person lists as a row of their own at the date of their latest trade, among the other rows", () => {
+test("every Form 4 lists as its own row at its date, among the other rows, with nothing folded under a person", () => {
   const earnings = event({ id: "earn", form: "8-K", class: "earnings", filedAt: "2026-08-11", items: ["2.02"] });
   const deal = event({ id: "deal", form: "8-K", class: "deal", filedAt: "2026-10-16", items: ["1.01"] });
   const vote = event({ id: "vote", form: "8-K", class: "vote", filedAt: "2026-09-15", items: ["5.07"] });
   const all = items([...trades, earnings, deal, vote]);
-  const persons = personsFromEvents(insiderFilings(all).map(item => item.event), NOW);
-  const id = (owner: [string, string]) => personRowId(owner[0]);
-  for (const filter of ["key", "all"] as const) {
-    const rows = streamRows(railLayout(all, filter), [], null, filter, persons);
-    // One date order: the deal between Magnetar (10.18) and Agarwal (10.15), the earnings release of 08.11 last.
-    const order = [id(INTRATOR), id(MAGNETAR), "deal", id(AGARWAL), id(MCBEE), "vote", id(BUYER), "earn"];
-    assert.deepEqual(rows.map(r => r.id), filter === "all" ? order : order.filter(id => rows.some(r => r.id === id)), filter);
-    assert.equal(rows.filter(r => r.kind === "person").length, 5, filter);
-    // A person's row holds their filings of any age, so a trade in focus finds the row to open.
-    const mcbee = rows.find(r => r.id === id(MCBEE))!;
-    assert.ok(mcbee.kind === "person");
-    assert.deepEqual(mcbee.kind === "person" && mcbee.items.map(item => item.id), ["c1", "old"]);
-    assert.equal(mcbee.date, "2026-09-30");
+  assert.deepEqual(ids(all, "all"), ["i1", "m1", "deal", "a1", "i2", "c1", "vote", "b1", "earn", "old"]);
+  assert.deepEqual(ids(all, "insiders"), ["i1", "m1", "a1", "i2", "c1", "b1", "old"]);
+  for (const filter of ["earnings", "material"] as const) assert.ok(!ids(all, filter).some(id => trades.some(t => t.id === id)), filter);
+  // Key keeps the date order and lists the Form 4s that matter, each as itself.
+  const events = all.flatMap(item => item.kind === "event" ? [item.event] : []);
+  assert.deepEqual(ids(all, "key"), ids(all, "all").filter(id => eventImportance(events.find(e => e.id === id)!, events) === "key"));
+  for (const filter of ["key", "all", "insiders"] as const) {
+    const rows = railLayout(all, filter).rows;
+    assert.ok(rows.every(row => row.kind === "item" || !row.items.some(item => item.kind === "event" && item.event.class === "insider")), filter);
+    assert.equal(rows.flatMap(rowLeaves).length, rows.length, filter);
   }
-  // The Insiders reading is the people alone, latest trade first.
-  assert.deepEqual(streamRows(railLayout(all, "insiders"), [], null, "insiders", persons).map(r => r.id), persons.map(p => personRowId(p.key)));
 });
 
-test("the earnings filing lists at its date, the people hold the trades, and nothing shows twice", () => {
-  const earnings = event({ id: "earn", form: "8-K", class: "earnings", filedAt: "2026-08-11", items: ["2.02"] });
-  const deal = event({ id: "deal", form: "8-K", class: "deal", filedAt: "2026-10-25", items: ["1.01"] });
-  const all = items([...trades, earnings, deal]);
-  for (const filter of ["key", "all"] as const) {
-    const layout = railLayout(all, filter);
-    const ids = layout.rows.flatMap(rowLeaves).map(item => item.id);
-    assert.deepEqual(ids, filter === "all" ? ["deal", "earn"] : ["deal", "earn"].filter(id => ids.includes(id)), filter);
-    assert.ok(ids.includes("earn"), filter);
-    assert.equal(layout.insiders.length, 7, filter);
-    assert.ok(!layout.rows.flatMap(rowLeaves).some(item => layout.insiders.some(trade => trade.id === item.id)), filter);
-  }
-  // A trade older than the window lists through its person too, never as its own row.
-  assert.ok(!railLayout(all, "all").rows.flatMap(rowLeaves).some(item => item.id === "old"));
-  assert.ok(railLayout(all, "all").insiders.some(item => item.id === "old"));
-  // The Insiders reading is the people alone; the other event readings get no people.
-  const insiders = railLayout(all, "insiders");
-  assert.equal(insiders.insiders.length, 7);
-  assert.deepEqual(insiders.rows, []);
-  for (const filter of ["earnings", "material"] as const) assert.deepEqual(railLayout(all, filter).insiders, []);
-});
-
-test("a 10-Q report lists at its own date, after the newer rows", () => {
+test("a 10-Q report lists at its own date, among the Form 4s", () => {
   const report = { accessionNumber: "q3", form: "10-Q", date: "2026-10-12", periodEnd: "2026-09-30", headline: "Quarter headline", sources: [] } as unknown as PublicFilingDigest;
   const release = event({ id: "earn", form: "8-K", class: "earnings", filedAt: "2026-08-11", items: ["2.02"] });
-  const all = items([...trades, release], [report]);
-  const persons = personsFromEvents(insiderFilings(all).map(item => item.event), NOW);
-  const ids = streamRows(railLayout(all, "all"), [], null, "all", persons).map(r => r.id);
-  assert.deepEqual(ids, [personRowId("1"), personRowId("2"), personRowId("3"), "q3", personRowId("4"), personRowId("5"), "earn"]);
+  assert.deepEqual(ids(items([...trades, release], [report]), "all"), ["i1", "m1", "a1", "q3", "i2", "c1", "b1", "earn", "old"]);
 });

@@ -7,11 +7,13 @@ import { isTaxWithholdingSale, eventImportance, insiderWindowValueUsd, isKeyInsi
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, insiderFilings, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
-import { timelineFromFilings } from "../src/reports-model.ts";
+import { timelineFromFilings, type RailItem } from "../src/reports-model.ts";
 import { clusterByGap } from "../src/timeline-model.ts";
 
+/** The rail's Form 4s, newest first. */
+const insiderFilings = (items: readonly RailItem[]) => items.flatMap(item => item.kind === "event" && item.event.class === "insider" ? [item] : []).sort((a, b) => b.date.localeCompare(a.date));
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
 const metaEvents = readEventsPublication(fixture("meta-events.json"), "META")!;
 const tsmEvents = readEventsPublication(fixture("tsm-events.json"), "TSM")!;
@@ -57,7 +59,7 @@ test("sales by one person across months are one person, and the leaves are the f
   });
   const publication: EventsPublication = { schemaVersion: "events.v1", ticker: "TEST", checkedAt: "2026-10-24T00:00:00Z", pendingInsider: 0, events: [sale("a", "2026-10-21", 1575), sale("b", "2026-10-14", 1575), sale("c", "2026-10-07", 1575), sale("d", "2026-09-30", 1575)] };
   const entries = railEntries(null, readEventsPublication(publication, "TEST"));
-  // The reading lists each filing as itself; the rail lists them through the person who filed them.
+  // The reading lists each filing as itself; the stage groups them by the person who filed them.
   const rows = noiseRows(entries, "insiders");
   assert.equal(rows.filter(row => row.kind === "item").length, 4);
   assert.equal(rows.flatMap(rowLeaves).length, 4);
@@ -203,7 +205,7 @@ test("text detection and mixed filings preserve both value legs", () => {
   assert.equal(insiderWindowValueUsd(e), 0);
 });
 
-test("TSM employee purchases and routine 6-Ks leave Key empty, and every Form 4 lists through its person in the other readings", () => {
+test("TSM employee purchases and routine 6-Ks leave Key empty, and every Form 4 lists as itself in the other readings", () => {
   const entries = railEntries(null, tsmEvents);
   assert.equal(filterCounts(entries).key, 0);
   assert.ok(tsmEvents.events.every(e => eventImportance(e, tsmEvents.events) === "routine"));

@@ -9,6 +9,7 @@ import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
 import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, partialDollars, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
+import { PersonHistory } from "./InsiderHistory";
 
 const ITEM_LABEL = labels({
   "1.01": "Material agreement", "1.02": "Agreement terminated", "1.05": "Cybersecurity incident", "2.01": "Acquisition or disposition completed", "2.02": "Results of operations", "2.03": "New financial obligation", "2.04": "Acceleration triggered", "2.05": "Exit costs",
@@ -60,15 +61,17 @@ const m = messages({
  * analysis is written by and verified here as a finding is, drawn by the finding's own blocks. Until a filing has one
  * (a routine Form 4, a company without AI analysis), its chart and figures and the filing's own summary stand in, in
  * the same single-column document; the summary's headline is the title, so it is not repeated. The tag on an insider
- * sale is rule-based.
+ * sale is rule-based. A Form 4 closes with its filer's every transaction of the company, newest first.
  */
-export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onClose }: {
   event: CompanyEvent;
   publication: EventsPublication;
   ticker: string;
   data: FindingData;
   updates: number;
   nodeColor: (id: string) => string;
+  /** Opens another filing of the events publication on the stage. */
+  onFocusEvent: (id: string) => void;
   onClose: () => void;
 }) {
   const counts = useMemo(() => shareCounts(data.fundamentals), [data.fundamentals]);
@@ -77,6 +80,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   const analysis = useItemAnalysis(ticker, event.id, updates);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
   const title = verified?.finding.title ?? eventTitle(event);
+  const history = event.insider ? <PersonHistory event={event} publication={publication} ticker={ticker} updates={updates} onFocusEvent={onFocusEvent} /> : null;
   return <section className="lens event-lens" data-class={event.class} aria-label={m.event(eventTitle(event))} key={event.id}>
     <header className="lens-head">
       <div className="lens-title">
@@ -89,7 +93,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row"><div className="lens-doc-cell">
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} after={history} fallback={<div className="lens-doc"><div className="lens-doc-row"><div className="lens-doc-cell">
       {insider && !insider.stake && <InsiderLadder model={insider} event={event} />}
       {insider && <InsiderReading model={insider} event={event} />}
       {event.summary ? <>
@@ -107,7 +111,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <li><a href={event.documentUrl} target="_blank" rel="noopener noreferrer">{m.filing(event.form)}<span aria-hidden="true"> ↗</span></a></li>
         {event.exhibits.map(x => <li key={x.url}><a href={x.url} target="_blank" rel="noopener noreferrer">{x.type} · {x.title}<span aria-hidden="true"> ↗</span></a></li>)}
       </ol>
-    </div></div></div>} />
+    </div></div>{history}</div>} />
   </section>;
 }
 
