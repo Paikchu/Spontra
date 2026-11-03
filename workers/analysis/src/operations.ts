@@ -361,7 +361,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       if (!ticker) throw new Error("Invalid SEC job lookup.");
       assertTrackedTicker(env, ticker);
       // A filing the archive does not hold yet is analysed by the run its `filing.archived` event starts.
-      if (!await archiveHolds(archive(), ticker, filing.accessionNumber)) return false;
+      if (!await archiveHolds(archive(), ticker, filing.accessionNumber, filing.documentUrl)) return false;
       if (filing.earningsGroup) {
         const summary = await repository().getSummary(ticker, filing.accessionNumber);
         if (summary?.earningsGroup?.inputKey !== filing.earningsGroup.inputKey) {

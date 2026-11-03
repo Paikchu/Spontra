@@ -1,7 +1,7 @@
 import { archiveFilingDisclosures, disclosureAuditPrefix, readArchivedDocument, ARCHIVE_PREFIX, type StoredAudit } from "../financial-data/disclosure-audit.ts";
 import { withFilingStructure } from "../financial-data/presentation.ts";
 import type { DocumentSource } from "../financial-data/parser.ts";
-import { canonicalSecHtml, type SecReader } from "../financial-data/provider.ts";
+import { canonicalSecHtml, exhibitLinks, type SecReader } from "../financial-data/provider.ts";
 import { classifyExhibit, exhibitTitle, type FoundMaterial } from "../guidance/sources.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { htmlToSecText } from "../sec/sec.ts";
@@ -19,8 +19,11 @@ export type ArchivedDocument = {
   role: "primary" | "exhibit";
   html: string;
 };
-/** A filing as the archive holds it: every document stored for the accession, the body first. */
-export type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; documents: ArchivedDocument[] };
+/**
+ * A filing as the archive holds it: every document stored for the accession, the body first. `complete` says the body
+ * and every exhibit it names are stored; a batch interrupted between them is not, and its readers wait.
+ */
+export type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; complete: boolean; documents: ArchivedDocument[] };
 
 const MIN_EXHIBIT_TEXT = 400;
 const fileOf = (url: string) => decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
@@ -45,9 +48,13 @@ async function pointers(env: ArchiveEnv, ticker: string, accession: string): Pro
   return out;
 }
 
-/** True when the archive holds the filing's body, without reading it. */
-export async function archiveHolds(env: ArchiveEnv, ticker: string, accession: string): Promise<boolean> {
-  return (await pointers(env, ticker, accession)).length > 0;
+/**
+ * True when the archive holds the whole filing: its body and the exhibits the body names (`exhibitLinks`). A body stored
+ * before its exhibits (the collector and the archive task commit one document at a time) does not count yet, so the
+ * report and guidance that follow `filing.archived` read the filing only once it is all there.
+ */
+export async function archiveHolds(env: ArchiveEnv, ticker: string, accession: string, primaryUrl?: string): Promise<boolean> {
+  return (await archivedFiling(env, ticker, accession, primaryUrl))?.complete ?? false;
 }
 
 /**
@@ -76,7 +83,9 @@ export async function archivedFiling(env: ArchiveEnv, ticker: string, accession:
     : { url: d.url, filename: d.file, role: "exhibit", type: exhibitType(d.file), html: d.html });
   documents.sort((a, b) => Number(a.role === "exhibit") - Number(b.role === "exhibit") || a.url.localeCompare(b.url));
   const bodyRecord = records.find(r => r.source.documentUrl === body) ?? records[0]!;
-  return { ticker, accession, form: bodyRecord.source.form, filedAt: bodyRecord.source.filedAt ?? "", reportDate: bodyRecord.source.reportDate ?? "", documents };
+  const held = new Set(documents.map(d => d.url));
+  const complete = exhibitLinks(documents[0]!.html, documents[0]!.url).every(url => held.has(url));
+  return { ticker, accession, form: bodyRecord.source.form, filedAt: bodyRecord.source.filedAt ?? "", reportDate: bodyRecord.source.reportDate ?? "", complete, documents };
 }
 
 /**
@@ -85,7 +94,8 @@ export async function archivedFiling(env: ArchiveEnv, ticker: string, accession:
  */
 export async function archivedExhibits(env: ArchiveEnv, ticker: string, accession: string, filingDate: string, primaryUrl?: string): Promise<FoundMaterial[] | null> {
   const filing = await archivedFiling(env, ticker, accession, primaryUrl);
-  if (!filing) return null;
+  // A body whose exhibits are not all stored yet reads as not archived: the release is in those exhibits.
+  if (!filing?.complete) return null;
   return filing.documents.filter(d => d.role === "exhibit").slice(0, 4).map((d): FoundMaterial => {
     const base = { sourceKind: "sec" as const, url: d.url, publishedAt: filingDate };
     const text = htmlToSecText(d.html);

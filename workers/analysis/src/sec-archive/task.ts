@@ -36,7 +36,8 @@ export const ARCHIVE_TASKS = {
       try {
         for (const filing of pending.slice(0, PER_RUN)) {
           const url = secArchiveDocumentUrl(secArchiveRoot(Number(state.cik), filing.accession), filing.document);
-          const documents = await readFilingDocuments(url, reader, filing.accession, filing.form);
+          // No form: a 6-K notice is read with its exhibits (the announcement is in them), not as the collector reads it.
+          const documents = await readFilingDocuments(url, reader, filing.accession);
           await archiveDocuments(reader, { accession: filing.accession, filedAt: filing.filingDate, cik: state.cik, industry: "unknown" }, documents, { form: filing.form, reportDate: filing.reportDate });
           await repository.setCache(archiveCompleteKey(ticker, filing.accession), { documents: documents.length }, new Date().toISOString());
           archived.push(filing.accession);

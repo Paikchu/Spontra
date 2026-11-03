@@ -77,6 +77,8 @@ test("the SEC report follows the archive: it starts on filing.archived, and curr
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "40-F" } }), true);
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "NBIS", detail: { form: "6-K" } }), true, "a 6-K collection's incremental window leaves out is still archived");
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "4" } }), false);
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "10-Q/A" } }), true, "a periodic amendment inside collection's incremental window is not collected");
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "10-Q" } }), false, "collection always lists an unamended periodic report");
   assert.deepEqual(SUBSCRIPTIONS["archive.requested"]!.map(s => s.task), ["archive"], "a baseline's current reports are archived without a filing.discovered");
   const report = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "sec-report")!;
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true);

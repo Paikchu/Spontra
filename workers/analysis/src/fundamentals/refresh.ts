@@ -60,8 +60,12 @@ export async function refreshSecFundamentals(env: Env, ticker: string, fetcher: 
   const published = await publishedQuarter(db, ticker);
   if (!published) return { status: "no-publication", published: null, stored: null, facts: null };
   const stored = (await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(ticker)))?.payload ?? null;
-  // Any failed read, SEC pausing access included, leaves the stored facts as they are.
-  const companyFacts = await edgarListings(env, { fetcher }).companyFacts(published.cik).catch(() => null);
+  // An answer SEC gave (no facts for the issuer, access paused) leaves the stored facts as they are; a read that failed
+  // on the way (timeout, network) propagates, so the task retries it instead of dropping the refresh.
+  const companyFacts = await edgarListings(env, { fetcher }).companyFacts(published.cik).catch((error: unknown) => {
+    if (error instanceof Error && ["SEC_SOURCE_UNAVAILABLE", "SEC_ACCESS_PAUSED"].includes(error.message)) return null;
+    throw error;
+  });
   const base = { published: published.periodEnd, stored: snapshotQuarter(stored) };
   if (companyFacts === null) return { ...base, status: "no-facts", facts: null };
   const history = normalizeCompanyFacts(ticker, companyFacts);

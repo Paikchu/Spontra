@@ -192,6 +192,7 @@ test("a Workflow still running a day after it started is stopped and retried lik
 
 test("the archive task finishes a filing whose exhibit failed to store, instead of passing it over once its body is in", async () => {
   const { ARCHIVE_TASKS } = await import("../src/sec-archive/task.ts");
+  const { archiveHolds, archivedExhibits } = await import("../src/sec-archive/index.ts");
   const db = database();
   const objects = new Map<string, string>();
   // The store fails once on the exhibit (each document writes three objects), after the body is already in.
@@ -222,9 +223,14 @@ test("the archive task finishes a filing whose exhibit failed to store, instead 
     failNextPut = true;
     await assert.rejects(run(), /R2 unavailable/);
     assert.equal(await stored(), 1, "the body alone was stored");
+    // A body whose exhibit is not stored yet is not a filing the report or guidance may read.
+    assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), false, "half a filing is not held");
+    assert.equal(await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`), null, "its exhibits read as not archived");
     const resumed = await run();
     assert.deepEqual(resumed, { status: "done", detail: { archived: ["0001193125-26-000001"] } }, "the filing is still pending after its body was stored");
     assert.ok(await stored() >= 2, "the exhibit is stored too");
+    assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), true, "the whole filing is held");
+    assert.equal((await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`))?.length, 1);
     assert.deepEqual(await run(), { status: "done", detail: { archived: 0 } });
   } finally {
     globalThis.fetch = original;

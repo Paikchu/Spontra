@@ -61,21 +61,25 @@ export function reportsFinancials(form:string|undefined,html:string):boolean{
  return /financial\s+(?:statements|results|information)|earnings|(?:quarterly|interim|half[- ]year)\s+(?:results|report)|consolidated\s+report|management\s+report/i.test(exhibits)
   ||/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|profit\s+or\s+loss)/i.test(plain(html));
 }
+/**
+ * The Exhibit 99 documents a filing body links, at most two, in the filing's own folder: what a read of the filing
+ * follows, and what the archive must hold for the filing to count as complete. Never an arbitrary outbound URL.
+ */
+export function exhibitLinks(html:string,primaryUrl:string):string[]{
+ const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
+ const candidates=[...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+  .filter(row=>/\b99(?:\.\d+)?\b/.test(row[1].replace(/<[^>]*>/g,' ')))
+  .flatMap(row=>[...row[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(link=>link[1]));
+ candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
+ return [...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
+  .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
+}
 /** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded; archived ones are not downloaded again.
  * A 6-K that reports no financials yields its cover alone. */
 export async function readFilingDocuments(primaryUrl:string,reader:SecReader,accession?:string,form?:string):Promise<Array<{url:string;html:string;memberLabels?:Record<string,string>}>>{
  const html=await readDocument(primaryUrl,reader);const documents:Array<{url:string;html:string;memberLabels?:Record<string,string>}>=[{url:primaryUrl,html}];
  if(!reportsFinancials(form,html))return documents;
- // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
- // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
- const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
- const candidates = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-  .filter(row => /\b99(?:\.\d+)?\b/.test(row[1].replace(/<[^>]*>/g,' ')))
-  .flatMap(row => [...row[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(link=>link[1]));
- candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
- const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
-  .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
- for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_TOO_LARGE');documents.push({url,html:body});}
+ for(const url of exhibitLinks(html,primaryUrl)){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_TOO_LARGE');documents.push({url,html:body});}
  // One label set covers the filing; only a document that names members needs it.
  if(accession&&reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
  return documents;
