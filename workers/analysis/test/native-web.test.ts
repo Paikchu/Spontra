@@ -79,3 +79,19 @@ test("native search usage belongs to its main agent model call", () => {
   assert.equal(row.model, "deepseek-v4-pro");
   assert.equal(row.inputTokens, 100);
 });
+
+test("a malformed entry in a result list is skipped, and a stringified input still yields the query", () => {
+  const [batch] = nativeSearches([
+    { type: "server_tool_use", id: "s2", name: "web_search", input: JSON.stringify({ query: "coreweave backlog" }) },
+    { type: "web_search_tool_result", tool_use_id: "s2", content: [
+      { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" },
+      { type: "web_search_result", url: "https://example.com/a", title: "A", page_age: null },
+    ] },
+  ]);
+  assert.equal(batch!.query, "coreweave backlog");
+  assert.deepEqual(batch!.hits.map(h => h.url), ["https://example.com/a"]);
+  assert.equal(batch!.error, null);
+  const [empty] = nativeSearches([{ type: "web_search_tool_result", tool_use_id: "x", content: [{ type: "web_search_result" }] }]);
+  assert.deepEqual(empty!.hits, []);
+  assert.notEqual(empty!.error, null);
+});

@@ -20,8 +20,11 @@ export function nativeSearches(content: AgentBlock[]): NativeSearch[] {
   const quotes = new Map<string, string[]>();
   for (const block of content) {
     if (block.type === "server_tool_use" && block.name === "web_search" && typeof block.id === "string") {
-      const input = z.object({ query: z.string() }).parse(block.input);
-      queries.set(block.id, input.query);
+      // DeepSeek sends the input as a JSON string.
+      let raw: unknown = block.input;
+      if (typeof raw === "string") try { raw = JSON.parse(raw); } catch { raw = null; }
+      const input = z.object({ query: z.string() }).safeParse(raw);
+      queries.set(block.id, input.success ? input.data.query : "");
     }
     if (block.type === "text" && Array.isArray(block.citations)) for (const raw of block.citations) {
       const parsed = citationSchema.safeParse(raw);
@@ -35,13 +38,16 @@ export function nativeSearches(content: AgentBlock[]): NativeSearch[] {
     if (!Array.isArray(block.content)) return { query, hits: [], error: "Native web search failed; use another query or existing sources." };
     const hits: SearchHit[] = [];
     for (const raw of block.content) {
-      const h = resultSchema.parse(raw);
+      // A provider may mix error or other entries into the result list; only well-formed results are leads.
+      const parsed = resultSchema.safeParse(raw);
+      if (!parsed.success) continue;
+      const h = parsed.data;
       let url: string;
       try { url = publicUrl(h.url); } catch { continue; }
       if (isEdgarUrl(url) || hits.some(x => x.url === url)) continue;
       hits.push({ url, title: h.title, snippet: (quotes.get(h.url) ?? []).join(" … "), publishedAt: dateOf(h.page_age), score: null });
     }
-    return { query, hits, error: null };
+    return { query, hits, error: hits.length || !block.content.length ? null : "Native web search returned no readable results; use another query or existing sources." };
   });
 }
 
