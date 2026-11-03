@@ -17,7 +17,7 @@ export async function executeSecMemoryWorkflow(
 ) {
   const ownerToken = params.ownerToken || `${workflowInstanceId}:${crypto.randomUUID()}`;
   const repository = new D1SecRepository(requireDb(env));
-  const claim = await step.do(`memory-claim:${params.jobId}`, () => repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "findings")));
+  const claim = await step.do(`memory-claim:${params.jobId}`, () => repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "filings")));
   if (!claim) return { status: "no-op", jobId: params.jobId };
   const source = await step.do(`memory-source:${params.jobId}`, async () => {
     const object = await env.SEC_FILINGS.get(claim.sourceR2Key);
@@ -31,19 +31,20 @@ export async function executeSecMemoryWorkflow(
     // Durable retries can outlive the original lease. Renew ownership before
     // another long model call so the sweeper cannot launch a competing writer. The token is the one the claim step
     // recorded: `ownerToken` above is minted again whenever the engine replays `run()`, so it cannot prove ownership.
-    if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, claim.ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "findings"))) {
+    if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, claim.ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "filings"))) {
       throw new Error("Memory lease ownership changed before model retry");
     }
     const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model || modelFor(env, "memory"), undefined, { reasoning: reasoningFor(env, "memory") });
     return normalizeMemoryExtraction(value, validEvidenceIds, priorMemoryIds);
   });
   const committed = await step.do(`memory-commit:${params.jobId}`, async () => {
-    assertFeatureTicker(env, "findings", claim.ticker);
+    assertFeatureTicker(env, "filings", claim.ticker);
     return { status: "committed" as const, ...await repository.commitMemoryJob(claim, extraction) };
   });
   let companyAnalysisQueued = false;
   const reportDate = sourceReportDate(source, claim.periodId);
-  if (env.COMPANY_ANALYSIS_WORKFLOW && Number.isInteger(committed.memoryVersion) && reportDate) {
+  // Memory is layer 2; the company analysis it feeds is layer 3 and starts only where that layer is on.
+  if (env.COMPANY_ANALYSIS_WORKFLOW && featureTickersFor(env, "findings").includes(params.ticker) && Number.isInteger(committed.memoryVersion) && reportDate) {
     companyAnalysisQueued = await step.do(`company-analysis-enqueue:${params.jobId}`, async () => {
       const triggerRef = `${params.jobId}:${committed.memoryVersion}`;
       try {

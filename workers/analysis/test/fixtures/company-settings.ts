@@ -19,6 +19,6 @@ export function resolvedFor(tickers: string[]): { SEC_DATA_TICKERS: string; SEC_
   const list = [...tickers].sort();
   return {
     SEC_DATA_TICKERS: list.join(","), SEC_AI_TICKERS: list.join(","), SEC_AI_ENABLED: "true",
-    FEATURE_RESOLVED: JSON.stringify({ enabled: { reports: true, findings: true, explainer: true, tree: true, valuation: true }, tickers: { reports: list, findings: list, explainer: list, tree: list, valuation: list } }),
+    FEATURE_RESOLVED: JSON.stringify({ enabled: { filings: true, findings: true, tree: true, valuation: true }, tickers: { filings: list, findings: list, tree: list, valuation: list } }),
   };
 }

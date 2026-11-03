@@ -174,7 +174,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
         url.searchParams.get("limit"),
       );
       // Report summaries hidden by the admin: the filings are still listed, as filings, without what the model wrote.
-      const filings = await hidden("reports", page.ticker) ? page.filings.map(withoutSummary) : page.filings;
+      const filings = await hidden("filings", page.ticker) ? page.filings.map(withoutSummary) : page.filings;
       const calendar = await issuerCalendar(page.ticker);
       return dataResponse(request, { ...page, filings: (await translated("filings", filings)).map(f => ({ ...f, fiscalYearEndMonth: calendar.fiscalYearEndMonth })) });
     }
@@ -184,7 +184,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
       const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
-      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
+      if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
       return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
@@ -224,7 +224,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "guidance": {
-      const payload = await readGuidanceResponse(database, route.ticker, { hidden: await hidden("reports") });
+      const payload = await readGuidanceResponse(database, route.ticker, { hidden: await hidden("filings") });
       payload.guidance = await translated("guidance", payload.guidance);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
@@ -234,7 +234,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "events": {
-      const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("reports") });
+      const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("filings") });
       payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
@@ -249,7 +249,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     }
     // One rail row's analysis, under the AI analysis switch; the analysis is applied in the reader's language like a finding.
     case "item": {
-      const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("findings") });
+      const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("filings") });
       if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }

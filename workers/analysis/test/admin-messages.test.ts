@@ -30,7 +30,7 @@ test("publications fold into one unread success per company and feature; a read 
   await db.batch(messageStatements(db, [event("report.published", "NET"), event("guidance.published", "NET"), event("map.derived", "NET"), event("tree.published", "*")], "2026-10-20T14:00:00.000Z"));
   let inbox = await listMessages(db);
   assert.equal(inbox.unread, 1);
-  assert.deepEqual(inbox.messages.map(m => [m.ticker, m.feature, m.outcome, m.count, m.detail]), [["NET", "reports", "succeeded", 2, "guidance.published"]]);
+  assert.deepEqual(inbox.messages.map(m => [m.ticker, m.feature, m.outcome, m.count, m.detail]), [["NET", "filings", "succeeded", 2, "guidance.published"]]);
   await markRead(db, null, "2026-10-20T14:01:00.000Z");
   await db.batch(messageStatements(db, [event("report.published", "NET")], "2026-10-20T14:02:00.000Z"));
   inbox = await listMessages(db);
@@ -38,17 +38,17 @@ test("publications fold into one unread success per company and feature; a read 
   assert.deepEqual(inbox.messages.map(m => [m.count, m.readAt]), [[1, null], [2, "2026-10-20T14:01:00.000Z"]]);
 });
 
-test("a failed run switches the feature off but keeps what was written shown; the findings go off with the reports", async () => {
+test("a failed run switches the feature off but keeps what was written shown; every layer above goes off with it", async () => {
   const db = database();
-  await switchOn(db, ["NET"], { reports: ["NET"], findings: ["NET"] });
-  await recordFeatureFailure(db, "NET", "reports", "sec-report: filing 0001 failed", "2026-10-20T14:00:00.000Z");
+  await switchOn(db, ["NET"], { filings: ["NET"], findings: ["NET"] });
+  await recordFeatureFailure(db, "NET", "filings", "sec-report: filing 0001 failed", "2026-10-20T14:00:00.000Z");
   const env = await companyPolicyEnvironment({ ...deployment, DB: db });
-  assert.deepEqual(featureTickersFor(env, "reports"), []);
+  assert.deepEqual(featureTickersFor(env, "filings"), []);
   assert.deepEqual(featureTickersFor(env, "findings"), []);
-  assert.equal(await featureShown(db, "NET", "reports"), true);
-  assert.deepEqual([...(await latestOutcomes(db)).entries()], [["reports:NET", { outcome: "failed", detail: "sec-report: filing 0001 failed", updatedAt: "2026-10-20T14:00:00.000Z" }]]);
+  assert.equal(await featureShown(db, "NET", "filings"), true);
+  assert.deepEqual([...(await latestOutcomes(db)).entries()], [["filings:NET", { outcome: "failed", detail: "sec-report: filing 0001 failed", updatedAt: "2026-10-20T14:00:00.000Z" }]]);
   // A switch the admin had turned off stays hidden.
-  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NET', 'tree', 0, 0, '')").run();
+  await db.prepare("INSERT OR REPLACE INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NET', 'tree', 0, 0, '')").run();
   await recordFeatureFailure(db, "NET", "tree", "late run", "2026-10-20T14:00:00.000Z");
   assert.equal(await featureShown(db, "NET", "tree"), false);
 });

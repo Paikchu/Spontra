@@ -40,7 +40,7 @@ function fakeDb(rows: Row[], migrated = true, cache: Record<string, unknown> = {
 test("readers see a feature exactly when its switch is on; a company the admin never switched on shows nothing", async () => {
   const { db } = fakeDb([
     { ticker: "ORCL", feature: "findings", generate: 0 },
-    { ticker: "AAPL", feature: "reports", generate: 1 },
+    { ticker: "AAPL", feature: "filings", generate: 1 },
     { ticker: "MSFT", feature: "tree", generate: 1 },
     { ticker: "NET", feature: "findings", generate: 1 },
     { ticker: "*", feature: "tree", generate: 0 },
@@ -49,8 +49,8 @@ test("readers see a feature exactly when its switch is on; a company the admin n
   // A failed run stopped generation only: what was written stays shown.
   assert.equal(await featureShown(db, "NET", "explainer"), true, "stopped by a failure");
   assert.equal(await featureShown(db, "ORCL", "findings"), false, "switched off");
-  assert.equal(await featureShown(db, "ORCL", "reports"), false, "never switched on");
-  assert.equal(await featureShown(db, "AAPL", "reports"), true, "switched on");
+  assert.equal(await featureShown(db, "ORCL", "filings"), false, "never switched on");
+  assert.equal(await featureShown(db, "AAPL", "filings"), true, "switched on");
   assert.equal(await featureShown(db, "AAPL", "tree"), false, "never on: an old tree is not shown");
   // The global switch pauses generation only; what companies show follows their own switches.
   assert.equal(await featureShown(db, "MSFT", "tree"), true);
@@ -77,7 +77,7 @@ test("with reports switched off the events route still lists every filing, witho
     { ...filing, id: "0001-26-000001", form: "8-K", filedAt: "2026-09-22", eventDate: "2026-09-17", summary },
   ] };
   const read = async (on: boolean) => {
-    const { db } = fakeDb([{ ticker: "CRWV", feature: "reports", generate: on ? 1 : 0 }], true, { "events:v1:CRWV": publication });
+    const { db } = fakeDb([{ ticker: "CRWV", feature: "filings", generate: on ? 1 : 0 }], true, { "events:v1:CRWV": publication });
     const response = await handleMapRead(new Request("https://analysis.internal/api/v1/companies/CRWV/events"), { DB: db, SEC_AI_ENABLED: "true" });
     return (await response.json() as { status: string; events: { events: Array<{ id: string; summary: unknown }> } });
   };
@@ -92,8 +92,8 @@ test("missing settings tables reject reads, and a switch writes both stored bits
   await assert.rejects(featureShown(unmigrated.db, "ORCL", "findings"), /no such table/);
   await assert.rejects(featureShown(unmigrated.db, "AAPL", "findings"), /no such table/);
   const { db, writes } = fakeDb([]);
-  await writeFeatureSetting(db, "ORCL", "reports", false, "2026-10-17T00:00:00Z");
-  assert.deepEqual(writes[0]!.binds, ["ORCL", "reports", 0, 0, "2026-10-17T00:00:00Z"]);
+  await writeFeatureSetting(db, "ORCL", "filings", false, "2026-10-17T00:00:00Z");
+  assert.deepEqual(writes[0]!.binds, ["ORCL", "filings", 0, 0, "2026-10-17T00:00:00Z"]);
   await writeFeatureSetting(db, "*", "tree", true, "2026-10-17T00:00:00Z");
   assert.deepEqual(writes[1]!.binds, ["*", "tree", 1, null, "2026-10-17T00:00:00Z"]);
 });

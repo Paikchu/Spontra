@@ -11,7 +11,7 @@ import { messageStatements } from "../admin/messages.ts";
 export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<string[]> {
   if (scope === "global") return ["*"];
   const policyEnv = await companyPolicyEnvironment(env);
-  if (scope !== "data") return featureTickersFor(policyEnv, scope);
+  if (scope !== "map") return featureTickersFor(policyEnv, scope);
   return [...dataTickers(policyEnv)].sort();
 }
 
@@ -27,7 +27,7 @@ async function targets(env: AnalysisEnv, event: EventMessage, scopes: (scope: Ta
   for (const subscription of SUBSCRIPTIONS[event.type] ?? []) {
     if (subscription.when && !subscription.when(event)) continue;
     const scope = TASKS[subscription.task].scope;
-    // A company task runs only for companies in its scope: the SEC report and guidance only where the reports feature is on.
+    // A company task runs only for companies in its scope: the SEC report and guidance only where layer 2 is on.
     if (scope !== "global" && !(await scopes(scope)).includes(event.ticker)) continue;
     list.push({ task: subscription.task, ticker: scope === "global" ? "*" : event.ticker, causeId: event.id });
   }

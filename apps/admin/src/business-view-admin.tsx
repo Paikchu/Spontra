@@ -16,9 +16,9 @@ import { AnalyticsPanel } from "./analytics";
 export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
-/** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
+/** Every page of the BusinessView admin. Financials is a drill-down from the companies page, so it has no entry of its own. */
 const PAGES: Record<Section, Page> = {
-  whitelist: { path: "/admin/whitelist", title: "白名单管理" },
+  whitelist: { path: "/admin/companies", title: "公司" },
   analytics: { path: "/admin/analytics", title: "使用情况" },
   financials: { path: "/admin/financials", title: "财报与更新记录", nav: "whitelist" },
   filings: { path: "/admin/filings", title: "SEC 文件拆分" },
@@ -32,7 +32,7 @@ export const THEME_KEY = "businessview-admin-theme";
 /** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
 const FROM_ADDRESS = new Set<Section>(["whitelist", "financials", "filings", "business", "findings"]);
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
-const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/library": "filings" };
+const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/whitelist": "whitelist", "/admin/library": "filings" };
 
 function initialSection(): Section {
   if (typeof window === "undefined") return "whitelist";

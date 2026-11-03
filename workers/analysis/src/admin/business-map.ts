@@ -1,9 +1,9 @@
 import { knownCik } from '../pipeline/identity.ts';
 import { dataTickersFor } from '../core.ts';
-import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany, BusinessMapFlow, FeatureRunProgress } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany, BusinessMapDirectory, BusinessMapFlow, FeatureRunProgress } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import type { AiRunKind } from '../../../../shared/analysis-contract/ai-runs-admin.ts';
-import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
-import { isFeature } from '../../../../shared/analysis-runtime/business-features.ts';
+import { FEATURES, LAYER_REQUIRES, LAYERS, type Feature, type Layer } from '../../../../shared/analysis-contract/business-features.ts';
+import { isFeature, layersAbove } from '../../../../shared/analysis-runtime/business-features.ts';
 import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '../financial-data/company-policy.ts';
 import { writeFeatureSetting } from './feature-settings.ts';
 import { AiRunStore } from '../ai-runs/store.ts';
@@ -25,7 +25,7 @@ import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer } from '../financial-data/provider.ts';
 import { edgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
-import { issuerDirectory, primaryTicker, searchIssuers } from '../catalog/issuer-directory.ts';
+import { issuerDirectory, primaryTicker, searchIssuers, securities, type IssuerEntry } from '../catalog/issuer-directory.ts';
 import { json } from "./http.ts";
 import { readValuationCompanyInputs, writeValuationCompanyInputs } from '../valuation/curated.ts';
 import { readFiscalFocus } from '../read-api/fiscal-periods.ts';
@@ -58,7 +58,7 @@ async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string
   ]);
   for (const job of jobs.results) {
     const running = job.status === 'running';
-    note('reports', job.ticker, running ? 'running' : 'queued', job.at, running ? {kind:'report', status:'running', stage:job.stage, steps:[], startedAt:job.startedAt, updatedAt:job.at} : undefined);
+    note('filings', job.ticker, running ? 'running' : 'queued', job.at, running ? {kind:'report', status:'running', stage:job.stage, steps:[], startedAt:job.startedAt, updatedAt:job.at} : undefined);
   }
   // Only runs in flight read their step log: a few rows, not every company's history.
   await Promise.all([...runs].map(async ([key, run]) => {
@@ -76,16 +76,54 @@ async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string
 }
 /** The newest publication of each feature per company, from where the feature stores it. */
 const PUBLISHED: Record<Feature,string> = {
-  reports: "SELECT ticker, max(generated_at) at FROM sec_published_reports GROUP BY ticker",
+  filings: "SELECT ticker, max(generated_at) at FROM sec_published_reports GROUP BY ticker",
   findings: "SELECT substr(cache_key,13) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'",
   tree: "SELECT substr(cache_key,18) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-tree:v1:' AND cache_key < 'business-tree:v1;'",
   valuation: "SELECT c.ticker, v.generated_at at FROM valuation_current c JOIN valuation_versions v ON v.version_id = c.version_id",
 };
+const LAYER_LABEL: Record<Layer,string> = { map: '财报桑基图', filings: 'SEC 文件解析', findings: '关键点', tree: '业务解析', valuation: '估值' };
+const DIRECTORY_PAGE = 50;
+/**
+ * Every US-listed company in EDGAR's exchange directory, one row per issuer (its first-listed class; the others listed
+ * beside it), ETFs left out, with the five layer switches as they stand. `filter=on` keeps the companies with layer 1
+ * on; a query ranks by ticker and name over the whole directory.
+ */
+export function directoryPage(entries: IssuerEntry[], etf: (ticker: string) => boolean, layers: (ticker: string) => Record<Layer, boolean>,
+  query: string, filter: 'on' | 'all', page: number): BusinessMapDirectory {
+  const issuers = new Map<string, { entry: IssuerEntry; classes: string[] }>();
+  for (const entry of entries) {
+    if (etf(entry[0])) continue;
+    const key = entry[3] || entry[0], seen = issuers.get(key);
+    if (seen) seen.classes.push(entry[0]); else issuers.set(key, { entry, classes: [] });
+  }
+  let rows = [...issuers.values()];
+  if (query.trim()) {
+    const order = new Map(searchIssuers(rows.map(r => r.entry), query, 500).map((s, i) => [s.ticker, i]));
+    rows = rows.filter(r => order.has(r.entry[0])).sort((a, b) => order.get(a.entry[0])! - order.get(b.entry[0])!);
+  }
+  const shaped = rows.map(({ entry: [ticker, name, exchange, cik], classes }) => ({ ticker, name, exchange, cik, classes, layers: layers(ticker) }));
+  const kept = filter === 'on' ? shaped.filter(r => r.layers.map) : shaped;
+  if (!query.trim()) kept.sort((a, b) => Number(b.layers.map) - Number(a.layers.map) || a.ticker.localeCompare(b.ticker));
+  const pages = Math.max(1, Math.ceil(kept.length / DIRECTORY_PAGE)), at = Math.min(Math.max(1, page), pages);
+  return { total: kept.length, page: at, pages, rows: kept.slice((at - 1) * DIRECTORY_PAGE, at * DIRECTORY_PAGE) };
+}
 export async function handleBusinessMapAdminRequest(request: Request, env: AnalysisEnv): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, Date.now())) return json({error:'请登录管理后台。'},401);
   if (!env.DB) return json({error:'数据服务尚未连接。'},503);
   const db = env.DB, path = new URL(request.url).pathname;
   try {
+    if (path === '/admin/business-map/directory' && request.method === 'GET') {
+      const params = new URL(request.url).searchParams;
+      const filter = params.get('filter') === 'all' ? 'all' : 'on';
+      let entries: IssuerEntry[];
+      try { entries = await issuerDirectory(db, edgarListings(env, { delayMs: 0 })); }
+      catch { return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503); }
+      const security = await securities(db).catch(() => () => null);
+      const data = new Set(dataTickersFor(env));
+      const lists = Object.fromEntries(FEATURES.map(f => [f, new Set(featureCompaniesFor(env, f))])) as Record<Feature, Set<string>>;
+      const layers = (ticker: string) => Object.fromEntries(LAYERS.map(l => [l, l === 'map' ? data.has(ticker) : lists[l].has(ticker)])) as Record<Layer, boolean>;
+      return json(directoryPage(entries, t => security(t)?.etf ?? false, layers, params.get('q') ?? '', filter, Number(params.get('page')) || 1) satisfies BusinessMapDirectory);
+    }
     if (path === '/admin/business-map/companies' && request.method === 'GET') {
       const list = await listFinancialCompanies(env);
       const rows = await db.prepare(`WITH companies AS (
@@ -178,18 +216,19 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       const ticker = normalizeTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
       const body = await request.json() as {on?:boolean};
       if (!ticker || !isFeature(feature) || typeof body.on !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
-      if (body.on && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
-      // Findings are written from the report summaries' publications: switching them on needs the reports on.
-      if (feature === 'findings' && body.on && !featureCompaniesFor(await companyPolicyEnvironment(env),'reports').includes(ticker)) return json({error:'请先开启该公司的财报摘要。'},409);
+      // The ladder: a layer opens only over the layer below it, and closing a layer closes every layer above.
+      const policy = await companyPolicyEnvironment(env);
+      const below = LAYER_REQUIRES[feature];
+      const belowOn = below === 'map' ? dataTickersFor(policy).includes(ticker) : !!below && featureCompaniesFor(policy, below).includes(ticker);
+      if (body.on && !belowOn) return json({error:`请先开启该公司的${LAYER_LABEL[below!]}。`},409);
       const now = new Date().toISOString();
       await writeFeatureSetting(db,ticker,feature,body.on,now);
       // Switched on again after a failure: the failed input no longer holds the feature's tasks back, it runs at once.
       if (body.on) await clearFailures(db,ticker,feature);
-      // Switching the reports off leaves the findings without a trigger: they are switched off with them.
-      const cascade = feature === 'reports' && !body.on;
-      if (cascade) await writeFeatureSetting(db,ticker,'findings',false,now);
+      const closed = body.on ? [] : layersAbove(feature).filter((f): f is Feature => f !== 'map' && featureCompaniesFor(policy, f).includes(ticker));
+      for (const f of closed) await writeFeatureSetting(db,ticker,f,false,now);
       const cik = await knownCik(db,ticker);
-      await emit(env,[{type:'feature.settings',ticker,cik,detail:{feature}},...(cascade ? [{type:'feature.settings' as const,ticker,cik,detail:{feature:'findings' as const}}] : [])]);
+      await emit(env,[feature,...closed].map(f=>({type:'feature.settings' as const,ticker,cik,detail:{feature:f}})));
       return json({ticker,feature,on:body.on},200);
     }
     if (path === '/admin/business-map/messages' && request.method === 'GET') return json(await listMessages(db));
@@ -270,6 +309,14 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     ]);
     const saved=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(saved?.ticker!==ticker||saved.enabled!==Number(body.enabled))return json({error:'操作标识已用于不同请求。'},409);
+    // Layer 1 off closes every layer above it (the ladder); what they wrote stays stored.
+    if(!body.enabled){
+      const policy=await companyPolicyEnvironment(env);
+      const closed=FEATURES.filter(f=>featureCompaniesFor(policy,f).includes(ticker));
+      for(const f of closed)await writeFeatureSetting(db,ticker,f,false,now);
+      const cik=await knownCik(db,ticker);
+      await emit(env,[{type:'feature.settings' as const,ticker,cik,detail:{feature:'map' as const}},...closed.map(f=>({type:'feature.settings' as const,ticker,cik,detail:{feature:f}}))]);
+    }
     // A newly added company starts with an extract task; the maintenance task picks it up, and its event rail is built.
     if(await db.prepare('SELECT 1 FROM financial_maintenance_tasks WHERE request_id=?').bind(body.requestId).first()){
       const cik=await knownCik(db,ticker);

@@ -181,7 +181,8 @@ async function labelRow(env: AnalysisEnv, row: QueueRow): Promise<FiscalLabel | 
 export async function syncTranscript(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch, causeId: string | null = null) {
   if (env.TRANSCRIPTS_ENABLED !== 'true' || !env.DB || !env.ALPHA_VANTAGE_API_KEY) return { status: 'disabled' };
   const policy = await companyPolicyEnvironment(env);
-  const tickers = dataTickersFor(policy), stamp = now.toISOString();
+  // Calls are layer-2 material (guidance, valuation): only companies with filing analysis on are fetched.
+  const tickers = featureTickersFor(policy, 'filings'), stamp = now.toISOString();
   await seedTranscripts(env, now, tickers);
   await relabelTranscripts(env.DB, stamp);
   const budget = new GuidanceStore(env.DB,env.SEC_FILINGS);
@@ -194,7 +195,7 @@ export async function syncTranscript(env: AnalysisEnv, now = new Date(), fetcher
     SELECT id FROM company_transcripts WHERE ticker IN (SELECT value FROM json_each(?)) AND
       ((status IN ('queued','retry') AND next_attempt_at<=?) OR (status='fetching' AND lease_until<=?))
     ORDER BY ticker IN (SELECT value FROM json_each(?)) DESC,period_end DESC,ticker LIMIT 1) RETURNING *,${columns}`)
-    .bind(lease,stamp,JSON.stringify(tickers),stamp,stamp,JSON.stringify(featureTickersFor(policy,'reports'))).first<QueueRow>();
+    .bind(lease,stamp,JSON.stringify(tickers),stamp,stamp,JSON.stringify(featureTickersFor(policy,'filings'))).first<QueueRow>();
   if (!row) return { status: 'idle' };
   const finish = async (status: string, code: string | null, next=stamp, uncount=false) => {
     await env.DB!.prepare(`UPDATE company_transcripts SET status=?,error_code=?,next_attempt_at=?,attempts=attempts-?,lease_until=NULL,updated_at=? WHERE id=? AND lease_until=?`)

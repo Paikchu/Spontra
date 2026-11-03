@@ -115,7 +115,7 @@ test("a run whose company left the task's feature since it was scheduled ends wi
   const sent: unknown[] = [];
   // The findings switch is off for META; the reports switch stays on.
   const env = { DB: db, SEC_DATA_TICKERS: "META", SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true",
-    FEATURE_RESOLVED: JSON.stringify({ enabled: { reports: true, findings: true, explainer: true, tree: true, valuation: true }, tickers: { reports: ["META"], findings: [], explainer: [], tree: [], valuation: [] } }),
+    FEATURE_RESOLVED: JSON.stringify({ enabled: { filings: true, findings: true, tree: true, valuation: true }, tickers: { filings: ["META"], findings: [], tree: [], valuation: [] } }),
     PIPELINE_TASKS: { send: async (m: unknown) => { sent.push(m); } } } as unknown as AnalysisEnv;
   const result = await runTaskMessage(env, { v: 1, kind: "task", id: "m1", causeId: "e1", task: "company-analysis", ticker: "META", dueAt }, new Date(dueAt));
   assert.deepEqual(result, { outcome: "done", detail: { skipped: "findings is off for this company" } });

@@ -96,7 +96,7 @@ async function seed(db: D1Database) {
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('findings:v2:HIDE', ?, '2026-08-07T00:00:00Z')", JSON.stringify(findings("HIDE")));
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('admin:financial-issuer:ACME', ?, '2026-08-07T00:00:00Z')", JSON.stringify({ name: "Acme Cloud Inc." }));
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('i18n:v1:zh-CN:findings:ACME', ?, '2026-08-07T00:00:00Z')", JSON.stringify({ strings: { "Cloud demand outran capacity": "云需求超过产能" } }));
-  await switchOn(db, ["ACME", "HIDE", "WAIT", "BAD"], { reports: ["ACME", "HIDE"], findings: ["ACME"] });
+  await switchOn(db, ["ACME", "HIDE", "WAIT", "BAD"], { filings: ["ACME", "HIDE"], findings: ["ACME"] });
   await insert("INSERT OR REPLACE INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('HIDE', 'findings', 0, 0, '2026-08-01T00:00:00Z')");
 }
 

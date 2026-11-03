@@ -1,5 +1,5 @@
 import { aiIsEnabled, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
+import { FEATURES, LAYER_REQUIRES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 
 import { aiToolEnvironment } from '../ai-config.ts';
 
@@ -20,14 +20,14 @@ export function parseFeatureResolution(value: string | undefined): FeatureResolu
 }
 
 /**
- * Before the admin's switches: the deployment's global flags (SEC_AI_ENABLED for the reports and findings,
+ * Before the admin's switches: the deployment's global flags (SEC_AI_ENABLED for the filings and findings layers,
  * BUSINESS_TREE_ENABLED, VALUATION_ENABLED) and no company. The deployment never lists companies; every company is
  * switched on one by one in the admin (`business_feature_settings`).
  */
 function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution {
   const aiOn = aiIsEnabled(env);
   return {
-    enabled: { reports: aiOn, findings: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false', valuation: env.VALUATION_ENABLED !== 'false' },
+    enabled: { filings: aiOn, findings: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false', valuation: env.VALUATION_ENABLED !== 'false' },
     tickers: Object.fromEntries(FEATURES.map(f => [f, []])) as unknown as Record<Feature, string[]>,
   };
 }
@@ -36,7 +36,7 @@ function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution
  * The admin's choices are the company lists: the whitelist (`financial_company_settings`) is the collection list, and
  * the feature switches (`business_feature_settings`) are each feature's list, over its global switch
  *. A list in the deployment's variables is ignored. The result is carried as
- * `SEC_DATA_TICKERS` and `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the reports list so code reading it as "the AI
+ * `SEC_DATA_TICKERS` and `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the layer-2 (filings) list so code reading it as "the AI
  * list" keeps working.
  * Applying it twice gives the same lists, so every entry point applies it once and code below reads the environment as
  * before. A settings read failure aborts resolution; defaults apply only when no row exists. The admin's model settings ride along as
@@ -62,12 +62,18 @@ export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Pro
     else if (row.generate) sets[row.feature].add(row.ticker);
     else sets[row.feature].delete(row.ticker);
   }
+  // The ladder (docs/spontra-architecture-upgrade.md): a layer runs for a company only while every layer below is on.
+  for (const feature of FEATURES) {
+    const below = LAYER_REQUIRES[feature];
+    const allowed = below === 'map' ? enabledData : sets[below as Feature];
+    for (const ticker of [...sets[feature]]) if (!allowed.has(ticker)) sets[feature].delete(ticker);
+  }
   const resolved: FeatureResolution = { enabled, tickers: Object.fromEntries(FEATURES.map(f => [f, [...sets[f]].sort()])) as Record<Feature, string[]> };
   return aiToolEnvironment({
     ...env,
     SEC_DATA_TICKERS: [...enabledData].join(','),
-    SEC_AI_TICKERS: resolved.tickers.reports.join(','),
-    SEC_AI_ENABLED: resolved.enabled.reports ? 'true' : 'false',
+    SEC_AI_TICKERS: resolved.tickers.filings.join(','),
+    SEC_AI_ENABLED: resolved.enabled.filings ? 'true' : 'false',
     BUSINESS_TREE_ENABLED: resolved.enabled.tree ? 'true' : 'false',
     VALUATION_ENABLED: resolved.enabled.valuation ? 'true' : 'false',
     FEATURE_RESOLVED: JSON.stringify(resolved),

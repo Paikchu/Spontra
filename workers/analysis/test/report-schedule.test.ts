@@ -52,8 +52,8 @@ test("a scheduled report runs only while the company is still on the reports lis
 
 test("routing a filing does not queue a report for a company whose reports are off, and still queues one that is on", async () => {
   const db = database();
-  await switchOn(db, ["META", "NBIS"], { reports: ["META"] });
-  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'reports', 0, 1, '2026-10-22T08:00:00.000Z')").run();
+  await switchOn(db, ["META", "NBIS"], { filings: ["META"] });
+  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'filings', 0, 1, '2026-10-22T08:00:00.000Z')").run();
   const sent: Array<{ task: string; ticker: string }> = [];
   const env = {
     DB: db, SEC_AI_ENABLED: "true",
@@ -81,7 +81,7 @@ test("a report task already queued for a company that has left the list finishes
 
 test("a workflow that already failed because the company is not tracked is a skip, not a feature failure", async () => {
   const db = database();
-  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'reports', 1, 1, '2026-10-22T08:00:00.000Z')").run();
+  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'filings', 1, 1, '2026-10-22T08:00:00.000Z')").run();
   await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind(
     failedInputKey("sec-report", "NBIS"),
     JSON.stringify({ fingerprint: "0001104659-26-065681", instanceId: "older", failure: "editorial", attempts: 1, retryAt: "2026-10-22T09:00:00.000Z" }),
@@ -97,13 +97,13 @@ test("a workflow that already failed because the company is not tracked is a ski
   assert.equal((outcome.detail as { skipped?: string }).skipped, "Ticker is not tracked");
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM admin_messages").first<{ n: number }>())!.n, 0);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 0);
-  assert.equal((await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = 'NBIS' AND feature = 'reports'").first<{ generate: number }>())!.generate, 1);
+  assert.equal((await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = 'NBIS' AND feature = 'filings'").first<{ generate: number }>())!.generate, 1);
   assert.equal(await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind(failedInputKey("sec-report", "NBIS")).first(), null);
 });
 
 test("a workflow that failed for a tracked company is recorded as a feature failure, and the feature stays on for its retry", async () => {
   const db = database();
-  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('META', 'reports', 1, 1, '2026-10-22T05:00:00.000Z')").run();
+  await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('META', 'filings', 1, 1, '2026-10-22T05:00:00.000Z')").run();
   const workflows = binding({ "scheduled-META-1792645596262": { status: "errored", error: { message: "No core facts passed factual verification" } } });
   const env = { DB: db, SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
   const deadLetter = { task: "sec-report" as const, ticker: "META", causeId: "c2" };
@@ -112,7 +112,7 @@ test("a workflow that failed for a tracked company is recorded as a feature fail
   const outcome = await driveWorkflow(env, "sec-report:META", workflows, start, { deadLetter, trigger: "e1" });
   assert.equal(outcome.status, "later");
   const message = await db.prepare("SELECT outcome, feature FROM admin_messages WHERE ticker = 'META'").first<{ outcome: string; feature: string }>();
-  assert.deepEqual(message, { outcome: "failed", feature: "reports" });
+  assert.deepEqual(message, { outcome: "failed", feature: "filings" });
   // A retry is scheduled, so the switch stays on; switched off now, the retry would be refused as out of scope.
-  assert.equal((await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = 'META' AND feature = 'reports'").first<{ generate: number }>())!.generate, 1);
+  assert.equal((await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = 'META' AND feature = 'filings'").first<{ generate: number }>())!.generate, 1);
 });

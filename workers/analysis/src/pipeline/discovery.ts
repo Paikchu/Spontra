@@ -66,7 +66,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
   let directory: Promise<Record<string, string>> | null = null;
   const ciks = () => directory ??= issuerDirectory(db, listings, now).then(entries => Object.fromEntries(entries.filter(e => e[3]).map(e => [e[0], e[3]])));
   await Promise.all([ciks().catch(() => undefined), refreshListings(db, fetcher, now).catch(() => undefined)]);
-  for (const ticker of await scopeTickers(env, "data")) {
+  for (const ticker of await scopeTickers(env, "map")) {
     let cik = await knownCik(db, ticker);
     let bootstrap = false;
     // A company on the data list the pipeline has never collected: its CIK comes from EDGAR's issuer directory, and

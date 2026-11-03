@@ -2,7 +2,7 @@ import type { FinancialMaintenanceCompany, FinancialMaintenanceTask } from './fi
 import type { CompleteFlowPublication } from './complete-business-flow.ts';
 import type { PublicBusinessFlow } from './business-flow.ts';
 import type { PublicCapitalStructure } from './capital-structure.ts';
-import type { Feature } from './business-features.ts';
+import type { Feature, Layer } from './business-features.ts';
 import type { AiRunKind, AiRunStep } from './ai-runs-admin.ts';
 /**
  * How far one run in flight got: a report job's stage (`report`, no step log), or the steps a model run entered,
@@ -41,6 +41,10 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
 };
 /** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };
+/** One issuer of EDGAR's exchange directory on the companies page: its first-listed class, the others, and its five layer switches. */
+export type DirectoryCompany = { ticker: string; name: string; exchange: string; cik: string; classes: string[]; layers: Record<Layer, boolean> };
+/** One page of the companies page's directory (50 issuers). */
+export type BusinessMapDirectory = { total: number; page: number; pages: number; rows: DirectoryCompany[] };
 /** One issuer of EDGAR's exchange directory, as the whitelist's ticker field suggests them. */
 export type IssuerSuggestion = { ticker: string; name: string; exchange: string };
 

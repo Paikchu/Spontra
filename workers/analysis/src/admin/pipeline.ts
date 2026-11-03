@@ -23,7 +23,7 @@ async function overview(env: AnalysisEnv, db: D1Database, ticker: string | null)
       : db.prepare(`SELECT ${LOG_COLUMNS} FROM pipeline_log ORDER BY created_at DESC LIMIT 200`).all<PipelineLogEntry>(),
     db.prepare("SELECT payload, deployed_at FROM pipeline_versions WHERE id = 'tasks'").first<{ payload: string; deployed_at: string }>(),
     db.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key = ?").bind(DISCOVERY_HEARTBEAT_KEY).first<{ fetched_at: string }>(),
-    scopeTickers(env, "data"),
+    scopeTickers(env, "map"),
   ]);
   let announced: Record<string, string> | null = null;
   try { announced = versions ? JSON.parse(versions.payload) as Record<string, string> : null; } catch { /* shown as unknown */ }
@@ -80,7 +80,7 @@ async function manualEvent(env: AnalysisEnv, body: { type?: unknown; ticker?: un
   let ticker = "*";
   if (definition.scope === "company") {
     if (typeof body.ticker !== "string" || !TICKER_PATTERN.test(body.ticker)) return json({ error: "请选择公司。" }, 400);
-    if (!(await scopeTickers(env, "data")).includes(body.ticker)) return json({ error: "该公司不在数据白名单中。" }, 404);
+    if (!(await scopeTickers(env, "map")).includes(body.ticker)) return json({ error: "该公司不在数据白名单中。" }, 404);
     ticker = body.ticker;
   }
   await emit(env, [{ type: definition.type, ticker, causeId: null }]);

@@ -151,7 +151,7 @@ test("the event graph: business links lead to tags, tags to the peers projection
   assert.deepEqual(TASKS["library-links"].emits, ["library.links.published"]);
   assert.deepEqual(SUBSCRIPTIONS["library.links.published"]?.map(s => s.task), ["business-tags"]);
   assert.deepEqual(SUBSCRIPTIONS["business.tags.published"]?.map(s => s.task), ["peers"]);
-  assert.equal(TASKS["business-tags"].scope, "data");
+  assert.equal(TASKS["business-tags"].scope, "filings");
 });
 
 /** D1 over node:sqlite with every migration applied, reporting changes. */

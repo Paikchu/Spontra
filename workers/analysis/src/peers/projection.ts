@@ -81,7 +81,7 @@ export async function buildPeerPairs(db: D1Database, tickers: string[]): Promise
 /** The projection for every data company, in ticker order; companies without a publication are left out. */
 export async function buildPeersPublication(env: AnalysisEnv, now: Date): Promise<PeersPublication> {
   const companies: PeerCompany[] = [];
-  const tickers = await scopeTickers(env, "data");
+  const tickers = await scopeTickers(env, "map");
   for (const ticker of tickers) {
     const company = await buildPeerCompany(env, ticker);
     if (company) companies.push(company);
@@ -103,7 +103,7 @@ export async function publishPeers(env: AnalysisEnv, now: Date): Promise<{ compa
   // A company whose own pairs moved reads different peers on its page, cited or not.
   const pairsOf = (p: PeersPublication | null, ticker: string) => JSON.stringify([(p?.pairs ?? []).filter(x => unitTicker(x.left) === ticker || unitTicker(x.right) === ticker), (p?.units ?? []).filter(u => u.ticker === ticker)]);
   const revised: string[] = [];
-  for (const ticker of await scopeTickers(env, "data")) {
+  for (const ticker of await scopeTickers(env, "map")) {
     if (pairsOf(before, ticker) !== pairsOf(publication, ticker)) { revised.push(ticker); continue; }
     if (!changed.size) continue;
     if (rankingPeers(publication, ticker).some(t => changed.has(t))) { revised.push(ticker); continue; }

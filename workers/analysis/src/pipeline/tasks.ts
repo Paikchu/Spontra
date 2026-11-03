@@ -108,7 +108,7 @@ type DueRow = { due_at: string; first_requested_at: string; cause_id: string | n
 
 /** Whether a company is in a task's scope, read from the environment the queue entry already resolved (no D1 read). */
 function inScope(env: AnalysisEnv, scope: Exclude<TaskScope, "global">, ticker: string): boolean {
-  return scope === "data" ? allowData(dataTickers(env), ticker) : featureTickersFor(env, scope).includes(ticker);
+  return scope === "map" ? allowData(dataTickers(env), ticker) : featureTickersFor(env, scope).includes(ticker);
 }
 
 /**

@@ -24,11 +24,13 @@ function fixture(protection: "policy" | "task", failedTable?: string) {
         async all() {
           queries.push(sql);
           if (failedTable && sql.includes(failedTable)) throw failure;
-          if (sql.includes("business_feature_settings")) return { results: [{ ticker: "ORCL", feature: "reports", generate: 1 }, ...protection === "policy"
-            ? [{ ticker: "ADHOC", feature: "reports", generate: 1 }] : []] };
+          if (sql.includes("business_feature_settings")) return { results: [{ ticker: "ORCL", feature: "filings", generate: 1 }, ...protection === "policy"
+            ? [{ ticker: "ADHOC", feature: "filings", generate: 1 }] : []] };
           if (sql.includes("financial_maintenance_tasks")) return { results: protection === "task"
             ? [{ ticker: "ADHOC" }] : [] };
-          if (sql.includes("financial_company_settings") || sql.includes("ai_tool_settings") || sql.includes("web_search_cache")) return { results: [] };
+          // The ladder runs a layer only over the whitelist: the companies switched on are whitelisted too.
+          if (sql.includes("financial_company_settings")) return { results: [{ ticker: "ORCL", enabled: 1 }, ...protection === "policy" ? [{ ticker: "ADHOC", enabled: 1 }] : []] };
+          if (sql.includes("ai_tool_settings") || sql.includes("web_search_cache")) return { results: [] };
           throw new Error(`Unexpected query: ${sql}`);
         },
       };
