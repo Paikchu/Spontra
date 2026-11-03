@@ -63,7 +63,7 @@ test("a tool turn sends the tools and the exchange as given, and returns the rep
   assert.deepEqual(body.tools, tools);
   assert.deepEqual(body.messages, messages);
   assert.equal(body.tool_choice, undefined, "the prompt asks for a call; no forced tool choice");
-  assert.equal(body.thinking, undefined);
+  assert.deepEqual(body.thinking, { type: "adaptive" });
   assert.deepEqual(body.cache_control, { type: "ephemeral" });
   assert.equal((body.system as Array<Record<string, unknown>>)[0]!.text, "Agent.");
   assert.equal(body.fallbacks, undefined);
@@ -107,4 +107,25 @@ test("HTTP errors keep their status, provider code and retry-after for the recov
   const { fetcher } = fakeFetch(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }), 429, { "retry-after": "7" });
   await assert.rejects(callWorkerSecModel(env, fetcher, "synthesis", "S.", {}), (error) =>
     error instanceof SecModelHttpError && error.status === 429 && error.retryAfterMs === 7000 && error.providerCode === "rate_limit_error");
+});
+
+test("the main model request executes native web_search and returns server evidence alongside a file call", async () => {
+  const search = { type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 1, blocked_domains: ["sec.gov"] };
+  const server = { type: "server_tool_use", id: "srv1", name: "web_search", input: { query: "product" } };
+  const found = { type: "web_search_tool_result", tool_use_id: "srv1", content: [{ type: "web_search_result", url: "https://example.com/product", title: "Product", encrypted_content: "opaque", page_age: null }] };
+  const block = (index: number, content_block: object) => [{ type: "content_block_start", index, content_block }, { type: "content_block_stop", index }];
+  const { fetcher, requests } = fakeFetch(sse([start(), ...thinking(0, "signature"), ...block(1, server), ...block(2, found), ...toolUse(3, "f1", "read", '{"source":"archived-file"}'), ...end("tool_use", { output_tokens: 40, server_tool_use: { web_search_requests: 1 } })]));
+  const saved: unknown[][] = [];
+  const db = { prepare: () => ({ bind: (...values: unknown[]) => { saved.push(values); return { run: async () => ({ success: true }) }; } }) } as unknown as D1Database;
+  const reply = await callWorkerToolModel({ ...env, DB: db }, fetcher, "valuation-research-t1", { system: "Research using sources", tools: [...tools, search], messages: [{ role: "user", content: "Research" }] }, "deepseek-v4-pro", undefined, { ticker: "TEST", kind: "valuation-research" });
+  assert.equal(requests.length, 1, "no relay model request");
+  assert.equal(requests[0]!.body.model, "deepseek-v4-pro");
+  assert.deepEqual(requests[0]!.body.tools, [...tools, search]);
+  assert.deepEqual(reply.content.slice(1, 3), [server, found]);
+  assert.equal(reply.content[0]!.signature, "signature");
+  assert.equal(reply.content[3]!.name, "read");
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0]![1], "TEST");
+  assert.equal(saved[0]![2], "valuation-research");
+  assert.equal(saved[0]![14], 1, "native search usage is persisted with the main model request");
 });

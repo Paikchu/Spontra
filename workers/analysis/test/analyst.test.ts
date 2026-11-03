@@ -103,7 +103,7 @@ test("the analyst accepts only a document that compiles, applies the review's re
   const replies = [call("peers"), call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
   const model: AnalystModel = {
     act: async (_stage, system, tools, messages) => {
-      assert.equal(tools, ANALYST_TOOLS);
+      assert.deepEqual(tools, ANALYST_TOOLS);
       sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
       return replies[sent.length - 1] ?? call("finish");
     },
@@ -133,7 +133,7 @@ test("the analyst accepts only a document that compiles, applies the review's re
 });
 
 test("the research tools are strict and closed; compile and finish take an open document the harness checks", () => {
-  assert.deepEqual(ANALYST_TOOLS.map(t => t.name), ["find_sections", "read_section", "peers", "similar_businesses", "search", "read_web", "compile", "finish"]);
+  assert.deepEqual(ANALYST_TOOLS.map(t => t.name), ["find_sections", "read_section", "peers", "similar_businesses", "read_web", "compile", "finish"]);
   const closed = (schema: unknown): boolean => {
     if (!schema || typeof schema !== "object") return true;
     const s = schema as Record<string, unknown>;

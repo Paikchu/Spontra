@@ -8,7 +8,6 @@ import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
 import { AiRuns } from "./ai-runs";
 import { AiModels } from "./ai-models";
-import { StageAdminPanel } from "./stage-admin";
 import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
@@ -130,7 +129,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
           : key === "financials" ? <FinancialMaintenance {...auth} />
           : key === "filings" ? <FilingLibrary {...auth} />
           : key === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
-          : key === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
+          : key === "models" ? <AiModels {...auth} />
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
           : <AiRuns {...auth} kinds={["findings", "analyst", "checkup", "valuation"]} translations />;
         return <div key={`${key}:${generation[key] ?? 0}`} className="ra-page" hidden={key !== section}><PageActive.Provider value={key === section}>{content}</PageActive.Provider></div>;

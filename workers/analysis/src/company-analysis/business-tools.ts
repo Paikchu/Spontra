@@ -1,3 +1,4 @@
+import type { NativeSearch } from "../web-search/native.ts";
 import type { BusinessDeepDive } from "../../../../shared/analysis-contract/company-analysis.ts";
 import type { CompanyAnalysisD1Database } from "./repository.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -11,7 +12,7 @@ export type BusinessToolResult = { sourceId: string | null; observation: unknown
 export interface BusinessResearchTools {
   availableReports(): Promise<AvailableSecReport[]>;
   readSecReport(periodId: string): Promise<BusinessToolResult>;
-  searchWeb(query: string): Promise<BusinessToolResult>;
+  registerSearch(batch: NativeSearch): BusinessToolResult;
   readWeb(url: string): Promise<BusinessToolResult>;
   sources(): BusinessSource[];
   restore(sources: BusinessSource[], result: BusinessToolResult): void;
@@ -86,11 +87,9 @@ export function createBusinessResearchTools(input: {
         limitations: report.dataQuality.warnings.slice(0, 5),
       } };
     },
-    async searchWeb(query) {
-      const clean = query.trim().slice(0, 300);
-      if (clean.length < 3) return { sourceId: null, observation: { error: "Search query is too short" } };
-      const result = await input.search.search({ query: clean, maxResults: 5, depth: "advanced" }, scope);
-      const hits = result.data.results.filter((hit) => isHttps(hit.url)).slice(0, 5).map((hit) => {
+    registerSearch(batch) {
+      if (batch.error) return { sourceId: null, observation: { error: batch.error } };
+      const hits = batch.hits.filter((hit) => isHttps(hit.url)).slice(0, 5).map((hit) => {
         let existing = searchHits.get(hit.url);
         if (!existing && searchHits.size < 20) {
           existing = { id: `web-${searchHits.size + 1}`, snippet: hit.snippet.slice(0, 1_500) };
@@ -98,8 +97,8 @@ export function createBusinessResearchTools(input: {
         }
         if (!existing) return null;
         sources.set(existing.id, {
-          id: existing.id, title: hit.title.slice(0, 240) || clean,
-          url: hit.url, kind: "web", publishedAt: isoDate(hit.publishedAt), retrievedAt: result.fetchedAt,
+          id: existing.id, title: hit.title.slice(0, 240) || batch.query,
+          url: hit.url, kind: "web", publishedAt: isoDate(hit.publishedAt), retrievedAt: input.now,
         });
         return { sourceId: existing.id, title: hit.title, url: hit.url, snippet: existing.snippet, publishedAt: hit.publishedAt };
       }).filter((hit) => hit !== null);

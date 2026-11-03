@@ -1,3 +1,4 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import type { WorkflowStepConfig } from "cloudflare:workers";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
@@ -15,7 +16,7 @@ import { createBusinessResearchTools } from "./company-analysis/business-tools.t
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
 import { companyName } from "./catalog/issuer-directory.ts";
 import { researchSearch } from "./web-search/research-search.ts";
-import { callWorkerSecModel } from "./operations.ts";
+import { callWorkerSecModel, callWorkerToolModel } from "./operations.ts";
 import type { AnalysisEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
 import { FUNDAMENTALS_STALE_AFTER_MS } from "../../../shared/analysis-contract/fundamentals.ts";
@@ -106,6 +107,7 @@ export async function executeCompanyAnalysisWorkflow(
       ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
       model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis") }),
+      act: (stage, system, tools, messages) => callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {

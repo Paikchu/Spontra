@@ -1,3 +1,4 @@
+import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { AnalysisFinding, ComposedAnalysis, FindingEvidence, FindingMaterial, FindingPassage, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
@@ -116,12 +117,12 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
     ...reads,
     // The SEC resource (sec-archive/tool.ts): the filings as the library holds them, never EDGAR or the web.
     ...secFilingTools<ComposeState>({ env, ticker, budget, register: (state, passage) => register(state, passage, "sec", null), spent: { finds: "read what you found or compose", reads: "compose with the materials you have" } }),
-    tool({ name: "search", description: "Search the web; results are hits h<n> that read_web can open.", parameters: z.object({ query: z.string().min(2).max(300) }),
-      execute: async ({ query }, ctx) => {
-        if (!search) throw new Error("web search is not configured; use the filings");
-        if (ctx.state.used.searches >= budget.searches) throw new Error("no searches left");
+    tool({ name: "search", description: "Register native search results as source IDs for page reads.", parameters: nativeSearchSchema,
+      nativeSearch: { remaining: state => budget.searches - state.used.searches, excluded: EXCLUDED_HOSTS },
+      execute: async ({ query, hits, error }, ctx) => {
         ctx.state.used.searches++;
-        const found = await ctx.stage("search", () => search.search({ query, maxResults: 6, depth: "advanced", topic: "general", startDate: yearBefore, excludeDomains: EXCLUDED_HOSTS }, WEB_SCOPE(ticker)).then(r => r.data.results).catch(() => [] as SearchHit[]));
+        if (error) return error;
+        const found = datedHits(hits, yearBefore).slice(0, 6);
         for (const h of found) if (!ctx.state.hits.some(x => x.url === h.url)) ctx.state.hits.push(h);
         return found.map(h => `[h${ctx.state.hits.findIndex(x => x.url === h.url) + 1}] ${h.title.slice(0, 160)} (${hostOf(h.url)} · ${h.publishedAt?.slice(0, 10) ?? "undated"})\n${untrusted(hostOf(h.url), h.snippet.replace(/\s+/g, " ").slice(0, 300))}`).join("\n") || `Search "${query}" returned nothing.`;
       }, observe: (_a, v) => v }),

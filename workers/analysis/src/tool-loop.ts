@@ -14,7 +14,8 @@ export type AgentSchema = { type: "object"; properties: Record<string, unknown>;
  * A client tool. A strict tool's arguments always match its schema, so every object in it is closed. A tool taking a
  * whole document is left open: the document grammar is larger than a strict schema may be, and the harness checks it.
  */
-export type AgentTool = { name: string; description: string; strict?: true; input_schema: AgentSchema };
+export type AgentClientTool = { name: string; description: string; strict?: true; input_schema: AgentSchema };
+export type AgentTool = AgentClientTool | import("./web-search/native.ts").NativeSearchTool;
 /** One turn's reply: its content blocks as they are to be sent back and why it stopped, or why there is no reply. */
 export type AgentReply = { content: AgentBlock[]; stopReason: string | null; refusalCategory?: string | null } | { error: string };
 /** One turn of a loop, taken through the tools. `messages` is the whole exchange so far; it only ever grows. */
