@@ -896,7 +896,12 @@ button { cursor: pointer; }
 .quarter-frame-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 9px 12px 5px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .quarter-frame-title { flex: none; font-size: 13px; font-weight: 650; color: var(--foreground); }
 .quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
-.quarter-frame-holds { flex: none; margin-left: auto; color: var(--faint); }
+/* The findings, the standing read of the company, between the businesses and the tabs. */
+.guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.guidance-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 28px; margin: 2px 0 0 36px; padding: 0 10px; border-radius: 999px; color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
+.guidance-more:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
+.guidance-more .fold-chevron { margin-top: 0; transform: rotate(90deg); }
+.guidance-more[aria-expanded="true"] .fold-chevron { transform: rotate(-90deg); }
 @media (max-width: 960px) { .stream-tabs { position: static; } }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }

@@ -4,7 +4,7 @@ import type { CompanyEvent, EventsPublication } from "../../../shared/analysis-c
 import type { PublicFilingDigest, PublicFilingDigestPage } from "../../../shared/analysis-contract/filings.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { eventImportance, readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
-import { railLayout, rowLeaves, streamRows } from "../src/event-noise.ts";
+import { railLayout, rowLeaves } from "../src/event-noise.ts";
 import type { RailItem } from "../src/reports-model.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 
@@ -45,7 +45,7 @@ const trades = [
 ];
 
 const insiderFilings = (all: readonly RailItem[]) => all.flatMap(item => item.kind === "event" && item.event.class === "insider" ? [item] : []).sort((a, b) => b.date.localeCompare(a.date));
-const ids = (all: readonly RailItem[], filter: Parameters<typeof railLayout>[1]) => streamRows(railLayout(all, filter), [], null, filter).map(r => r.id);
+const ids = (all: readonly RailItem[], filter: Parameters<typeof railLayout>[1]) => railLayout(all, filter).rows.map(r => r.id);
 
 test("the people of the filings group them by the ledger's rule, latest trade first", () => {
   const filings = insiderFilings(items(trades));
