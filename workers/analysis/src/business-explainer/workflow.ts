@@ -61,7 +61,7 @@ export async function businessExplainerFingerprint(env: AnalysisEnv, ticker: str
 }
 
 export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
-  assertFeatureTicker(env, "explainer", params.ticker);
+  assertFeatureTicker(env, "tree", params.ticker);
   const modelVersion = modelFor(env, "explainer");
   const now = await step.do("explainer-time", async () => new Date().toISOString());
   const input = await step.do("explainer-input", () => readInput(env, params.ticker));

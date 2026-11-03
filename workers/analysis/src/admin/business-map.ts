@@ -77,7 +77,6 @@ async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string
 const PUBLISHED: Record<Feature,string> = {
   reports: "SELECT ticker, max(generated_at) at FROM sec_published_reports GROUP BY ticker",
   findings: "SELECT substr(cache_key,13) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'",
-  explainer: "SELECT substr(cache_key,23) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-explainer:v1:' AND cache_key < 'business-explainer:v1;'",
   tree: "SELECT substr(cache_key,18) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-tree:v1:' AND cache_key < 'business-tree:v1;'",
   valuation: "SELECT c.ticker, v.generated_at at FROM valuation_current c JOIN valuation_versions v ON v.version_id = c.version_id",
 };

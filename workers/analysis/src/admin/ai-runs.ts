@@ -6,7 +6,7 @@ import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.t
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { FEATURES, type Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { featureEnabled, featureTickersFor } from "../financial-data/company-policy.ts";
-const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图", valuation: "估值评估" };
+const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", tree: "业务拆解", valuation: "估值评估" };
 import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { securities } from "../catalog/issuer-directory.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
@@ -32,7 +32,7 @@ function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
   return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for (docs/whitelist-feature-switches-design.md). */
-const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" || kind === "checkup" ? "findings" : kind;
+const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" || kind === "checkup" ? "findings" : kind === "explainer" ? "tree" : kind;
 function enabled(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
   return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }

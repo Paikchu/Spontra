@@ -52,7 +52,7 @@ const errors: Record<string,string> = {
 };
 const active = new Set(['queued','running','cancel_requested']);
 /** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
-const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
+const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',tree:'业务拆解',valuation:'估值评估'};
 /** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
 function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {
   const groups=new Map<string,{code:string;label:string;filings:string[]}>();
