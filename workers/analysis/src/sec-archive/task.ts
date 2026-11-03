@@ -14,9 +14,10 @@ const secAccessPaused = (error: unknown) => error instanceof Error && error.mess
 export const archiveCompleteKey = (ticker: string, accession: string) => `sec-archive:complete:v1:${ticker}:${accession}`;
 
 /**
- * Stores the current reports collection does not read (8-Ks without Item 2.02), so the SEC report reads every filing
- * it analyses from the archive (docs/sec-archive.md). The list comes from discovery's state in D1, newest first; a
- * filing already archived is passed over, and each one stored emits `filing.archived` like any other.
+ * Stores every current report and 40-F (pipeline/filing-forms.ts `archivedForm`), so the SEC report reads every filing
+ * it analyses from the archive (docs/sec-archive.md); a document collection already stored is read back, not downloaded. The list comes from discovery's
+ * state in D1, newest first; a filing whose documents are all stored is passed over, and each one stored emits
+ * `filing.archived` like any other.
  */
 export const ARCHIVE_TASKS = {
   archive: {

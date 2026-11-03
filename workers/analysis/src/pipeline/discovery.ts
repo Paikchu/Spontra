@@ -2,6 +2,7 @@ import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime
 import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { edgarListings } from "../sec-archive/index.ts";
+import { archivedForm, collectedForm } from "./filing-forms.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
@@ -20,18 +21,13 @@ const REMEMBERED = 200;
  * the same filings with what reading one needs, so collection depends on no other writer's index (a data-only issuer has none).
  * `fiscalYearEnd` (`MMDD`) and `name` are the issuer's as its submissions state them; EDGAR leaves the year end out for some foreign issuers.
  * `annualForm`: the form of its latest annual report ("10-K", "20-F", "40-F"), so a foreign issuer reads as one before any filing is collected.
- * `current`: the current reports collection does not read, which the `archive` task stores for the SEC report (sec-archive).
+ * `current`: the current reports and 40-Fs the `archive` task stores (pipeline/filing-forms.ts), whether or not collection reads them too.
  */
 export type CollectableFiling = { accession: string; form: string; filedAt: string; reportDate: string | null; url: string };
 export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null; annualForm?: string | null; current?: DiscoveredFiling[] };
 export type DiscoveredFiling = { accession: string; form: string; items: string; filingDate: string; reportDate: string; document: string };
-/** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
-const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
-/**
- * The current reports the SEC report analyses, all archived by the `archive` task: collection reads only some of them
- * (an unamended earnings 8-K, a 6-K inside its incremental window), and a document it stored is not downloaded again.
- */
-const CURRENT = (f: { form: string }) => /^(?:8-K|6-K)(?:\/A)?$/.test(f.form);
+const COLLECTED = (f: { form: string; items: string }) => collectedForm(f.form, f.items);
+const CURRENT = (f: { form: string }) => archivedForm(f.form);
 
 
 type Filing = { accession: string; form: string; items: string; filingDate: string; reportDate: string; primaryDocument: string };

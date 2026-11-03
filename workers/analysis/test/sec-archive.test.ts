@@ -71,12 +71,17 @@ test("the SEC report follows the archive: it starts on filing.archived, and curr
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K", items: "5.02" } }), true);
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K", items: "2.02,9.01" } }), true, "a release collection also reads is archived once: stored documents are not downloaded again");
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "10-Q" } }), false);
-  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K/A", items: "2.02,9.01" } }), true, "collection reads only an unamended earnings 8-K; the amendment is archived here");
+  // Every current report and 40-F is archived by the task, amended or not; collection's own copies are read back, not downloaded again.
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "8-K/A", items: "2.02,9.01" } }), true, "an amended earnings release is not collected");
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "6-K/A" } }), true);
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "40-F" } }), true);
   assert.equal(archive.when!({ type: "filing.discovered", ticker: "NBIS", detail: { form: "6-K" } }), true, "a 6-K collection's incremental window leaves out is still archived");
+  assert.equal(archive.when!({ type: "filing.discovered", ticker: "ORCL", detail: { form: "4" } }), false);
   assert.deepEqual(SUBSCRIPTIONS["archive.requested"]!.map(s => s.task), ["archive"], "a baseline's current reports are archived without a filing.discovered");
-  assert.ok(SUBSCRIPTIONS["filing.archived"]!.some(s => s.task === "guidance" && s.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } })), "a release's archive starts guidance again");
   const report = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "sec-report")!;
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true);
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "4" } }), false);
   assert.ok(TASKS.archive.emits.includes("filing.archived"));
+  const guidance = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "guidance")!;
+  assert.equal(guidance.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true, "a release that waited for the archive restarts its guidance");
 });

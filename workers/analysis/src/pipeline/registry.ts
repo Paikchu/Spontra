@@ -1,5 +1,6 @@
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
+import { archivedForm } from "./filing-forms.ts";
 /**
  * The pipeline's event graph (docs/analysis-events.md): the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
@@ -129,9 +130,9 @@ export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => bo
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    // Every current report is archived by its own task (collection reads only some of them, and stores nothing twice);
-    // the SEC report follows `filing.archived`.
-    { task: "archive", when: e => /^(?:8|6)-K/.test(form(e)) },
+    // Every current report (and 40-F) is archived by its own task; collection stores only some of them, and a stored
+    // document is not downloaded again. The SEC report follows `filing.archived`.
+    { task: "archive", when: e => archivedForm(form(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],

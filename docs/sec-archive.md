@@ -34,9 +34,8 @@ sec-archive/
 ## 事件链的变化
 
 - `filing.discovered` 不再直接触发 SEC 财报。SEC 财报改为订阅 `filing.archived`（定期报告、8-K、6-K）：`shouldAnalyze` 对归档里没有的申报返回“跳过”，等它归档后由新事件再起一次运行。
-- 财务采集只读定期报告、6-K 和业绩 8-K。其他 8-K 由新任务 `archive` 归档：申报发现在 D1 状态里记下这些 8-K（`current`），任务按新到旧每轮存 2 份，发出同样的 `filing.archived`。
-- 前瞻指引的材料顺序：文件库已拆解的 EX-99 → 归档原文；两者都没有说明申报尚未归档（申报列表先于采集被索引），事件回到队列，由该 8-K 的 `filing.archived` 再起一次运行。不再读 EDGAR。
-- 所有 8-K、6-K 及其修订都由 `archive` 任务归档（订阅 `filing.discovered`；申报发现建立基线时发 `archive.requested`，覆盖此前已有的申报）。采集只读其中一部分（未修订的业绩 8-K、增量窗口内的 6-K），已存入的文档不会再下载，所以两条路径不冲突。`archive` 任务以 `sec-archive:complete:v1:{ticker}:{accession}` 标记整批文档存完，中途中断的申报下次继续。
+- 财务采集只读 10-Q、10-K、20-F（含修正版）、增量窗口内的 6-K 原件和业绩 8-K 原件。所有 8-K、6-K、40-F 及其修订都由新任务 `archive` 归档，判定统一在 `pipeline/filing-forms.ts`（`archivedForm`）：采集已存入的文档经 `archived` 钩子从 R2 读回、按内容哈希命中，不会再下载或重写，所以两条路径并存只多一次 D1 标记。申报发现在 D1 状态里记下这些申报（`current`），任务按新到旧每轮存 2 份，发出同样的 `filing.archived`；建立基线时（含首次引导）发 `archive.requested`，覆盖此前已有的申报。一份申报的全部文档都存好后才写完成标记（`sec-archive:complete:v1:{ticker}:{accession}`）；存到一半中断的，下一轮从归档读回已存的部分，补齐其余文档。
+- 前瞻指引的材料顺序：文件库已拆解的 EX-99 → 归档原文；不再读 EDGAR。业绩发布两者都还没有（申报列表先于采集被索引）时，指引任务不启动 Workflow，事件保持 `queued`；该 8-K 的 `filing.archived` 让任务重跑，此外每 6 小时检查一次。已经启动的 Workflow 读不到时，也把事件放回队列。发布日起 2 天仍未归档的，按现有材料运行。
 - 业务脑图、业务解读、stage 的 `read_web`：对 sec.gov 的网页抓取由 `WebSearchService.fetchContent` 统一拒绝（`archive_only`）。SEC 原文只经文件库读取。
 
 ## 已知取舍
