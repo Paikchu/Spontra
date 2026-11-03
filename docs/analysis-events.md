@@ -107,7 +107,8 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 
 | 事件 | 谁发出 | 谁订阅 |
 |---|---|---|
-| `filing.discovered` | SEC 申报发现（Cron） | 财务采集、归档（非业绩 8-K）、事件 |
+| `filing.discovered` | SEC 申报发现（Cron） | 财务采集、归档（8-K、6-K 及修订）、事件 |
+| `archive.requested` | SEC 申报发现（建立基线且列表中有 8-K/6-K 时） | 归档 |
 | `company.added` | 后台增加数据公司 | 财务采集、补历史季度 |
 | `maintenance.requested` | 后台财务维护 | 财务维护 |
 | `financials.published` | `D1CompleteStore.publish`（财务采集、财务维护都经过它） | 基本面刷新（`fundamentals`）、地图推导、业务解读、业务脑图、补历史季度 |

@@ -27,8 +27,11 @@ export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: str
 export type DiscoveredFiling = { accession: string; form: string; items: string; filingDate: string; reportDate: string; document: string };
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
-/** The current reports the SEC report analyses that collection does not read: 8-Ks without Item 2.02. */
-const ARCHIVED_ONLY = (f: { form: string; items: string }) => /^8-K(?:\/A)?$/.test(f.form) && !COLLECTED(f);
+/**
+ * The current reports the SEC report analyses, all archived by the `archive` task: collection reads only some of them
+ * (an unamended earnings 8-K, a 6-K inside its incremental window), and a document it stored is not downloaded again.
+ */
+const CURRENT = (f: { form: string }) => /^(?:8-K|6-K)(?:\/A)?$/.test(f.form);
 
 
 type Filing = { accession: string; form: string; items: string; filingDate: string; reportDate: string; primaryDocument: string };
@@ -96,10 +99,12 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
           .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
             name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions),
-            current: filings.filter(ARCHIVED_ONLY).slice(0, 40).map(f => ({ accession: f.accession, form: f.form, items: f.items, filingDate: f.filingDate, reportDate: f.reportDate, document: f.primaryDocument })) } satisfies DiscoveryState), at),
+            current: filings.filter(CURRENT).slice(0, 40).map(f => ({ accession: f.accession, form: f.form, items: f.items, filingDate: f.filingDate, reportDate: f.reportDate, document: f.primaryDocument })) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
+        // A baseline announces no filing, so the current reports it lists are asked to be archived here.
+        ...(!previous && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
       ]);
       if (bootstrap) result.bootstrapped.push(ticker);
       if (!previous) result.baseline.push(ticker);

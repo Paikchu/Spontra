@@ -52,6 +52,8 @@ test("a data ticker discovery has never seen is announced as a new company with 
   assert.deepEqual(await outbox(db), [
     { type: "company.added", ticker: "NBIS", cik: "0002056322", detail: null },
     { type: "collection.requested", ticker: "NBIS", cik: "0002056322", detail: null },
+    // The baseline's 8-K was never announced by a filing.discovered: it is asked to be archived here.
+    { type: "archive.requested", ticker: "NBIS", cik: "0002056322", detail: null },
   ]);
   await db.prepare("DELETE FROM pipeline_outbox").bind().run();
 

@@ -8,7 +8,7 @@ import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime
  */
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
-  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
+  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
@@ -129,15 +129,17 @@ export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => bo
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    // A current report collection does not read (collection reads only an unamended earnings 8-K) is archived on its
-    // own; the SEC report follows `filing.archived`.
-    { task: "archive", when: e => /^8-K/.test(form(e)) && !(form(e) === "8-K" && earnings(e)) },
+    // Every current report is archived by its own task (collection reads only some of them, and stores nothing twice);
+    // the SEC report follows `filing.archived`.
+    { task: "archive", when: e => /^(?:8|6)-K/.test(form(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
   "company.added": [{ task: "events" }, { task: "presentation" }],
+  // A company's baseline lists current reports no `filing.discovered` announced.
+  "archive.requested": [{ task: "archive" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
@@ -196,7 +198,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
-  "sec-discovery": ["company.added", "filing.discovered", "collection.requested"],
+  "sec-discovery": ["company.added", "filing.discovered", "collection.requested", "archive.requested"],
   "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
 };

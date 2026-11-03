@@ -36,7 +36,7 @@ sec-archive/
 - `filing.discovered` 不再直接触发 SEC 财报。SEC 财报改为订阅 `filing.archived`（定期报告、8-K、6-K）：`shouldAnalyze` 对归档里没有的申报返回“跳过”，等它归档后由新事件再起一次运行。
 - 财务采集只读定期报告、6-K 和业绩 8-K。其他 8-K 由新任务 `archive` 归档：申报发现在 D1 状态里记下这些 8-K（`current`），任务按新到旧每轮存 2 份，发出同样的 `filing.archived`。
 - 前瞻指引的材料顺序：文件库已拆解的 EX-99 → 归档原文；两者都没有说明申报尚未归档（申报列表先于采集被索引），事件回到队列，由该 8-K 的 `filing.archived` 再起一次运行。不再读 EDGAR。
-- 采集只读未修订的业绩 8-K；带 Item 2.02 的 `8-K/A` 与其他 8-K 一样由 `archive` 任务归档。`archive` 任务以 `sec-archive:complete:v1:{ticker}:{accession}` 标记整批文档存完，中途中断的申报下次继续。
+- 所有 8-K、6-K 及其修订都由 `archive` 任务归档（订阅 `filing.discovered`；申报发现建立基线时发 `archive.requested`，覆盖此前已有的申报）。采集只读其中一部分（未修订的业绩 8-K、增量窗口内的 6-K），已存入的文档不会再下载，所以两条路径不冲突。`archive` 任务以 `sec-archive:complete:v1:{ticker}:{accession}` 标记整批文档存完，中途中断的申报下次继续。
 - 业务脑图、业务解读、stage 的 `read_web`：对 sec.gov 的网页抓取由 `WebSearchService.fetchContent` 统一拒绝（`archive_only`）。SEC 原文只经文件库读取。
 
 ## 已知取舍
