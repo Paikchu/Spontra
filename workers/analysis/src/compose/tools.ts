@@ -9,8 +9,7 @@ import { compileDocument, verifyLensDocument } from "../../../../shared/analysis
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
-import { libraryFindAcross, libraryRead } from "../filing-library/tool.ts";
-import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
+import { secFilingTools } from "../sec-archive/tool.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { StageData } from "../stage/data.ts";
 import { stageTools, type StageInput, type StageTurn } from "../stage/recipe.ts";
@@ -115,30 +114,8 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
   };
   return [
     ...reads,
-    tool({ name: "find_sections", description: "Find sections of the company's filings by topic, keywords or a question.", parameters: z.object({ topic: z.string().max(120).optional(), keywords: z.string().max(200).optional(), question: z.string().max(300).optional() }), concurrencySafe: true,
-      execute: async (args, ctx) => {
-        if (ctx.state.used.finds >= budget.finds) throw new Error("no finds left; read what you found or compose");
-        ctx.state.used.finds++;
-        const found = await ctx.stage("find", () => libraryFindAcross(env, { tickers: [ticker], ...args, limit: 8 }));
-        return found.found.map(s => `${s.form} ${s.filedAt} · documentId ${s.documentId} · sectionId ${s.sectionId} · ${s.path.join(" › ")}${s.gist ? ` · ${s.gist}` : ""}`).join("\n") || "No sections found; try other keywords.";
-      }, observe: (_a, v) => v }),
-    tool({ name: "read_section", description: "Read a section of a filing; previous: true reads the same section in the earlier filing. Each passage read becomes a material m<n> a quote may cite.", parameters: z.object({ documentId: z.string().max(80), sectionId: z.string().max(80).optional(), focus: z.array(z.string().max(60)).max(8).optional(), previous: z.boolean().optional() }),
-      execute: async (args, ctx) => {
-        if (ctx.state.used.reads >= budget.reads) throw new Error("no reads left; compose with the materials you have");
-        ctx.state.used.reads++;
-        const read = await ctx.stage("read", async () => {
-          let target = args.documentId;
-          if (args.previous) target = (await readLibraryDocument(db, args.documentId))?.previousDocumentId ?? args.documentId;
-          const document = await readLibraryDocument(db, target);
-          if (!document || document.ticker !== ticker) return null;
-          const read = await libraryRead(db, { documentId: target, sectionId: args.sectionId, focus: args.focus, maxChars: 7000 });
-          const full = await libraryPassages(db, read.passages.map(p => p.passageId));
-          return { document, passages: read.passages.map(p => { const row = full.find(f => f.passageId === p.passageId); return { passageId: p.passageId, documentId: target, title: `${document.ticker} ${document.form} ${document.reportDate}`, form: document.form, filedAt: document.filedAt, url: document.documentUrl, path: p.path.split(" › "), text: p.text,
-            table: row?.table ? { unit: row.table.unit, columns: row.table.columns, rows: row.table.rows.map(r => ({ label: r.label, cells: r.cells.map(c => ({ text: c.text, value: c.value })) })) } : null } satisfies FindingPassage; }), omitted: read.omitted };
-        });
-        if (!read) throw new Error(`no filing ${args.documentId} of ${ticker}`);
-        return read.passages.map(p => { const id = register(ctx.state, p, "sec", null); return `[${id}] ${p.title} › ${p.path.join(" › ")}\n${p.table ? renderTable(p.table, args.focus ?? []) : p.text.slice(0, 2400)}`; }).join("\n\n") + (read.omitted ? `\n(${read.omitted} passages omitted; narrow with focus)` : "");
-      }, observe: (_a, v) => v }),
+    // The SEC resource (sec-archive/tool.ts): the filings as the library holds them, never EDGAR or the web.
+    ...secFilingTools<ComposeState>({ env, ticker, budget, register: (state, passage) => register(state, passage, "sec", null), spent: { finds: "read what you found or compose", reads: "compose with the materials you have" } }),
     tool({ name: "search", description: "Search the web; results are hits h<n> that read_web can open.", parameters: z.object({ query: z.string().min(2).max(300) }),
       execute: async ({ query }, ctx) => {
         if (!search) throw new Error("web search is not configured; use the filings");

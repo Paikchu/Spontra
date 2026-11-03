@@ -139,3 +139,13 @@ test("B13: a 52/53-week filer's real period ends and values remain in the calend
   assert.ok(revenue.points.slice(-2).every(p => p.valueDecimal !== null && !p.missing));
   assert.ok(response.periods.every(p => p.periodEnd >= "2023-10-01"));
 });
+
+test("a Company Facts read that fails on the way propagates for the task's retry; SEC's own no-facts answer leaves the stored snapshot", async () => {
+  const db = database();
+  await seed(db, normalizeCompanyFacts("GOOGL", facts(false)));
+  const timeout = (async () => { throw new Error("The operation was aborted due to timeout"); }) as typeof fetch;
+  await assert.rejects(refreshSecFundamentals(env(db), "GOOGL", timeout, new Date("2026-10-30T00:00:00Z")), /timeout/);
+  const missing = await refreshSecFundamentals(env(db), "GOOGL", (async () => new Response("no", { status: 404 })) as typeof fetch, new Date("2026-10-30T00:00:00Z"));
+  assert.equal(missing.status, "no-facts");
+  assert.equal(snapshotQuarter(await stored(db)), "2026-06-30", "the stored snapshot stands");
+});

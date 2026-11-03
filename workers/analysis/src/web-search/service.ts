@@ -1,7 +1,8 @@
 import { WebSearchError, type CachePolicy, type ContentData, type ContentRequest, type Retrieval,
   type RetrievalData, type SearchData, type SearchProvider, type SearchRequest } from "./types.ts";
 import type { SearchStore, StoredResult } from "./store.ts";
-import { digest, normalizeContent, normalizeSearch } from "./validation.ts";
+import { digest, isEdgarUrl, normalizeContent, normalizeSearch } from "./validation.ts";
+export { isEdgarUrl } from "./validation.ts";
 const MINUTE = 60_000;
 export class WebSearchService {
   private readonly provider: SearchProvider;
@@ -10,12 +11,17 @@ export class WebSearchService {
   constructor(provider: SearchProvider, store: SearchStore, now: () => number = Date.now) {
     this.provider = provider; this.store = store; this.now = now;
   }
-  search(request: SearchRequest, policy: CachePolicy): Promise<Retrieval<SearchData>> {
+  async search(request: SearchRequest, policy: CachePolicy): Promise<Retrieval<SearchData>> {
     const normalized = normalizeSearch(request);
-    return this.retrieve("search", normalized, policy, () => this.provider.search(normalized));
+    const found = await this.retrieve("search", normalized, policy, () => this.provider.search(normalized));
+    // An EDGAR hit is dropped on the way out, cached results included: a filing's text, even as a provider's excerpt,
+    // reaches an agent only from the SEC archive (docs/sec-archive.md).
+    return { ...found, data: { ...found.data, results: found.data.results.filter(hit => !isEdgarUrl(hit.url)) } };
   }
-  fetchContent(request: ContentRequest, policy: CachePolicy): Promise<Retrieval<ContentData>> {
+  async fetchContent(request: ContentRequest, policy: CachePolicy): Promise<Retrieval<ContentData>> {
     const normalized = normalizeContent(request);
+    // EDGAR documents come from the SEC archive, never through a web provider's extraction.
+    if (isEdgarUrl(normalized.url)) throw new WebSearchError("archive_only");
     return this.retrieve("content", normalized, policy, () => this.provider.fetchContent(normalized));
   }
   private async retrieve<T extends RetrievalData>(kind: T["kind"], request: unknown, policy: CachePolicy,

@@ -17,6 +17,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { FilingBlock } from "../sec/analysis.ts";
 import { prepareSecFiling, selectEventBlocks } from "../sec/pipeline.ts";
+import { archivedFiling, archiveHolds } from "../sec-archive/index.ts";
 import { getPublicFilingPage } from "../sec/public-api.ts";
 import { loadStageData } from "../stage/data.ts";
 import type { AgentMessage, AgentReply } from "../tool-loop.ts";
@@ -35,9 +36,9 @@ export type ItemsParams = { ticker: string; fingerprint: string };
 const accessionsOf = (s: ItemSubject) => s.report ? [s.id, ...s.report.sources.map(x => x.accessionNumber)] : [s.id];
 
 /**
- * The rows that can be analysed now, and what a run would write from: a report waits until the library holds its text,
- * so the library's arrival (`library.prepared`) is what starts its analysis; a current report or a Form 4 is read
- * from its own words and can go at once. Null when no row is due.
+ * The rows that can be analysed now, and what a run would write from: a report or a current report waits until the
+ * library holds its text, so the library's arrival (`library.prepared`) is what starts its analysis; a Form 4 is read
+ * from its own footnotes and can go at once. Null when no row is due.
  */
 export async function itemsPlan(env: AnalysisEnv, ticker: string, now: Date): Promise<{ subjects: ItemSubject[]; fingerprint: string } | null> {
   const db = requireDb(env);
@@ -48,7 +49,16 @@ export async function itemsPlan(env: AnalysisEnv, ticker: string, now: Date): Pr
     db.prepare("SELECT DISTINCT accession_number a FROM sec_documents WHERE ticker = ? AND status = 'ready'").bind(ticker).all<{ a: string }>().then(r => new Set(r.results.map(x => x.a))),
   ]);
   const events = stored ? readEventsPublication(stored.payload, ticker) : null;
-  const subjects = itemSubjects(page, events, now).filter(s => s.kind !== "report" || accessionsOf(s).some(a => ready.has(a)));
+  // A report and a current report wait until the library holds their text (`library.prepared` starts the run); a
+  // Form 4 is read from its own footnotes and can go at once. With the library switched off, a current report is read
+  // from the archive once that holds it whole.
+  const libraryOn = env.FILING_LIBRARY_ENABLED !== "false";
+  const archive = { DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT };
+  const subjects: ItemSubject[] = [];
+  for (const s of itemSubjects(page, events, now)) {
+    if (s.kind === "insider" || accessionsOf(s).some(a => ready.has(a))) { subjects.push(s); continue; }
+    if (!libraryOn && s.kind === "current" && s.event && await archiveHolds(archive, ticker, s.id, s.event.documentUrl)) subjects.push(s);
+  }
   if (!subjects.length) return null;
   return { subjects, fingerprint: await sha256(JSON.stringify({ version: ITEMS_VERSION, items: subjects.map(s => s.id) })) };
 }
@@ -90,11 +100,13 @@ async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubjec
   let blocks = prepared?.blocks ?? null;
   if (!blocks?.length) {
     const cik = await knownCik(db, ticker);
+    // The filing's text comes from the archive alone; one not archived yet is analysed when the library holds it.
     if (cik) {
       const archive = event.documentUrl.slice(0, event.documentUrl.lastIndexOf("/"));
-      blocks = await prepareSecFiling({ ticker, cik, cikNumber: Number(cik), companyName: ticker, form: event.form, filingDate: event.filedAt, reportDate: event.eventDate, accessionNumber: event.id,
-        primaryDocument: event.documentUrl.slice(event.documentUrl.lastIndexOf("/") + 1), description: event.description, items: event.items.join(","), documentUrl: event.documentUrl, indexUrl: `${archive}/${event.id}-index.htm` },
-      { userAgent: env.SEC_USER_AGENT }).then(p => p.blocks).catch(() => null);
+      blocks = await archivedFiling({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, event.id, event.documentUrl)
+        .then(stored => prepareSecFiling({ ticker, cik, cikNumber: Number(cik), companyName: ticker, form: event.form, filingDate: event.filedAt, reportDate: event.eventDate, accessionNumber: event.id,
+          primaryDocument: event.documentUrl.slice(event.documentUrl.lastIndexOf("/") + 1), description: event.description, items: event.items.join(","), documentUrl: event.documentUrl, indexUrl: `${archive}/${event.id}-index.htm` }, stored))
+        .then(p => p.blocks).catch(() => null);
     }
   }
   return { documents, earlierAvailable, seed: blocks?.length ? blockPassages(ticker, event, blocks) : [] };

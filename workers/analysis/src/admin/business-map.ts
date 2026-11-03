@@ -22,7 +22,8 @@ import { dataTickers, normalizeTicker } from "../../../../shared/analysis-runtim
 import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
-import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
+import { discoverDataIssuer } from '../financial-data/provider.ts';
+import { edgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import { issuerDirectory, primaryTicker, searchIssuers } from '../catalog/issuer-directory.ts';
 import { json } from "./http.ts";
@@ -196,7 +197,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     if (path === '/admin/business-map/issuers' && request.method === 'GET') {
       const query = new URL(request.url).searchParams.get('q') ?? '';
       if (!query.trim()) return json({issuers:[]});
-      try { return json({issuers: searchIssuers(await issuerDirectory(db, throttledSecReader(env.SEC_USER_AGENT, fetch, 0)), query)}); }
+      try { return json({issuers: searchIssuers(await issuerDirectory(db, edgarListings(env, { delayMs: 0 })), query)}); }
       catch { return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503); }
     }
     if (path === '/admin/business-map/messages/read' && request.method === 'POST') {
@@ -236,7 +237,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     let ticker = normalizeTicker(match[1]);
     const body = await request.json() as {enabled?:boolean;requestId?:string};
     // A second share class joins as the class EDGAR lists first for its issuer, so one company is never kept twice.
-    if (ticker && body.enabled === true) ticker = primaryTicker(await issuerDirectory(db, throttledSecReader(env.SEC_USER_AGENT, fetch, 0)).catch(() => []), ticker);
+    if (ticker && body.enabled === true) ticker = primaryTicker(await issuerDirectory(db, edgarListings(env, { delayMs: 0 })).catch(() => []), ticker);
     if (!ticker || typeof body.enabled !== 'boolean' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(body.requestId??'')) return json({error:'公司代码或操作参数无效。'},400);
     const receipt=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(receipt)return receipt.ticker===ticker&&receipt.enabled===Number(body.enabled)?json({ticker,enabled:body.enabled,reused:true}):json({error:'操作标识已用于不同请求。'},409);
@@ -247,7 +248,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // maintenance task; the issuer record saved now lets discovery and collection know its CIK at once.
     if (body.enabled) {
       try {
-        const issuer = await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 0));
+        const issuer = await discoverDataIssuer(ticker, edgarListings(env, { delayMs: 0 }));
         await new D1SecRepository(db).setCache(`admin:financial-issuer:${ticker}`, issuer, now);
       } catch (error) {
         if (error instanceof Error && error.message === 'SEC_ISSUER_NOT_FOUND') return json({error:'SEC 发行人目录中没有这个代码。'},404);

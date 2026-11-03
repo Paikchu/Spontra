@@ -1,7 +1,8 @@
-import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
+import { isOfferingForm, isProspectusSupplement, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
-import { secArchiveDocumentUrl, secArchiveRoot, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
-import { throttledSecReader } from "../financial-data/provider.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { edgarListings } from "../sec-archive/index.ts";
+import { archivedForm, collectedForm, reportedForm } from "./filing-forms.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
@@ -10,7 +11,7 @@ import { scopeTickers } from "./router.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
 export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
-const stateKey = (ticker: string) => `${DISCOVERY_STATE_PREFIX}${ticker}`;
+export const discoveryStateKey = (ticker: string) => `${DISCOVERY_STATE_PREFIX}${ticker}`;
 /** Forms something downstream reads: periodic reports, current reports and insider transactions with amendments, offerings and proxies. */
 const ANNOUNCED = (form: string) => /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/.test(form) || isOfferingForm(form) || isProxyForm(form);
 const REMEMBERED = 200;
@@ -20,11 +21,13 @@ const REMEMBERED = 200;
  * the same filings with what reading one needs, so collection depends on no other writer's index (a data-only issuer has none).
  * `fiscalYearEnd` (`MMDD`) and `name` are the issuer's as its submissions state them; EDGAR leaves the year end out for some foreign issuers.
  * `annualForm`: the form of its latest annual report ("10-K", "20-F", "40-F"), so a foreign issuer reads as one before any filing is collected.
+ * `current`: the current reports and 40-Fs the `archive` task stores (pipeline/filing-forms.ts), whether or not collection reads them too.
  */
 export type CollectableFiling = { accession: string; form: string; filedAt: string; reportDate: string | null; url: string };
-export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null; annualForm?: string | null };
-/** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
-const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
+export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null; annualForm?: string | null; current?: DiscoveredFiling[] };
+export type DiscoveredFiling = { accession: string; form: string; items: string; filingDate: string; reportDate: string; document: string };
+const COLLECTED = (f: { form: string; items: string }) => collectedForm(f.form, f.items);
+const CURRENT = (f: { form: string }) => archivedForm(f.form);
 
 
 type Filing = { accession: string; form: string; items: string; filingDate: string; reportDate: string; primaryDocument: string };
@@ -33,7 +36,7 @@ function recentFilings(payload: unknown): Filing[] {
   const recent = (payload as { filings?: { recent?: Record<string, unknown[]> } } | null)?.filings?.recent;
   if (!recent || !Array.isArray(recent.accessionNumber)) return [];
   const column = (name: string, i: number) => String((recent[name] as unknown[] | undefined)?.[i] ?? "");
-  return recent.accessionNumber.slice(0, REMEMBERED).map((_, i) => ({
+  return recent.accessionNumber.map((_, i) => ({
     accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i),
     reportDate: column("reportDate", i), primaryDocument: column("primaryDocument", i),
   })).filter(f => /^\d{10}-\d{2}-\d{6}$/.test(f.accession));
@@ -56,12 +59,12 @@ export function annualForm(payload: unknown): string | null {
 export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch) {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
-  const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
+  const listings = edgarListings(env, { fetcher });
   const result = { checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
   // The two reference directories (catalog/issuer-directory.ts) are read here at most once a day; every other reader
   // uses the stored copies. EDGAR's names the CIK of a company the pipeline has not collected yet.
   let directory: Promise<Record<string, string>> | null = null;
-  const ciks = () => directory ??= issuerDirectory(db, reader, now).then(entries => Object.fromEntries(entries.filter(e => e[3]).map(e => [e[0], e[3]])));
+  const ciks = () => directory ??= issuerDirectory(db, listings, now).then(entries => Object.fromEntries(entries.filter(e => e[3]).map(e => [e[0], e[3]])));
   await Promise.all([ciks().catch(() => undefined), refreshListings(db, fetcher, now).catch(() => undefined)]);
   for (const ticker of await scopeTickers(env, "data")) {
     let cik = await knownCik(db, ticker);
@@ -76,25 +79,34 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
     }
     if (!cik) { result.unknown.push(ticker); continue; }
     try {
-      const submissions = await (await reader.read(secSubmissionsUrl(cik))).json() as { fiscalYearEnd?: unknown; name?: unknown } | null;
+      const submissions = await listings.submissions(cik) as { fiscalYearEnd?: unknown; name?: unknown } | null;
       const filings = recentFilings(submissions);
       if (!filings.length) throw new Error("EMPTY_SUBMISSIONS");
-      const previous = (await repository.getCache<DiscoveryState>(stateKey(ticker)))?.payload;
+      const previous = (await repository.getCache<DiscoveryState>(discoveryStateKey(ticker)))?.payload;
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
-      const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
+      // The bounded memory (REMEMBERED) is for the diff; the lists below are read from the whole recent block, as
+      // the SEC report reads its own window of filings, so a run of other forms never pushes a filing out of them.
+      const remembered = filings.slice(0, REMEMBERED);
+      const fresh = previous ? remembered.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
         url: secArchiveDocumentUrl(secArchiveRoot(Number(cik), f.accession), f.primaryDocument) }));
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
+          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: remembered.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
-            name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions) } satisfies DiscoveryState), at),
+            name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions),
+            // The report's own window of filings (its discovery reads the newest 40 business filings) and, apart from
+            // them, the prospectus supplements, so a run of supplements never pushes a report out of the list.
+            current: [...filings.filter(f => reportedForm(f.form)).slice(0, 40), ...filings.filter(f => isProspectusSupplement(f.form)).slice(0, 40)].map(f => ({ accession: f.accession, form: f.form, items: f.items, filingDate: f.filingDate, reportDate: f.reportDate, document: f.primaryDocument })) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
+        // A baseline announces no filing, so the current reports it lists are asked to be archived here; so are those of
+        // a state saved before `current` existed, whose archive task ran on its version change with nothing to list.
+        ...((!previous || !previous.current) && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
       ]);
       if (bootstrap) result.bootstrapped.push(ticker);
       if (!previous) result.baseline.push(ticker);

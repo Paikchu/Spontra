@@ -48,6 +48,9 @@ export async function issuerHistory(db: D1Database, cik: string, ticker: string)
 export async function readNewFiling(db: D1Database, reader: SecReader, model: NoteModel, filing: NewFiling,
   issuer: { cik: string; ticker: string; published: BusinessFlowQuarter[]; history: RevenueHistoryQuarter[] }, reserve: () => Promise<boolean>): Promise<NoteOutcome> {
   const documents = await readFilingDocuments(filing.url, reader, filing.accession, filing.form);
+  // Every document read is archived before it is judged: the SEC report and the library start from `filing.archived`,
+  // and a filing that yields no quarter (a notice, an unresolved read) has no other way into the archive.
+  for (const document of documents) await reader.archive?.({ url: document.url, accession: filing.accession, filedAt: filing.filedAt, cik: issuer.cik, industry: 'unknown' }, document.html, { form: filing.form, ...(filing.reportDate ? { reportDate: filing.reportDate } : {}) });
   const context = { tables: filingTables(documents), text: documentText(documents), published: issuer.published, history: issuer.history,
     source: { accession: filing.accession, url: filing.url, filedAt: filing.filedAt, form: filing.form } };
   const kind = periodic(filing.form) ? "form NOT LIKE '8-K%' AND form NOT LIKE '6-K%'" : "(form LIKE '8-K%' OR form LIKE '6-K%')";

@@ -1,6 +1,6 @@
 import { extractText } from "unpdf";
 import { WebSearchError, type ContentData, type ContentRequest, type SearchData, type SearchProvider, type SearchRequest } from "./types.ts";
-import { normalizeContent, publicUrl } from "./validation.ts";
+import { isEdgarUrl, normalizeContent, publicUrl } from "./validation.ts";
 
 /** Workers AI document conversion (`env.AI.toMarkdown`); HTML and PDF convert without model tokens. */
 export type MarkdownConverter = {
@@ -58,6 +58,8 @@ export async function readPageDirect(url: string, depth: "basic" | "advanced", o
     if (!location) break;
     await response.body?.cancel().catch(() => undefined);
     try { current = publicUrl(new URL(location, current).href); } catch { throw new Unreadable("redirect-not-public", response.status); }
+    // A hop onto EDGAR is refused like a direct request for it: SEC text comes from the archive (docs/sec-archive.md).
+    if (isEdgarUrl(current)) throw new WebSearchError("archive_only");
     if (hop === MAX_REDIRECTS) throw new Unreadable("too-many-redirects", response.status);
   }
   if (!response) throw new Unreadable("no-response");
@@ -104,7 +106,8 @@ export class DirectPageProvider implements SearchProvider {
       this.options.record?.({ url: r.url, outcome: "direct", status: page.status, contentType: page.contentType, characters: page.text.length, durationMs: Date.now() - started });
       return { kind: "content", url: r.url, text: page.text, format: "markdown", completeness: "unverified" };
     } catch (error) {
-      if (error instanceof WebSearchError && error.code === "invalid_request") throw error;
+      // An invalid request, or the refusal of an EDGAR page, is final: no provider reads it either.
+      if (error instanceof WebSearchError && (error.code === "invalid_request" || error.code === "archive_only")) throw error;
       const reason = error instanceof Unreadable ? error.message : error instanceof Error && error.name === "TimeoutError" ? "timeout" : "transport";
       this.options.record?.({ url: r.url, outcome: "fallback", reason, ...(error instanceof Unreadable ? { status: error.status, contentType: error.contentType } : {}), durationMs: Date.now() - started });
       return this.inner.fetchContent(r);
