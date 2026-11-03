@@ -9,7 +9,7 @@ import { archivedForm } from "./filing-forms.ts";
  */
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
-  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested",
+  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
@@ -56,7 +56,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Stores the current reports collection does not read (8-Ks without Item 2.02), so every filing the SEC report
   // analyses is in the archive (docs/sec-archive.md); no model.
-  "archive": { emits: ["filing.archived", "archive.superseded"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  "archive": { emits: ["filing.archived", "archive.superseded", "archive.unsupported"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Brings the company's quarterly revenue history up to date after a publication.
   "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Re-projects archived filings whose capital projection predates the current version.
@@ -141,6 +141,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "company.added": [{ task: "events" }, { task: "presentation" }],
   // A company's baseline lists current reports no `filing.discovered` announced.
   "archive.requested": [{ task: "archive" }],
+  // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
+  "archive.unsupported": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],

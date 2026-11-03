@@ -3,6 +3,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { discoveryStateKey, type DiscoveryState } from "../pipeline/discovery.ts";
 import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 import { archiveCompleteKey, archiveDocuments, archivingReader, type ArchiveCompletion } from "./archive.ts";
 export { archiveCompleteKey } from "./archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
@@ -62,7 +63,12 @@ export const ARCHIVE_TASKS = {
           const reason = error instanceof Error ? error.message.slice(0, 200) : String(error);
           const attempts = ((await repository.getCache<Attempts>(archiveAttemptsKey(ticker, filing.accession)))?.payload.attempts ?? 0) + 1;
           if (PERMANENT.has(reason) || attempts >= MAX_ATTEMPTS) {
-            await repository.setCache(archiveCompleteKey(ticker, filing.accession), { unsupported: reason, attempts } satisfies ArchiveCompletion, stamp);
+            // The marker and its announcement commit together: the report regroups the period's sources without it.
+            await db.batch([
+              db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+                .bind(archiveCompleteKey(ticker, filing.accession), JSON.stringify({ unsupported: reason, attempts } satisfies ArchiveCompletion), stamp),
+              outboxStatement(db, { type: "archive.unsupported", ticker, cik: state.cik, detail: { form: filing.form, accession: filing.accession }, causeId }, stamp),
+            ]);
             unsupported.push(filing.accession);
           } else {
             await repository.setCache(archiveAttemptsKey(ticker, filing.accession), { attempts, reason, retryAt: new Date(now.getTime() + RETRY_MS).toISOString() } satisfies Attempts, stamp);

@@ -54,6 +54,15 @@ test("an exhibit's type is read from its file name", () => {
   assert.equal(exhibitType("coreweave4q25earningspress.htm"), "EX-99");
 });
 
+test("the web search drops EDGAR hits from its results, cached ones included", async () => {
+  const hit = (url: string) => ({ url, title: "t", snippet: "s", publishedAt: null, score: 1 });
+  const stored = { kind: "search", results: [hit("https://www.sec.gov/Archives/edgar/data/1/0001-26-000001/a.htm"), hit("https://investor.oracle.com/q1")] };
+  const store = { read: async () => ({ data: stored, fetchedAt: Date.now() - 1000, expiresAt: Date.now() + 60_000 }), claim: async () => true, publish: async () => undefined, release: async () => undefined };
+  const service = new WebSearchService({ id: "test", search: async () => { throw new Error("unused: cached"); }, fetchContent: async () => { throw new Error("unused"); } } as never, store as never);
+  const found = await service.search({ query: "oracle results" }, { scope: "test" });
+  assert.deepEqual(found.data.results.map(r => r.url), ["https://investor.oracle.com/q1"]);
+});
+
 test("the web search refuses EDGAR pages: SEC documents come from the archive", async () => {
   assert.ok(isEdgarUrl("https://www.sec.gov/Archives/edgar/data/1/0001-26-000001/a.htm"));
   assert.ok(!isEdgarUrl("https://investor.oracle.com/q1.pdf"));
@@ -86,6 +95,7 @@ test("the SEC report follows the archive: it starts on filing.archived, and curr
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true);
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "4" } }), false);
   assert.ok(TASKS.archive.emits.includes("filing.archived"));
+  assert.ok(SUBSCRIPTIONS["archive.unsupported"]!.some(s => s.task === "sec-report" && s.when!({ type: "archive.unsupported", ticker: "ORCL", detail: { form: "10-Q" } })), "a filing the archive gave up on sends the report back to regroup");
   const guidance = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "guidance")!;
   assert.equal(guidance.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true, "a release that waited for the archive restarts its guidance");
 });

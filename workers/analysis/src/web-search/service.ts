@@ -15,9 +15,12 @@ export class WebSearchService {
   constructor(provider: SearchProvider, store: SearchStore, now: () => number = Date.now) {
     this.provider = provider; this.store = store; this.now = now;
   }
-  search(request: SearchRequest, policy: CachePolicy): Promise<Retrieval<SearchData>> {
+  async search(request: SearchRequest, policy: CachePolicy): Promise<Retrieval<SearchData>> {
     const normalized = normalizeSearch(request);
-    return this.retrieve("search", normalized, policy, () => this.provider.search(normalized));
+    const found = await this.retrieve("search", normalized, policy, () => this.provider.search(normalized));
+    // An EDGAR hit is dropped on the way out, cached results included: a filing's text, even as a provider's excerpt,
+    // reaches an agent only from the SEC archive (docs/sec-archive.md).
+    return { ...found, data: { ...found.data, results: found.data.results.filter(hit => !isEdgarUrl(hit.url)) } };
   }
   async fetchContent(request: ContentRequest, policy: CachePolicy): Promise<Retrieval<ContentData>> {
     const normalized = normalizeContent(request);
