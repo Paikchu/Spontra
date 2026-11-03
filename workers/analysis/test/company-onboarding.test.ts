@@ -62,6 +62,14 @@ test("a data ticker discovery has never seen is announced as a new company with 
   const second = await runSecDiscovery(env, new Date("2026-10-17T10:10:00.000Z"), fetcher({ "CIK0002056322.json": submissions(newer) }));
   assert.deepEqual({ baseline: second.baseline, bootstrapped: second.bootstrapped, discovered: second.discovered }, { baseline: [], bootstrapped: [], discovered: ["NBIS:10-Q:0001104659-26-000003"] });
   assert.deepEqual(await outbox(db), [{ type: "filing.discovered", ticker: "NBIS", cik: "0002056322", detail: JSON.stringify({ form: "10-Q", items: "", accession: "0001104659-26-000003" }) }]);
+
+  // A state saved before `current` existed (an upgraded installation): the sweep that first lists the current reports asks for their archive.
+  await db.prepare("DELETE FROM pipeline_outbox").bind().run();
+  const saved = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload);
+  delete saved.current;
+  await db.prepare("UPDATE sec_cache SET payload = ? WHERE cache_key = 'sec:discovery:v1:NBIS'").bind(JSON.stringify(saved)).run();
+  await runSecDiscovery(env, new Date("2026-10-17T10:20:00.000Z"), fetcher({ "CIK0002056322.json": submissions(newer) }));
+  assert.deepEqual(await outbox(db), [{ type: "archive.requested", ticker: "NBIS", cik: "0002056322", detail: null }]);
 });
 
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {

@@ -254,22 +254,24 @@ test("the archive task finishes a filing whose exhibit failed to store, instead 
     if (url === `${folder}/ex99.htm`) return new Response(exhibit);
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
-  const run = () => ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1", now: new Date("2026-10-17T00:00:00.000Z"), trigger: null });
+  const run = (minutesLater = 0) => ARCHIVE_TASKS.archive.run(env, "ORCL", { causeId: "c1", now: new Date(Date.parse("2026-10-17T00:00:00.000Z") + minutesLater * 60_000), trigger: null });
   const stored = async () => (await db.prepare("SELECT COUNT(*) AS n FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:%'").first<{ n: number }>())!.n;
   try {
     failNextPut = true;
     // The failed store is a failure of this filing alone: counted, tried again after a pause, never the batch's.
     assert.deepEqual(await run(), { status: "later", afterMs: 15 * 60_000, detail: { archived: [], failed: ["0001193125-26-000001"] } });
     assert.equal(await stored(), 1, "the body alone was stored");
+    // Until its delay is out the filing waits, and the run says how long; it is not tried again at once.
+    assert.deepEqual(await run(1), { status: "later", afterMs: 14 * 60_000, detail: { archived: 0, deferred: 1 } });
     // A body whose exhibit is not stored yet is not a filing the report or guidance may read.
     assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), false, "half a filing is not held");
     assert.equal(await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`), null, "its exhibits read as not archived");
-    const resumed = await run();
+    const resumed = await run(16);
     assert.deepEqual(resumed, { status: "done", detail: { archived: ["0001193125-26-000001"] } }, "the filing is still pending after its body was stored");
     assert.ok(await stored() >= 2, "the exhibit is stored too");
     assert.equal(await archiveHolds(env, "ORCL", "0001193125-26-000001", `${folder}/d1.htm`), true, "the whole filing is held");
     assert.equal((await archivedExhibits(env, "ORCL", "0001193125-26-000001", "2026-10-16", `${folder}/d1.htm`))?.length, 1);
-    assert.deepEqual(await run(), { status: "done", detail: { archived: 0 } });
+    assert.deepEqual(await run(17), { status: "done", detail: { archived: 0 } });
   } finally {
     globalThis.fetch = original;
   }

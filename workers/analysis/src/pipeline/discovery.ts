@@ -99,8 +99,9 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
-        // A baseline announces no filing, so the current reports it lists are asked to be archived here.
-        ...(!previous && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
+        // A baseline announces no filing, so the current reports it lists are asked to be archived here; so are those of
+        // a state saved before `current` existed, whose archive task ran on its version change with nothing to list.
+        ...((!previous || !previous.current) && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
       ]);
       if (bootstrap) result.bootstrapped.push(ticker);
       if (!previous) result.baseline.push(ticker);
