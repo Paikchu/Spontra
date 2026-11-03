@@ -34,8 +34,8 @@ sec-archive/
 ## 事件链的变化
 
 - `filing.discovered` 不再直接触发 SEC 财报。SEC 财报改为订阅 `filing.archived`（定期报告、8-K、6-K）：`shouldAnalyze` 对归档里没有的申报返回“跳过”，等它归档后由新事件再起一次运行。
-- 财务采集只读定期报告、6-K 和业绩 8-K。其他 8-K 由新任务 `archive` 归档：申报发现在 D1 状态里记下这些 8-K（`current`），任务按新到旧每轮存 2 份，发出同样的 `filing.archived`。
-- 前瞻指引的材料顺序：文件库已拆解的 EX-99 → 归档原文 → 没有就为空；不再读 EDGAR。
+- 财务采集只读 10-Q、10-K、20-F（含修正版）、6-K 原件和业绩 8-K 原件。SEC 财报要读、采集却不读的申报（其他 8-K、8-K/A、6-K/A、40-F）由新任务 `archive` 归档，判定统一在 `pipeline/filing-forms.ts`。申报发现在 D1 状态里记下这些申报（`current`），任务按新到旧每轮存 2 份，发出同样的 `filing.archived`。一份申报的全部文档都存好后才记完成标记（`sec:archive-complete:v1:<ticker>:<accession>`）；存到一半中断的，下一轮从归档读回已存的部分，补齐其余文档。
+- 前瞻指引的材料顺序：文件库已拆解的 EX-99 → 归档原文 → 没有就为空；不再读 EDGAR。业绩发布还没归档时，事件保持 `queued`，不启动 Workflow；该 8-K 发出 `filing.archived` 后指引任务重跑，此外每 6 小时检查一次。发布日起 2 天仍未归档的，按现有材料运行。
 - 业务脑图、业务解读、stage 的 `read_web`：对 sec.gov 的网页抓取由 `WebSearchService.fetchContent` 统一拒绝（`archive_only`）。SEC 原文只经文件库读取。
 
 ## 已知取舍

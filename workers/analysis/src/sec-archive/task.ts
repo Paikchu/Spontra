@@ -3,12 +3,17 @@ import type { AnalysisEnv } from "../operations.ts";
 import { discoveryStateKey, type DiscoveryState } from "../pipeline/discovery.ts";
 import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { archiveDocuments, archiveHolds, archivingReader } from "./archive.ts";
+import { archiveDocuments, archivingReader } from "./archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 const MINUTE = 60_000;
 /** Filings stored per run; the rest follow at once in the next run. */
 const PER_RUN = 2;
+/**
+ * A filing counts as archived once every document read for it is stored, not when its first one is: the documents are
+ * stored one at a time, so a run cut short after the body must come back for the exhibits.
+ */
+const completeKey = (ticker: string, accession: string) => `sec:archive-complete:v1:${ticker}:${accession}`;
 const secAccessPaused = (error: unknown) => error instanceof Error && error.message === "SEC_ACCESS_PAUSED";
 
 /**
@@ -24,8 +29,9 @@ export const ARCHIVE_TASKS = {
       const state = (await new D1SecRepository(db).getCache<DiscoveryState>(discoveryStateKey(ticker)))?.payload;
       if (!state?.current?.length) return { status: "done", detail: { skipped: "no current reports to archive" } };
       const archive = { DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT };
+      const repository = new D1SecRepository(db);
       const pending = [];
-      for (const filing of state.current) if (/^[A-Za-z0-9_.-]+\.html?$/.test(filing.document) && !await archiveHolds(archive, ticker, filing.accession)) pending.push(filing);
+      for (const filing of state.current) if (/^[A-Za-z0-9_.-]+\.html?$/.test(filing.document) && !await repository.getCache(completeKey(ticker, filing.accession))) pending.push(filing);
       if (!pending.length) return { status: "done", detail: { archived: 0 } };
       const reader = archivingReader(archive, ticker, causeId);
       const archived: string[] = [];
@@ -34,6 +40,7 @@ export const ARCHIVE_TASKS = {
           const url = secArchiveDocumentUrl(secArchiveRoot(Number(state.cik), filing.accession), filing.document);
           const documents = await readFilingDocuments(url, reader, filing.accession, filing.form);
           await archiveDocuments(reader, { accession: filing.accession, filedAt: filing.filingDate, cik: state.cik, industry: "unknown" }, documents, { form: filing.form, reportDate: filing.reportDate });
+          await repository.setCache(completeKey(ticker, filing.accession), { documents: documents.length }, new Date().toISOString());
           archived.push(filing.accession);
         }
       } catch (error) {
