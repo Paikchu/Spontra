@@ -464,12 +464,12 @@ test("the page shows only the paragraphs whose numbers hold and the quotes found
 });
 
 test("the writer's finish is held to the same check, and a model that never reads gets no note", async () => {
-  assert.deepEqual(NOTE_TOOLS.map(t => t.name), ["find_sections", "read_section", "finish"]);
+  assert.deepEqual(NOTE_TOOLS.map(t => t.name), ["read_filing_analysis", "finish"]);
   let calls = 0;
   const outcome = await runNote({
     env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", metric: capexMetric(), flags: capexFlags(), data: standard, documents: [],
     act: async () => ({ content: [{ type: "tool_use", id: `t${++calls}`, name: "finish", input: { paragraphs: [{ text: goodText, sourceIds: ["m1"] }], quotes: [] } }], stopReason: "tool_use" }),
-    stage: (_, cb) => cb(), reserveTurn: async () => true, budget: { turns: 3, reads: 1, finds: 1 },
+    stage: (_, cb) => cb(), reserveTurn: async () => true, budget: { turns: 3, reads: 1 },
   });
   assert.equal(outcome.note, null);
   assert.equal(calls, 3);

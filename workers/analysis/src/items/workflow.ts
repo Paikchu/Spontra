@@ -131,7 +131,7 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
     return rows.filter(r => r.v === ITEMS_VERSION).map(r => r.k);
   });
   const pending = plan.subjects.filter(s => !written.includes(itemAnalysisKey(ticker, s.id)));
-  const data = pending.length ? await loadStageData(env, ticker) : null;
+  const data = pending.length ? await loadStageData(env, ticker, { findings: false }) : null;
   const outcomes: ItemOutcome[] = [];
   if (data) {
     // Form 4 figures are cited through `{ event }` refs, which the verifier resolves from the events publication.

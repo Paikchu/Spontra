@@ -1,3 +1,8 @@
+import { D1SecRepository } from "../sec/d1.ts";
+import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
+import { readStoredFindings } from "../findings/read.ts";
+import { businessTreeCacheKey } from "../business-tree/workflow.ts";
+import type { BusinessTree } from "../../../../shared/analysis-contract/business-tree.ts";
 import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
@@ -503,6 +508,43 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         const id = await registerEvidence(ctx.state, { passageId: `transcript:${meta.id}`, documentId: `transcript:${meta.id}`, title: meta.title, form: "transcript", filedAt: meta.filedAt, url: meta.sourceUrl, path: ["earnings call", `FY${meta.fiscalYear} Q${meta.fiscalQuarter}`], text, table: null }, "sec", meta.filedAt);
         return `[${id}] ${meta.title}\n${text}`;
       }, observe: (_a, v) => v }),
+    // The layers below (docs/spontra-architecture-upgrade.md, U4): each filing's analysis and the passages it quoted
+    // (layer 2), the company's findings (layer 3) and its business breakdown with the researched pages (layer 4).
+    tool({ name: "read_filing_analyses", description: "The written analysis of each of the company's filings, newest report first: id, form, dates and title. Read one with read_filing_analysis.", parameters: z.object({}), concurrencySafe: true,
+      execute: async (_a, ctx) => { const list = await ctx.stage("analyses", () => listFilingAnalyses(db, ctx.state.input.ticker).catch(() => [])); return list.map(a => `${a.id} · ${a.form} filed ${a.filedAt} · report ${a.periodEnd} · ${a.title}`).join("\n") || "No filing analysis is written yet."; }, observe: (_a, v) => v }),
+    tool({ name: "read_filing_analysis", description: "Read one filing analysis: its conclusion and the verbatim passages it quoted, each becoming evidence [e…]. Counts against filing reads.", parameters: z.object({ id: z.string().max(40), focus: z.array(z.string().max(60)).max(8).optional() }),
+      execute: async (args, ctx) => {
+        if (ctx.state.used.reads >= RESEARCH_BUDGET.reads) throw new Error("no filing reads left; score with the evidence you have");
+        ctx.state.used.reads++;
+        const read = await ctx.stage("analysis", () => readFilingAnalysis(db, ctx.state.input.ticker, args.id));
+        if (!read) throw new Error("no filing analysis with that id (read_filing_analyses)");
+        const terms = (args.focus ?? []).map(f => f.toLowerCase());
+        const chosen = terms.length ? read.passages.filter(p => terms.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : read.passages;
+        const out: string[] = [];
+        for (const p of (chosen.length ? chosen : read.passages).slice(0, 10)) {
+          const excerpt = (p.table ? renderTable(p.table, args.focus ?? []) : p.text).slice(0, READ_CHARS);
+          out.push(`[${await registerEvidence(ctx.state, p, "sec", null, excerpt)}] ${p.path.join(" › ")}\n${excerpt}`);
+        }
+        return `${read.form} filed ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion (analysis, not evidence): ${read.judgment}\n\n${out.join("\n\n") || "(no passage quoted)"}`;
+      }, observe: (_a, v) => v }),
+    tool({ name: "read_findings", description: "The company's verified findings: what the financial review concluded across the eight quarters (analysis, not evidence; their figures are facts you read with read_financials).", parameters: z.object({}), concurrencySafe: true,
+      execute: async (_a, ctx) => { const f = await ctx.stage("findings", () => readStoredFindings(db, ctx.state.input.ticker).catch(() => null)); return f?.findings.length ? f.findings.map(x => `${x.id} · ${x.kind} · severity ${x.severity} · ${x.title}\n${x.judgment.text}`).join("\n\n") : "No findings are published."; }, observe: (_a, v) => v }),
+    tool({ name: "read_business_tree", description: "The company's business breakdown: each disclosed business, its lines and products and how they earn money, each anchored by a passage from a researched page or filing. A business's anchors become evidence [e…].", parameters: z.object({ business: z.string().max(120).optional() }),
+      execute: async (args, ctx) => {
+        const tree = await ctx.stage("tree", async () => (await new D1SecRepository(db).getCache<BusinessTree>(businessTreeCacheKey(ctx.state.input.ticker)).catch(() => null))?.payload ?? null);
+        if (!tree?.branches?.length) return "No business breakdown is published.";
+        const branches = args.business ? tree.branches.filter(b => b.name.toLowerCase().includes(args.business!.toLowerCase())) : tree.branches;
+        if (!args.business) return tree.branches.map(b => `${b.name}: ${b.children.map(c => c.name).join(", ") || "no lines"}${b.summary ? ` — ${b.summary.text}` : ""}`).join("\n");
+        const out: string[] = [];
+        const walk = async (node: BusinessTree["branches"][number]["children"][number], depth: number): Promise<void> => {
+          const source = tree.sources.find(x => node.anchor?.sourceIds.includes(x.id));
+          const id = node.anchor && source ? await registerEvidence(ctx.state, { passageId: `tree:${tree.ticker}:${node.id}`, documentId: `tree:${tree.ticker}`, title: source.title, form: source.kind === "sec" ? "filing" : "web", filedAt: source.publishedAt ?? tree.generatedAt.slice(0, 10), url: source.url, path: ["business breakdown", node.name], text: node.anchor.text, table: null }, source.kind, source.publishedAt, node.anchor.text) : null;
+          out.push(`${"  ".repeat(depth)}${node.name}${node.gloss ? ` (${node.gloss})` : ""}${node.revenue.length ? ` · ${node.revenue.map(r => r.label).join(", ")}` : ""}${id ? ` [${id}]` : ""}${node.summary ? ` — ${node.summary.text}` : ""}`);
+          for (const child of node.children) await walk(child, depth + 1);
+        };
+        for (const b of branches.slice(0, 3)) { out.push(`${b.name}${b.summary ? ` — ${b.summary.text}` : ""}`); for (const n of b.children) await walk(n, 1); }
+        return out.join("\n").slice(0, 9000) || "No such business.";
+      }, observe: (_a, v) => v }),
     tool({ name: "search_evidence", description: "Register native search results as source IDs for page reads.", parameters: nativeSearchSchema,
       nativeSearch: { remaining: state => RESEARCH_BUDGET.searches - state.used.searches, excluded: EXCLUDED_HOSTS },
       execute: async ({ query, hits, error }, ctx) => {
@@ -597,7 +639,8 @@ export async function registerManagementEvidence(state: ValuationState): Promise
   return ids;
 }
 
-export const RESEARCH_TOOLS = ["read_financials", "list_filings", "find_filing_sections", "read_filing_section", "read_guidance", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+// No web: research the company through the layers below; the business breakdown carries the researched pages.
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "find_filing_sections", "read_filing_section", "read_guidance", "read_transcript", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "read_guidance", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

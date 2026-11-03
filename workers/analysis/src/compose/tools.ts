@@ -52,7 +52,15 @@ export type ComposeState = Omit<StageTurn, "report"> & { report: StageTurn["repo
   used: { finds: number; reads: number; searches: number; webReads: number };
   draft: { finding: AnalysisFinding; errors: string[] } | null;
   composed: ComposedAnalysis | null;
+  /** Analyses the checks refused; past `REPAIR_ROUNDS` repairs the analysis is withheld rather than tried again. */
+  rejected: number;
+  withheld: boolean;
 };
+/**
+ * Repairs a composed analysis gets after its first check (docs/spontra-architecture-upgrade.md, U7): one. What one
+ * repair cannot fix is withheld, so a run never spends its turns re-sending whole documents.
+ */
+export const REPAIR_ROUNDS = 1;
 
 const tool = defineTool<ComposeState>();
 const untrusted = (host: string, text: string) => `<untrusted source="${host}">\n${text}\n</untrusted>`;
@@ -67,7 +75,7 @@ function register(state: ComposeState, passage: FindingPassage, kind: "sec" | "w
 
 /** A run's state with its seed passages already registered, in order, as m1… */
 export function openCompose(input: ComposeInput): ComposeState {
-  const state: ComposeState = { candidates: [], last: null, accepted: null, answer: null, materials: [], hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0 }, draft: null, report: null, composed: null };
+  const state: ComposeState = { candidates: [], last: null, accepted: null, answer: null, materials: [], hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0 }, draft: null, report: null, composed: null, rejected: 0, withheld: false };
   for (const passage of input.seed ?? []) register(state, passage, "sec", null);
   return state;
 }
@@ -110,8 +118,9 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
     if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_section with previous: true)");
     for (const line of input.check?.(finding) ?? []) errors.push(line);
     state.draft = { finding, errors };
+    if (errors.length && ++state.rejected > REPAIR_ROUNDS) { state.withheld = true; return `errors (${errors.length}):\n  ${errors.join("\n  ")}\nNo repair is left: the analysis is withheld.`; }
     const described = lens ? describeDocument(lens.document, compileDocument(lens.document, facts, input.periodEnd), []) : "";
-    return `${described}\n${errors.length ? `errors (${errors.length}):\n  ${errors.join("\n  ")}\nFix them and compose again.` : "The analysis is accepted as written; call finish."}`;
+    return `${described}\n${errors.length ? `errors (${errors.length}):\n  ${errors.join("\n  ")}\nFix them and compose again; this is the one repair.` : "The analysis is accepted as written; call finish."}`;
   };
   return [
     ...reads,

@@ -13,7 +13,7 @@ export type PlannedLine = { key: LineKey; why: string; questions: string[]; evid
 export type Tier = "deep" | "standard" | "light";
 export type Plan = { tier: Tier; lines: PlannedLine[]; budget: { turns: number; reads: number; finds: number; searches: number; webReads: number } };
 
-const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 16, reads: 8, finds: 6, searches: 4, webReads: 3 }, standard: { turns: 10, reads: 5, finds: 4, searches: 2, webReads: 1 }, light: { turns: 0, reads: 0, finds: 0, searches: 0, webReads: 0 } };
+const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 16, reads: 8, finds: 6, searches: 0, webReads: 0 }, standard: { turns: 10, reads: 5, finds: 4, searches: 0, webReads: 0 }, light: { turns: 0, reads: 0, finds: 0, searches: 0, webReads: 0 } };
 const MAX_LINES = 5;
 
 const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {

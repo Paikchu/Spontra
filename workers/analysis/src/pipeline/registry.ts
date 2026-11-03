@@ -10,7 +10,7 @@ import { archivedForm } from "./filing-forms.ts";
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
-  "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
+  "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
@@ -25,7 +25,7 @@ export type EventType = typeof EVENT_TYPES[number];
 export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
-  "sec-report", "fundamentals", "guidance", "events",
+  "sec-report", "fundamentals", "guidance", "events", "extract",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
@@ -81,6 +81,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Current reports and Form 4 filings for the map's event rail, and every company's filings list; no model.
   "events": { emits: ["events.published", "filings.indexed"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
+  // Layer 2's per-period extract: the eight quarters, the ledger every finding's figures come from and the checkup's
+  // flags, cut from layer 1's publication and the guidance so the layers above never read layer 1; no model.
+  "extract": { emits: ["extract.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
   "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Recovers company analyses that stopped, failed or are behind the prompt version.
@@ -171,20 +174,22 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
     { task: "items", when: e => PERIODIC.test(form(e)) },
   ],
-  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
-  "guidance.published": [{ task: "findings" }, { task: "translate" }, { task: "valuation" }],
-  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }, { task: "valuation" }],
+  // Findings read layer 2 only: the per-period extract, the filing analyses and the company analysis.
+  "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
+  "guidance.published": [{ task: "extract" }, { task: "translate" }, { task: "valuation" }],
+  "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
+  "extract.published": [{ task: "findings" }, { task: "items" }],
   "analysis.published": [{ task: "findings" }],
-  "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
+  "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }, { task: "valuation" }],
   // Every publication with reader-facing prose is translated once it lands.
   "dossier.published": [{ task: "translate" }],
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
-  "tree.published": [{ task: "translate" }],
+  "tree.published": [{ task: "translate" }, { task: "valuation" }],
   "valuation.published": [{ task: "translate" }],
   // New rows on the rail are filings to analyse.
   "events.published": [{ task: "translate" }, { task: "items" }],
-  "items.published": [{ task: "translate" }],
+  "items.published": [{ task: "translate" }, { task: "findings" }, { task: "valuation" }],
   "presentation.unresolved": [{ task: "presentation" }],
   // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the SEC
   // reports lead on to guidance; the findings chain starts from the company analysis already published); the map's
@@ -192,6 +197,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "feature.settings": [
     // Layer 2: the archived filings are split into the library, the summaries and guidance written, each filing analysed.
     { task: "library", when: e => e.detail?.feature === "filings" },
+    { task: "extract", when: e => e.detail?.feature === "filings" },
     { task: "sec-report", when: e => e.detail?.feature === "filings" },
     { task: "items", when: e => e.detail?.feature === "filings" },
     { task: "memory", when: e => e.detail?.feature === "filings" },

@@ -1,23 +1,18 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
-import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract/statement-analysis.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
+import { readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { companyName as listedName } from "../catalog/issuer-directory.ts";
 import { assertFeatureTicker, requireDb } from "../core.ts";
-import { readMapDerived } from "../financial-data/derived.ts";
-import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
-import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
-import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { callWorkerSecModel, callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
-import { buildHighlightTable, buildLedger, type Ledger } from "./ledger.ts";
+import { buildHighlightTable, type Ledger } from "./ledger.ts";
+import { readPeriodExtract } from "../extract/period-extract.ts";
+import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from "../items/read.ts";
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
@@ -26,10 +21,9 @@ import { browserRenderer } from "../lens/draw.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v10";
+export const FINDINGS_VERSION = "findings.writer.v11";
 /** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
 export const LENS_VERSION = "lens.agent.v6";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
@@ -38,42 +32,45 @@ export type FindingsDeps = { model?: FindingsModel; lens?: LensModel; fetcher?: 
 /** The model reasons at length before it writes, and the provider counts that against the output limit; the default limit leaves room. */
 const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
 
-export type Input = { data: FindingData; ledger: Ledger; context: string | null; fingerprint: string } | null;
+/** A filing's analysis as the writer reads it (layer 2): which filing, what it concluded. */
+export type FilingAnalysisNote = { id: string; kind: string; periodEnd: string; title: string; judgment: string };
+export type Input = { data: FindingData; ledger: Ledger; context: string | null; filings: FilingAnalysisNote[]; fingerprint: string } | null;
+
+/** The filing analyses read with the findings: the newest per filing, written for the last eight quarters. */
+const FILING_NOTES = 16;
 
 /**
- * Everything the writer sees, from stored projections only: no SEC fetch, no model call. The older quarters and the
- * capital structure come from the map's prepared snapshot, the same data the map verifies findings against; until
- * the snapshot matches the current publication there is nothing to write from.
+ * Everything the writer sees, from layer 2's products only (docs/spontra-architecture-upgrade.md): the per-period
+ * extract (statements, capital, fundamentals, guidance and the ledger, cut once by layer 2), the analysis of each
+ * filing, and the company analysis built on the report memory. No SEC fetch, no model call, no layer-1 read; until
+ * layer 2 has cut the extract there is nothing to write from.
  */
 export async function findingsInput(env: AnalysisEnv, ticker: string): Promise<Input> {
   const db = requireDb(env);
-  const publication = await readCompletePublicationForTicker(db, ticker);
-  const flow = publication.status === "ready" ? publication.flow : null;
-  const newest = [...flow?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
-  if (!flow || !newest) return null;
-  const snapshot = await readMapDerived(db, flow);
-  if (!snapshot) return null;
-  const quarters = [...new Map([...(snapshot.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
-  const capital = snapshot.capital;
-  const [fundamentals, guidance, analysis] = await Promise.all([
-    getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null),
-    readGuidanceResponse(db, ticker).then(r => r.guidance).catch(() => null),
+  const extract = await readPeriodExtract(db, ticker);
+  if (!extract) return null;
+  const [analysis, filings] = await Promise.all([
     new D1CompanyAnalysisRepository(db).getLatestPublication(ticker).catch(() => null),
+    filingNotes(db, ticker, extract.ledger.periodEnd).catch(() => [] as FilingAnalysisNote[]),
   ]);
-  const data: FindingData = { quarters, history: publication.history ?? null, capital, fundamentals, guidance };
-  const sources = new Map<string, ExplainerSource>();
-  for (const q of quarters) for (const s of q.sources) if (isSecUrl(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
-  for (const s of guidance?.sources ?? []) if (!sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: s.sourceKind === "sec" ? "sec" : "web", publishedAt: s.publishedAt });
-  const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
   const overview = analysis?.overview;
   const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}: ${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
-  // The periods the snapshot covers and the newest backlog, not when the snapshot was rebuilt: a daily re-collection
-  // that changes nothing must not rewrite the findings.
-  // Guidance by what it says: a republish that only stamps a new time or moves a transcript's coverage status is not new input.
-  const guidanceContent = guidance ? await sha256(JSON.stringify([guidance.items, guidance.sources])) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidanceContent, analysis: analysis?.generatedAt ?? null,
-    quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
-  return { data, ledger, context, fingerprint };
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, extract: extract.fingerprint, analysis: analysis?.generatedAt ?? null, filings: filings.map(f => f.id) }));
+  return { data: extract.data, ledger: extract.ledger, context, filings, fingerprint };
+}
+
+/** The written filing analyses of the eight quarters to `periodEnd`, newest first. */
+async function filingNotes(db: D1Database, ticker: string, periodEnd: string): Promise<FilingAnalysisNote[]> {
+  const repository = new D1SecRepository(db);
+  const index = (await repository.getCache<ItemsIndex>(itemsIndexKey(ticker)))?.payload;
+  const from = new Date(Date.parse(periodEnd) - 2 * 366 * 86_400_000).toISOString().slice(0, 10);
+  const notes: FilingAnalysisNote[] = [];
+  for (const item of (index?.items ?? []).filter(i => i.written)) {
+    const stored = (await repository.getCache<StoredItem>(itemAnalysisKey(ticker, item.id)))?.payload;
+    if (!stored || stored.schemaVersion !== "item-analysis.v1" || stored.periodEnd < from || stored.periodEnd > periodEnd) continue;
+    notes.push({ id: `item:${item.id}`, kind: stored.itemKind, periodEnd: stored.periodEnd, title: stored.finding.title, judgment: stored.finding.judgment.text });
+  }
+  return notes.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd) || a.id.localeCompare(b.id)).slice(0, FILING_NOTES);
 }
 
 /** The state a run would write for now; null when the company has no complete report yet. */
@@ -107,7 +104,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const companyName = issuerNames(await listedName(requireDb(env), params.ticker) ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
   const draft = await writeFindings({
-    ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, data: input.data,
+    ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, filings: input.filings, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage,
   });
   // Each verified finding's lens document, composed by the agent at low reasoning through its tools; a broken or stalled

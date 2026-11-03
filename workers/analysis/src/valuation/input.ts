@@ -1,3 +1,4 @@
+import { readPeriodExtract } from "../extract/period-extract.ts";
 import type { FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import type { DiagnosticMetric, FactorDistribution, ManagementTargetSet, PeerSelectionBasis, PeriodType, ValuationFact } from "../../../../shared/analysis-contract/valuation.ts";
 import type { BalanceSheet, RpoDisclosure } from "../../../../shared/analysis-contract/capital-structure.ts";
@@ -19,7 +20,6 @@ import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals, secFundamentalsKey } from "../fundamentals/sec-fundamentals.ts";
-import { readGuidanceResponse } from "../guidance/workflow.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import type { HistoricalObservation, SecHistorySnapshot } from "../sec/analysis.ts";
@@ -76,20 +76,16 @@ export type ValuationInput = {
 
 const num = (value: string | number | null | undefined): number | null => { if (value == null || value === "") return null; const n = typeof value === "number" ? value : Number(value); return Number.isFinite(n) ? n : null; };
 
-/** The company's data as the findings and peers read it, plus the guidance the findings also carry. */
+/**
+ * The company's data as layer 2's per-period extract holds it (the statements, capital, fundamentals and guidance the
+ * findings read too), with the share-count history its facts are cut from; null until layer 2 has cut the extract.
+ */
 export async function readValuationData(env: AnalysisEnv, ticker: string): Promise<{ data: FindingData; snapshot: SecHistorySnapshot | null } | null> {
   const db = requireDb(env);
-  const publication = await readCompletePublicationForTicker(db, ticker).catch(() => null);
-  const flow = publication?.status === "ready" ? publication.flow : null;
-  if (!flow?.quarters.length) return null;
-  const snapshot = await readMapDerived(db, flow).catch(() => null);
-  const quarters = [...new Map([...(snapshot?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
-  const [fundamentals, guidance, history] = await Promise.all([
-    getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null),
-    readGuidanceResponse(db, ticker).then(r => r.guidance).catch(() => null),
-    new D1SecRepository(db).getCache<SecHistorySnapshot>(secFundamentalsKey(ticker)).then(r => r?.payload ?? null).catch(() => null),
-  ]);
-  return { data: { quarters, history: publication?.history ?? null, capital: snapshot?.capital ?? null, fundamentals, guidance }, snapshot: history };
+  const extract = await readPeriodExtract(db, ticker);
+  if (!extract?.data.quarters.length) return null;
+  const history = await new D1SecRepository(db).getCache<SecHistorySnapshot>(secFundamentalsKey(ticker)).then(r => r?.payload ?? null).catch(() => null);
+  return { data: extract.data, snapshot: history };
 }
 
 type FactSpec = { id: string; label: string; ref: FindingRef; span: "quarter" | "fiscal_year"; periodType: PeriodType; required?: boolean };
@@ -412,10 +408,19 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
     facts: facts.map(f => [f.id, f.value, f.periodEnd]), quarters: data.quarters.map(q => q.periodEnd).sort(),
     documents: documents.map(d => d.documentId).sort(), guidance: guidanceHash, transcripts: transcripts.map(t => [t.id, t.characters]).sort(),
     management: management ? [management.asOf, management.targets.map(t => [t.metric, t.segment ?? "", t.fiscalYear, t.value])] : null,
+    // The layers below it (docs/spontra-architecture-upgrade.md): a new findings set, business breakdown or filing analysis is new input.
+    below: await belowFingerprints(db, ticker),
   }));
   return {
     ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
     facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint,
     rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data, new Map([[newest.periodEnd, leases.facts]])),
   };
+}
+
+/** What the layers below valuation last published for the company: the findings, the business breakdown and the filing analyses. */
+async function belowFingerprints(db: D1Database, ticker: string): Promise<[string | null, string | null, string | null]> {
+  const repository = new D1SecRepository(db);
+  const read = (key: string, field: "fingerprint" | "generatedAt") => repository.getCache<Record<string, unknown>>(key).then(r => typeof r?.payload?.[field] === "string" ? r.payload[field] as string : null).catch(() => null);
+  return Promise.all([read(`findings:v2:${ticker}`, "fingerprint"), read(`business-tree:v1:${ticker}`, "fingerprint"), read(`items:v1:${ticker}`, "fingerprint")]);
 }

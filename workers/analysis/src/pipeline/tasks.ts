@@ -15,6 +15,10 @@ import { LIBRARY_TASKS } from "./library-tasks.ts";
 import { TRANSLATION_TASKS } from "./translation-tasks.ts";
 import { PEERS_VERSION, publishPeers } from "../peers/projection.ts";
 import { ARCHIVE_TASKS } from "../sec-archive/task.ts";
+import { buildPeriodExtract, EXTRACT_VERSION, periodExtractKey, readPeriodExtract } from "../extract/period-extract.ts";
+import { D1SecRepository } from "../sec/d1.ts";
+import { emit } from "./outbox.ts";
+import { knownCik } from "./identity.ts";
 
 /** `later`: the run is not finished (budget spent, input not ready); it runs again after `afterMs`. */
 export type TaskOutcome = { status: "done"; detail?: unknown } | { status: "later"; afterMs: number; detail?: unknown };
@@ -44,6 +48,19 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...LIBRARY_TASKS,
   ...TRANSLATION_TASKS,
   ...PRESENTATION_TASKS,
+
+  // Layer 2's per-period extract: cut from the publication, fundamentals and guidance; published only when it changed.
+  "extract": {
+    version: EXTRACT_VERSION,
+    async run(env, ticker, { now }) {
+      const extract = await buildPeriodExtract(env, ticker, now);
+      if (!extract) return { status: "done", detail: { skipped: "no complete publication yet" } };
+      if ((await readPeriodExtract(env.DB!, ticker))?.fingerprint === extract.fingerprint) return { status: "done", detail: { unchanged: extract.periodEnd } };
+      await new D1SecRepository(env.DB!).setCache(periodExtractKey(ticker), extract, now.toISOString());
+      await emit(env, [{ type: "extract.published", ticker, cik: await knownCik(env.DB!, ticker) }]);
+      return { status: "done", detail: { published: extract.periodEnd, rows: extract.ledger.rows.length } };
+    },
+  },
 
   "map-derive": {
     // Which archived filings are read changes without the parsed quarters changing: v3 reads every filing in a filing-date window;

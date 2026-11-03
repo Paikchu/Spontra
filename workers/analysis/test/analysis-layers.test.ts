@@ -22,3 +22,35 @@ test("closing a layer closes every layer above it", () => {
   assert.deepEqual(layersAbove("filings"), ["findings", "tree", "valuation"]);
   assert.deepEqual(layersAbove("valuation"), []);
 });
+
+test("the findings read layer 2 only: map changes reach them through the per-period extract", async () => {
+  const { SUBSCRIPTIONS, TASKS } = await import("../src/pipeline/registry.ts");
+  for (const event of ["map.derived", "guidance.published", "fundamentals.updated"] as const) {
+    const tasks = SUBSCRIPTIONS[event]!.map(s => s.task);
+    assert.ok(tasks.includes("extract") && !tasks.includes("findings"), event);
+  }
+  assert.deepEqual(SUBSCRIPTIONS["extract.published"]!.map(s => s.task), ["findings", "items"]);
+  assert.equal(TASKS.extract.scope, "filings");
+  assert.equal(TASKS.items.scope, "filings");
+  const { ITEM_POLICY } = await import("../src/items/recipe.ts");
+  assert.ok(!ITEM_POLICY.allow!.includes("findings"), "a filing analysis never reads the findings built on it");
+});
+
+test("the layers above read a filing's analysis and the passages it quoted, never the filing", async () => {
+  const { listFilingAnalyses, readFilingAnalysis } = await import("../src/items/library.ts");
+  const passage = (id: string, filedAt: string) => ({ passageId: id, documentId: `d-${id}`, title: `CRWV 10-Q ${filedAt}`, form: "10-Q", filedAt, url: "https://www.sec.gov/x", path: ["Liquidity"], text: "We expect capital expenditures to increase.", table: null });
+  const item = (id: string, periodEnd: string, filedAt: string) => ({ schemaVersion: "item-analysis.v1", ticker: "CRWV", itemId: id, itemKind: "report", periodEnd, generatedAt: filedAt, version: "items.v1",
+    finding: { title: `Report ${periodEnd}`, judgment: { text: `Capex rose in ${periodEnd}.`, sourceIds: [] } }, materials: [], passages: [passage(`p-${id}`, filedAt)], sources: [], trace: [] });
+  const cache: Record<string, unknown> = {
+    "items:v1:CRWV": { version: "items.v1", fingerprint: "f", generatedAt: "", items: [{ id: "0001-26-000001", kind: "report", written: true }, { id: "0001-26-000002", kind: "report", written: true }, { id: "0001-26-000003", kind: "current", written: false }] },
+    "item-analysis:v1:CRWV:0001-26-000001": item("0001-26-000001", "2026-03-31", "2026-05-10"),
+    "item-analysis:v1:CRWV:0001-26-000002": item("0001-26-000002", "2026-06-30", "2026-08-10"),
+  };
+  const db = { prepare: () => { let key = ""; const s = { bind: (k: string) => { key = k; return s; }, first: async () => cache[key] ? { cache_key: key, payload: JSON.stringify(cache[key]), fetched_at: "" } : null }; return s; } } as unknown as D1Database;
+  const list = await listFilingAnalyses(db, "CRWV");
+  assert.deepEqual(list.map(a => a.periodEnd), ["2026-06-30", "2026-03-31"]);
+  const read = await readFilingAnalysis(db, "CRWV", "0001-26-000001");
+  assert.equal(read?.judgment, "Capex rose in 2026-03-31.");
+  assert.deepEqual(read?.passages.map(p => p.passageId), ["p-0001-26-000001"]);
+  assert.equal(await readFilingAnalysis(db, "CRWV", "0001-26-000003"), null);
+});

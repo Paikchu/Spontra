@@ -1,6 +1,6 @@
 # Spontra 项目架构优化升级方案
 
-日期：2026-11-03。状态：方案，未实施。前置：[analysis-events](analysis-events.md)（事件图）、[item-analysis](item-analysis.md)（逐文件分析）、[analyst-agent-design](analyst-agent-design.md)（分析师卷宗）、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)（今天的四个功能开关，本文替代其后台部分）。
+日期：2026-11-03。状态：A–D 已实施（2026-11-04），见文末「实施记录」。前置：[analysis-events](analysis-events.md)（事件图）、[item-analysis](item-analysis.md)（逐文件分析）、[analyst-agent-design](analyst-agent-design.md)（分析师卷宗）、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)（今天的四个功能开关，本文替代其后台部分）。
 
 ## 一句话
 
@@ -511,3 +511,20 @@ EDGAR 交易所目录约一万个代码、六七千家发行人。不能像今�
 - 不把第 1 层并入 `business_feature_settings`。
 - 不改 `SEC_AI_TICKERS` 等部署变量的名字（它们只在 Worker 内部承载解析结果）。
 - 不在本次让估值读第 3、4 层的产物。
+
+## 实施记录（2026-11-04）
+
+已实施：
+
+- **A 分层与开关**：`LAYERS` / `LAYER_REQUIRES`（`shared/analysis-contract/business-features.ts`），`reports` 改名 `filings`（迁移 0045），`data` scope 改名 `map`；文件库、索引卡、业务主线与标签、AI Search、逐字稿、记忆、逐文件分析归第 2 层；`company-policy.ts` 按链裁剪名单；关一层连带关上层（手动与失败自动关闭都如此）；迁移把断链的上层设为不生成、保留展示。后台「公司」页 `/admin/companies`（旧 `/admin/whitelist` 跳转）列出 EDGAR 交易所目录的每家发行人，`GET /admin/business-map/directory` 分页搜索。
+- **B 每期提取**：任务 `extract`（第 2 层，无模型）写 `period-extract:v1:<ticker>`，发 `extract.published`；findings、items（经 `loadStageData`）、valuation 从它读数据与账本，不再读第 1 层发布。
+- **C 上层收口**：findings 的输入加逐文件分析（`payload.filings`）；items 不再读 findings；analyst 与 checkup 改用 `filings` / `read_filing_analysis`（读第 2 层分析及其已核验段落），去掉 `find_sections` / `read_section` 与网页；compose 只给一次修复，修不好扣留（`REPAIR_ROUNDS`）。
+- **D 估值读前四层**：valuation 加 `read_filing_analyses`、`read_filing_analysis`、`read_findings`、`read_business_tree`，去掉网页工具；指纹含要点、脑图、逐文件分析；订阅 `findings.published`、`tree.published`、`items.published`。
+
+与方案的出入（留待后续）：
+
+- 读取时的引文重验（C5）未改：前端仍按当前段落重验 `verifyQuote`。上层引文现在都来自第 2 层已核验的段落，重验仍会通过。
+- 证据登记（C1）与产物 `verification` 记录（C3）未建独立模块；第 3 层起的引文 id 直接是第 2 层段落 id。
+- 摘要 bullets 的 evidenceIds（C2）未加；第 3 层不读摘要，读逐文件分析。
+- valuation 仍可读文件原文的债务、股数、租赁附注（`find_filing_sections` / `read_filing_section`），同业数据仍读同业的第 1 层发布。
+- 数字量级的 harness 规范化与 `ai_usage` 修复轮数计量（C8 后两项）未做。

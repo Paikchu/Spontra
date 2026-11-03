@@ -96,13 +96,21 @@ test("a flagged Form 4 must cite its own figures through event refs, and one of 
     judgment: "The chief executive sold a third of the direct holding in one filing, outside a trading plan, after a much smaller sale earlier in the year. A sale this size from the top officer is the rule's attention case; it signals reduced exposure rather than anything about the quarter." });
   const { outcome, results, opening } = await run(input, [
     [["compose", { report: report([earlier.id]) }]],
-    [["compose", { report: report([flagged.id]) }]],
     [["compose", { report: report([flagged.id, earlier.id]) }]],
     [["finish", {}]],
   ]);
   assert.ok(opening.subject.refs.some((r: { ref: { event: { id: string } } }) => r.ref.event.id === earlier.id));
   assert.match(results[0]!, /cite at least one figure of this filing/);
-  assert.match(results[1]!, /cite one of the owner's earlier filings too/);
-  assert.match(results[2]!, /accepted as written/);
+  assert.match(results[1]!, /accepted as written/);
   assert.equal(outcome.reason, "finished");
+  // One repair only: an analysis the repair does not fix is withheld, and the run ends without spending more turns.
+  const twice = await run(input, [
+    [["compose", { report: report([earlier.id]) }]],
+    [["compose", { report: report([flagged.id]) }]],
+    [["compose", { report: report([flagged.id, earlier.id]) }]],
+  ]);
+  assert.match(twice.results[0]!, /this is the one repair/);
+  assert.equal(twice.state.withheld, true);
+  assert.equal(twice.outcome.turns, 2);
+  assert.equal(twice.state.composed, null);
 });

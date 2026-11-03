@@ -72,7 +72,7 @@ const system = (input: ItemInput) => `You write the analysis of one filing for t
 
 The analysis answers what this filing tells a holder of the stock that the earlier filings did not, and how it changes the reading of the company's figures. ${KIND[input.subject.kind]}
 
-Read before you write: the first message carries the subject, its own words as materials m1… when they were read for you, and the library's documents of the filing. company_overview and read_series give the figures; findings gives the published findings of the newest report; find_sections and read_section read the filings (read_section with previous: true reads the same section in the earlier filing). Then call compose with the whole analysis, fix what it reports until it is accepted, then call finish.
+Read before you write: the first message carries the subject, its own words as materials m1… when they were read for you, and the library's documents of the filing. company_overview and read_series give the figures; find_sections and read_section read the filings (read_section with previous: true reads the same section in the earlier filing). Then call compose with the whole analysis, fix what it reports until it is accepted, then call finish.
 
 ${COMPOSE_CONTRACT}
 - ${input.subject.kind === "insider" ? "Quote the filing's own words (m<n>) when the first message gives any." : "Quote the filing word for word (m<n>), and, when the library holds the earlier filing, quote what the earlier filing said too."} Charts come with written analysis beside them.
@@ -129,7 +129,8 @@ const composeInput = (input: ItemInput): ComposeInput => {
   };
 };
 
-export const ITEM_POLICY: ToolPolicy = { allow: ["company_overview", "findings", "read_series", "find_sections", "read_section", "compose", "finish"] };
+// Layer 2: the filing's text and the figures; never the findings, which are built on these analyses.
+export const ITEM_POLICY: ToolPolicy = { allow: ["company_overview", "read_series", "find_sections", "read_section", "compose", "finish"] };
 
 export function itemRecipe(input: ItemInput): Recipe<ItemInput, ComposedAnalysis | null, ComposeState> {
   return {
@@ -140,7 +141,7 @@ export function itemRecipe(input: ItemInput): Recipe<ItemInput, ComposedAnalysis
     open: () => openCompose(composeInput(input)),
     tools: () => composeTools(composeInput(input)),
     policy: ITEM_POLICY,
-    settled: s => s.composed != null,
+    settled: s => s.composed != null || s.withheld,
     settle: s => s.composed,
     nudge: "Continue: read what the filing needs, then compose the analysis and finish.",
   };

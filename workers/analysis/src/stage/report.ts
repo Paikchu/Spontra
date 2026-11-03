@@ -47,7 +47,7 @@ export function reportRecipe(input: ReportInput): Recipe<ReportInput, UserReport
     open: () => openCompose(composeInput(input)),
     tools: () => reportTools(input),
     policy: REPORT_POLICY,
-    settled: s => s.composed != null,
+    settled: s => s.composed != null || s.withheld,
     settle: written,
     nudge: "Continue: read what the question needs, then compose the report and finish.",
   };
