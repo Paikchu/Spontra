@@ -22,9 +22,8 @@ type Attempts = { attempts: number; reason: string; retryAt: string };
 const PERMANENT = new Set(["SEC_DOCUMENT_TOO_LARGE"]);
 
 /**
- * Stores every current report, 40-F and prospectus supplement (pipeline/filing-forms.ts `archivedForm`), so the SEC
- * report and the item analysis read every filing from the archive (docs/sec-archive.md); a document collection already
- * stored is read back, not downloaded. The list comes from discovery's state in D1, newest first; a filing whose
+ * Stores every filing the SEC report and the item analysis read (pipeline/filing-forms.ts `archivedForm`), so they read
+ * every filing from the archive (docs/sec-archive.md); a document collection already stored is read back, not downloaded. The list comes from discovery's state in D1, newest first; a filing whose
  * documents are all stored is passed over, and each one stored emits `filing.archived` like any other. A filing that
  * cannot be stored (a document over the size cap, or one SEC fails to serve MAX_ATTEMPTS times) is recorded as
  * unsupported and the rest of the list goes on.
