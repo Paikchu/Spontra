@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { HISTORY_VERSION, runHistoryStep } from "../src/financial-data/history.ts";
 import type { SecReader } from "../src/financial-data/provider.ts";
 import { refreshCompanyEvents, secAccessPaused } from "../src/events/workflow.ts";
+import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { AI_TASKS } from "../src/pipeline/ai-tasks.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
 
@@ -85,6 +86,50 @@ test("the event refresh reads EDGAR through the paced reader; a Form 4 SEC does 
   // Recorded, so the next refresh does not ask SEC for it again.
   const again = await refreshCompanyEvents(eventsEnv(db), "MSFT", spy, now, { forceList: true });
   assert.equal(again.insiderReads, 0);
+});
+
+test("a filing index description that says more than the form becomes the 6-K title, and a later submissions read keeps it", async () => {
+  const db = database();
+  await knownCompany(db);
+  const accession = "0000789019-26-000050";
+  const submissions = { filings: { recent: {
+    accessionNumber: [accession], form: ["6-K"], filingDate: ["2026-10-01"], reportDate: ["2026-09-30"], primaryDocument: ["stats.htm"], primaryDocDescription: ["6-K"], items: [""],
+  } } };
+  const index = (description: string) => `<table><tr><td>Seq</td><td>Description</td><td>Document</td><td>Type</td><td>Size</td></tr><tr><td>1</td><td>${description}</td><td><a href="stats.htm">stats.htm</a></td><td>6-K</td><td>10</td></tr></table>`;
+  let description = "Monthly operating statistics";
+  const read = fetcher((url) => {
+    if (url.endsWith(`CIK${CIK}.json`)) return Response.json(submissions);
+    if (url.endsWith("-index.htm")) return new Response(index(description));
+    return new Response("missing", { status: 404 });
+  });
+  await refreshCompanyEvents(eventsEnv(db), "MSFT", read, now, { forceList: true });
+  const load = async () => readEventsPublication(JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind("events:v1:MSFT").first<{ payload: string }>())!.payload), "MSFT")!;
+  const first = await load();
+  assert.equal(first.events[0]?.description, "Monthly operating statistics");
+  assert.equal(first.events[0]?.title, "Monthly operating statistics");
+  assert.equal(first.events[0]?.importance, "normal");
+  // The index is cached, and the submissions feed names the form again. The stored title stays.
+  description = "6-K";
+  const again = await refreshCompanyEvents(eventsEnv(db), "MSFT", read, now, { forceList: true });
+  assert.equal(again.exhibitReads, 0);
+  const second = await load();
+  assert.equal(second.events[0]?.title, "Monthly operating statistics");
+});
+
+test("a filing index whose description is only the form name leaves the 6-K untitled", async () => {
+  const db = database();
+  await knownCompany(db);
+  const accession = "0000789019-26-000051";
+  const submissions = { filings: { recent: {
+    accessionNumber: [accession], form: ["6-K"], filingDate: ["2026-10-02"], reportDate: [""], primaryDocument: ["form.htm"], primaryDocDescription: ["6-K"], items: [""],
+  } } };
+  const index = `<table><tr><td>1</td><td>6-K</td><td><a href="form.htm">form.htm</a></td><td>6-K</td><td>10</td></tr></table>`;
+  const read = fetcher((url) => url.endsWith(`CIK${CIK}.json`) ? Response.json(submissions) : url.endsWith("-index.htm") ? new Response(index) : new Response("missing", { status: 404 }));
+  await refreshCompanyEvents(eventsEnv(db), "MSFT", read, now, { forceList: true });
+  const stored = readEventsPublication(JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind("events:v1:MSFT").first<{ payload: string }>())!.payload), "MSFT")!;
+  assert.equal(stored.events[0]?.description, "6-K");
+  assert.equal(stored.events[0]?.title, null);
+  assert.equal(stored.events[0]?.importance, "routine");
 });
 
 test("findings wait while a recent earnings release's guidance is queued or running, not after it published or went silent", async () => {

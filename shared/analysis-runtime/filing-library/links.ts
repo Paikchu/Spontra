@@ -4,16 +4,16 @@ import { compactName } from "../business-tree.ts";
 /** Bumping this proposes and reviews every company's business links again; an admin's category stays. */
 export const LIBRARY_LINKS_VERSION = "library-links.v2";
 /** Businesses one company can have linked, and sections one business can name. */
-export const LINK_LIMITS = { businesses: 12, sections: 8 } as const;
+const LINK_LIMITS = { businesses: 12, sections: 8 } as const;
 
 export type LinkFlowNode = { flowNodeId: string; name: string };
 export type LinkDraft = { businessKey: string; name: string; flowNodeId: string | null; xbrlMembers: string[]; sectionIds: string[]; industryCategory: IndustryCategory | null };
 
 const slug = (name: string) => name.normalize("NFKC").toLowerCase().replace(/&/g, " and ").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 /** `MSFT:intelligent-cloud`: unique across companies, stable while the business keeps its name. */
-export const businessKeyOf = (ticker: string, name: string) => `${ticker}:${slug(name) || "business"}`;
+const businessKeyOf = (ticker: string, name: string) => `${ticker}:${slug(name) || "business"}`;
 /** A flow node id that is an XBRL member names the member; derived ids (`cloud`, `reported-company-total`) do not. */
-export const xbrlMembersOf = (flowNodeId: string | null) => flowNodeId && /^[a-z][a-z0-9-]*:[A-Za-z0-9]+Member$/.test(flowNodeId) ? [flowNodeId] : [];
+const xbrlMembersOf = (flowNodeId: string | null) => flowNodeId && /^[a-z][a-z0-9-]*:[A-Za-z0-9]+Member$/.test(flowNodeId) ? [flowNodeId] : [];
 const isCategory = (value: unknown): value is IndustryCategory => typeof value === "string" && Object.hasOwn(INDUSTRY_CATEGORIES, value);
 
 /**

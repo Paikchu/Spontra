@@ -1,8 +1,8 @@
-import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
-import { currencyName, MINUS } from "@/shared/analysis-runtime/locale";
+import { adjustmentLabel, currencyName, formatPct, MINUS } from "@/shared/analysis-runtime/locale";
+import { edgarSearchUrl } from "@/shared/analysis-runtime/sec-sources";
 import { getLocale, messages } from "@/packages/web/src/i18n/core";
 
 /** Change words and statement checks; a change's label reads in the page's locale when it is formed. */
@@ -42,7 +42,6 @@ export const flowWords = messages({
   operatingCategoriesCheck: "各类费用之和 = 已披露营业费用",
 });
 
-
 export function numeric(amount: FlowAmount | null | undefined): number | null {
   if (typeof amount?.value !== "string" || amount.value.trim() === "") return null;
   const value = Number(amount.value);
@@ -60,7 +59,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
       const series = data.series.find(s => s && Array.isArray(s.points) && s.metricKey === key && s.unitFamily === "currency" && s.currency === period.currency && s.unit === period.currency);
       const point = series?.points.find(p => p && p.periodEnd === period.periodEnd);
       if (!series || !point) continue;
-      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC filing ${point.sourceAccession}`, url: `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(point.sourceAccession)}`, publishedAt: point.sourceFiledAt });
+      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC filing ${point.sourceAccession}`, url: edgarSearchUrl(point.sourceAccession), publishedAt: point.sourceFiledAt });
       figures[target as FlowMetric] = { value: point.valueDecimal, basis: series.basis, definition: `${data.catalogVersion}:${key}`, comparabilityKey: point.revision != null ? `${data.source}:${key}:revision-${point.revision}` : null, sourceIds: point.sourceAccession ? [point.sourceAccession] : [], formula: point.derivationFormula };
     }
     // Differences are only formed from figures in the same filing/revision. No YTD subtraction.
@@ -80,8 +79,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
 
 export function selectFlow(published: PublicBusinessFlow | undefined, fundamentals: PublicFundamentalsResponse | null, ticker: string): PublicBusinessFlow {
   const parsed=publicFlowSchema.safeParse(published);
-  const flow = parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
-  return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
+  return parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
 }
 
 /** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */
@@ -109,8 +107,6 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
 
 /** A change between two quarters. `comparable` is false when the quarters cannot be compared; `trend` says which way the figure moved. */
 export type FlowChange = { label: string; comparable: boolean; trend: "up" | "down" | null; delta: number | null; previous: number | null; percent: number | null };
-/** The English label of a change that cannot be formed; `flowWords.na` is the page's own. */
-export const NOT_COMPARABLE = "n/a";
 
 export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined): FlowChange {
   const av = numeric(a), bv = numeric(b);
@@ -124,7 +120,7 @@ export function compareFlowAmounts(current: BusinessFlowQuarter, previous: Busin
   if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? flowWords.turnedLoss : flowWords.turnedNegative, "down") : moved(profit ? flowWords.turnedProfit : flowWords.turnedPositive, "up");
   if (bv < 0) return delta === 0 ? moved(flowWords.flat, null) : delta > 0 ? moved(profit ? flowWords.lossNarrowed : flowWords.increased, "up") : moved(profit ? flowWords.lossWidened : flowWords.decreased, "down");
   const percent = delta / bv * 100;
-  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
+  return { label: formatPct(percent, { signed: true }), comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }
 
 export type Reconciliation = { label: string; status: "balanced" | "missing" | "mismatch"; difference: number | null };
@@ -175,3 +171,24 @@ export function formatFlowValue(value: number | null, quarter: BusinessFlowQuart
   const display = value * quarter.scale / 1_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
 }
+
+/**
+ * One row of the revenue reconciliation (segment total, each adjustment, consolidated revenue). Every row keeps at most
+ * two decimals in its own unit so the column reads at one precision: "12.04亿美元", "−56.7万美元" / "1,204.4", "−0.57".
+ */
+export function formatReconciliation(value: number | null, quarter: BusinessFlowQuarter): string {
+  if (value == null) return flowWords.notDisclosed;
+  if (getLocale() === "zh-CN") {
+    const amount = value * quarter.scale, abs = Math.abs(amount);
+    const [divisor, suffix] = abs >= 1e8 ? [1e8, "亿"] : abs >= 1e4 ? [1e4, "万"] : [1, ""];
+    const name = currencyName(quarter.currency, "zh-CN");
+    const text = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(abs / divisor);
+    return (amount < 0 && /[1-9]/.test(text) ? MINUS : "") + text + suffix + (name === quarter.currency ? ` ${name}` : name);
+  }
+  const display = value * quarter.scale / 1_000_000;
+  const text = new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 2 : 1 }).format(Math.abs(display));
+  return (display < 0 && /[1-9]/.test(text) ? MINUS : "") + text;
+}
+
+/** A revenue adjustment's name as the page's locale reads it ("Intersegment sales" → "分部间抵销"). */
+export const adjustmentName = (name: string) => adjustmentLabel(name, getLocale());

@@ -1,4 +1,4 @@
-import { financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { companyPolicyEnvironment, featureTickersFor } from "../financial-data/company-policy.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { logStatements } from "./log.ts";
@@ -12,7 +12,7 @@ export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<
   if (scope === "global") return ["*"];
   const policyEnv = await companyPolicyEnvironment(env);
   if (scope !== "data") return featureTickersFor(policyEnv, scope);
-  return [...financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" }).dataTickers].sort();
+  return [...dataTickers(policyEnv)].sort();
 }
 
 type Target = { task: TaskName; ticker: string; causeId: string };

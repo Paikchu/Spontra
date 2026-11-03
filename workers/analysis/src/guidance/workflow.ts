@@ -6,7 +6,7 @@ import {
   type FiscalAnchor, type GuidanceEntry, type VerifiedGuidance,
 } from "../../../../shared/analysis-runtime/guidance.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type AnalysisEnv } from "../operations.ts";
@@ -15,7 +15,8 @@ import { researchSearch, researchSearchConfigured } from "../web-search/research
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
-import { inFiscalSequence, quarterOf } from "../sec/fiscal-sequence.ts";
+import { inFiscalSequence } from "../sec/fiscal-sequence.ts";
+import { quarterNumber } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
@@ -25,6 +26,8 @@ import { findIrDeck, reportedTranscriptRef, type FoundMaterial, type TranscriptR
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { transcriptForEvent } from "../transcripts/library.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
@@ -63,14 +66,14 @@ export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Ar
 async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | null): Promise<FiscalAnchor[]> {
   const anchors: FiscalAnchor[] = [];
   for (const filing of feed?.filings ?? []) {
-    if (!/^(10-Q|10-K)(\/A)?$/.test(filing.form)) continue;
+    if (!/^(10-Q|10-K|20-F)(\/A)?$/.test(filing.form)) continue;
     const period = (await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(filing)))?.payload;
     if (period) anchors.push({ fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, periodEnd: period.periodEnd });
     if (anchors.length >= 8 || period?.fiscalPeriod === "FY") break;
   }
-  // A quarter whose DEI repeats last year's label (Oracle, 2026-08-31) would date the guidance a year early.
-  const labelled = anchors.flatMap(a => { const quarter = quarterOf(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
-  return inFiscalSequence(labelled).map(({ quarter: _, ...anchor }) => anchor);
+  // A quarter whose DEI repeats last year's label would date the guidance a year early.
+  const labelled = anchors.flatMap(a => { const quarter = quarterNumber(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
+  return inFiscalSequence(labelled).map(anchor => omit(anchor, "quarter"));
 }
 
 function modelCall(env: AnalysisEnv, store: GuidanceStore, fetcher: typeof fetch, day: string, call: { ticker: string; runId?: string }): GuidanceModelCall {
@@ -78,7 +81,7 @@ function modelCall(env: AnalysisEnv, store: GuidanceStore, fetcher: typeof fetch
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
-    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance"), ticker: call.ticker, runId: call.runId });
+    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance"), ticker: call.ticker, runId: call.runId });
   };
 }
 
@@ -186,7 +189,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       cikNumber: filing?.cikNumber ?? null,
       // A periodic report's exhibits are not a release; an event standing under one reads only its stored call.
       exhibits: !!filing && /^(?:8-K|6-K)(?:\/A)?$/.test(filing.form),
-      companyName: issuerNames(findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker)[0]!, ref,
+      companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? feed?.company?.name ?? params.ticker)[0]!, ref,
     };
   });
 
@@ -275,7 +278,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
 /** Read-only: never starts extraction. A stored document that fails validation reads as preparing. */
 export async function readGuidanceResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<GuidanceResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   // Guidance is read from the reports feature; the admin's display switch hides it with the summaries.
   if (options.hidden) return { schemaVersion: "guidance-response.v1", status: "hidden", guidance: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(guidanceCacheKey(ticker));

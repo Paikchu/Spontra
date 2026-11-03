@@ -5,10 +5,10 @@ import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { companyName as listedName } from "../catalog/issuer-directory.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -19,13 +19,14 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { buildHighlightTable, buildLedger, type Ledger } from "./ledger.ts";
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
-import { authoredFindings, findingsCacheKey } from "./read.ts";
+import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
 import { writeLensDocuments, type LensModel, type LensTrace } from "../lens/agent.ts";
 import { browserRenderer } from "../lens/draw.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
 export const FINDINGS_VERSION = "findings.writer.v10";
@@ -61,7 +62,7 @@ export async function findingsInput(env: AnalysisEnv, ticker: string): Promise<I
   ]);
   const data: FindingData = { quarters, history: publication.history ?? null, capital, fundamentals, guidance };
   const sources = new Map<string, ExplainerSource>();
-  for (const q of quarters) for (const s of q.sources) if (/^https:\/\/www\.sec\.gov\//.test(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
+  for (const q of quarters) for (const s of q.sources) if (isSecUrl(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
   for (const s of guidance?.sources ?? []) if (!sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: s.sourceKind === "sec" ? "sec" : "web", publishedAt: s.publishedAt });
   const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
   const overview = analysis?.overview;
@@ -95,15 +96,15 @@ export async function priorWatches(store: AiRunStore, ticker: string, previous: 
 }
 
 export async function executeFindingsWorkflow(params: FindingsWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: FindingsDeps = {}) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "findings");
   const now = await step.do("findings-time", async () => new Date().toISOString());
   const input = await step.do("findings-input", () => findingsInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
-  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
-  const companyName = issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!;
+  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
+  const companyName = issuerNames(await listedName(requireDb(env), params.ticker) ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
   const draft = await writeFindings({
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, data: input.data,
@@ -124,15 +125,15 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     ticker: params.ticker, companyName, periodEnd, table: buildHighlightTable(input.data, periodEnd), findings: outcome.publication?.findings.map(f => f.title) ?? [],
     data: input.data, model, stage,
   }).catch(() => ({ highlights: null, withheld: [] }));
-  // Neither findings nor highlights verified: whatever is stored (an authored set, an older run) keeps serving.
+  // Neither findings nor highlights verified: whatever an older run stored keeps serving.
   if (!outcome.publication && !written.highlights) return { status: "empty" as const, withheld: outcome.withheld };
   const published = await step.do("findings-publish", async () => {
     const db = requireDb(env);
     const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(params.ticker));
-    const previous = (stored ? readFindingsPublication(stored.payload, params.ticker) : null) ?? authoredFindings(params.ticker);
+    const previous = stored ? readFindingsPublication(stored.payload, params.ticker) : null;
     // Earlier reports keep the highlights written when each was the newest.
     const highlights = mergeHighlights(written.highlights, previous?.highlights);
-    // Findings that verified nothing fall back to the set published before (an older run or the authored set), so the
+    // Findings that verified nothing fall back to the set an older run published, so the
     // new highlights still land; it takes this run's fingerprint, so the same input is not written again.
     const base = outcome.publication ?? (previous ? { ...previous, fingerprint: params.fingerprint }
       : { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion, fingerprint: params.fingerprint, findings: [], sources: input.ledger.sources });

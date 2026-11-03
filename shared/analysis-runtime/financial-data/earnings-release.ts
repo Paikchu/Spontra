@@ -1,5 +1,7 @@
+import type { RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
 import type { BusinessFlowQuarter, BusinessSegment, FlowAmount, FlowMetric } from "../../analysis-contract/business-flow.ts";
 import { checkCompleteFlow } from "./completeness.ts";
+import { omit } from "../omit.ts";
 
 /**
  * The quarter an earnings release (Form 8-K, Exhibit 99) reports, read before the quarterly report is filed.
@@ -18,7 +20,7 @@ export type ReleaseSource = { accession: string; filedAt: string; parserVersion:
 type Cell = { text: string; column: number; span: number };
 /** A value column: a dated period, or a quarter code ("3Q26", "Q2 FY27") placed relative to the newest code. */
 type Column = { months: number; end?: string; code?: number };
-type Table = { index: number; url: string; rows: Cell[][]; scale: number; columns: Map<number, Column>; headerEnd: number };
+type Table = { title: string; index: number; url: string; rows: Cell[][]; scale: number; columns: Map<number, Column>; headerEnd: number };
 type Bound = { value: number; table: Table; row: number; column: number };
 type Line = { id: string; name: string; group: "direct" | "research" | "sales" | "administration" | "other"; amount: FlowAmount };
 
@@ -55,13 +57,17 @@ function grid(table: string): Cell[][] {
 /** A quarter code ("3Q26", "Q2 FY27") as a running quarter number, fiscal year × 4 + quarter; consecutive quarters differ by one. */
 export function quarterCode(text: string): number | null {
   const code = text.match(/\b([1-4])Q\s?(\d{2})\b/i) ?? text.match(/\bQ([1-4])\s*(?:FY\s?)?['’]?(\d{4}|\d{2})\b/i);
+  if (!code) {
+    const ordinal = text.match(/\b(first|second|third|fourth) quarter\s+(?:of\s+)?(?:fiscal\s+)?(20\d{2})\b/i);
+    if (ordinal) return Number(ordinal[2]) * 4 + ["first", "second", "third", "fourth"].indexOf(ordinal[1]!.toLowerCase()) + 1;
+  }
   return code ? Number(code[2]!.length === 2 ? `20${code[2]}` : code[2]) * 4 + Number(code[1]) : null;
 }
 
 /** A column's period from every header cell above it. Change and ratio columns are not periods. */
 function period(text: string): Column | null {
   const lower = text.toLowerCase();
-  if (/\bchange\b|%|\bvs\.?\b|\byoy\b|\bq\/q\b|\by\/y\b/.test(lower)) return null;
+  if (/non-gaap|as adjusted|\bchange\b|%|\bvs\.?\b|\byoy\b|\bq\/q\b|\by\/y\b/.test(lower)) return null;
   const code = quarterCode(text);
   if (code !== null) return { months: 3, code };
   const months = /\bthree months\b|\bquarters? ended\b|\b13 weeks\b/.test(lower) ? 3 : /\bsix months\b/.test(lower) ? 6 : /\bnine months\b/.test(lower) ? 9 : /\b(?:twelve months|year ended|fiscal year)\b/.test(lower) ? 12 : 0;
@@ -71,10 +77,19 @@ function period(text: string): Column | null {
   return day >= 1 && day <= 31 ? { months, end: new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) } : null;
 }
 
+/** The newest quarter end explicitly dated by a release, within 120 days of filing. */
+export function releasePeriodEnd(html: string, filedAt: string): string | undefined {
+  const filed = Date.parse(filedAt);
+  return clean(html).match(/\b(?:three\s+months|quarters?|fourth\s+quarter)\s+(?:and\s+fiscal\s+20\d{2},?\s+which\s+)?ended\s+(?:on\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2}/gi)
+    ?.map(text => { const [, name, day, year] = text.match(/(\w+)\s+(\d{1,2}),?\s+(20\d{2})$/)!; return new Date(Date.UTC(Number(year), MONTHS[name!.toLowerCase()]! - 1, Number(day))).toISOString().slice(0, 10); })
+    .filter(end => Date.parse(end) <= filed && filed - Date.parse(end) <= 120 * 86400000).sort().at(-1);
+}
+
 /** Every table with period columns and a stated unit, in filing order. */
-export function releaseTables(documents: ReleaseDocument[]): Table[] {
+function releaseTables(documents: ReleaseDocument[]): Table[] {
   const tables: Table[] = [];
   for (const source of documents) {
+    let previousScale: number | undefined;
     for (const match of source.html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
       const rows = grid(match[0]);
       const headerEnd = rows.findIndex(row => row.slice(1).some(c => numeric(c.text) !== null && !/^(?:19|20)\d{2}$/.test(c.text.trim())));
@@ -82,17 +97,25 @@ export function releaseTables(documents: ReleaseDocument[]): Table[] {
       // The unit the statement states nearest to it: "(In millions, except ... in thousands)" is in millions.
       const near = `${clean(source.html.slice(Math.max(0, match.index! - 6000), match.index)).slice(-400)} ${rows.slice(0, headerEnd).flat().map(c => c.text).join(" ")}`;
       const unit = near.match(/\bin (millions|thousands|billions)\b/i)?.[1]?.toLowerCase();
-      if (!unit) continue;
-      const scale = unit === "billions" ? 1e9 : unit === "millions" ? 1e6 : 1e3;
-      const header = rows.slice(0, headerEnd);
-      const leafRow = [...header].reverse().find(row => row.some(c => c.text && period(header.flatMap(r => r.filter(x => x.text && x.column <= c.column && c.column < x.column + x.span)).map(x => x.text).join(" "))));
+      const scale = unit ? unit === "billions" ? 1e9 : unit === "millions" ? 1e6 : 1e3 : previousScale;
+      if (!scale) continue;
+      previousScale = scale;
+      const titleAt = [...near.matchAll(/(?:non-gaap\s+)?(?:condensed\s+)?consolidated\s+(?:condensed\s+)?statements?\s+of\s+(?:operations|income|earnings)|income statements?/gi)].at(-1)?.index;
+      const title = titleAt === undefined ? near : near.slice(titleAt);
+      const width = Math.max(...rows.flat().map(c => c.column + c.span));
+      const header = rows.slice(0, headerEnd).map(row => {
+        const printed = row.filter(c => c.text);
+        return printed.map((c, i) => ({ ...c, span: Math.max(c.span, (printed[i + 1]?.column ?? width) - c.column) }));
+      });
+      const resolvedAt = (column: number) => period(header.flatMap(r => r.filter(x => x.text && x.column <= column && column < x.column + x.span)).map(x => x.text).join(" "));
+      const leafRow = [...header].sort((a, b) => b.filter(c => resolvedAt(c.column)).length - a.filter(c => resolvedAt(c.column)).length)[0];
       if (!leafRow) continue;
       const columns = new Map<number, Column>();
       for (const leaf of leafRow.filter(c => c.text)) {
         const resolved = period(header.flatMap(row => row.filter(c => c.text && c.column <= leaf.column && leaf.column < c.column + c.span)).map(c => c.text).join(" "));
         if (resolved) columns.set(leaf.column, resolved);
       }
-      if (columns.size) tables.push({ index: tables.length, url: source.url, rows, scale, columns, headerEnd });
+      if (columns.size) tables.push({ title, index: tables.length, url: source.url, rows, scale, columns, headerEnd });
     }
   }
   return tables;
@@ -113,6 +136,7 @@ function valueAt(table: Table, row: Cell[], end: string): { value: number; colum
   const leaves = [...table.columns.keys()].sort((a, b) => a - b);
   const starts = [...new Set(table.rows.slice(0, table.headerEnd).flat().filter(c => c.text).map(c => c.column))].sort((a, b) => a - b);
   for (const cell of row.slice(1)) {
+    if (row.find(c => c.column === cell.column + cell.span)?.text === "%") continue;
     const value = numeric(cell.text);
     if (value === null && !dash(cell.text)) continue;
     const leaf = leaves.filter(l => l <= cell.column).at(-1);
@@ -121,7 +145,7 @@ function valueAt(table: Table, row: Cell[], end: string): { value: number; colum
     if (next !== undefined && cell.column >= next && !table.columns.has(next)) continue;
     const column = table.columns.get(leaf);
     if (!column || column.months !== 3 || column.end !== end) continue;
-    return { value: value ?? 0, column: cell.column };
+    return { value: value !== null && value > 0 && row.find(c => c.column === cell.column + cell.span)?.text === ")" ? -value : value ?? 0, column: cell.column };
   }
   return null;
 }
@@ -187,11 +211,14 @@ function abbreviations(documents: ReleaseDocument[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const d of documents) for (const m of clean(d.html).matchAll(/([A-Z][\w&,.' -]{2,90}?)\s*\(\s*"([A-Z][A-Za-z&]{1,9})"\s*\)/g)) {
     const words = m[1]!.split(/\s+/), initials = m[2]!.replace(/&/g, "").toUpperCase();
-    // The full name is the words ending at the abbreviation whose initials start like it.
+    let full: string | undefined;
     for (let i = words.length - 1; i >= 0; i--) {
       const name = words.slice(i).join(" ").replace(/^(?:and|the|our)\s+/i, "");
-      if (name[0]?.toUpperCase() === initials[0]) { if (!map.has(labelKey(m[2]!))) map.set(labelKey(m[2]!), name); break; }
+      const letters = name.split(/[^A-Za-z]+/).filter(w => w && !/^(?:and|the|of)$/i.test(w)).map(w => w[0]).join("").toUpperCase();
+      if (letters === initials) { full = name; break; }
     }
+    full ??= m[1]!.split(",").at(-1)!.trim().replace(/^(?:and|the|our)\s+/i, "");
+    if (!map.has(labelKey(m[2]!))) map.set(labelKey(m[2]!), full);
   }
   return map;
 }
@@ -221,6 +248,81 @@ export function releaseQuarter(documents: ReleaseDocument[], previous: BusinessF
     issues.push(...built.issues);
   }
   return { quarter: null, issues: [...new Set(issues)] };
+}
+
+/** Revenue rows bound to a verified member name, either directly or inside that member's block. */
+function segmentBounds(table: Table, names: string[], end: string, named: (a: string, b: string) => boolean): Bound[][] {
+  const candidates = names.map(name => table.rows.flatMap((row, i) => {
+    if (!named(labelKey(labelled(row)), labelKey(name))) return [];
+    const direct = valueAt(table, row, end);
+    if (direct) return [{ value: direct.value, table, row: i, column: direct.column }];
+    const stop = table.rows.findIndex((r, j) => j > i && names.some(n => named(labelKey(labelled(r)), labelKey(n))));
+    const bound = find(table, FIGURE_LABELS.revenue, end, undefined, i + 1, stop < 0 ? Infinity : stop);
+    return bound ? [bound] : [];
+  }));
+  // Repeated names in revenue and operating-income sections are separate blocks, never mixed.
+  const count = Math.min(...candidates.map(c => c.length));
+  return Array.from({ length: count }, (_, i) => candidates.map(c => c[i]!));
+}
+
+const reconcilingLabel = (label: string) => /\b(?:hedging|eliminations?|reconciling)\b/i.test(label);
+
+/** Enrich an independently verified revenue total. Only periodic-report names can authorize a release split. */
+export function enrichReleaseHistory(documents: ReleaseDocument[], quarter: RevenueHistoryQuarter, verified: RevenueHistoryQuarter[]): RevenueHistoryQuarter {
+  const tables = releaseTables(documents), end = quarter.periodEnd;
+  const datedEnds = tables.flatMap(t => [...t.columns.values()].flatMap(c => c.months === 3 && c.end ? [c.end] : [])).sort();
+  const latest = datedEnds.at(-1) ?? documents.map(d => releasePeriodEnd(d.html, quarter.source.filedAt)).filter((d): d is string => !!d).sort().at(-1) ?? end;
+  for (const table of tables) {
+    const codes = [...table.columns.values()].filter(c => c.code !== undefined);
+    const newest = Math.max(...codes.map(c => c.code!));
+    for (const c of codes) c.end = c.code === newest ? latest : latest === monthEnd(latest, 0) ? monthEnd(latest, (c.code! - newest) * 3) : undefined;
+  }
+  const source = { ...quarter.source, form: "8-K" }, start = quarter.periodStart;
+  const lineage = (b: Bound, concept: string) => [{ accession: source.accession, url: b.table.url, concept: `release:${concept}`, contextId: `table-${b.table.index}:row-${b.row}:column-${b.column}`, periodStart: start, periodEnd: end, dimensions: {}, parserVersion: "release-history.v1" }];
+  const sameRevenue = (b: Bound) => Math.abs(b.value * b.table.scale / quarter.scale - Number(quarter.revenue)) <= 1;
+  const statements = tables.filter(t => /(?:statements? of (?:operations|income|earnings)|income statements?)(?! data)/i.test(t.title) && !/non-gaap|reconciliation of|income statement data/i.test(t.title) && find(t, FIGURE_LABELS.net, end) && (() => { const r = find(t, FIGURE_LABELS.revenue, end); return r && sameRevenue(r); })());
+  const eps: Bound[] = [];
+  for (const t of statements) {
+    let perShare = false;
+    for (const [i, row] of t.rows.entries()) {
+      const label = labelKey(labelled(row));
+      if (/per (?:common )?share|earnings per share/.test(label)) perShare = true;
+      if (/weighted|shares used|number of shares|common shares|diluted shares/.test(label)) perShare = false;
+      if (!/diluted/.test(label) || (!perShare && !/per share/.test(label)) || /shares|non gaap|adjusted/.test(label)) continue;
+      const at = valueAt(t, row, end);
+      if (at) eps.push({ ...at, table: t, row: i });
+    }
+  }
+  let result: RevenueHistoryQuarter = { ...quarter, segments: [{id: "reported-company-total", name: "Total company (segment split not yet verified)", value: quarter.revenue, lineage: quarter.lineage}], revenueAdjustments: undefined };
+  if (eps.length && new Set(eps.map(e => e.value)).size === 1) result.dilutedEps = { value: String(eps[0]!.value), basis: "reported", source: {...source, url: eps[0]!.table.url}, lineage: lineage(eps[0]!, "EarningsPerShareDiluted") };
+  const anchors = verified.filter(q => q.source.form !== "8-K" && q.segments.length > 1).sort((a, b) => Math.abs(Date.parse(a.periodEnd) - Date.parse(end)) - Math.abs(Date.parse(b.periodEnd) - Date.parse(end)));
+  const isBusiness = (s: RevenueHistoryQuarter["segments"][number]) => s.lineage?.some(l => Object.keys(l.dimensions).some(a => a.endsWith(":StatementBusinessSegmentsAxis")));
+  const business = anchors.filter(q => q.segments.some(isBusiness) && q.segments.every(s => isBusiness(s)
+    || (s.id === "corporate" && s.lineage?.some(l => Object.entries(l.dimensions).some(([a,m]) => a.endsWith(":ConsolidationItemsAxis") && m.endsWith(":CorporateNonSegmentMember"))))));
+  const nearest = verified.filter(q => q.source.form !== "8-K").sort((a,b)=>Math.abs(Date.parse(a.periodEnd)-Date.parse(end))-Math.abs(Date.parse(b.periodEnd)-Date.parse(end)))[0];
+  if (nearest?.segmentDisclosure === "single_reportable_segment") return {...result, segmentDisclosure: nearest.segmentDisclosure,
+    segments: [{...result.segments[0]!, name: "Total company (single reportable segment)"}]};
+  const anchor = business[0];
+  if (!anchor) return result;
+  const defined = abbreviations(documents);
+  const named = (a: string, b: string) => loose(defined.get(a) ?? a) === loose(defined.get(b) ?? b);
+  const successes: RevenueHistoryQuarter[] = [];
+  for (const table of tables) for (const found of segmentBounds(table, anchor.segments.map(s => s.name), end, named)) {
+    const segments = found.map((b, i) => ({ id: anchor.segments[i]!.id, name: anchor.segments[i]!.name, value: String(b.value * table.scale / quarter.scale), lineage: lineage(b, `segment:${anchor.segments[i]!.id}`) }));
+    if (segments.some(s => Number(s.value) < 0)) continue;
+    const from = Math.min(...found.map(b => b.row)), last = Math.max(...found.map(b => b.row));
+    const stop = table.rows.findIndex((r, i) => i > last && (/^(?:total (?:net )?(?:sales|revenues?)|(?:segment )?operating (?:income|loss))/i.test(labelled(r))));
+    const adjustments = table.rows.flatMap((r, i) => {
+      if (i < from || (stop >= 0 && i >= stop) || !reconcilingLabel(labelled(r))) return [];
+      const at = valueAt(table, r, end); if (!at) return [];
+      return [{ id: `release-adjustment-${i}`, name: labelled(r), value: String(at.value * table.scale / quarter.scale), basis: "reported" as const, lineage: lineage({ ...at, table, row: i }, "revenue-adjustment") }];
+    });
+    const sum = [...segments, ...adjustments].reduce((n, s) => n + Number(s.value), 0);
+    if (Math.abs(sum - Number(quarter.revenue)) <= 1) successes.push({ ...result, segments, revenueAdjustments: adjustments });
+  }
+  const distinct = [...new Map(successes.map(q => [JSON.stringify([q.segments.map(s => s.value), q.revenueAdjustments?.map(a => a.value)]), q])).values()];
+  if (distinct.length === 1) result = distinct[0]!;
+  return result;
 }
 
 function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter, source: ReleaseSource, end: string, defined: Map<string, string>): { quarter: BusinessFlowQuarter | null; issues: string[] } {
@@ -289,8 +391,10 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
   if (previous.figures.operatingExpenses) {
     const like = previous.figures.operatingExpenses;
     if (previous.incomeModel === "financial") figures.operatingExpenses = derived(sum(expenseComponents), like, expenseComponents.map(c => c.amount), "Release noninterest expense + release provision for credit losses");
-    else if (previous.incomeModel === "standard") figures.operatingExpenses = num(figures.gross) != null && num(figures.operating) != null
-      ? derived(num(figures.gross)! - num(figures.operating)!, like, [figures.gross!, figures.operating!], "Release gross profit − release operating income (total operating expenses)") : undefined as never;
+    else if (previous.incomeModel === "standard") {
+      if (num(figures.gross) != null && num(figures.operating) != null)
+        figures.operatingExpenses = derived(num(figures.gross)! - num(figures.operating)!, like, [figures.gross!, figures.operating!], "Release gross profit − release operating income (total operating expenses)");
+    }
     else if (rows.operatingTotal) figures.operatingExpenses = amountOf(rows.operatingTotal, like, "operatingExpenses");
   }
   if (previous.figures.other && num(figures.pretax) != null && num(figures.operating) != null)
@@ -382,7 +486,7 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
       return s.children.map((c, i) => ({ ...c, revenue: amountOf(bound[i]!, c.revenue, `segment:${c.id}`) }));
     };
     const segments = previous.segments.map((s, i) => {
-      const { children: _, ...rest } = s, children = parts(s, found[i]!);
+      const rest = omit(s, "children"), children = parts(s, found[i]!);
       return { ...rest, revenue: amountOf(found[i]!, s.revenue!, `segment:${s.id}`), sourceIds: [source.accession], ...(children ? { children } : {}) };
     });
     const adjustments: NonNullable<BusinessFlowQuarter["revenueAdjustments"]> = [];
@@ -392,6 +496,13 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
       if (bound) adjustments.push({ ...a, amount: amountOf(bound, a.amount, `adjustment:${a.id}`) });
       else if (a.id === "reconciling-items" && !missing) missing = a;
       else complete = false;
+    }
+    const last = Math.max(...rows), stop = table.rows.findIndex((r, i) => i > last && /^(?:total (?:net )?(?:sales|revenues?)|(?:segment )?operating (?:income|loss))/i.test(labelled(r)));
+    for (let i = Math.min(...rows); i < (stop < 0 ? table.rows.length : stop); i++) {
+      const label = labelled(table.rows[i]!);
+      if (!reconcilingLabel(label) || adjustments.some(a => named(labelKey(a.name), labelKey(label)))) continue;
+      const at = valueAt(table, table.rows[i]!, end);
+      if (at) adjustments.push({ id: `release-adjustment-${i}`, name: label, amount: amountOf({ ...at, table, row: i }, revenue, "revenue-adjustment") });
     }
     if (!complete) return "incomplete";
     const added = () => segments.reduce((n, s) => n + Number(s.revenue.value), 0) + adjustments.reduce((n, a) => n + Number(a.amount.value), 0);
@@ -407,8 +518,7 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
     adjustments: built.adjustments.map(a => [a.id, a.amount.value]),
   });
   for (const table of tables) {
-    const found = previous.segments.map(s => find(table, [s.name], end, named));
-    if (!found.some(f => !f) && new Set(found.map(f => f!.row)).size === found.length) {
+    for (const found of segmentBounds(table, previous.segments.map(s => s.name), end, named)) {
       const built = assemble(table, found as Bound[]);
       // Names that add up to revenue are the filing's own split. Old names reprinted under another section
       // (operating income below the revenue block) do not add up, so the prior-quarter block is still tried.

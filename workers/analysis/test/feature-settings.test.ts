@@ -36,31 +36,32 @@ function fakeDb(rows: Row[], migrated = true, cache: Record<string, unknown> = {
   return { db, writes };
 }
 
-const deployment = { SEC_AI_TICKERS: "ORCL,NET", SEC_AI_ENABLED: "true", BUSINESS_TREE_TICKERS: "MSFT" };
 
-test("readers see a feature exactly when its switch is on: the stored choice, else the deployment's default list", async () => {
+test("readers see a feature exactly when its switch is on; a company the admin never switched on shows nothing", async () => {
   const { db } = fakeDb([
     { ticker: "ORCL", feature: "findings", generate: 0 },
     { ticker: "AAPL", feature: "reports", generate: 1 },
+    { ticker: "MSFT", feature: "tree", generate: 1 },
+    { ticker: "NET", feature: "findings", generate: 1 },
     { ticker: "*", feature: "tree", generate: 0 },
     { ticker: "NET", feature: "explainer", generate: 0, display: 1 },
   ]);
   // A failed run stopped generation only: what was written stays shown.
-  assert.equal(await featureShown(db, deployment, "NET", "explainer"), true, "stopped by a failure");
-  assert.equal(await featureShown(db, deployment, "ORCL", "findings"), false, "switched off");
-  assert.equal(await featureShown(db, deployment, "ORCL", "reports"), true, "default list");
-  assert.equal(await featureShown(db, deployment, "AAPL", "reports"), true, "switched on");
-  assert.equal(await featureShown(db, deployment, "AAPL", "tree"), false, "never on: an old tree is not shown");
+  assert.equal(await featureShown(db, "NET", "explainer"), true, "stopped by a failure");
+  assert.equal(await featureShown(db, "ORCL", "findings"), false, "switched off");
+  assert.equal(await featureShown(db, "ORCL", "reports"), false, "never switched on");
+  assert.equal(await featureShown(db, "AAPL", "reports"), true, "switched on");
+  assert.equal(await featureShown(db, "AAPL", "tree"), false, "never on: an old tree is not shown");
   // The global switch pauses generation only; what companies show follows their own switches.
-  assert.equal(await featureShown(db, deployment, "MSFT", "tree"), true);
-  const shown = await shownFilter(db, deployment, "findings");
+  assert.equal(await featureShown(db, "MSFT", "tree"), true);
+  const shown = await shownFilter(db, "findings");
   assert.deepEqual(["ORCL", "NET", "AAPL"].filter(shown), ["NET"]);
 });
 
 test("the readers answer hidden when the route says so and are untouched otherwise", async () => {
   const { db } = fakeDb([]);
   assert.equal((await readFindingsResponse(db, "ORCL", { hidden: true })).status, "hidden");
-  assert.equal((await readFindingsResponse(db, "ORCL")).status, "ready", "the authored ORCL set serves the admin");
+  assert.equal((await readFindingsResponse(db, "ORCL")).status, "preparing", "nothing stored yet");
   assert.equal((await readGuidanceResponse(db, "NET", { hidden: true })).status, "hidden");
   assert.equal((await readGuidanceResponse(db, "NET")).status, "preparing");
   assert.equal((await readBusinessExplainerResponse(db, "ORCL", { hidden: true })).status, "hidden");
@@ -77,7 +78,7 @@ test("with reports switched off the events route still lists every filing, witho
   ] };
   const read = async (on: boolean) => {
     const { db } = fakeDb([{ ticker: "CRWV", feature: "reports", generate: on ? 1 : 0 }], true, { "events:v1:CRWV": publication });
-    const response = await handleMapRead(new Request("https://analysis.internal/api/v1/companies/CRWV/events"), { DB: db, ...deployment });
+    const response = await handleMapRead(new Request("https://analysis.internal/api/v1/companies/CRWV/events"), { DB: db, SEC_AI_ENABLED: "true" });
     return (await response.json() as { status: string; events: { events: Array<{ id: string; summary: unknown }> } });
   };
   const shown = await read(true), hidden = await read(false);
@@ -86,13 +87,19 @@ test("with reports switched off the events route still lists every filing, witho
   assert.deepEqual(hidden.events.events.map(e => [e.id, e.summary]), [["0001-26-000001", null]]);
 });
 
-test("before the table exists the defaults stand, and a switch writes both stored bits together", async () => {
+test("missing settings tables reject reads, and a switch writes both stored bits together", async () => {
   const unmigrated = fakeDb([], false);
-  assert.equal(await featureShown(unmigrated.db, deployment, "ORCL", "findings"), true);
-  assert.equal(await featureShown(unmigrated.db, deployment, "AAPL", "findings"), false);
+  await assert.rejects(featureShown(unmigrated.db, "ORCL", "findings"), /no such table/);
+  await assert.rejects(featureShown(unmigrated.db, "AAPL", "findings"), /no such table/);
   const { db, writes } = fakeDb([]);
   await writeFeatureSetting(db, "ORCL", "reports", false, "2026-10-17T00:00:00Z");
   assert.deepEqual(writes[0]!.binds, ["ORCL", "reports", 0, 0, "2026-10-17T00:00:00Z"]);
   await writeFeatureSetting(db, "*", "tree", true, "2026-10-17T00:00:00Z");
   assert.deepEqual(writes[1]!.binds, ["*", "tree", 1, null, "2026-10-17T00:00:00Z"]);
+});
+
+test("A20: a display query failure rejects rather than showing a feature", async () => {
+  const { db } = fakeDb([], false);
+  await assert.rejects(featureShown(db, "ORCL", "findings"), /business_feature_settings/);
+  await assert.rejects(shownFilter(db, "findings"), /business_feature_settings/);
 });

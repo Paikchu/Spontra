@@ -1,3 +1,4 @@
+import { readValuationResponse } from "../valuation/store.ts";
 import type { PublicFilingPage } from "../../../../shared/analysis-contract/filings.ts";
 import { GLOSSARY_ZH } from "../../../../shared/analysis-runtime/glossary.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
@@ -16,6 +17,7 @@ import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
+import { sha256 } from "../sha256.ts";
 
 /**
  * The translator (docs/i18n-design.md, phase 2). Reads a company's English publications exactly as the read API
@@ -23,9 +25,8 @@ import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
  * source, and writes one table per resource for the read API to apply. Strings are remembered across publications,
  * so a regenerated finding that kept a sentence costs nothing to translate again.
  */
-/** v2: the checker compares full values and accepts digits kept verbatim, so v1's false rejections are retried. */
-export const TRANSLATION_VERSION = "translate.v3";
-export const TRANSLATION_LOCALES: readonly Locale[] = ["zh-CN"];
+/** v2: the checker compares full values and accepts digits kept verbatim; v4: a range's unit scales both ends ($90–95B). Each bump retries the earlier false rejections. */
+export const TRANSLATION_VERSION = "translate.v4";
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */
 const BATCH_CHARS = 6_000, BATCH_ITEMS = 40;
@@ -37,8 +38,6 @@ export const tableKey = (locale: Locale, resource: TranslatedResource, ticker: s
   `i18n:v1:${locale}:${resource}:${ticker}${scope ? `:${scope}` : ""}`;
 type StoredTable = { locale: Locale; version: string; sources: string; strings: TranslationTable; at: string };
 
-const hex = (buffer: ArrayBuffer) => [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, "0")).join("");
-export const sha256 = async (text: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 const quiet = async <T>(work: () => Promise<T>): Promise<T | null> => { try { return await work(); } catch { return null; } };
 
 /** Every English string the read API serves for the company, per resource, read the way the routes read them. */
@@ -60,6 +59,9 @@ export async function readSources(db: D1Database, ticker: string): Promise<Trans
     { resource: "events", scope: "", strings: collectProse("events", events?.events ?? null) },
     { resource: "filings", scope: "", strings: collectProse("filings", (page as PublicFilingPage | null)?.filings ?? null) },
   ];
+  // The current valuation report, scoped by its version so an older version keeps the words it was translated with.
+  const valuation = await quiet(() => readValuationResponse(db, ticker));
+  if (valuation?.report) sources.push({ resource: "valuation", scope: valuation.report.versionId, strings: collectProse("valuation", valuation.report) });
   // Each published report the reader can open, newest first.
   for (const filing of (page as PublicFilingPage | null)?.filings ?? []) {
     if (!filing.summary?.report && !filing.analysis?.reader && !filing.analysis?.presentation) continue;
@@ -156,7 +158,7 @@ async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string,
   const model = modelFor(env, "translate");
   const payload = { items: items.map(({ i, text, problems }) => ({ i, text, ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
   let result: Record<string, unknown>;
-  try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, true, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
+  try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
   catch (error) {
     if (error instanceof SecModelOutputError || /model-timeout/.test(String(error))) throw new ModelUnavailable(error instanceof SecModelOutputError ? error.code : "timeout");
     throw error;
@@ -189,13 +191,14 @@ export async function translateBatch(env: AnalysisEnv, ticker: string, runId: st
     for (const item of pending) {
       const zh = answers.get(item.i);
       const problems = zh == null ? ["omitted from the model's answer"] : checkTranslation(item.text, zh);
-      outcome.set(item.i, { text: problems.length ? null : zh!, problems });
+      // A failed first answer is still pending until the corrective answer is evaluated.
+      if (!problems.length || attempt === 2) outcome.set(item.i, { text: problems.length ? null : zh!, problems });
       if (problems.length) retry.push({ i: item.i, text: item.text, problems });
     }
     pending = retry;
   }
   const model = modelFor(env, "translate");
-  // Only strings the model answered are remembered; the rest stay pending for the next run.
+  // Persist successes and final evaluated failures; interrupted corrections stay pending for the next run.
   const rows = batch.flatMap((item, i) => {
     const o = outcome.get(i);
     return o ? [[locale, item.sha, item.text, o.text, o.text ? "ready" : "rejected", o.problems.length ? JSON.stringify(o.problems) : null, TRANSLATION_VERSION, model, now]] : [];

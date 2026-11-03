@@ -2,16 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { runSecDiscovery } from "../src/pipeline/discovery.ts";
+import { annualForm, runSecDiscovery } from "../src/pipeline/discovery.ts";
+import { newFilings } from "../src/financial-data/new-filings.ts";
+import { READ_NOTE_VERSION } from "../src/financial-data/read-note.ts";
+import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 import { FinancialMaintenanceStore } from "../src/admin/financial-maintenance-store.ts";
 import { SUBSCRIPTIONS, validateRegistry } from "../src/pipeline/registry.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
+import { indexFilings } from "../src/events/workflow.ts";
+import { switchOn, UNSEEDED } from "./fixtures/company-settings.ts";
 
 /** D1 over node:sqlite with every migration applied. */
 function database(): D1Database {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  sqlite.exec(UNSEEDED);
   const statement = (sql: string, values: unknown[] = []) => ({
     bind: (...next: unknown[]) => statement(sql, next),
     run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
@@ -39,7 +45,8 @@ const outbox = async (db: D1Database) => (await db.prepare("SELECT type, ticker,
 
 test("a data ticker discovery has never seen is announced as a new company with its first collection, then only its new filings", async () => {
   const db = database();
-  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "NBIS" } as unknown as AnalysisEnv;
+  await switchOn(db, ["NBIS"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
   const first = await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY, "CIK0002056322.json": submissions(FILINGS) }));
   assert.deepEqual({ baseline: first.baseline, bootstrapped: first.bootstrapped, discovered: first.discovered }, { baseline: ["NBIS"], bootstrapped: ["NBIS"], discovered: [] });
   assert.deepEqual(await outbox(db), [
@@ -57,7 +64,8 @@ test("a data ticker discovery has never seen is announced as a new company with 
 
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {
   const db = database();
-  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "NBSI" } as unknown as AnalysisEnv;
+  await switchOn(db, ["NBSI"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
   const result = await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY }));
   assert.deepEqual(result.unknown, ["NBSI"]);
   assert.deepEqual(await outbox(db), []);
@@ -83,4 +91,58 @@ test("a maintenance task holds up collection only for its own issuer", async () 
   assert.equal(await store.hasActiveDataTasksFor("GOOGL", "0001652044"), true, "the same issuer under another ticker");
   assert.equal(await store.hasActiveDataTasksFor("MSFT", "0000789019"), false, "another issuer is not held up");
   assert.equal(await store.hasActiveDataTasks(), true);
+});
+
+test("a data-only issuer's new earnings release reaches collection from discovery alone, with no reports index", async () => {
+  const db = database();
+  await switchOn(db, ["GOOGL"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
+  const recent = (rows: Array<[string, string, string, string, string, string]>) => ({ filings: { recent: {
+    accessionNumber: rows.map(r => r[0]), form: rows.map(r => r[1]), items: rows.map(r => r[2]), filingDate: rows.map(r => r[3]), reportDate: rows.map(r => r[4]), primaryDocument: rows.map(r => r[5]),
+  } } });
+  const tenQ: [string, string, string, string, string, string] = ["0001652044-26-000071", "10-Q", "", "2026-07-23", "2026-06-30", "goog-20260630.htm"];
+  const release: [string, string, string, string, string, string] = ["0001652044-26-000080", "8-K", "2.02,9.01", "2026-10-28", "2026-10-28", "googexhibit991q32026.htm"];
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload) VALUES (?, ?)").bind("sec:discovery:v1:GOOGL", JSON.stringify({ cik: "0001652044", accessions: [], checkedAt: "", collectable: [release[0]] })).run();
+  const newest = { periodEnd: "2026-06-30", reportedAt: "2026-07-23", sources: [{ title: "Form 10-Q", publishedAt: "2026-07-23" }] } as unknown as BusinessFlowQuarter;
+  assert.equal(await newFilings(db, "GOOGL", "0001652044", newest), null, "a listing discovery wrote before it kept the details is not read as nothing new");
+  await runSecDiscovery(env, new Date("2026-10-28T20:00:00.000Z"), fetcher({ "CIK0001652044.json": recent([release, ["0001652044-26-000079", "4", "", "2026-10-27", "", "xslF345X05/form4.xml"], tenQ]) }));
+  assert.equal((await db.prepare("SELECT count(*) n FROM sec_filings").first<{ n: number }>())!.n, 0);
+  assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), [{ accession: "0001652044-26-000080", form: "8-K", filedAt: "2026-10-28", reportDate: null,
+    url: "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000080/googexhibit991q32026.htm" }]);
+
+  // A filing with a read note under this version is read once.
+  await db.prepare("INSERT INTO filing_read_notes (accession, cik, ticker, form, version, status, updated_at) VALUES (?, ?, ?, ?, ?, 'unresolved', ?)")
+    .bind("0001652044-26-000080", "0001652044", "GOOGL", "8-K", READ_NOTE_VERSION, "2026-10-28T20:12:00.000Z").run();
+  assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), []);
+});
+
+test("the issuer's annual form is its latest annual report's, read across its whole recent list", () => {
+  const recent = (form: string[]) => ({ filings: { recent: { form } } });
+  // A 20-F filer's monthly 6-Ks push its annual report far down the list; an amendment reads as the report it amends.
+  assert.equal(annualForm(recent([...Array<string>(300).fill("6-K"), "20-F", "10-K"])), "20-F");
+  assert.equal(annualForm(recent(["8-K", "10-K/A", "10-Q"])), "10-K");
+  assert.equal(annualForm(recent(["40-F"])), "40-F");
+  assert.equal(annualForm(recent(["6-K", "F-1"])), null);
+  assert.equal(annualForm(null), null);
+});
+
+test("a company without the report summaries gets its filings list from the event rail's read, announced once per new filing", async () => {
+  const db = database();
+  const list = (rows: Array<[string, string, string]>) => ({ name: "Taiwan Semiconductor", filings: { recent: {
+    accessionNumber: rows.map(r => r[0]), form: rows.map(r => r[1]), filingDate: rows.map(r => r[2]), reportDate: rows.map(() => ""),
+    primaryDocument: rows.map(r => `${r[0]}.htm`), primaryDocDescription: rows.map(() => ""), items: rows.map(() => ""),
+  } } });
+  const first: Array<[string, string, string]> = [["0001046179-26-000002", "6-K", "2026-10-15"], ["0001046179-26-000001", "20-F", "2026-04-15"], ["0001046179-26-000000", "SC 13G", "2026-02-01"]];
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list(first), "2026-10-16T00:00:00.000Z"), 2);
+  assert.deepEqual((await db.prepare("SELECT accession_number a, form FROM sec_filings WHERE ticker = 'TSM' ORDER BY a").all<{ a: string; form: string }>()).results.map(r => ({ ...r })),
+    [{ a: "0001046179-26-000001", form: "20-F" }, { a: "0001046179-26-000002", form: "6-K" }]);
+  // Nothing new: no rows, no event.
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list(first), "2026-10-16T01:00:00.000Z"), 0);
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list([["0001046179-26-000003", "6-K", "2026-11-01"], ...first]), "2026-11-01T01:00:00.000Z"), 1);
+  assert.deepEqual((await outbox(db)).map(e => e.type), ["filings.indexed", "filings.indexed"]);
+});
+
+test("every business filing a data company files reaches the events task, which indexes the filings list", () => {
+  const routed = (form: string) => (SUBSCRIPTIONS["filing.discovered"] ?? []).some(s => s.task === "events" && (!s.when || s.when({ type: "filing.discovered", ticker: "TSM", detail: { form } })));
+  assert.deepEqual(["10-Q", "10-K", "20-F", "6-K", "8-K", "4", "SC 13G"].map(routed), [true, true, true, true, true, true, false]);
 });

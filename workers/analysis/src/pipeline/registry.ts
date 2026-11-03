@@ -1,4 +1,5 @@
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 /**
  * The pipeline's event graph (docs/analysis-events.md): the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
@@ -14,6 +15,7 @@ export const EVENT_TYPES = [
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
+  "valuation.published",
   "presentation.unresolved",
   "feature.settings",
 ] as const;
@@ -22,10 +24,10 @@ export type EventType = typeof EVENT_TYPES[number];
 export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
-  "sec-report", "guidance", "events",
+  "sec-report", "fundamentals", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
-  "peers", "translate", "presentation",
+  "peers", "translate", "presentation", "valuation",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -71,10 +73,13 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
   "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
+  // Re-reads Company Facts when new statements are published, so the SEC fundamentals keep up with the page; retried
+  // while Company Facts is still behind the filing. No model.
+  "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Extracts management guidance from earnings releases and the calls the transcript library stored (Workflow).
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
-  // Current reports and Form 4 filings for the map's event rail; no model.
-  "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
+  // Current reports and Form 4 filings for the map's event rail, and every company's filings list; no model.
+  "events": { emits: ["events.published", "filings.indexed"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
   "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "findings" },
   // Recovers company analyses that stopped, failed or are behind the prompt version.
@@ -111,6 +116,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
   // arithmetic decides), then collects the issuer again through a maintenance task.
   "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
+  // The valuation assessment (docs/valuation-assessment-design.md): five researched dimensions and a calculated model,
+  // rewritten when the figures, filings, guidance or calls it reads from change (Workflow; model at the reasoning tier).
+  "valuation": { emits: ["valuation.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -123,19 +131,20 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
     // A current report collection does not read is archived on its own; the SEC report follows `filing.archived`.
     { task: "archive", when: e => /^8-K/.test(form(e)) && !earnings(e) },
-    { task: "events", when: e => /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
+    // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
+    { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
   "company.added": [{ task: "events" }, { task: "presentation" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
+  "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
   "filing.archived": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
-  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }],
+  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -146,7 +155,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
   // A stored call is guidance material for the company's earnings event; only where the reports feature is on.
-  "transcript.stored": [{ task: "guidance" }],
+  "transcript.stored": [{ task: "guidance" }, { task: "valuation" }],
   "report.published": [
     { task: "translate" },
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
@@ -154,9 +163,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
     { task: "items", when: e => PERIODIC.test(form(e)) },
   ],
-  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }],
-  "guidance.published": [{ task: "findings" }, { task: "translate" }],
-  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
+  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
+  "guidance.published": [{ task: "findings" }, { task: "translate" }, { task: "valuation" }],
+  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }, { task: "valuation" }],
   "analysis.published": [{ task: "findings" }],
   "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
   // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
@@ -164,6 +173,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }],
+  "valuation.published": [{ task: "translate" }],
   // New rows on the rail are filings to analyse.
   "events.published": [{ task: "translate" }, { task: "items" }],
   "items.published": [{ task: "translate" }],
@@ -178,6 +188,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "items", when: e => e.detail?.feature === "findings" },
     { task: "explainer", when: e => e.detail?.feature === "explainer" },
     { task: "tree", when: e => e.detail?.feature === "tree" },
+    { task: "valuation", when: e => e.detail?.feature === "valuation" },
   ],
 };
 

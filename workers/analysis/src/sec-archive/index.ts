@@ -7,7 +7,6 @@ import type { AnalysisEnv } from "../operations.ts";
 import { edgarListingsFor, type EdgarListings, type GatewayOptions } from "./gateway.ts";
 
 export type { EdgarListings, GatewayOptions } from "./gateway.ts";
-export { archiveRoot } from "./gateway.ts";
 export { archivedExhibits, archivedFiling, archiveDocuments, archiveHolds, archivingReader, exhibitType, readArchivedDocument, type ArchivedDocument, type ArchivedFiling, type ArchiveEnv } from "./archive.ts";
 
 /** EDGAR's listings for this Worker: the contact user-agent from the environment, a test's fetcher when given. */

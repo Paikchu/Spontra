@@ -3,6 +3,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { reserve } from "./budget.ts";
 import { issueReader, readerOf } from "./identity.ts";
 import type { StageAgent, StageProps } from "./agent.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * The stage's only door (docs/stage-agent-design.md §3.1), reached from the business map over a Service Binding to this
@@ -11,7 +12,6 @@ import type { StageAgent, StageProps } from "./agent.ts";
  * Only StageAgent is routable, and only for a conversation registered to the reader: an unknown name is a 404 that
  * never creates an object.
  */
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const CONVERSATION = /^[0-9a-f]{32}$/;
 const LOCALES = new Set(["en", "zh-CN"]);
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
@@ -26,7 +26,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
   // The stage is open on every company page; the page asks only whether this browser already has a reader id.
   if (url.pathname === "/agents/status" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";
-    const open = TICKER.test(ticker);
+    const open = TICKER_PATTERN.test(ticker);
     return json({ open, reader: reader != null });
   }
 
@@ -44,7 +44,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
 
   if (url.pathname === "/agents/conversations" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";
-    if (!TICKER.test(ticker)) return json({ error: "bad-request" }, 400);
+    if (!TICKER_PATTERN.test(ticker)) return json({ error: "bad-request" }, 400);
     const rows = (await db.prepare("SELECT id, last_at, turns FROM stage_conversations WHERE user_id = ? AND ticker = ? AND status = 'active' ORDER BY last_at DESC LIMIT 20").bind(reader, ticker).all<{ id: string; last_at: string; turns: number }>()).results;
     return json({ conversations: rows.map(r => ({ id: r.id, lastAt: r.last_at, turns: r.turns })) });
   }
@@ -53,7 +53,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     const body = await request.json().catch(() => null) as { ticker?: unknown; locale?: unknown } | null;
     const ticker = typeof body?.ticker === "string" ? body.ticker : "";
     const locale = typeof body?.locale === "string" && LOCALES.has(body.locale) ? body.locale : "en";
-    if (!TICKER.test(ticker)) return json({ error: "bad-request" }, 400);
+    if (!TICKER_PATTERN.test(ticker)) return json({ error: "bad-request" }, 400);
     const spent = await reserve(db, "stage-conversations", { reader, address });
     if (!spent.ok) return json({ error: "quota", which: spent.which }, 429);
     const now = new Date().toISOString();

@@ -1,5 +1,4 @@
 import type { PublicBusinessFlow, BusinessFlowQuarter } from '../../../../shared/analysis-contract/business-flow.ts';
-import type { FinancialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { allowData } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import type { CompleteStore, Job } from './store.ts';
@@ -35,7 +34,7 @@ export async function collectNewFilings<F extends {accession:string}>(job:Job,cu
  if(!published)await store.defer({...job,attempt:3},['NEWER_PUBLICATION_CURRENT'],job.cursor);
  return {published,reasons:published?[]:['NEWER_PUBLICATION_CURRENT'],read};
 }
-export async function collectComplete(job:Job,policy:FinancialPolicy,store:CompleteStore,readBatch:(job:Job)=>Promise<DocumentBatch>,readRelease?:ReadRelease):Promise<{published:boolean;reasons:string[];flow?:PublicBusinessFlow;release?:{periodEnd:string|null;issues:string[]}}>{
+export async function collectComplete(job:Job,dataTickers:ReadonlySet<string>,store:CompleteStore,readBatch:(job:Job)=>Promise<DocumentBatch>,readRelease?:ReadRelease):Promise<{published:boolean;reasons:string[];flow?:PublicBusinessFlow;release?:{periodEnd:string|null;issues:string[]}}>{
  // The verified pair publishes as it is unless a newer earnings release passes the same gate on top of its newest quarter;
  // a release that cannot be read leaves the verified pair, and the 10-Q brings the quarter later.
  const publish=async(at:Job,flow:PublicBusinessFlow)=>{
@@ -52,7 +51,7 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
   if(!published)await store.defer({...at,attempt:3},['NEWER_PUBLICATION_CURRENT'],at.cursor);
   return {published,reasons:published?[]:['NEWER_PUBLICATION_CURRENT'],flow};
  };
- if(!allowData(policy,job.ticker)){await store.defer({...job,attempt:3},['DATA_POLICY_DENIED'],job.cursor);return {published:false,reasons:['DATA_POLICY_DENIED']};}
+ if(!allowData(dataTickers,job.ticker)){await store.defer({...job,attempt:3},['DATA_POLICY_DENIED'],job.cursor);return {published:false,reasons:['DATA_POLICY_DENIED']};}
  try{
   // Stop once the newest filing period and its comparable predecessor are fully verified;
   // older historical documents cannot improve this publication and need not delay it.

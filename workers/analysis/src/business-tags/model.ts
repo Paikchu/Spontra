@@ -3,7 +3,7 @@ import { INDUSTRY_CATEGORIES } from "../../../../shared/analysis-contract/filing
 import { buildUnits, checkTags, nameGuard, readAssignments, readTagReview, TAG_LIMITS, type TagDraft, type TagScope } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName, securities } from "../catalog/issuer-directory.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { sectionPassages, type PassageRow, type TagsPlan } from "./input.ts";
@@ -36,12 +36,13 @@ Return JSON only: {"reviews":[{"id","supported":true|false}]}, one entry per tag
 /** Every tracked company's tickers and names, which no tag may carry. */
 export async function trackedNames(db: D1Database): Promise<(text: string) => string | null> {
   const tickers = (await db.prepare("SELECT DISTINCT ticker FROM sec_business_links").bind().all<{ ticker: string }>()).results.map(r => r.ticker);
-  return nameGuard(tickers, tickers.flatMap(t => issuerNames(findSecurity(t)?.name ?? t)));
+  const named = await securities(db);
+  return nameGuard(tickers, tickers.flatMap(t => issuerNames(named(t)?.name ?? t)));
 }
 
 async function call(env: AnalysisEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown, tool: "business-tags" | "business-tags-review", ticker: string) {
   for (const attempt of [1, 2]) {
-    try { return await callWorkerSecModel(env, fetcher, `${stage}-${attempt}`, system, payload, modelFor(env, tool), 5 * 60_000, true, { reasoning: reasoningFor(env, tool), ticker, kind: "business-tags" }); }
+    try { return await callWorkerSecModel(env, fetcher, `${stage}-${attempt}`, system, payload, modelFor(env, tool), 5 * 60_000, { reasoning: reasoningFor(env, tool), ticker, kind: "business-tags" }); }
     catch (error) { if (!(error instanceof SecModelOutputError) || attempt === 2) throw error; }
   }
   return null;
@@ -59,7 +60,7 @@ export async function proposeTags(env: AnalysisEnv, plan: TagsPlan, fetcher: typ
   const shown = (ids: string[]) => ids.slice(0, TAG_LIMITS.sectionsPerUnit).map(id => ({ path: paths.get(id) ?? "", passages: (passages.get(id) ?? []).map((p: PassageRow) => { seen.add(p.passage_id); return { id: p.passage_id, text: p.text.slice(0, PASSAGE_TEXT) }; }) })).filter(s => s.passages.length);
   const unplacedLinks = plan.links.filter(l => plan.unplaced.some(u => u.businessKey === l.businessKey));
   const payload = {
-    company: issuerNames(findSecurity(plan.ticker)?.name ?? plan.ticker)[0], ticker: plan.ticker,
+    company: issuerNames(await companyName(db, plan.ticker) ?? plan.ticker)[0], ticker: plan.ticker,
     sectors: Object.fromEntries(Object.entries(INDUSTRY_CATEGORIES).map(([k, v]) => [k, `${SECTOR_LABELS[k as keyof typeof SECTOR_LABELS]} — ${v}`])),
     facets: TAG_FACET_LABELS, nodes: plan.nodes,
     units: plan.units.slice(0, TAG_LIMITS.units).map(u => ({ unitKey: u.unitKey, name: u.name, sectors: u.sectors, businesses: plan.links.filter(l => u.linkKeys.includes(l.businessKey)).map(l => l.name), sections: shown(u.sectionIds) })),
@@ -86,7 +87,7 @@ export async function reviewTags(env: AnalysisEnv, ticker: string, tags: TagDraf
   // Batches keep each call short; a tag left unanswered is not kept.
   for (let i = 0; i < tags.length; i += 40) {
     const batch = tags.slice(i, i + 40);
-    const payload = { company: issuerNames(findSecurity(ticker)?.name ?? ticker)[0], tags: batch.map(t => ({ id: t.tagId, unit: t.unitKey.slice(t.unitKey.indexOf("|") + 1), facet: t.facet, label: t.label, definition: t.definition, passages: t.passageIds.map(id => texts.get(id) ?? "") })) };
+    const payload = { company: issuerNames(await companyName(env.DB!, ticker) ?? ticker)[0], tags: batch.map(t => ({ id: t.tagId, unit: t.unitKey.slice(t.unitKey.indexOf("|") + 1), facet: t.facet, label: t.label, definition: t.definition, passages: t.passageIds.map(id => texts.get(id) ?? "") })) };
     const raw = await call(env, fetcher, `business-tags-review-${i / 40 + 1}`, REVIEW, payload, "business-tags-review", ticker);
     for (const id of readTagReview(raw, batch.map(t => t.tagId))) kept.add(id);
   }

@@ -13,6 +13,7 @@ import { findingData, KIND_LABEL, verifiedFindings, type VerifiedFinding } from 
 import type { CompanyData } from "../live-company";
 import { LensBlocks } from "../LensPanel";
 import { LensFrame } from "../LensFrame";
+import { SeverityIcon } from "../SeverityIcon";
 import { trendChart, type StageState } from "./stage-model";
 
 export const NOTICE: Record<NoticeCode, string> = labels({
@@ -78,7 +79,7 @@ const Trend = memo(function Trend({ block, data, periodEnd }: { block: Extract<S
 
 function FindingList({ findings, onOpen }: { findings: VerifiedFinding[]; onOpen: (id: string) => void }) {
   return <ol className="scene-findings">{findings.map(f => <li key={f.id} data-kind={f.kind}>
-    <Button variant="unstyled" type="button" onClick={() => onOpen(f.id)}><i className="finding-mark" aria-hidden="true">{f.severity}</i><span lang={langOf(f.title)}>{f.title}</span></Button>
+    <Button variant="unstyled" type="button" onClick={() => onOpen(f.id)}><SeverityIcon severity={f.severity} /><span lang={langOf(f.title)}>{f.title}</span></Button>
   </li>)}</ol>;
 }
 

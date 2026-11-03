@@ -26,7 +26,7 @@ function fakeFetch(body: string, status = 200, headers: Record<string, string> =
 
 test("a model call streams one JSON object from DeepSeek's Anthropic-format API with effort and caching", async () => {
   const { fetcher, requests } = fakeFetch(sse([start(), ...text(0, '{"ok":'), ...text(1, "true}"), ...end("end_turn")]));
-  const value = await callWorkerSecModel(env, fetcher, "findings-write", "Write findings.", { ticker: "MSFT" }, undefined, undefined, true, { reasoning: "low" });
+  const value = await callWorkerSecModel(env, fetcher, "findings-write", "Write findings.", { ticker: "MSFT" }, undefined, undefined, { reasoning: "low" });
   assert.deepEqual(value, { ok: true });
   const [request] = requests;
   assert.match(request!.url, /^https:\/\/api\.deepseek\.com\/anthropic\/v1\/messages/);

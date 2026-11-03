@@ -19,7 +19,7 @@ const stageLabels: Record<string, string> = {
   backup: "准备更新", history: "补充历史报表", audit: "整理报表",
   analysis_dispatch: "准备分析", analysis_wait: "生成财报分析", finalize: "保存结果",
   discover: "查找最新财报", discovery: "查找最新财报", extract: "读取表格",
-  collect: "获取财报", analyze: "分析财报", analysis: "分析财报", reread: "重新读取报告",
+  collect: "获取财报", analyze: "分析财报", analysis: "分析财报", reread: "重新读取报告", republish: "更新公开财报",
 };
 const actionNames: Record<FinancialMaintenanceTask["action"], string> = { extract: "财报数据", analyze: "财报分析", reread: "重新读取报告" };
 const periods = (values: string[]) => values.length ? values.join("、") : "无";

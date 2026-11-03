@@ -22,7 +22,6 @@ export class SecModelHttpError extends Error {
 export type ModelRequestOptions = {
   model: string;
   maxTokens: number;
-  jsonMode: boolean;
   continuation?: string;
   repair?: string;
   checkpoint?: (content: string) => Promise<void>;
@@ -32,7 +31,7 @@ export type ModelRequestOptions = {
 export type ModelCheckpoint = { version: "model-recovery.v1"; content: string; mode: "continue" | "repair"; maxTokens: number };
 export type ModelCheckpointStore = { load(): Promise<ModelCheckpoint | null>; save(value: ModelCheckpoint | null): Promise<void> };
 export type RecoveryOptions = {
-  stage: string; model: string; fallbackModel: string; jsonMode: boolean;
+  stage: string; model: string; fallbackModel: string;
   request(options: ModelRequestOptions): Promise<string>;
   checkpoint?: ModelCheckpointStore;
   heartbeat?: () => Promise<void>;
@@ -48,7 +47,7 @@ export function modelOutputCeiling(model: string): number {
 
 /** Repair format, continue truncated output, or switch a failing model. Never accept incomplete JSON. */
 export async function recoverModelJson(options: RecoveryOptions): Promise<Record<string, unknown>> {
-  let model = options.model, jsonMode = options.jsonMode;
+  let model = options.model;
   let maxTokens = Math.min(SEC_MODEL_OUTPUT_TOKENS, modelOutputCeiling(model));
   let state = await options.checkpoint?.load() ?? null;
   if (state) maxTokens = Math.min(Math.max(maxTokens, state.maxTokens), modelOutputCeiling(model));
@@ -65,7 +64,7 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
     };
     try {
       await options.heartbeat?.();
-      const text = await options.request({ model, maxTokens, jsonMode: jsonMode && !prefix,
+      const text = await options.request({ model, maxTokens,
         ...(prefix ? { continuation: prefix } : {}), ...(repair ? { repair } : {}),
         checkpoint: (partial) => hold(combine(partial), "continue"),
         heartbeat: options.heartbeat,
@@ -92,7 +91,6 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
           if (!state?.content) model = model === options.model ? options.fallbackModel : options.model;
         } else if (error.code === "invalid_json") {
           if (!state) await hold(error.partialContent, "repair");
-          jsonMode = false;
           if (attempt > 0) model = model === options.model ? options.fallbackModel : options.model;
           action = "repair_json";
         } else if (error.code === "content_limit") {
@@ -100,7 +98,6 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
           throw error;
         } else {
           model = model === options.model ? options.fallbackModel : options.model;
-          jsonMode = false;
           action = "switch_model";
         }
       } else if (error instanceof SecModelHttpError) {
@@ -118,8 +115,6 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
           const supported = limit ? Number(limit.replaceAll(",", "")) : Math.floor(maxTokens / 2);
           maxTokens = Math.max(1024, Math.min(maxTokens - 1, supported));
           action = "negotiate_token_budget";
-        } else if (error.status === 400 && /json|response_format|schema|parameter/i.test(error.message) && jsonMode) {
-          jsonMode = false; action = "plain_json_transport";
         } else if (error.status === 408 || error.status === 429 || error.status >= 500) {
           model = model === options.model ? options.fallbackModel : options.model;
           action = "backoff_and_switch_model";

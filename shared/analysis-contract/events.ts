@@ -1,15 +1,20 @@
 /**
- * What a company filed between its reports: 8-K/6-K current reports and Form 4 insider
- * transactions, as EDGAR lists them. An event is a deterministic record — its class comes from the
+ * What a company filed between its reports: 8-K/6-K current reports, Form 4 insider transactions,
+ * securities offerings (shelf registrations, prospectus supplements) and proxy statements, as EDGAR lists them. An event is a deterministic record — its class comes from the
  * 8-K item codes or the form, its figures from the Form 4 XML — and the only model-written part is
  * the summary already produced for the filing. Every event keeps its EDGAR links.
  */
 
-/** What kind of event the filing discloses, decided by item codes (8-K) or the form (Form 4), never by a model. */
+/** What kind of event the filing discloses, decided by item codes (8-K) or the form (Form 4, offerings, proxies), never by a model. */
 export type EventClass =
   | "earnings" | "guidance" | "executive" | "insider" | "deal" | "financing" | "capital_return" | "vote" | "legal" | "other";
 
-export type EventForm = "8-K" | "8-K/A" | "6-K" | "6-K/A" | "4" | "4/A";
+/** A shelf registration, a prospectus supplement or a free writing prospectus: the company selling securities. */
+export type OfferingForm = "S-3" | "S-3/A" | "S-3ASR" | "F-3" | "F-3/A" | "F-3ASR" | "424B1" | "424B2" | "424B3" | "424B4" | "424B5" | "424B7" | "FWP";
+/** The annual meeting's proxy statement, or the one for a merger vote. */
+export type ProxyForm = "DEF 14A" | "DEFM14A";
+
+export type EventForm = "8-K" | "8-K/A" | "6-K" | "6-K/A" | "4" | "4/A" | OfferingForm | ProxyForm;
 
 /** Form 4 transaction codes the ladder draws. Everything else (grants, gifts, withholding) is kept but not a signal. */
 export type InsiderTransactionCode = "S" | "P" | "M" | "F" | "A" | "G" | "D" | "C" | "J" | "X" | "W" | "I" | "Z" | "L" | "U" | "O" | "E" | "H" | "K";
@@ -20,7 +25,7 @@ export type InsiderLine = {
   /** Shares acquired (A) or disposed (D). */
   acquiredDisposed: "A" | "D";
   shares: number;
-  /** Per-share price as reported; null for grants, gifts and option exercises reported at zero. */
+  /** Per-share price as reported, including explicit zero; null when no numeric price is reported. */
   price: number | null;
   /** Shares of this class the owner held after the line, as reported on the line. */
   ownedAfter: number | null;
@@ -31,6 +36,12 @@ export type InsiderLine = {
 };
 
 export type InsiderTransaction = {
+  /**
+   * The issuer whose securities the filing reports, CIK without leading zeros. Absent on transactions read before it
+   * was parsed; a filing about another issuer (the company reporting as an owner of someone else's stock) is never kept.
+   */
+  issuerCik?: string | null;
+  issuerTradingSymbol?: string | null;
   /** The reporting owner's CIK, stable across filings. */
   ownerCik: string;
   ownerName: string;
@@ -45,10 +56,15 @@ export type InsiderTransaction = {
   planAdoptedOn: string | null;
   securityTitle: string;
   lines: InsiderLine[];
-  /** Open-market sales (code S) in this filing: shares, proceeds and weighted price; null when there were none. */
-  sold: { shares: number; proceeds: number; averagePrice: number } | null;
-  /** Open-market purchases (code P) in this filing. */
-  bought: { shares: number; cost: number; averagePrice: number } | null;
+  /**
+   * Non-derivative open-market sales (code S, disposed) in this filing; null when there were none.
+   * Shares includes unpriced lines. Proceeds and weighted averagePrice are null if any selected line is unpriced.
+   * pricedShares counts shares with a reported numeric price (including zero); absent on legacy aggregates,
+   * whose price coverage is unknown. New parsers always emit it.
+   */
+  sold: { shares: number; proceeds: number | null; averagePrice: number | null; pricedShares?: number } | null;
+  /** Open-market purchases (code P, acquired), with the same pricing/coverage rules as sold. */
+  bought: { shares: number; cost: number | null; averagePrice: number | null; pricedShares?: number } | null;
   /** Shares exercised or converted (code M) in this filing. */
   exercised: number;
   /** Shares held directly after the last non-derivative line; null when the filing reports none. */
@@ -56,6 +72,9 @@ export type InsiderTransaction = {
   /** Footnotes as filed, trimmed. */
   footnotes: string[];
 };
+
+/** How loudly a filing belongs on the default rail. Computed, never written by a model. */
+export type EventImportance = "key" | "normal" | "routine";
 
 export type EventExhibit = { type: string; title: string; url: string };
 
@@ -81,6 +100,13 @@ export type CompanyEvent = {
   class: EventClass;
   /** What the filing is about, as the primary document describes it; empty when EDGAR gives none. */
   description: string;
+  /**
+   * A document title that says more than the form name (an EDGAR description such as "Results of Operations").
+   * Null when the only text EDGAR gives is the form itself ("6-K", "8-K"); those rows are grouped instead of titled.
+   */
+  title: string | null;
+  /** Noise rank for the rail and the time axis. The same rules run in the API and in the page. */
+  importance: EventImportance;
   edgarUrl: string;
   documentUrl: string;
   exhibits: EventExhibit[];

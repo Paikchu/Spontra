@@ -6,7 +6,7 @@ import { adminApi } from "./admin-api";
 import { financialDate } from "./financial-update-history";
 import "./admin-messages.css";
 
-const FEATURE_LABEL: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图" };
+const FEATURE_LABEL: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图", valuation: "估值评估" };
 const OUTCOME: Record<AdminMessage["outcome"], { status: string; text: string }> = { succeeded: { status: "reviewed", text: "生成成功" }, failed: { status: "failed", text: "生成失败 · 已关闭" } };
 
 /** The inbox, read every 30 seconds while the page is visible; `read` marks entries read (all when no ids are given). */

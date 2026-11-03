@@ -91,10 +91,11 @@ export { readArchivedDocument };
  * under their content hash, and read back from the archive when already there. Every collector step, maintenance step
  * and archive task reads through one of these, so nothing a task reads is left out of the archive.
  */
-export function archivingReader(env: ArchiveEnv, ticker: string, causeId: string | null = null, options: GatewayOptions = {}): SecReader {
-  const reader = edgarDocumentReader(env.SEC_USER_AGENT, { delayMs: 1000, ...options });
+export function archivingReader(env: ArchiveEnv, ticker: string, causeId: string | null = null, options: GatewayOptions & { announce?: boolean } = {}): SecReader {
+  const { announce, ...gateway } = options;
+  const reader = edgarDocumentReader(env.SEC_USER_AGENT, { delayMs: 1000, ...gateway });
   const archive = { DB: env.DB, SEC_FILINGS: env.SEC_FILINGS };
-  reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId).then(() => undefined);
+  reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId, { announce: announce ?? true }).then(() => undefined);
   reader.archived = url => readArchivedDocument(archive, ticker, url);
   return withFilingStructure(reader, env.DB);
 }

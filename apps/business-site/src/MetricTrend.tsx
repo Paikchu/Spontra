@@ -1,30 +1,31 @@
 import { Button } from "@/packages/web/src/ui/button";
-import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/packages/web/src/ui/chart";
+import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/packages/web/src/ui/custom-chart";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/packages/web/src/ui/native-select";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { axisNumber, axisUnit, compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { MomentumTag } from "./MomentumTag";
+import { momentumOf } from "./momentum";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
+import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 
 const m = messages({
   chartMetric: "Chart metric", revenueByBusiness: "Revenue · By business", yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", pp: " pp",
   trendLabel: (label: string, n: number) => `${label}, last ${n} quarters`, wholeCompany: "Whole company", since: (period: string) => `Since ${period}`,
   comparisonBase: "Comparison base", notDisclosedLower: "not disclosed", thisQuarter: "This quarter", notDisclosed: "Not disclosed", noComparison: "No comparison period",
-  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`,
+  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`, profitPair: "Operating or net income", operating: "Operating income", net: "Net income",
 }, {
   chartMetric: "图表指标", revenueByBusiness: "营收 · 按业务", yoyGrowth: "同比增长", qoqGrowth: "环比增长", pp: "个百分点",
   trendLabel: (label: string, n: number) => `${label}，最近 ${n} 个季度`, wholeCompany: "公司整体", since: (period: string) => `${period} 以来`,
   comparisonBase: "比较基准", notDisclosedLower: "未披露", thisQuarter: "本季度", notDisclosed: "未披露", noComparison: "无可比期",
-  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`,
+  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`, profitPair: "营业利润或净利润", operating: "营业利润", net: "净利润",
 });
 
 const DAY = 86_400_000;
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
-const periodLabel = (end: string) => <time dateTime={end}><span>{end.slice(0, 4)}</span><span className="trend-period-month">{end.slice(5, 7)}</span></time>;
 const sign = (v: number) => v > 0 ? "+" : v < 0 ? "−" : "";
 const percent = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}%`;
 const points = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}${m.pp}`;
@@ -44,6 +45,18 @@ export function MetricPicker({ value, groups, revenue, onChange }: { value: stri
       </NativeSelectOptGroup>)}
     </NativeSelect>
   </span>;
+}
+
+/** The two profits a non-operating gap sets apart, one press from each other on the trend (R28). */
+export const PROFIT_PAIR = ["operating_income", "net_income"] as const;
+
+export function ProfitToggle({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  return <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={value} onValueChange={next => { if (next && next !== value) onChange(next); }} asChild>
+    <span className="periods periods--small profit-pair" role="radiogroup" aria-label={m.profitPair}>
+      <ToggleGroupItem value="operating_income" role="radio" aria-checked={value === "operating_income"}>{m.operating}</ToggleGroupItem>
+      <ToggleGroupItem value="net_income" role="radio" aria-checked={value === "net_income"}>{m.net}</ToggleGroupItem>
+    </span>
+  </ToggleGroup>;
 }
 
 function formatter(trend: MetricTrend) {
@@ -73,13 +86,18 @@ function formatter(trend: MetricTrend) {
  * flow hang below it), and for amounts a growth line on the right axis. Rates are already in points, so their change is
  * stated in points and drawn as no second line. Gaps stay gaps.
  */
-export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod }: {
-  trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void;
+/** The amounts whose growth momentum the trend tags: revenue and operating income. */
+const MOMENTUM_METRICS = new Set(["total_revenue", "operating_income"]);
+
+export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod, ticker }: {
+  trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void; ticker: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
   const format = useMemo(() => formatter(trend), [trend]);
+  // Amounts tick without the currency, stated once in the legend; rates, multiples, per-share and share counts keep their unit.
+  const amounts = trend.unitFamily === "currency";
   const rate = trend.unitFamily !== "percent";
   const lag = chosenLag ?? (metricChanges(trend, 4).filter(v => v != null).length >= 2 ? 4 : 1);
   const changes = useMemo(() => metricChanges(trend, lag), [trend, lag]);
@@ -102,10 +120,11 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   return <ChartContainer asChild config={config}><section className="trend" data-view="metric" aria-label={m.trendLabel(trend.label, trend.points.length)} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
-        <div className="trend-heading"><h2>{m.wholeCompany}</h2>{picker}</div>
+        <div className="trend-heading"><h2>{m.wholeCompany}</h2>{MOMENTUM_METRICS.has(trend.key) && <MomentumTag momentum={momentumOf(trend.history, currentPeriod)} subject={trend.label} />}{picker}</div>
         <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
           {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName}</span>}
           <span className="trend-basis">{m.secXbrl}</span>
+          {amounts && <span className="trend-sub">{axisUnit(trend.currency || "USD", getLocale())}</span>}
         </div></ChartLegendContent>
       </div>
       <div className="trend-kpis">
@@ -124,7 +143,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": "var(--foreground)", "--cols": trend.points.length } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={trend.key + hi} aria-hidden="true">
-        {ticks.map((t, k) => <div key={t} data-zero={t === 0 && k > 0 ? "" : undefined} style={{ bottom: `${y(t)}%` }}><span>{format(t)}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
+        {ticks.map((t, k) => <div key={t} data-zero={t === 0 && k > 0 ? "" : undefined} style={{ bottom: `${y(t)}%` }}><span>{amounts ? axisNumber(t, getLocale()) : format(t)}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + trend.key} aria-hidden="true" />
       {trend.points.map((point, i) => {
@@ -134,10 +153,12 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
         const line = rateAxis && delta != null ? { y: rateY(delta), next: changes[i + 1] != null ? rateY(changes[i + 1]!) : null } : null;
         const labelled = i === current || series === "line";
         const nearBar = line != null && Math.abs(line.y - top) < 16;
+        const fiscal = fiscalPhrase(ticker, point.periodEnd);
+        const mark = fiscal.primary ?? fiscal.unknown;
         return <div key={point.periodEnd} className="trend-col" role="listitem" data-state={v == null ? "missing" : "ok"} data-current={i === current || undefined}
           data-align={i < 2 ? "start" : i > trend.points.length - 3 ? "end" : undefined} style={{ "--i": i } as CSSProperties} onMouseEnter={() => setHover(i)}>
           <Button variant="unstyled" type="button" className="trend-hit" disabled={!pick} onClick={() => pick && onPickPeriod(pick)} onFocus={() => setHover(i)}
-            aria-label={`${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? m.notDisclosedLower : format(v)}`} />
+            aria-label={`${mark} ${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? m.notDisclosedLower : format(v)}`} />
           <span className="trend-value" data-below={v != null && v < 0 || undefined} data-quiet={rateAxis && i !== current && !(hover === i && series !== "line") ? "" : undefined}
             style={{ bottom: `${v == null ? 22 : v < 0 ? bottom : top}%` }}>{format(v)}</span>
           {v != null ? <span className="trend-stack" data-negative={v < 0 || undefined} aria-hidden="true" style={{ top: "auto", bottom: `${bottom}%`, height: `${top - bottom}%` }}>
@@ -150,9 +171,9 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
           {line && <i className="trend-dot" data-series-line="" data-hover={hover === i || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} />}
           {line && labelled && <span className="trend-rate" data-trend={direction(delta)} data-below={delta! < 0 || nearBar || undefined} aria-hidden="true"
             style={{ bottom: `${nearBar ? Math.min(line.y, top) : line.y}%` }}>{percent(delta)}</span>}
-          <span className="trend-period">{periodLabel(point.periodEnd)}{i === current && <b>{m.thisQuarter}</b>}</span>
+          <QuarterBadge ticker={ticker} periodEnd={point.periodEnd} current={i === current} prefix={m.thisQuarter} />
           {hover === i && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
-            <div className="trend-tip-title">{shortPeriod(point.periodEnd)} · {trend.label}</div>
+            <div className="trend-tip-title">{mark} · {shortPeriod(point.periodEnd)} · {trend.label}</div>
             <div className="trend-tip-row trend-tip-lead"><span>{series === "line" && rate ? rateName : m.thisQuarter}</span><b data-trend={series === "line" ? direction(delta) : undefined}>{series === "line" && rate ? percent(delta) : format(v)}</b></div>
             {series !== "line" && delta != null && <div className="trend-tip-row"><span>{lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale())}</span><b data-trend={direction(delta)}>{rate ? percent(delta) : points(delta)}</b></div>}
             {v == null && <p>{m.notDisclosed}</p>}

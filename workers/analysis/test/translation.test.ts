@@ -8,7 +8,8 @@ import { checkTranslation, collectProse, langOf, localize, normalizeTranslation 
 import type { AnalysisEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
 import { translationsAdmin } from "../src/translation/admin.ts";
-import { ModelUnavailable, publishTables, readTranslationTable, sha256, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
+import { ModelUnavailable, publishTables, readTranslationTable, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
+import { sha256 } from "../src/sha256.ts";
 
 /** D1 over node:sqlite with every migration applied, enough for the translator's statements. */
 function database(): D1Database {
@@ -73,6 +74,9 @@ test("a translation must keep every figure, placeholder and markdown line, be Ch
   assert.deepEqual(checkTranslation("{value}, {change} on the year", "{value}，同比 {change}"), []);
   assert.deepEqual(checkTranslation("Oracle Cloud Infrastructure grew 55%.", "Oracle Cloud Infrastructure 增长 55%。"), []);
   assert.match(checkTranslation("Capex was $28.5 billion.", "资本开支为 28.5亿美元。").join(), /figures missing/);
+  // A range's unit covers both ends: $90–95B is 900亿 to 950亿, and a range of percentages stays unscaled.
+  assert.deepEqual(checkTranslation("FY27 capex of $90–95B gross, revenue +27–29%, and $2 to $3 billion of leases.", "2027 财年资本开支总额 900亿至950亿美元，营收增长 27–29%，租赁 20亿至30亿美元。"), []);
+  assert.match(checkTranslation("FY27 capex of $90–95B gross.", "2027 财年资本开支总额 90亿至950亿美元。").join(), /figures missing: 90/);
   // A number the English spells as a word may be a Chinese numeral; a real amount still has to match.
   assert.deepEqual(checkTranslation("Over the trailing four quarters the gap was one-off, not twelve months long.", "近四个季度的缺口是一次性的，而非持续十二个月。"), []);
   assert.match(checkTranslation("Over the trailing four quarters capex was $75.7 billion.", "近四个季度资本开支为 75.7亿美元。").join(), /figures missing/);
@@ -148,6 +152,42 @@ test("a model that gives no answer marks nothing: the strings stay pending, the 
   assert.deepEqual(omitted, { ready: 1, rejected: 1 });
   assert.equal(await translationPlan(db, "TEST", "zh-CN", read) == null || (await translationPlan(db, "TEST", "zh-CN", read))!.batches.length === 0, true, "a string the model left out of a real answer is settled, not retried forever");
 });
+
+for (const stopped of ["budget", "unavailable"] as const) {
+  for (const failure of ["omitted", "invalid"] as const) {
+    test(`an ${failure} translation stays retryable when correction stops for ${stopped}, while successful translations are remembered`, async () => {
+      const db = database();
+      const env = { DB: db, TRANSLATION_DAILY_CALLS: stopped === "budget" ? "1" : "10" } as unknown as AnalysisEnv;
+      const read = async (): Promise<TranslationSource[]> => [{ resource: "events", scope: "", strings: ["Results beat guidance.", "Capex was $28.5 billion."] }];
+      const plan = await translationPlan(db, "TEST", "zh-CN", read);
+      const calls: string[] = [];
+      const result = await translateBatch(env, "TEST", "run", plan!.batches.flat(), async (stage, items) => {
+        calls.push(stage);
+        if (stage === "translate-2") {
+          assert.deepEqual(items.map(item => item.text), ["Capex was $28.5 billion."]);
+          assert.ok(items[0]!.problems!.length > 0);
+          throw new ModelUnavailable("stream_stall");
+        }
+        const answers = new Map([[0, "业绩超出指引。"]]);
+        if (failure === "invalid") answers.set(1, "资本开支为 28.5亿美元。");
+        return answers;
+      });
+      assert.deepEqual(result, { ready: 1, rejected: 0, stopped });
+      assert.deepEqual(calls, stopped === "budget" ? ["translate-1"] : ["translate-1", "translate-2"]);
+      const rows = (await db.prepare("SELECT source, status FROM i18n_strings").all<{ source: string; status: string }>()).results;
+      assert.deepEqual(rows.map(row => [row.source, row.status]), [["Results beat guidance.", "ready"]]);
+      await publishTables(db, "TEST", "zh-CN", read);
+      assert.deepEqual(await readTranslationTable(db, "zh-CN", "events", "TEST"), { "Results beat guidance.": "业绩超出指引。" });
+      const retry = await translationPlan(db, "TEST", "zh-CN", read);
+      assert.deepEqual(retry!.batches.flat().map(item => item.text), ["Capex was $28.5 billion."]);
+      const recovered = await translateBatch({ ...env, TRANSLATION_DAILY_CALLS: "10" }, "TEST", "retry", retry!.batches.flat(),
+        async (_stage, items) => new Map(items.map(item => [item.i, "资本开支为 285亿美元。"])));
+      assert.deepEqual(recovered, { ready: 1, rejected: 0 });
+      await publishTables(db, "TEST", "zh-CN", read);
+      assert.equal(await translationPlan(db, "TEST", "zh-CN", read), null);
+    });
+  }
+}
 
 test("the checker compares figures at full value, so unit changes, ordinals, possessives and standard abbreviations pass, and a wrong scale does not", () => {
   const ok: Array<[string, string]> = [

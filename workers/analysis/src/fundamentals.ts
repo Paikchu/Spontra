@@ -1,6 +1,7 @@
 import { FundamentalSyncService } from "./fundamentals/fundamental-sync.ts";
+import { normalizeTicker } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1FundamentalsRepository, FundamentalSyncInProgressError, type FundamentalsD1Database } from "./fundamentals/fundamentals-d1.ts";
-import { normalizeTrackedTicker } from "./sec/config.ts";
+
 import { assertDataTicker, requireDb, type SecCronEnv } from "./core.ts";
 
 export type FundamentalsSyncOutcome = {
@@ -57,7 +58,7 @@ export async function handleFundamentalsRefreshRequest(request: Request, env: Se
   } catch {
     return Response.json({ error: "Invalid ticker" }, { status: 400 });
   }
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   if (!ticker) return Response.json({ error: "Invalid ticker" }, { status: 400 });
   try {
     assertDataTicker(env, ticker);

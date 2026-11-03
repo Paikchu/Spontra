@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SECTION_KINDS, type BusinessExplainer, type ExplainerClaim, type ExplainerSection, type ExplainerSectionKind, type ExplainerSectionLayout } from "../analysis-contract/business-explainer.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 const https = z.string().max(2000).refine(v => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } });
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -75,7 +76,7 @@ const explanation = z.object({
 });
 export const businessExplainerSchema = z.object({
   schemaVersion: z.literal("business-explainer.v1"),
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   companyName: text(200), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128),
   businesses: z.array(explanation).min(1).max(24),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),

@@ -23,13 +23,13 @@ sec-archive/
 
 | 对外接口 | 做什么 | 谁用 |
 |---|---|---|
-| `edgarListings(env)` | 发行人目录、submissions 列表及分页、Company Facts、申报索引页、Form 3/4/5 XML。只说明“有什么”，不返回申报正文 | 申报发现 Cron、SEC 财报的 `discover`、事件任务、后台发行人搜索、采集请求 |
+| `edgarListings(env)` | 发行人目录、submissions 列表及分页、Company Facts、申报索引页、Form 3/4/5 XML。只说明“有什么”，不返回申报正文 | 申报发现 Cron、SEC 财报的 `discover`、事件任务、发行人目录（`catalog/issuer-directory.ts`）、采集请求、基本面刷新 |
 | `archivingReader(env, ticker)` | 唯一会下载申报正文的 reader：下载即按内容哈希归档，已归档的直接从 R2 读 | 财务采集、补历史、财务维护、报表结构判断、`archive` 任务 |
 | `archivedFiling(env, ticker, accession)` | 一份申报在归档中的全部文档（正文在前，附件在后）及其原文 | SEC 财报 `prepare`、要点条目的 8-K 回退 |
 | `archivedExhibits(env, ticker, accession, date)` | 业绩 8-K 的 EX-99 文本（文件库尚未拆解时） | 前瞻指引 |
 | `secFilingTools(input)` | 挂到 Agent 上的 SEC 资源：列申报、找章节、读段落并登记为材料 | compose（要点、条目分析等所有写分析的 Agent） |
 
-`gateway.ts` 不在 `index.ts` 以外导出；`scripts/check-analysis-boundary.ts` 在构建时拒绝：模块外出现 EDGAR 清单端点字面量（`data.sec.gov`、`www.sec.gov/files`）、模块外构造 EDGAR reader、模块外以值导入 `gateway.ts`。`/Archives/edgar/data/...` 的文档 URL 是数据，各模块仍可持有和比较。
+`gateway.ts` 不在 `index.ts` 以外导出。EDGAR 地址统一定义在 `shared/analysis-runtime/sec-sources.ts`，网关用它拼请求。`scripts/check-analysis-boundary.ts` 在构建时拒绝：`workers/analysis/src` 中 `sec-archive/` 以外的代码出现 EDGAR 清单端点字面量或引用清单地址构造函数（`secSubmissionsUrl`、`secSubmissionsPageUrl`、`secCompanyFactsUrl`、`SEC_EXCHANGE_DIRECTORY_URL`、`SEC_TICKERS_URL`）、在模块外构造 EDGAR reader，或以值导入 `gateway.ts`。`workers/analysis/scripts/` 下的本地维护脚本不在此范围内。`/Archives/edgar/data/...` 的文档 URL 是数据，各模块仍可持有和比较。
 
 ## 事件链的变化
 

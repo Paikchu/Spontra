@@ -62,6 +62,11 @@ export const PLANS: Record<FeatureRunProgress['kind'], Plan> = {
       [/^explainer-review-(\d+)$/, m => `审校 · 第 ${nth(m[1]!)} 组`],
     ],
   },
+  valuation: {
+    phases: ['读取资料', '先验试算', '研究', '假设与计算', '反证', '成稿', '发布'],
+    rules: [[/^valuation-(time|input|quote)$/, 0], [/^valuation-prior$/, 1], [/^valuation-research-/, 2], [/^valuation-assume-/, 3], [/^valuation-redteam/, 4], [/^valuation-compose-/, 5], [/^valuation-publish$/, 6]],
+    step: [[/^valuation-quote$/, () => '冻结参考收盘价'], [/^valuation-prior$/, () => '按历史先验试算'], [/^valuation-(research|assume|compose)-/, m => { const t = TURN.exec(m.input); return t ? `${{ research: '研究', assume: '假设', compose: '成稿' }[m[1]!]} · ${turnLabel(t)}` : ''; }]],
+  },
   tree: {
     phases: ['读取业务', '研究', '审校', '描述', '复核', '发布'],
     rules: [[/^tree-(time|input|filings)$/, 0], [/^tree-b\d+-describe-review/, 4], [/^tree-b\d+-describe/, 3], [/^tree-b\d+-review/, 2], [/^tree-b\d+-/, 1], [/^tree-publish$/, 5]],

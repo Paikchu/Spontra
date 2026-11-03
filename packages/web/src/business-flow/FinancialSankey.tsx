@@ -6,7 +6,7 @@ import { financialGraph, hasSignedFigures, metricLabels, type FinancialGraph } f
 import { compactFlowValue, estimateTextWidth, layoutInfographic, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { compareRevenueNode } from "@/packages/web/src/model/revenue-tree";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { qoqLabel } from "@/shared/analysis-runtime/locale";
+import { qoqLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 
 const m = messages({
   grossMargin: "Gross margin", operatingMargin: "Operating margin", pretaxMargin: "Pretax margin", netMargin: "Net margin",
@@ -24,7 +24,6 @@ const m = messages({
   bankBridge: "银行利润桥", bridge: "利润桥", unit: () => "", component: "费用项目", equals: "等于",
 });
 const ratioName = (metric: FlowMetric) => ({ gross: m.grossMargin, operating: m.operatingMargin, pretax: m.pretaxMargin, net: m.netMargin } as Partial<Record<FlowMetric, string>>)[metric];
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 
 /** The comparison the labels state: YoY against the same quarter a year earlier, QoQ against the quarter before; a caller may pass the word in the page's locale. */
 export type ChangeWord = "YoY" | "QoQ";

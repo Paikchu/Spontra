@@ -2,51 +2,45 @@
 export type CompanyFault =
   | { kind: "not-found"; code: "NOT_FOUND" }
   | { kind: "insufficient"; code: string }
+  | { kind: "preparing"; code: "PREPARING" }
   | { kind: "rate-limit"; code: "429" }
   | { kind: "server"; code: string };
-
-const FEATURED = ["NBIS", "META", "ORCL", "NET", "AMZN"] as const;
-
-const FEATURED_NAME: Record<(typeof FEATURED)[number], { en: string; zh: string }> = {
-  NBIS: { en: "Nebius Group", zh: "Nebius Group" },
-  META: { en: "Meta Platforms", zh: "Meta" },
-  ORCL: { en: "Oracle", zh: "甲骨文" },
-  NET: { en: "Cloudflare", zh: "Cloudflare" },
-  AMZN: { en: "Amazon", zh: "亚马逊" },
-};
 
 export type FeaturedCompany = { ticker: string; name: string; nameZh: string | null };
 
 /**
  * Unknown tickers answer as a preparing publication with no attempt. A company the catalog already
- * lists is never "not covered", even when that publication is the only thing we have so far.
+ * lists is never "not covered", even when that publication is the only thing we have so far: until its
+ * first attempt it is being prepared. null: wait for the catalog before naming a fault.
  */
 export function companyFault(input: {
   httpStatus: number | null;
   reasons: readonly string[];
-  /** null while the covered catalog has not loaded. */
-  covered: boolean | null;
+  /** null when the covered catalog could not load; undefined while it is still being read. */
+  covered: boolean | null | undefined;
   attempted: boolean;
-}): CompanyFault {
+  /** The publication's status is "preparing". */
+  preparing?: boolean;
+}): CompanyFault | null {
   const status = input.httpStatus;
   if (status === 429) return { kind: "rate-limit", code: "429" };
   if (status === 404) return { kind: "not-found", code: "NOT_FOUND" };
   if (status === 0 || (status != null && status >= 500)) return { kind: "server", code: status === 0 ? "NETWORK" : String(status) };
   if (status != null && status >= 400) return { kind: "server", code: String(status) };
   if (input.covered === false) return { kind: "not-found", code: "NOT_FOUND" };
+  if (input.covered === undefined) return null;
   const untouched = !input.attempted && (input.reasons.length === 0 || (input.reasons.length === 1 && input.reasons[0] === "MISSING_TWO_QUARTERS"));
-  if (input.covered == null && untouched) return { kind: "not-found", code: "NOT_FOUND" };
+  if (input.covered === null && untouched) return { kind: "not-found", code: "NOT_FOUND" };
+  if (untouched && input.preparing) return { kind: "preparing", code: "PREPARING" };
   const code = input.reasons.filter(Boolean).join(", ") || "MISSING_TWO_QUARTERS";
   return { kind: "insufficient", code };
 }
 
-/** The five companies the public site already covers, named from the catalog when it has them. */
-export function featuredCompanies(catalog: readonly FeaturedCompany[], locale: "en" | "zh-CN"): Array<{ ticker: string; name: string }> {
-  return FEATURED.map(ticker => {
+/** The covered companies the homepage puts first, named as the catalog names them; none until the catalog loads. */
+export function featuredCompanies(catalog: readonly FeaturedCompany[], popular: readonly string[], locale: "en" | "zh-CN"): Array<{ ticker: string; name: string }> {
+  return popular.flatMap(ticker => {
     const found = catalog.find(company => company.ticker === ticker);
-    if (found) return { ticker, name: locale === "zh-CN" && found.nameZh ? found.nameZh : found.name };
-    const name = FEATURED_NAME[ticker];
-    return { ticker, name: locale === "zh-CN" ? name.zh : name.en };
+    return found ? [{ ticker, name: locale === "zh-CN" && found.nameZh ? found.nameZh : found.name }] : [];
   });
 }
 

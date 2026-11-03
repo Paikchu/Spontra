@@ -1,5 +1,5 @@
 import type { DocumentSource, Fact } from './parser.ts';
-import { quarterCode } from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
+import { quarterCode, releasePeriodEnd } from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
 
 const clean = (value:string) => value.replace(/<[^>]*>/g,' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi,(_,hex,dec)=>String.fromCodePoint(parseInt(hex??dec,hex?16:10))).replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/[\u200b-\u200d\ufeff]/g,'').replace(/\s+/g,' ').trim();
 const months:Record<string,number>={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
@@ -93,21 +93,17 @@ function periodColumns(headers:Cell[][],latestQuarterEnd?:string) {
  if(coded.length&&anchor&&!weekly){
   const year=Number(anchor[1]),month=Number(anchor[2]),newest=Math.max(...coded.map(c=>c.code));
   const fiscalYearEnd=new Date(Date.UTC(year,month-1+(4-(newest%4||4))*3,1));
-  if(isoDay(Date.UTC(year,month,0))===latestQuarterEnd&&fiscalYearEnd.getUTCFullYear()===Math.floor((newest-1)/4))
+  if(fiscalYearEnd.getUTCFullYear()===Math.floor((newest-1)/4))
    for(const c of coded){
     const back=(newest-c.code)*3;
+    if(isoDay(Date.UTC(year,month,0))!==latestQuarterEnd){
+     if(back===0)periods.set(c.column,{start:isoDay(Date.parse(latestQuarterEnd!)-90*86400000),end:latestQuarterEnd!});
+     continue;
+    }
     periods.set(c.column,{start:isoDay(Date.UTC(year,month-3-back,1)),end:isoDay(Date.UTC(year,month-back,0))});
    }
  }
  return periods;
-}
-/** The newest quarter end the document dates in its own words ("three months ended December 31, 2025"), filed at most
- * 120 days after it: the quarter a release reports. Coded columns are dated from it; nothing else is. */
-function latestQuarterEnd(html:string,filedAt:string):string|undefined {
- const filed=Date.parse(filedAt);
- return clean(html).match(/\b(?:three\s+months|quarters?)\s+ended\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2}/gi)
-  ?.map(text=>{const [,name,day,year]=text.match(/(\w+)\s+(\d{1,2}),?\s+(20\d{2})$/)!;return isoDay(Date.UTC(Number(year),months[name.toLowerCase()]-1,Number(day)));})
-  .filter(end=>Date.parse(end)<=filed&&filed-Date.parse(end)<=120*86400000).sort().at(-1);
 }
 /** The first amount a row prints under one period, wherever the header's span puts it. */
 function amountAt(row:Cell[],periods:Map<number,{start:string;end:string}>,period:{start:string;end:string}):Cell|undefined {
@@ -165,10 +161,11 @@ const PRETAX='IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryIt
 /**
  * Statements print expenses as positive amounts; a line of other operating income printed beside them is a credit.
  * Which line that is follows from the statement's own arithmetic, not its wording: the operating lines must sum to
- * gross profit less operating income in every dated column, and at most one line may need the opposite orientation.
+ * gross profit (revenue, on a statement without cost of revenue) less operating income in every dated column, and at
+ * most one line may need the opposite orientation.
  * No consistent reading means no line is turned.
  */
-function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
+function creditLines(facts:Fact[],lineRows:number[],direct:boolean):Set<number> {
   const row=(f:Fact)=>Number(f.context.match(/:row-(\d+):/)?.[1]);
   const byPeriod=new Map<string,Fact[]>();
   for(const f of facts){const key=f.start+'|'+f.end;byPeriod.set(key,[...(byPeriod.get(key)??[]),f]);}
@@ -176,7 +173,7 @@ function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
     let checked=0;
     for(const period of byPeriod.values()){
       const of=(tag:string)=>period.find(f=>f.tag==='table:'+tag)?.value;
-      const revenue=of('Revenues'),cost=of('CostOfRevenue'),operating=of('OperatingIncomeLoss'),gross=of('GrossProfit')??(revenue!=null&&cost!=null?revenue-cost:undefined);
+      const revenue=of('Revenues'),cost=of('CostOfRevenue'),operating=of('OperatingIncomeLoss'),gross=of('GrossProfit')??(revenue!=null&&cost!=null?revenue-cost:direct?revenue:undefined);
       const lines=lineRows.map(r=>period.find(f=>row(f)===r));
       if(gross==null||operating==null||lines.some(f=>!f))continue;
       checked++;
@@ -196,7 +193,7 @@ function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
 export function readStatementTableFacts(html:string,source:DocumentSource):Fact[] {
   const output:Fact[]=[];
   const tables=[...html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)];
-  const quarterEnd=latestQuarterEnd(html,source.filedAt);
+  const quarterEnd=releasePeriodEnd(html,source.filedAt);
   let boundary=0;
   for(const [tableIndex,match] of tables.entries()) {
     const grid=rows(match[0]);
@@ -206,7 +203,7 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     const preceding=clean(html.slice(Math.max(boundary,match.index!-2500),match.index))+' '+grid.slice(0,firstAmount<0?0:firstAmount).flat().map(c=>c.text).join(' ');
     if(firstAmount>=0)boundary=match.index!+match[0].length;
     if(firstAmount<0)continue;
-    const title=[...preceding.matchAll(/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|earnings|profit\s+or\s+loss)|\bincome\s+statements?\b(?!\s+data)/gi)].at(-1);
+    const title=[...preceding.matchAll(/consolidated\s+(?:condensed\s+)?statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|earnings|profit\s+or\s+loss)|\bincome\s+statements?\b(?!\s+data)/gi)].at(-1);
     if(!title)continue;
     // Only the statement's own heading decides non-GAAP: a release's GAAP statement often follows a paragraph about non-GAAP measures.
     const heading=preceding.slice(0,title.index).split(/[.:;]\s/).at(-1)+preceding.slice(title.index);
@@ -215,7 +212,12 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     const {scale,currency}=unit;
     const printed=grid.map(rowLabel),tags=printed.map(conceptOf);
     if(!tags.includes('Revenues'))continue;
-    const operatingAt=tags.indexOf('OperatingIncomeLoss'),openAt=operatingAt<0?-1:tags.slice(0,operatingAt).findLastIndex(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
+    // Rows printed above the revenue total are its lines, read under their own labels; the parse uses them only when they add up to it.
+    const revenueAt=grid.findIndex((row,i)=>tags[i]==='Revenues'&&amountRow(row));
+    for(let i=firstAmount;i<revenueAt;i++)if(!tags[i]&&printed[i]&&amountRow(grid[i])&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
+    // A statement without cost of revenue or gross profit prints its operating lines straight after the revenue total.
+    const direct=!tags.some(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
+    const operatingAt=tags.indexOf('OperatingIncomeLoss'),openAt=operatingAt<0?-1:direct?(revenueAt<operatingAt?revenueAt:-1):tags.slice(0,operatingAt).findLastIndex(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
     const lineRows:number[]=[];
     if(openAt>=0)for(let i=openAt+1;i<operatingAt;i++){
       if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
@@ -257,7 +259,7 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     // A statement prints its revenue total once per period; two different totals (reported and managed basis) are a summary.
     const revenues=facts.filter(f=>f.tag==='table:Revenues');
     if(revenues.some(f=>revenues.some(g=>g.start===f.start&&g.end===f.end&&g.value!==f.value)))continue;
-    const credits=creditLines(facts,lineRows.filter(r=>facts.some(f=>f.statementRow!.order===r)));
+    const credits=creditLines(facts,lineRows.filter(r=>facts.some(f=>f.statementRow!.order===r)),direct);
     for(const f of facts)if(credits.has(f.statementRow!.order))f.statementRow={...f.statementRow!,flip:true};
     return withFirstQuarters([...facts,...segmentFacts(html,source,facts,scale)]);
   }

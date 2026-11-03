@@ -2,6 +2,7 @@ import type { BusinessDeepDive } from "../../../../shared/analysis-contract/comp
 import type { CompanyAnalysisD1Database } from "./repository.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WebSearchService } from "../web-search/service.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type BusinessSource = BusinessDeepDive["sources"][number];
 export type AvailableSecReport = { periodId: string; periodEnd: string; periodScope: string; reportVersion: string };
@@ -127,12 +128,6 @@ export function createBusinessResearchTools(input: {
 function isHttps(value: string): boolean {
   try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password; }
   catch { return false; }
-}
-
-function isSecUrl(value: string): boolean {
-  if (!isHttps(value)) return false;
-  const hostname = new URL(value).hostname.toLowerCase();
-  return hostname === "sec.gov" || hostname.endsWith(".sec.gov");
 }
 
 function isoDate(value: string | null): string | null {

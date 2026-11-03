@@ -10,7 +10,7 @@
  * The business-site Worker formats the same metrics for its API, so the locale is a parameter that
  * defaults to English rather than read from the page.
  */
-import { compactMoney, compactNumber, compactShares, currencyName, MINUS, type Locale } from "@/shared/analysis-runtime/locale.ts";
+import { compactMoney, compactNumber, compactShares, currencyName, formatPct, MINUS, type Locale } from "@/shared/analysis-runtime/locale.ts";
 
 const METRIC_LABELS: Record<string, string> = {
   revenue: "Revenue",
@@ -45,8 +45,6 @@ const METRIC_LABELS: Record<string, string> = {
   total_assets: "Total assets",
   total_liabilities: "Total liabilities",
   stockholders_equity: "Stockholders' equity",
-  data_center_revenue: "Data Center revenue",
-  gaming_revenue: "Gaming revenue",
   shares_outstanding: "Shares outstanding",
 };
 
@@ -83,19 +81,42 @@ const METRIC_LABELS_ZH: Record<string, string> = {
   total_assets: "总资产",
   total_liabilities: "总负债",
   stockholders_equity: "股东权益",
-  // i18n-allow: Data Center and Gaming are the segment names in the filing.
-  data_center_revenue: "Data Center 营收",
-  // i18n-allow: segment name in the filing.
-  gaming_revenue: "Gaming 营收",
   shares_outstanding: "流通股数",
+  units: "销量",
+  backlog: "未交付订单",
+  arpu: "每用户平均收入",
 };
 
-/** Keys whose value is a ratio, whether the model stored 0.75 or 75. */
+/** Keys whose value is a ratio; its `unit` says whether the model stored 0.75 ("ratio") or 75 ("%"). */
 const RATIO_KEY = /(margin|ratio|rate|yield|growth|percent)$/;
 
+/**
+ * A known metric reads by its label. A key that ends in one (`data_center_revenue`) is that metric for the part of the
+ * business its leading words name, kept as the filing names it: "Data Center revenue" / "Data Center 营收".
+ * In Chinese a known metric's `_growth` reads as its 增长 ("营收增长"), and a key with no Chinese label is marked as an
+ * untranslated metric name ("指标（foo bar）") rather than shown as if it were the translation.
+ */
 export function formatSecMetricLabel(metricKey: string, locale: Locale = "en"): string {
   const key = metricKey.trim().toLowerCase();
-  return (locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS)[key] ?? metricKey.trim().replace(/_/g, " ");
+  const known = knownMetricLabel(key, locale);
+  if (known) return known;
+  const words = metricKey.trim().replace(/_/g, " ");
+  if (locale !== "zh-CN") return words;
+  const base = key.endsWith("_growth") ? knownMetricLabel(key.slice(0, -"_growth".length), locale) : undefined;
+  return base ? `${base}增长` : `指标（${words}）`;
+}
+
+function knownMetricLabel(key: string, locale: Locale): string | undefined {
+  const labels = locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS;
+  if (labels[key]) return labels[key];
+  const words = key.split("_").filter(Boolean);
+  for (let i = 1; i < words.length; i++) {
+    const metric = labels[words.slice(i).join("_")];
+    if (!metric) continue;
+    const part = words.slice(0, i).map(w => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+    return locale === "zh-CN" || /^[A-Z]{2}/.test(metric) ? `${part} ${metric}` : `${part} ${metric[0]!.toLowerCase()}${metric.slice(1)}`;
+  }
+  return undefined;
 }
 
 /**
@@ -110,19 +131,23 @@ export function formatSecMetricValue(metricKey: string, rawValue: string, unit?:
   if (!Number.isFinite(numeric)) return value;
 
   if (RATIO_KEY.test(metricKey.trim().toLowerCase())) {
-    const percent = unit === "ratio" ? numeric * 100 : unit === "%" || unit === "percent" ? numeric : Math.abs(numeric) <= 1 ? numeric * 100 : numeric;
-    return `${percent.toFixed(1)}%`;
+    if (unit === "ratio") return formatPct(numeric * 100);
+    if (unit === "%" || unit === "percent") return formatPct(numeric);
+    // Without a unit, 0.8 could be 80 % or 0.8 %; the stored number is shown rather than a guessed scale.
+    return value;
   }
 
   const large = Math.abs(numeric) >= 1e4;
   if (locale === "zh-CN") return chineseValue(metricKey, numeric, large, unit, currency);
   const digits = { notation: large ? "compact" : "standard", maximumFractionDigits: large ? 1 : 2, minimumFractionDigits: large ? 0 : 2 } as const;
-  if (/shares/.test(metricKey) || unit === "shares") return `${new Intl.NumberFormat("en-US", { ...digits, minimumFractionDigits: 0 }).format(numeric)} shares`;
+  // Intl writes a hyphen-minus; the page's negative sign is the mathematical minus.
+  const minus = (text: string) => text.replace(/^-/, MINUS);
+  if (/shares/.test(metricKey) || unit === "shares") return `${minus(new Intl.NumberFormat("en-US", { ...digits, minimumFractionDigits: 0 }).format(numeric))} shares`;
   const code = (currency || unit || "").toUpperCase();
   if (/^[A-Z]{3}$/.test(code)) {
-    try { return new Intl.NumberFormat("en-US", { ...digits, style: "currency", currency: code }).format(numeric); } catch { /* not an ISO currency code */ }
+    try { return minus(new Intl.NumberFormat("en-US", { ...digits, style: "currency", currency: code }).format(numeric)); } catch { /* not an ISO currency code */ }
   }
-  return new Intl.NumberFormat("en-US", digits).format(numeric);
+  return minus(new Intl.NumberFormat("en-US", digits).format(numeric));
 }
 
 /** "757亿美元", "1.24美元", "123万股": Chinese counting units, the currency named after the amount. */

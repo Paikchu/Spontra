@@ -7,8 +7,9 @@
  * resolve exactly as in the browser.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { setLocale } from "@/packages/web/src/i18n/core";
+import { getLocale, setLocale } from "@/packages/web/src/i18n/core";
 import { BusinessMap } from "@/apps/business-site/src/BusinessMap";
+import { companyIdentity } from "@/apps/business-site/src/company-meta";
 import { Home } from "@/apps/business-site/src/Home";
 import { SearchPanel } from "@/apps/business-site/src/SearchDialog";
 import { Rail, RailActions } from "@/apps/business-site/src/Sidebar";
@@ -18,7 +19,7 @@ import { lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
 import { renderChartSvg } from "@/shared/analysis-runtime/lens/render";
 import { compileDocument } from "@/shared/analysis-runtime/lens/verify";
 import { checkTranslation, collectProse, localize, type TranslatedResource } from "@/shared/analysis-runtime/translation";
-import { capital, company, events, filings, filingsZh, findings, fixtureStrings, flow, TICKER, ZH_TABLES } from "./fixture.ts";
+import { capital, company, events, filings, filingsZh, findings, fixtureStrings, flow, TICKER, valuation, valuationReport, ZH_TABLES } from "./fixture.ts";
 
 /** The company's publications as the read API serves them in Chinese: the fixture's tables applied. */
 const translated = {
@@ -29,8 +30,9 @@ const translated = {
   guidance: localize("guidance", company.guidance, ZH_TABLES.guidance),
   events: localize("events", events, ZH_TABLES.events),
   filings: filingsZh,
+  valuation: { ...valuation, report: localize("valuation", valuationReport, ZH_TABLES.valuation) },
 };
-const english = { flow, findings, explainer: company.explainer, tree: company.tree, guidance: company.guidance, events, filings };
+const english = { flow, findings, explainer: company.explainer, tree: company.tree, guidance: company.guidance, events, filings, valuation };
 type Payload = typeof english;
 
 /** Each finding's lens charts as the frame paints them: compiled on the host in Chinese, then drawn to SVG. */
@@ -82,9 +84,10 @@ function readable(html: string): string[] {
 /** The company page as main.tsx mounts it, reading its focus from the URL set by browser(). */
 function CompanyPage({ payload }: { payload: Payload }) {
   return <SidebarProvider asChild open keyboardShortcut={null} persistState={false}><main>
-    <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow} notice={null}
+    <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow}
       revenueHistory={company.history ?? null} explainer={payload.explainer} tree={payload.tree} guidance={payload.guidance}
-      capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} />
+      capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} valuation={payload.valuation}
+      company={companyIdentity({ locale: getLocale(), issuer: company.issuer, explainerName: payload.explainer.companyName, treeName: payload.tree.companyName })} />
   </main></SidebarProvider>;
 }
 
@@ -106,6 +109,7 @@ export async function checkPages(unexpectedLatin: (text: string) => string[], ty
     ["company", "", map],
     ["business", "?business=cloud", map],
     ["metric", "?metric=gross_margin", map],
+    ["valuation", "?view=valuation", map],
     ...findings.findings.map(f => [`finding ${f.id}`, `?finding=${f.id}`, map] as [string, string, () => React.ReactNode]),
     ...events.events.map(e => [`event ${e.id}`, `?event=${e.id}`, map] as [string, string, () => React.ReactNode]),
     ...filings.filings.map(r => [`report ${r.accessionNumber}`, `?report=${r.accessionNumber}`, map] as [string, string, () => React.ReactNode]),
@@ -134,16 +138,16 @@ export async function checkPages(unexpectedLatin: (text: string) => string[], ty
     }
   }
   // The fixture's tables are what the translator would have to produce: complete, and each one passing its checks.
-  for (const resource of ["flow", "findings", "explainer", "tree", "guidance", "events"] as const satisfies readonly TranslatedResource[]) {
+  for (const resource of ["flow", "findings", "explainer", "tree", "guidance", "events", "valuation"] as const satisfies readonly TranslatedResource[]) {
     const table: Record<string, string> = ZH_TABLES[resource];
-    for (const text of collectProse(resource, english[resource])) {
+    for (const text of collectProse(resource, resource === "valuation" ? valuationReport : english[resource])) {
       const zh = table[text];
       const issues = zh == null ? ["missing"] : checkTranslation(text, zh);
       if (issues.length) problems.set(`fixture ${resource} translation of «${text.slice(0, 50)}»: ${issues.join("; ")}`, new Set([resource]));
     }
   }
   // Translated pages: no generated English left anywhere, the findings still verified in Chinese, and a 英文原文 tag only beside English.
-  const generated = new Set((["flow", "findings", "explainer", "tree", "guidance", "events"] as const).flatMap(r => collectProse(r, english[r])));
+  const generated = new Set([...(["flow", "findings", "explainer", "tree", "guidance", "events"] as const).flatMap(r => collectProse(r, english[r])), ...collectProse("valuation", valuationReport)]);
   const translatedMap = () => <CompanyPage payload={translated} />;
   for (const [name, search] of scenarios.filter(([n]) => !["home", "search", "rail"].includes(n))) {
     browser(search);

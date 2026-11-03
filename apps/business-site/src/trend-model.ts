@@ -2,6 +2,7 @@ import type { RevenueHistory, RevenueHistoryNode, RevenueHistoryQuarter } from "
 import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { perShare, range as spanOf } from "@/shared/analysis-runtime/locale";
+import { sameBasis, segmentBasis } from "@/shared/analysis-runtime/segment-basis";
 
 const m = messages({
   totalRevenue: "Total company revenue", revenueChange: "Revenue change",
@@ -25,7 +26,9 @@ export type TrendItem = { key: string; id: string; parent: string | null; name: 
 export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null; missingReason?: "currency" };
 /** A stacked piece of one column. Every column renders every layer key, so switching focus morphs heights instead of remounting. */
 export type Layer = { key: string; value: number; tone: "root" | "child" | "total"; slot: number; shade: number; name: string };
-export type Column = { slot: Slot; layers: Layer[]; total: number | null; state: "ok" | "missing" | "basis" };
+export type Column = { slot: Slot; layers: Layer[]; total: number | null; state: "ok" | "missing" | "basis";
+  /** The segment basis of the quarter against the latest split one: the same, an earlier one (re-segmented since), or none (total only). */
+  segmentBasis?: "current" | "earlier" | null };
 
 /** Most quarters shown as bars; companies with a shorter disclosure history show fewer. */
 export const SLOTS = 5;
@@ -91,6 +94,13 @@ export function layerOrder(items: TrendItem[], columns: Column[] = []) {
 }
 
 export function buildColumns(slots: Slot[], items: TrendItem[], selected: TrendItem | null): Column[] {
+  const latestSplit = [...slots].reverse().find(slot => slot.quarter && segmentBasis(slot.quarter.segments) != null)?.quarter ?? null;
+  const basisOf = (slot: Slot): Column["segmentBasis"] => !slot.quarter || !latestSplit || segmentBasis(slot.quarter.segments) == null ? null
+    : sameBasis(slot.quarter.segments, latestSplit.segments) ? "current" : "earlier";
+  return columnsFor(slots, items, selected).map(column => ({ ...column, segmentBasis: basisOf(column.slot) }));
+}
+
+function columnsFor(slots: Slot[], items: TrendItem[], selected: TrendItem | null): Column[] {
   const roots = items.filter(i => !i.parent);
   return slots.map(slot => {
     const q = slot.quarter;
@@ -158,6 +168,8 @@ export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridg
     ({ base, current, lag, change, percent, reason, steps: [{ ...layer, value: current.total!, base: base.total!, delta: change, before: base.total!, after: current.total! }] });
   const total: Layer = { key: "__total", value: 0, tone: "total", slot: 0, shade: 0, name: m.revenueChange };
   if (current.state !== "ok" || base.state !== "ok") return whole(total, "basis");
+  // One business across a change of segment basis has no comparable change.
+  if (current.layers.length < 2 && current.layers[0]?.tone !== "total" && !onSameBasis(current, base)) return null;
   if (current.layers.length < 2) return whole(current.layers[0] ?? total, "single");
   if (keys(current) !== keys(base)) return whole(total, "basis");
   let level = base.total;
@@ -168,9 +180,22 @@ export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridg
   return { base, current, lag, change, percent, steps, reason: "split" };
 }
 
-/** Growth of each column against the column `lag` slots earlier; a gap on either side leaves the point empty. */
-export function growthSeries(columns: Column[], lag: 1 | 4): Array<number | null> {
-  return columns.map((column, i) => i >= lag ? growth(column.total, columns[i - lag].total) : null);
+/**
+ * Growth of each column against the column `lag` slots earlier; a gap on either side leaves the point empty. A business's
+ * growth (`byBusiness`) is also empty across a change of segment basis: the same name on two bases is not the same business.
+ */
+export function growthSeries(columns: Column[], lag: 1 | 4, byBusiness = false): Array<number | null> {
+  return columns.map((column, i) => {
+    const base = columns[i - lag];
+    if (!base) return null;
+    if (byBusiness && !onSameBasis(column, base)) return null;
+    return growth(column.total, base.total);
+  });
+}
+
+/** Two columns that split revenue the same way; a column that does not split (total only) is on no basis. */
+export function onSameBasis(a: Column, b: Column): boolean {
+  return !!a.slot.quarter && !!b.slot.quarter && sameBasis(a.slot.quarter.segments, b.slot.quarter.segments);
 }
 
 /**
@@ -191,7 +216,7 @@ export function rateTicks(rates: Array<number | null>): number[] | null {
 
 /** A guided revenue range placed on a quarter: stated as an amount, or derived from stated growth. */
 export type GuideMark = { periodEnd: string; low: number; high: number; derived: boolean; item: GuidanceItem; source: GuidanceSource | null };
-export type GuideOverlay = { bySlot: Array<GuideMark | null>; next: GuideMark | null; outlook: GuidanceItem[] };
+export type GuideOverlay = { bySlot: Array<GuideMark | null>; next: GuideMark | null };
 
 const DAY = 86_400_000;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;
@@ -218,11 +243,10 @@ function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
 
 /**
  * Places quarterly revenue guidance on the trend: each reported quarter gets the last range guided for it,
- * and the next quarter gets its own column. Annual and long-term targets do not fit a quarterly axis and
- * are returned separately, from the latest event only. Unplottable future quarterly guidance stays visible as text.
+ * and the next quarter gets its own column.
  */
 export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | null, selected: TrendItem | null): GuideOverlay {
-  const empty = { bySlot: slots.map(() => null), next: null, outlook: [] };
+  const empty = { bySlot: slots.map(() => null), next: null };
   if (!guidance || !slots.length) return empty;
   const latestFirst = [...guidance.items].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   const quarterly = latestFirst.filter(i => i.horizon === "quarter" && forSubject(i, selected));
@@ -232,15 +256,9 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
   };
   const last = slots.at(-1)!.periodEnd;
   const canPlot = slots.at(-1)!.quarter?.currency === "USD";
-  const longer = latestFirst.filter(i => (selected ? forSubject(i, selected) : !i.segment)
-    && (i.horizon !== "quarter" || ((!i.periodEnd || Date.parse(i.periodEnd) > Date.parse(last)) && (!canPlot || !mark(i, guidance.sources)))));
-  const newest = longer[0]?.issuedAt;
-  const order = ["revenue", "segment_revenue", "operating_margin", "eps", "free_cash_flow", "capex"];
-  const rank = (i: GuidanceItem) => { const r = order.indexOf(i.metric); return r < 0 ? order.length : r; };
   return {
     bySlot: slots.map(slot => canPlot && slot.missingReason !== "currency" ? pick(end => near(end, slot.periodEnd)) : null),
     next: canPlot ? pick(end => Date.parse(end) - Date.parse(last) > 20 * DAY && Date.parse(end) - Date.parse(last) < 120 * DAY) : null,
-    outlook: longer.filter(i => i.issuedAt === newest).sort((a, b) => rank(a) - rank(b) || (a.horizon === "annual" ? -1 : 1)).slice(0, 4),
   };
 }
 

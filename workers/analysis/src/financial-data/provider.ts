@@ -1,6 +1,7 @@
 import type {Job} from './store.ts';
+import {secArchiveDocumentUrl, secArchiveRoot} from '../../../../shared/analysis-runtime/sec-sources.ts';
 import type {DocumentBatch} from './collect.ts';
-import {extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
+import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {reviewedCurrentPair} from './period-review.ts';
 import {restatedConcepts} from './restatement.ts';
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
@@ -93,20 +94,19 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   for(let i=0;i<recent.form.length&&counted<(cursor.foreign?MAX_REPORTS:10)&&cursor.documents.length<FOREIGN_LISTED;i++){
    if(cursor.foreign&&recent.form[i]==='6-K'&&!(Date.parse(recent.filingDate[i])>=newest-FOREIGN_LOOKBACK_DAYS*86400000))break;
    if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
-   const folder=`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-','')}/`;
-   cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
+   const folder=secArchiveRoot(Number(cik),accession);
+   cursor.documents.push({url:secArchiveDocumentUrl(folder,doc),accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
    if(recent.form[i]!=='6-K')counted++;
   }
   // An earnings release filed after the newest quarterly report reports a quarter no report covers yet. It is read on
   // its own once the verified pair is known (readReleaseQuarter), never among the reports that verify that pair.
-  if(!cursor.foreign&&!hasDisclosureProfile(cik)){
+  if(!cursor.foreign){
    const periodic=cursor.documents.filter(d=>d.form!=='8-K').map(d=>d.filedAt).sort().at(-1)??'';
    const release=cursor.documents.filter(d=>d.form==='8-K'&&d.filedAt>periodic).sort((a,b)=>b.filedAt.localeCompare(a.filedAt))[0];
    if(release){cursor.release={url:release.url,accession:release.accession,filedAt:release.filedAt};cursor.documents=cursor.documents.filter(d=>!(d.form==='8-K'&&d.filedAt>periodic));}
   }
   // The current statement and its adjacent filing provide the cumulative bridge.
-  // Preserve Oracle's existing earnings-exhibit profile order.
-  if(!cursor.foreign&&cik!=='0001341439')cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
+  if(!cursor.foreign)cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
   cursor.index=0;
   if(!cursor.documents.length)throw new Error('NO_SUPPORTED_FILINGS');
  }

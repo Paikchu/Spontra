@@ -123,6 +123,3 @@ export function judgementStatement(db: D1Database, row: { cik: string; ticker: s
     .bind(row.cik, row.ticker, structure ? 'verified' : 'unresolved', structure ? JSON.stringify(structure) : null, structure ? structureKey(structure) : null,
       row.accession, judgement.attempts, JSON.stringify(judgement.issues), now.toISOString(), version);
 }
-export async function saveJudgement(db: D1Database, row: { cik: string; ticker: string; accession: string }, judgement: Judgement, now: Date, version = ''): Promise<void> {
-  await judgementStatement(db, row, judgement, now, version).run();
-}

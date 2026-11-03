@@ -1,3 +1,4 @@
+import { TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 /** Companies the homepage digest confirmed. A ticker outside this list is not opened. */
 export type CatalogCompany = {
   ticker: string;
@@ -13,7 +14,6 @@ export type SearchRow =
   | { kind: "uncovered"; ticker: string }
   | { kind: "status"; status: "loading" | "invalid" | "empty" };
 
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const VALID = /^[\p{Script=Han}A-Za-z0-9 .&'-]+$/u;
 const MAX = 8;
 
@@ -49,7 +49,7 @@ export function searchRows(raw: string, catalog: CatalogCompany[], recent: strin
   if (query && !VALID.test(query)) return [{ kind: "status", status: "invalid" }];
 
   const byTicker = new Map(catalog.map(company => [company.ticker, company]));
-  const recentTickers = recent.filter(ticker => TICKER.test(ticker)).slice(0, 5);
+  const recentTickers = recent.filter(ticker => TICKER_PATTERN.test(ticker)).slice(0, 5);
 
   if (!query) {
     const recentCompanies = recentTickers
@@ -73,7 +73,7 @@ export function searchRows(raw: string, catalog: CatalogCompany[], recent: strin
       .map(ticker => byTicker.get(ticker) ?? { ticker, name: ticker, nameZh: null, aliases: [] });
     const rows: SearchRow[] = hits.map(company => companyRow(company, "recent"));
     if (status === "loading") return [...rows, { kind: "status", status: "loading" }];
-    if (TICKER.test(queryUpper) && !hits.some(company => company.ticker === queryUpper)) rows.push({ kind: "uncovered", ticker: queryUpper });
+    if (TICKER_PATTERN.test(queryUpper) && !hits.some(company => company.ticker === queryUpper)) rows.push({ kind: "uncovered", ticker: queryUpper });
     else if (!rows.length) rows.push({ kind: "status", status: "empty" });
     return rows;
   }
@@ -84,7 +84,7 @@ export function searchRows(raw: string, catalog: CatalogCompany[], recent: strin
     .sort((a, b) => a.rank - b.rank || a.company.ticker.localeCompare(b.company.ticker));
   const rows: SearchRow[] = ranked.slice(0, MAX).map(item => companyRow(item.company, "match"));
   const exact = ranked.some(item => item.company.ticker.toUpperCase() === queryUpper);
-  if (TICKER.test(queryUpper) && !exact) rows.push({ kind: "uncovered", ticker: queryUpper });
+  if (TICKER_PATTERN.test(queryUpper) && !exact) rows.push({ kind: "uncovered", ticker: queryUpper });
   else if (!rows.length) rows.push({ kind: "status", status: "empty" });
   return rows;
 }

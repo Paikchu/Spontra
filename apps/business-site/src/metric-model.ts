@@ -59,8 +59,13 @@ export function metricTrend(series: FindingFundamentalSeries, visible = SLOTS): 
 }
 
 /** Metrics with at least two reported quarters to compare, grouped as the statements present them. Revenue is the trend's own view. */
+/** Lines of other income and expense, read as net income's non-operating composition (non-operating.ts), not charted on their own. */
+const COMPONENT_METRICS = new Set(["equity_securities_gains", "nonoperating_interest_income", "nonoperating_interest_expense", "foreign_exchange_gains"]);
+
 export function metricOptions(fundamentals: FindingFundamentals | null): Array<{ group: string; options: MetricOption[] }> {
-  const series = (fundamentals?.series ?? []).filter(s => s.available && s.metricKey !== "total_revenue" && metricTrend(s));
+  // Fundamentals without a quarterly metric (an annual-only XBRL filer) offer none, even with year-end balances attached.
+  if (fundamentals?.unavailable) return [];
+  const series = (fundamentals?.series ?? []).filter(s => s.available && s.metricKey !== "total_revenue" && !COMPONENT_METRICS.has(s.metricKey) && metricTrend(s));
   return GROUPS
     .map(category => ({ group: GROUP_LABEL[category], options: series.filter(s => s.category === category).map(s => ({ key: s.metricKey, label: seriesLabel(s) })) }))
     .filter(g => g.options.length);

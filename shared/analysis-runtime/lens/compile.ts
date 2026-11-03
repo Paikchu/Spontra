@@ -1,9 +1,10 @@
 import type { FindingRef, FindingSpan } from "../../analysis-contract/findings.ts";
 import { LENS_ASPECT, type LensChart, type LensColorToken, type LensMark, type LensSeries } from "../../analysis-contract/lens.ts";
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
-import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue, type ValueUnit } from "../findings.ts";
+import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { formatDelta, formatResolved, periodLabel, shortPeriod, tickLabel } from "./format.ts";
+import { formatDelta, formatResolved, periodLabel, tickLabel } from "./format.ts";
+import { shortPeriod } from "../locale.ts";
 import { qoqLabel, yoyLabel, type Locale } from "../locale.ts";
 
 export type CompileOptions = {
@@ -21,10 +22,10 @@ const TOKEN_VAR: Record<LensColorToken, string> = {
   revenue: "var(--flow-revenue)", profit: "var(--flow-profit)", expense: "var(--flow-expense)", loss: "var(--loss)", up: "var(--up)", muted: "var(--muted-foreground)",
   "biz-0": "var(--biz-0)", "biz-1": "var(--biz-1)", "biz-2": "var(--biz-2)", "biz-3": "var(--biz-3)", "biz-4": "var(--biz-4)",
 };
-export const colorVar = (token: LensColorToken) => TOKEN_VAR[token];
+const colorVar = (token: LensColorToken) => TOKEN_VAR[token];
 
 /** Series colour follows what the figure is: revenue neutral, profit and cash generated teal, costs and capital spending amber. */
-export function defaultColor(ref: FindingRef, index: number): string {
+function defaultColor(ref: FindingRef, index: number): string {
   if ("ratio" in ref) return defaultColor(ref.ratio.numerator, index);
   if ("metric" in ref) return ref.metric === "revenue" ? TOKEN_VAR.revenue : ["gross", "operating", "pretax", "net"].includes(ref.metric) ? TOKEN_VAR.profit : TOKEN_VAR.expense;
   if ("capital" in ref) return ["operatingCashFlow", "cash", "equity", "rpo", "rpoNext12MonthsShare", "currentAssets", "receivables", "investments", "customerAdvances"].includes(ref.capital) ? TOKEN_VAR.profit : ["freeCashFlow", "totalAssets", "productive", "leaseAssets", "intangibles", "inventory"].includes(ref.capital) ? TOKEN_VAR["biz-1"] : ["debt", "leases", "payables", "deferredTax", "totalLiabilities", "currentLiabilities"].includes(ref.capital) ? TOKEN_VAR["biz-2"] : TOKEN_VAR.expense;
@@ -195,4 +196,3 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
 
 /** Pixel height the host gives a chart cell of a given width; the audit estimates with the same rule. */
 export const chartHeight = (width: number, aspect: keyof typeof LENS_ASPECT) => Math.max(200, Math.min(420, Math.round(width * LENS_ASPECT[aspect])));
-export const resolvedText = (v: ResolvedValue, ref?: FindingRef, locale: Locale = "en") => formatResolved(v, ref, locale);

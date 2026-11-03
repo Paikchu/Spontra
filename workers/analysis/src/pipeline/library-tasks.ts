@@ -12,7 +12,7 @@ import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { BUSINESS_TAGS_VERSION, PEER_MATCH_VERSION } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { matchCompany } from "../business-tags/match.ts";
-import { tagsCacheKey, tagsPlan } from "../business-tags/input.ts";
+import { tagsCacheKey, tagsPlan, tagsSkipReason } from "../business-tags/input.ts";
 
 /** Source bytes and wall time one run spends; what is left is split by the next run, right away. */
 const BYTE_BUDGET = 24_000_000, TIME_BUDGET_MS = 60_000, BATCH = 60;
@@ -90,7 +90,7 @@ export const LIBRARY_TASKS = {
       if (env.BUSINESS_TAGS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "business tags disabled" } };
       return driveWorkflow(env, `business-tags:${ticker}`, env.BUSINESS_TAGS_WORKFLOW, async () => {
         const plan = await tagsPlan(env.DB!, ticker);
-        if (!plan) return null;
+        if (!plan) return { status: "done", detail: { skipped: await tagsSkipReason(env.DB!, ticker) } };
         const repository = new D1SecRepository(env.DB!);
         const stored = (await repository.getCache<{ fingerprint: string; matchVersion?: string }>(tagsCacheKey(ticker)))?.payload;
         if (stored?.fingerprint === plan.fingerprint) {
@@ -109,10 +109,15 @@ export const LIBRARY_TASKS = {
 
   /** The recall layer: uploads what changed among the carded sections and deletes what left them, within a budget per run. */
   "library-search": {
-    version: "library-search.v1",
+    // v2: an AI Search overload waits instead of dead-lettering; the bump re-syncs the companies whose run was dead-lettered.
+    version: "library-search.v2-overload-wait",
     async run(env, ticker): Promise<TaskOutcome> {
       if (!searchEnabled(env)) return { status: "done", detail: { skipped: "recall layer not configured" } };
-      const result = await syncSearchItems(env, ticker);
+      let result: Awaited<ReturnType<typeof syncSearchItems>>;
+      // AI Search busy or limiting (seen as `ai_search_instance_overloaded`): a wait, not a failure the queue's five
+      // quick retries spend and dead-letter, which left GOOGL, META and TTMI with sections never uploaded.
+      try { result = await syncSearchItems(env, ticker); }
+      catch (error) { if (/overloaded|rate.?limit|too many requests|\b429\b|\b50[234]\b|timed? ?out/i.test(String(error))) return { status: "later", afterMs: 15 * 60_000, detail: { waiting: "AI Search busy", error: String(error).slice(0, 200) } }; throw error; }
       return result.remaining ? { status: "later", afterMs: 1000, detail: result } : { status: "done", detail: result };
     },
   },

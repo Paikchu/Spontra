@@ -17,21 +17,24 @@ import { FinancialMaintenanceStore, taskView, type MaintenanceRow } from './fina
 import { flowForIssuer } from '../financial-data/publication.ts';
 import { publicFlowSchema } from '../../../../shared/analysis-runtime/financial-data/schema.ts';
 import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
-import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
-import { normalizeTrackedTicker } from '../sec/config.ts';
+import { dataTickers, normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+
 import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer } from '../financial-data/provider.ts';
 import { edgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
-import { issuerDirectory, searchIssuers } from './issuer-search.ts';
+import { issuerDirectory, primaryTicker, searchIssuers } from '../catalog/issuer-directory.ts';
+import { json } from "./http.ts";
+import { readValuationCompanyInputs, writeValuationCompanyInputs } from '../valuation/curated.ts';
+import { readFiscalFocus } from '../read-api/fiscal-periods.ts';
+import type { ValuationCompanyInputs } from '../../../../shared/analysis-contract/valuation.ts';
 
 /** Forgets the failed inputs of a feature's tasks for a company, so a retry is not made to wait or refused. */
 async function clearFailures(db: D1Database, ticker: string, feature: Feature): Promise<void> {
   await db.prepare("DELETE FROM sec_cache WHERE cache_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(FEATURE_TASKS(feature).map(task=>failedInputKey(task,ticker)))).run();
 }
-const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 /**
  * Each feature's work in flight per company (`feature:ticker`): the SEC report jobs for the reports, the AI run store
  * for the model Workflows, and the due table for runs waiting their turn. Running beats queued. A running job or run
@@ -77,6 +80,7 @@ const PUBLISHED: Record<Feature,string> = {
   findings: "SELECT substr(cache_key,13) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'",
   explainer: "SELECT substr(cache_key,23) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-explainer:v1:' AND cache_key < 'business-explainer:v1;'",
   tree: "SELECT substr(cache_key,18) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-tree:v1:' AND cache_key < 'business-tree:v1;'",
+  valuation: "SELECT c.ticker, v.generated_at at FROM valuation_current c JOIN valuation_versions v ON v.version_id = c.version_id",
 };
 export async function handleBusinessMapAdminRequest(request: Request, env: AnalysisEnv): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, Date.now())) return json({error:'请登录管理后台。'},401);
@@ -139,7 +143,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // One company's analysis as a graph: the registry's tasks for the map and its features, and where each stands now.
     const flow = /^\/admin\/business-map\/companies\/([^/]+)\/flow$/.exec(path);
     if (flow && request.method === 'GET') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(flow[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(flow[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       return json(await readFlow(db, ticker) satisfies BusinessMapFlow);
     }
@@ -147,7 +151,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // cash flow and balance sheet from the derived capital structure. Read only, like the map's own routes.
     const charts = /^\/admin\/business-map\/companies\/([^/]+)\/charts$/.exec(path);
     if (charts && request.method === 'GET') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(charts[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(charts[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       const publication = await readCompletePublicationForTicker(db, ticker);
       const derived = publication.flow ? await readMapDerived(db, publication.flow) : null;
@@ -172,7 +176,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     const companySwitch = /^\/admin\/business-map\/companies\/([^/]+)\/features\/([a-z]+)$/.exec(path);
     if (companySwitch && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
+      const ticker = normalizeTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
       const body = await request.json() as {on?:boolean};
       if (!ticker || !isFeature(feature) || typeof body.on !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
       if (body.on && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
@@ -206,17 +210,35 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // Judge the issuer's income statement again (presentation-task.ts): forget the filing it was judged on and ask.
     const judge = /^\/admin\/business-map\/companies\/([^/]+)\/presentation$/.exec(path);
     if (judge && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(judge[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(judge[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       const cik = await knownCik(db, ticker);
       if (cik) await db.prepare("UPDATE financial_presentation_profiles SET accession='' WHERE cik=?").bind(cik).run();
       await emit(env,[{type:'presentation.unresolved',ticker,cik}]);
       return json({ticker,requested:true},202);
     }
+    // The valuation inputs the admin keeps for a company (valuation/curated.ts): its comparable set and management's
+    // cited targets. Saving one emits `feature.settings` for the valuation, which runs again when its input changed.
+    const valuation = /^\/admin\/business-map\/companies\/([^/]+)\/valuation-inputs$/.exec(path);
+    if (valuation && (request.method === 'GET' || request.method === 'POST')) {
+      const ticker = normalizeTicker(decodeURIComponent(valuation[1]!));
+      if (!ticker) return json({error:'公司代码无效。'},400);
+      const fiscalYearEndMonth = await readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null);
+      if (request.method === 'GET') return json({...await readValuationCompanyInputs(db, ticker), fiscalYearEndMonth} satisfies ValuationCompanyInputs);
+      const body = await request.json().catch(() => null) as {peers?:unknown;targets?:unknown;reassess?:unknown}|null;
+      if (!body || !('peers' in body) || !('targets' in body) || typeof body.reassess !== 'boolean') return json({error:'操作参数无效。'},400);
+      let saved: Omit<ValuationCompanyInputs,'fiscalYearEndMonth'>;
+      try { saved = await writeValuationCompanyInputs(db, ticker, {peers: body.peers, targets: body.targets, reassess: body.reassess}, new Date().toISOString()); }
+      catch (error) { return json({error: error instanceof Error ? error.message : '估值输入无效。'},400); }
+      await emit(env,[{type:'feature.settings',ticker,cik:await knownCik(db,ticker),detail:{feature:'valuation'}}]);
+      return json({...saved, fiscalYearEndMonth} satisfies ValuationCompanyInputs);
+    }
     const match = /^\/admin\/business-map\/companies\/([^/]+)$/.exec(path);
     if (!match || request.method !== 'POST') return json({error:'Not found'},404);
-    const ticker = normalizeTrackedTicker(match[1]);
+    let ticker = normalizeTicker(match[1]);
     const body = await request.json() as {enabled?:boolean;requestId?:string};
+    // A second share class joins as the class EDGAR lists first for its issuer, so one company is never kept twice.
+    if (ticker && body.enabled === true) ticker = primaryTicker(await issuerDirectory(db, edgarListings(env, { delayMs: 0 })).catch(() => []), ticker);
     if (!ticker || typeof body.enabled !== 'boolean' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(body.requestId??'')) return json({error:'公司代码或操作参数无效。'},400);
     const receipt=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(receipt)return receipt.ticker===ticker&&receipt.enabled===Number(body.enabled)?json({ticker,enabled:body.enabled,reused:true}):json({error:'操作标识已用于不同请求。'},409);
@@ -236,7 +258,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     // One D1 transaction saves the choice and its durable initial job. A retried add never
     // creates another job, and repeated enable of a default company does not restart collection.
-    const defaultEnabled = financialPolicy({...env,SEC_AI_ENABLED:'false'}).dataTickers.has(ticker);
+    const defaultEnabled = dataTickers(env).has(ticker);
     await db.batch([
       db.prepare(`INSERT INTO financial_maintenance_tasks(task_id,request_id,ticker,action,status,total_steps,next_attempt_at,created_at,updated_at)
         SELECT ?,?,?,'extract','queued',4,?,?,? WHERE ?=1

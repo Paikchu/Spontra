@@ -1,22 +1,24 @@
+import { insiderCompactMoney } from "./insider-money";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
+import type { InsiderTotals } from "@/shared/analysis-contract/insiders";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
+import { isOpenMarketInsiderTrade, DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
-  sale: (who: string, n: string) => `${who} · Sale ${n}`,
-  purchase: (who: string, n: string) => `${who} · Purchase ${n}`,
-  exercise: (who: string, n: string) => `${who} · Exercise ${n}`,
-  holdingChange: (who: string) => `${who} · Holding change`,
+  sale: (n: string) => `Sale ${n}`,
+  purchase: (n: string) => `Purchase ${n}`,
+  exercise: (n: string) => `Exercise ${n}`,
+  holdingChange: "Holding change",
   report: (period: string) => `${period} report`,
 }, {
-  sale: (who: string, n: string) => `${who} · 卖出 ${n}`,
-  purchase: (who: string, n: string) => `${who} · 买入 ${n}`,
-  exercise: (who: string, n: string) => `${who} · 行权 ${n}`,
-  holdingChange: (who: string) => `${who} · 持股变动`,
+  sale: (n: string) => `卖出 ${n}`,
+  purchase: (n: string) => `买入 ${n}`,
+  exercise: (n: string) => `行权 ${n}`,
+  holdingChange: "持股变动",
   report: (period: string) => `${period} 财报`,
 });
 
@@ -27,8 +29,19 @@ export const EVENT_CLASS_LABEL = labels(EVENT_CLASS_LABEL_EN,
 /** Share-count formatting: 1,234,567 reads as 1.23M shares (123万股) in the rail and the lens. */
 export const shares = (v: number): string => compactShares(v, getLocale());
 
-/** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元). */
-export const dollars = (v: number): string => compactMoney(v, "USD", getLocale());
+/** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元); an unknown amount (a Form 4 line without a price) reads "—". */
+export const dollars = (v: number | null): string => v == null ? "—" : compactMoney(v, "USD", getLocale());
+
+/** A total of amounts some of which may be unknown: exact when all are known, "≥" the known part when some are, "—" when none are. */
+export function partialDollars(values: readonly (number | null)[]): string {
+  const known = values.filter((v): v is number => v != null);
+  const total = dollars(known.reduce((s, v) => s + v, 0));
+  return known.length === values.length ? total : known.length ? `≥ ${total}` : "—";
+}
+
+/** Person totals retain the priced subtotal when the full amount is unknown. */
+export const insiderTotalDollars = (totals: InsiderTotals): string => partialDollars(totals.value != null ? [totals.value]
+  : totals.pricedCount > 0 ? [totals.pricedValue, null] : [null]);
 
 /** "2026.08 report" / "2026.08 财报": a quarter's report by its period end. */
 export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEnd));
@@ -37,24 +50,34 @@ export const shortDate = (d: string) => d.slice(5).replace("-", ".");
 
 export { isQuietInsider };
 
+/** Structured title keeps the amount visible independently of a long name or transaction. */
+export function insiderTitleParts(e: CompanyEvent): { name: string; content: string; amount: string | null } | null {
+  const t = e.insider;
+  if (!t) return null;
+  const name = t.ownerName.replace(/\s+/g, " ").trim();
+  const direction = isOpenMarketInsiderTrade(e);
+  if (direction === "sell" && t.sold) return { name, content: m.sale(shares(t.sold.shares)), amount: t.sold.proceeds != null && t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : null };
+  if (direction === "buy" && t.bought) return { name, content: m.purchase(shares(t.bought.shares)), amount: t.bought.cost != null && t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : null };
+  return { name, content: t.exercised ? m.exercise(shares(t.exercised)) : m.holdingChange, amount: null };
+}
+
 /** The rail's one-line title: what happened, from the figures for Form 4 and from the summary (or EDGAR's description) for a current report. */
 export function eventTitle(e: CompanyEvent): string {
-  const t = e.insider;
-  if (t) {
-    const who = t.ownerName.replace(/\s+/g, " ");
-    if (t.sold) return m.sale(who, shares(t.sold.shares));
-    if (t.bought) return m.purchase(who, shares(t.bought.shares));
-    if (t.exercised) return m.exercise(who, shares(t.exercised));
-    return m.holdingChange(who);
-  }
+  const insider = insiderTitleParts(e);
+  if (insider) return [insider.name, insider.content, insider.amount].filter(Boolean).join(" · ");
   if (e.summary?.headline) return e.summary.headline;
-  if (e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description)) return e.description;
-  return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
+  const documentTitle = filingDocumentTitle(e);
+  if (documentTitle) return documentTitle;
+  const items = e.items.filter(i => i !== "9.01");
+  if (items.length) return `${EVENT_CLASS_LABEL[e.class]} · ${e.form} · Item ${items.join(", ")}`;
+  // A current report with no items and no description used to read "其他 · 6-K". The form is the whole title; routine 6-Ks are grouped.
+  if (e.class === "other") return e.form;
+  return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}`;
 }
 
 /** The language of the event's title when it is generated (translated once Spontra Analysis has) or EDGAR text (English); undefined when it is composed in the reader's language. */
 export const eventTitleLang = (e: CompanyEvent): ReturnType<typeof langOf> | undefined =>
-  !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? langOf(eventTitle(e)) : undefined;
+  !e.insider && (!!e.summary?.headline || !!filingDocumentTitle(e)) ? langOf(eventTitle(e)) : undefined;
 
 export type TimelinePoint = {
   id: string;

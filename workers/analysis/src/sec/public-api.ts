@@ -1,9 +1,10 @@
 import { readFiscalPeriod } from "./fiscal-period.ts";
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { cleanSecAccession, type SecFilingWithSummary } from "./sec.ts";
-import { decodePageCursor, normalizeTrackedTicker } from "./config.ts";
+import { decodePageCursor } from "./config.ts";
 import { D1SecRepository } from "./d1.ts";
 import { readCachedSecFeed } from "./feed.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import {
   ANALYSIS_FILING_PAGE_DEFAULT_LIMIT,
@@ -37,7 +38,7 @@ export async function getPublicFilingPage(
   rawCursor: string | null,
   rawLimit: string | null,
 ): Promise<PublicFilingPage> {
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   if (!ticker) throw new AnalysisRequestError("INVALID_TICKER", "Ticker is invalid.");
   if (rawCursor && !decodePageCursor(rawCursor)) throw new AnalysisRequestError("INVALID_CURSOR", "Cursor is invalid.");
   const limit = parseFilingLimit(rawLimit);
@@ -47,7 +48,7 @@ export async function getPublicFilingPage(
   // never an older per-file feed window; otherwise releases reappear or cross page boundaries.
   const total = cursor ? null : await repository.countPublicFilings(ticker);
   const page = await repository.listPublicFilings(ticker, rawCursor, limit);
-  const company = cachedFeed?.company ?? (page.filings[0] ? companyFromFiling(page.filings[0]) : companyFromDirectory(ticker));
+  const company = cachedFeed?.company ?? (page.filings[0] ? companyFromFiling(page.filings[0]) : await companyFromDirectory(repository, ticker));
   const filings = await Promise.all(page.filings.map(async (filing) => toPublicFiling(repository, filing, company?.name ?? ticker)));
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
@@ -77,20 +78,20 @@ export async function getPublicFiling(
   rawAccession: string,
   snapshot?: { reportDate: string; reportVersion: string },
 ): Promise<PublicFilingDetail | null> {
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   const accession = cleanSecAccession(rawAccession);
   if (!ticker || !accession) return null;
   if (snapshot) {
     const filing = await repository.getReportSnapshot(ticker, accession, snapshot.reportDate, snapshot.reportVersion);
     if (!filing) return null;
-    const company = companyFromFiling(filing) ?? companyFromDirectory(ticker);
+    const company = companyFromFiling(filing) ?? await companyFromDirectory(repository, ticker);
     return { apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION, ticker, company,
       filing: await toPublicFiling(repository, filing, company?.name ?? ticker) };
   }
   const cachedFeed = typeof repository.getCache === "function" ? await readCachedSecFeed(repository, ticker) : null;
   const filing = await repository.getPublicFiling(ticker, accession);
   if (!filing) return null;
-  const company = cachedFeed?.company ?? companyFromFiling(filing) ?? companyFromDirectory(ticker);
+  const company = cachedFeed?.company ?? companyFromFiling(filing) ?? await companyFromDirectory(repository, ticker);
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
     ticker,
@@ -171,7 +172,7 @@ function companyFromFiling(filing: SecFilingWithSummary): PublicFilingCompany | 
   return { ticker: filing.ticker, name: filing.companyName, cik: filing.cik };
 }
 
-function companyFromDirectory(ticker: string): PublicFilingCompany | null {
-  const security = findSecurity(ticker);
-  return security ? { ticker: security.symbol, name: security.name, cik: "" } : null;
+async function companyFromDirectory(repository: D1SecRepository, ticker: string): Promise<PublicFilingCompany | null> {
+  const name = typeof repository.getCache === "function" ? await companyName(repository, ticker) : null;
+  return name ? { ticker, name, cik: "" } : null;
 }

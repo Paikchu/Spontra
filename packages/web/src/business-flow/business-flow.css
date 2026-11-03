@@ -50,8 +50,8 @@
 .flow-infographic__node[data-tone="source"] .flow-infographic__bar{fill:var(--flow-source);}
 .flow-infographic__node[data-tone="profit"] .flow-infographic__bar{fill:var(--flow-profit);}
 .flow-infographic__node[data-tone="expense"] .flow-infographic__bar{fill:var(--flow-expense);}
-.flow-infographic__node{transition:opacity 160ms;}
-.flow-infographic[data-active] .flow-infographic__node:not([data-on]){opacity:.45;}
+.flow-infographic__node{opacity:1;transition:opacity 150ms;}
+.flow-infographic[data-active] .flow-infographic__node:not([data-on]){opacity:.35;}
 .flow-infographic__node[data-segment]{cursor:pointer;}
 .flow-infographic__node[data-segment]:focus{outline:none;}
 .flow-infographic__node[data-segment]:focus-visible .flow-infographic__bar{stroke:var(--focus-ring);stroke-width:3px;}
@@ -59,7 +59,7 @@
 .flow-infographic__name{font-size:15px;font-weight:700;fill:var(--foreground);}
 .flow-infographic__value{font-size:22px;font-weight:700;letter-spacing:-.02em;fill:var(--foreground);}
 .flow-infographic__detail{font-size:13px;font-weight:500;fill:var(--muted-foreground);}
-.flow-infographic__node[data-tone="profit"] .flow-infographic__name,.flow-infographic__node[data-tone="profit"] .flow-infographic__value{fill:var(--flow-profit);}
+.flow-infographic__node[data-tone="profit"] .flow-infographic__name,.flow-infographic__node[data-tone="profit"] .flow-infographic__value{fill:var(--foreground);}
 .flow-infographic__node[data-tone="expense"] .flow-infographic__name,.flow-infographic__node[data-tone="expense"] .flow-infographic__value{fill:var(--flow-expense);}
 .flow-infographic__node[data-net] .flow-infographic__value{font-size:28px;}
 .flow-infographic__node[data-segment]:hover .flow-infographic__name{text-decoration:underline;}

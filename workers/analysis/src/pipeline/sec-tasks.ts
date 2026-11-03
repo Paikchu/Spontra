@@ -2,6 +2,7 @@ import { readEventsPublication } from "../../../../shared/analysis-runtime/event
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { refreshCompanyEvents, secAccessPaused } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
+import { refreshSecFundamentals } from "../fundamentals/refresh.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
@@ -79,6 +80,17 @@ const SECOND = 1000, MINUTE = 60 * SECOND;
 
 export const SEC_TASKS = {
   /**
+   * Re-reads Company Facts after new statements are published (fundamentals/refresh.ts): a later quarter replaces the
+   * stored snapshot and emits `fundamentals.updated`; while Company Facts is behind the filing, the run comes back.
+   */
+  fundamentals: {
+    version: "fundamentals.v1",
+    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+      const result = await refreshSecFundamentals({ DB: env.DB!, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, fetch, now, causeId);
+      return result.status === "behind" && result.retryAfterMs ? { status: "later", afterMs: result.retryAfterMs, detail: result } : { status: "done", detail: result };
+    },
+  },
+  /**
    * Runs the SEC report Workflow for an AI company with a new filing: it indexes the filing list (`filings.indexed`),
    * writes reports and 8-K summaries (`report.published`) and the SEC fundamentals (`fundamentals.updated`). A run
    * already in progress started before this filing, so the task waits for it and then starts its own (driveWorkflow
@@ -87,7 +99,8 @@ export const SEC_TASKS = {
    */
   "sec-report": {
     // v3: the run writes each periodic filing's fiscal period from Company Facts, which guidance dates its items by.
-    version: "sec-report.v3-fiscal-periods",
+    // v5: a period's canonical report is the original, not its amendment (NBIS had only a cover-page 20-F/A, NET a 10-K/A).
+    version: "sec-report.v5-original-canonical",
     async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         // The message may have been queued while reports were still on. Starting now would throw
@@ -157,7 +170,10 @@ export const SEC_TASKS = {
    * continue a bounded number per run for as long as they make progress.
    */
   events: {
-    version: "events.v1",
+    // v2: the run also indexes the filings list, which a company without the report summaries had none of.
+    // v3: the rail lists offerings (S-3, 424B, FWP) and proxy statements.
+    // v4: a program issuer is told by its offerings' pace, not their count, so a frequent raiser's supplements are key.
+    version: "events.v4-offering-pace",
     async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
       if (env.EVENTS_ENABLED === "false") return { status: "done", detail: { skipped: "events disabled" } };
       const stored = await new D1SecRepository(env.DB!).getCache<unknown>(eventsCacheKey(ticker));

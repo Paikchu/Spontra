@@ -9,12 +9,14 @@ import type { AnalysisEnv } from "../src/operations.ts";
 import { SEC_TASKS } from "../src/pipeline/sec-tasks.ts";
 import { fiscalPeriodsInSequence, inFiscalSequence, quarterAfterYearEnd } from "../src/sec/fiscal-sequence.ts";
 import { syncTranscript } from "../src/transcripts/library.ts";
+import { resolvedFor, UNSEEDED } from "./fixtures/company-settings.ts";
 
 /** D1 over node:sqlite with every migration applied. */
 function database(): D1Database {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  sqlite.exec(UNSEEDED);
   const statement = (sql: string, values: unknown[] = []) => ({
     bind: (...next: unknown[]) => statement(sql, next),
     run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
@@ -51,7 +53,7 @@ function alphaVantage(answer: (ticker: string, quarter: string) => unknown) {
 
 const now = new Date("2026-10-19T09:00:00.000Z");
 const libraryEnv = (db: D1Database, files: ReturnType<typeof bucket>, tickers: string) => ({
-  DB: db, SEC_FILINGS: files, TRANSCRIPTS_ENABLED: "true", ALPHA_VANTAGE_API_KEY: "test-key", SEC_DATA_TICKERS: tickers, SEC_AI_TICKERS: tickers, SEC_AI_ENABLED: "true",
+  DB: db, SEC_FILINGS: files, TRANSCRIPTS_ENABLED: "true", ALPHA_VANTAGE_API_KEY: "test-key", ...resolvedFor(tickers.split(",")),
 }) as unknown as AnalysisEnv;
 const cache = (db: D1Database, key: string, payload: unknown) => db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind(key, JSON.stringify(payload), now.toISOString()).run();
 const dei = (end: string, year: number, period: string) => `<html><body>

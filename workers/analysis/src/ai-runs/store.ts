@@ -1,5 +1,5 @@
 import type { AiRun, AiRunKind, AiRunStatus, AiRunTrigger, AiVersion, AiVersionSummary } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { KIND_FEATURE, recordFeatureFailure } from "../admin/messages.ts";
 
 /**
@@ -22,8 +22,8 @@ export function summarize(kind: AiRunKind, publication: unknown): AiVersionSumma
   // A dossier keeps one document per finding under its id, and its sources are the materials the quotes rest on.
   const documents = p.documents && typeof p.documents === "object" ? Object.keys(p.documents as object).length : 0;
   return {
-    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "checkup" ? "notes" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : "items"),
-    sources: kind === "analyst" || kind === "checkup" ? list("materials") : list("sources"),
+    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "checkup" ? "notes" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : kind === "valuation" ? "dimensions" : "items"),
+    sources: kind === "analyst" || kind === "checkup" ? list("materials") : kind === "valuation" ? list("evidence") : list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,
   };
@@ -78,7 +78,8 @@ export class AiRunStore {
     await this.update(kind, ticker, runId, { status: outcome.status, finishedAt: now }, now);
     await this.db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.result',json(?2),'$.error',?3) WHERE cache_key=?1")
       .bind(runPrefix(kind, ticker) + runId, JSON.stringify(outcome.result ?? null), outcome.error?.slice(0, 1000) ?? null).run();
-    if (outcome.status === "failed") await recordFeatureFailure(this.db, ticker, KIND_FEATURE[kind], `${kind} ${runId}: ${outcome.error ?? "failed"}`, now);
+    // Noted only: the task driving the run decides whether retries are left before the switch goes off (workflow-task.ts).
+    if (outcome.status === "failed") await recordFeatureFailure(this.db, ticker, KIND_FEATURE[kind], `${kind} ${runId}: ${outcome.error ?? "failed"}`, now, false);
   }
 
   async get(kind: AiRunKind, ticker: string, runId: string): Promise<AiRun | null> {

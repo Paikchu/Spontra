@@ -1,0 +1,4 @@
+/* The admin builds from apps/admin, so Tailwind's automatic scan would miss the shared shadcn components it renders. */
+@import "../../../packages/web/src/styles/globals.css";
+@source "./";
+@source "../../../packages/web/src/ui";

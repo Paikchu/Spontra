@@ -1,13 +1,13 @@
 import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
 import type { SecReader } from "../financial-data/provider.ts";
+import { parseSecArchiveDocumentUrl, SEC_DOMAIN, SEC_EXCHANGE_DIRECTORY_URL, secArchiveDocumentUrl, secArchiveRoot, secCompanyFactsUrl, secSubmissionsPageUrl, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /**
  * The one place Spontra Analysis talks to EDGAR (docs/sec-archive.md). Every request carries the SEC contact
  * user-agent, is paced, and may only go to EDGAR's two hosts. The module exports no raw reader: documents leave here
  * only through `archivingReader` (which stores what it downloads) and listings only through `edgarListings`.
  */
-const HOSTS = new Set(["www.sec.gov", "data.sec.gov"]);
-const DIRECTORY_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
+const HOSTS = new Set([`www.${SEC_DOMAIN}`, `data.${SEC_DOMAIN}`]);
 const COMPANY_FACTS_MAX_BYTES = 20_000_000;
 
 export type GatewayOptions = { fetcher?: typeof fetch; delayMs?: number };
@@ -53,27 +53,25 @@ function listingsFrom(request: ReturnType<typeof pacedEdgarRequest>): EdgarListi
   const submissions = (cik: string, page?: string) => {
     const padded = String(cik).replace(/\D/g, "").padStart(10, "0");
     if (page !== undefined && !new RegExp(`^CIK${padded}-submissions-\\d{3}\\.json$`).test(page)) throw new Error("Invalid submissions page");
-    return request(`https://data.sec.gov/submissions/${page ?? `CIK${padded}.json`}`).then(r => r.json());
+    return request(page === undefined ? secSubmissionsUrl(padded) : secSubmissionsPageUrl(page)).then(r => r.json());
   };
   return {
-    issuerDirectory: () => request(DIRECTORY_URL).then(r => r.json()),
+    issuerDirectory: () => request(SEC_EXCHANGE_DIRECTORY_URL).then(r => r.json()),
     submissions,
     companyFacts: async (cik) => {
-      const padded = String(cik).replace(/\D/g, "").padStart(10, "0");
-      const response = await request(`https://data.sec.gov/api/xbrl/companyfacts/CIK${padded}.json`, "application/json", 30_000);
+      const response = await request(secCompanyFactsUrl(cik), "application/json", 30_000);
       if (Number(response.headers.get("content-length") ?? 0) > COMPANY_FACTS_MAX_BYTES) throw new Error("SEC Company Facts payload exceeds 20 MB");
       return response.json();
     },
-    filingIndex: (cikNumber, accession) => request(`${archiveRoot(cikNumber, accession)}/${accession}-index.htm`, "text/html").then(r => r.text()),
+    filingIndex: (cikNumber, accession) => request(secArchiveDocumentUrl(secArchiveRoot(cikNumber, accession), `${accession}-index.htm`), "text/html").then(r => r.text()),
     ownershipXml: async (url) => {
-      if (!/^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/\d+\/\d{18}\/[A-Za-z0-9_.-]+\.xml$/.test(url)) throw new Error("Non-SEC source denied");
+      const parts = (() => { try { return parseSecArchiveDocumentUrl(url); } catch { return null; } })();
+      if (!parts || !/\/\d{18}$/.test(parts.archiveRoot) || !/^[A-Za-z0-9_.-]+\.xml$/.test(parts.primaryDocument)) throw new Error("Non-SEC source denied");
       return (await request(url, "application/xml,text/xml")).text();
     },
   };
 }
 
-/** A filing's folder on EDGAR. */
-export const archiveRoot = (cikNumber: number, accession: string) => `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accession.replaceAll("-", "")}`;
 
 /**
  * The document side of the gateway: a `SecReader` whose `read` downloads filing documents, bounded to the largest

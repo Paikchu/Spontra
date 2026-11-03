@@ -1,3 +1,4 @@
+import type { WorkflowStepConfig } from "cloudflare:workers";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
@@ -6,13 +7,13 @@ import {
 } from "./company-analysis/contracts.ts";
 import { buildCompanyAnalysisPacket, type CompanyAnalysisPacket } from "./company-analysis/packet.ts";
 import { D1CompanyAnalysisRepository, type CompanyAnalysisRunUpdate } from "./company-analysis/repository.ts";
-import { sha256 } from "./company-analysis/api.ts";
+import { sha256 } from "./sha256.ts";
 import { hashString } from "./sec/analysis.ts";
-import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
+import { assertFeatureTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
-import { findSecurity } from "./catalog/security-directory.ts";
+import { companyName } from "./catalog/issuer-directory.ts";
 import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel } from "./operations.ts";
 import type { AnalysisEnv } from "./operations.ts";
@@ -23,17 +24,8 @@ import { syncFundamentals } from "./fundamentals.ts";
 
 export type CompanyWorkflowStep = {
   do<T>(name: string, callback: () => Promise<T>): Promise<T>;
-  do<T>(name: string, config: CompanyWorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
+  do<T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
   sleep(name: string, duration: number): Promise<void>;
-};
-
-type CompanyWorkflowStepConfig = {
-  retries: {
-    limit: number;
-    delay: string;
-    backoff: "exponential";
-  };
-  timeout: string;
 };
 
 /** Each model turn is a durable checkpoint; one logical Agent session can exceed a single step. */
@@ -44,7 +36,7 @@ export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
     backoff: "exponential",
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
-} as const satisfies CompanyWorkflowStepConfig;
+} as const satisfies WorkflowStepConfig;
 
 async function refreshFundamentalsIfStale(env: AnalysisEnv, ticker: string): Promise<{ refreshed: boolean; error?: string }> {
   const [freshness] = await new D1FundamentalsRepository(requireDb(env)).listFundamentalsFreshness([ticker]);
@@ -75,7 +67,7 @@ export async function executeCompanyAnalysisWorkflow(
   };
   try {
     const claimed = await step.do("company-run-created", () => {
-      assertTrackedTicker(env, params.ticker);
+      assertFeatureTicker(env, "findings", params.ticker);
       return new D1CompanyAnalysisRepository(requireDb(env)).beginRun({
         ...statusBase, status: "waiting_fundamentals", updatedAt: new Date().toISOString(),
       }, params.recoveryAttempt ?? 0, params.expectedUpdatedAt);
@@ -111,9 +103,9 @@ export async function executeCompanyAnalysisWorkflow(
       status: "analyzing",
     }));
     const output = await runBusinessModelAgent({
-      ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!,
+      ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
-      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "company-analysis") }),
+      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis") }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {
@@ -156,7 +148,7 @@ export async function executeCompanyAnalysisWorkflow(
       generatedAt,
     });
     const published = await step.do("company-publish", () => {
-      assertTrackedTicker(env, publication.ticker);
+      assertFeatureTicker(env, "findings", publication.ticker);
       return new D1CompanyAnalysisRepository(requireDb(env)).publish(publication);
     });
     return { status: published.duplicate ? "duplicate" : "ready", analysisId, inputHash, rounds: output.rounds };
@@ -176,7 +168,7 @@ function readPacket(
   params: CompanyAnalysisWorkflowParams,
   packetStage: "current_quarter" | "cross_period",
 ): Promise<CompanyAnalysisPacket> {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   return buildCompanyAnalysisPacket({
     database: requireDb(env),
     rawTicker: params.ticker,
@@ -187,7 +179,7 @@ function readPacket(
 }
 
 function updateStatus(env: AnalysisEnv, value: Omit<CompanyAnalysisRunUpdate, "updatedAt">): Promise<void> {
-  assertTrackedTicker(env, value.ticker);
+  assertFeatureTicker(env, "findings", value.ticker);
   return new D1CompanyAnalysisRepository(requireDb(env)).upsertRun({ ...value, updatedAt: new Date().toISOString() });
 }
 

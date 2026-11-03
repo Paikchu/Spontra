@@ -1,5 +1,4 @@
 import type { GuidanceMaterialKind, GuidanceSourceKind } from "../../../../shared/analysis-contract/guidance.ts";
-
 import type { CachePolicy, ContentData, Retrieval, SearchData, SearchRequest, ContentRequest } from "../web-search/types.ts";
 
 /** A document found for an earnings event: readable text, or the reason it could not be read. */

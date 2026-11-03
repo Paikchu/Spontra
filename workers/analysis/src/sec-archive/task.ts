@@ -4,7 +4,7 @@ import { discoveryStateKey, type DiscoveryState } from "../pipeline/discovery.ts
 import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { archiveDocuments, archiveHolds, archivingReader } from "./archive.ts";
-import { archiveRoot } from "./gateway.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 const MINUTE = 60_000;
 /** Filings stored per run; the rest follow at once in the next run. */
@@ -31,7 +31,7 @@ export const ARCHIVE_TASKS = {
       const archived: string[] = [];
       try {
         for (const filing of pending.slice(0, PER_RUN)) {
-          const url = `${archiveRoot(Number(state.cik), filing.accession)}/${filing.document}`;
+          const url = secArchiveDocumentUrl(secArchiveRoot(Number(state.cik), filing.accession), filing.document);
           const documents = await readFilingDocuments(url, reader, filing.accession, filing.form);
           await archiveDocuments(reader, { accession: filing.accession, filedAt: filing.filingDate, cik: state.cik, industry: "unknown" }, documents, { form: filing.form, reportDate: filing.reportDate });
           archived.push(filing.accession);

@@ -1,9 +1,8 @@
 import { secFigureMetricLabel } from "@/shared/analysis-runtime/sec-figures.ts";
 import { compactNumber, currencyName, shortPeriod as quarterEnd } from "@/shared/analysis-runtime/locale.ts";
-import { getLocale } from "@/packages/web/src/i18n";
+import { getLocale, isChinese as zh } from "@/packages/web/src/i18n";
 
 const MINUS = "−";
-const zh = () => getLocale() === "zh-CN";
 
 export const metricLabel = (metricKey: string) => secFigureMetricLabel(metricKey, getLocale()) ?? metricKey;
 export const isCurrency = (unit: string) => /^[A-Z]{3}$/.test(unit);

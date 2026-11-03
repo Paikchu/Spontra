@@ -79,7 +79,7 @@ test("a filing is left unlabelled when its facts disagree, none ends on its repo
   assert.deepEqual(fiscalPeriodsFromCompanyFacts({ facts: { dei: { X: { units: { shares: "bad" } } } } }, [Q2]), []);
 });
 
-const env = (db: D1Database) => ({ DB: db, SEC_FILINGS: bucket(), SEC_USER_AGENT: "test agent", SEC_TRACKED_TICKERS: "AMZN", SEC_DATA_TICKERS: "AMZN" }) as unknown as AnalysisEnv;
+const env = (db: D1Database) => ({ DB: db, SEC_FILINGS: bucket(), SEC_USER_AGENT: "test agent", SEC_AI_TICKERS: "AMZN", SEC_DATA_TICKERS: "AMZN" }) as unknown as AnalysisEnv;
 const feed = { ticker: "AMZN", company: { ticker: "AMZN", cik: CIK, name: "AMAZON COM INC" }, filings: [RELEASE, Q2, Q1, FY].map(f => ({ ...f, summary: null })), fetchedAt: "2026-10-19T10:00:00.000Z", status: "ready" };
 const revenueFacts = companyFacts([
   { ...fact(Q2.accessionNumber, 2026, "Q2", "2026-06-30"), start: "2026-04-01", val: 167_000_000_000 },

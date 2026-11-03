@@ -3,7 +3,7 @@ import type { PublicFilingDigest, PublicFilingDigestPage } from "../../../../sha
 import type { AnalysisFinding, ComposedAnalysis, FindingPassage, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import { EVENT_FIELDS } from "../../../../shared/analysis-contract/findings.ts";
 import type { ItemKind } from "../../../../shared/analysis-contract/item-analysis.ts";
-import { DAY_MS, insiderCadence, insiderCluster, insiderTone, insiderVerdict } from "../../../../shared/analysis-runtime/events.ts";
+import { DAY_MS, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isProspectusSupplement } from "../../../../shared/analysis-runtime/events.ts";
 import { resolveEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
 import { railEntries } from "../../../../shared/analysis-runtime/rail.ts";
@@ -26,8 +26,8 @@ export const ITEM_WINDOW_MONTHS = 12;
 export type ItemSubject = { kind: ItemKind; id: string; date: string; form: string; report?: PublicFilingDigest; event?: CompanyEvent };
 
 /**
- * The rail's rows that get an analysis, newest first: every report and current report filed in the window, and every
- * Form 4 the insider rules flag for attention. A routine or planned sale, a grant or an exercise is left to its figures.
+ * The rail's rows that get an analysis, newest first: every report, current report and offering prospectus supplement
+ * filed in the window, and every Form 4 the insider rules flag for attention. A routine or planned sale, a grant or an exercise is left to its figures.
  */
 export function itemSubjects(filings: PublicFilingDigestPage | null, events: EventsPublication | null, now: Date, months = ITEM_WINDOW_MONTHS): ItemSubject[] {
   const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
@@ -35,7 +35,9 @@ export function itemSubjects(filings: PublicFilingDigestPage | null, events: Eve
   return railEntries(filings, events).filter(e => e.date >= floor).flatMap((e): ItemSubject[] => {
     if (e.kind === "report") return [{ kind: "report", id: e.id, date: e.date, form: e.report.form, report: e.report }];
     if (e.event.class === "insider") return insiderTone(all, e.event) === "attention" ? [{ kind: "insider", id: e.id, date: e.date, form: e.event.form, event: e.event }] : [];
-    return /^(?:8|6)-K/.test(e.event.form) ? [{ kind: "current", id: e.id, date: e.date, form: e.event.form, event: e.event }] : [];
+    // A prospectus supplement states an offering; a program issuer's routine ones (structured notes) are left to the rail.
+    const offering = isProspectusSupplement(e.event.form) && e.event.importance !== "routine";
+    return /^(?:8|6)-K/.test(e.event.form) || offering ? [{ kind: "current", id: e.id, date: e.date, form: e.event.form, event: e.event }] : [];
   });
 }
 
@@ -62,7 +64,7 @@ export type ItemInput = {
 
 const KIND: Record<ItemKind, string> = {
   report: "The subject is a periodic report, or the earnings release and report of one quarter. Judge the quarter: which figures moved and why, what management says changed compared with the earlier filing, and what to watch in the next report. Read the report's own sections and the same sections in the earlier filing.",
-  current: "The subject is a current report (8-K or 6-K). Say what it discloses and why it matters for the company's figures or its risks, placed against the figures of the latest report and against what earlier filings said about the same matter. A filing that only states a fact (a vote, an officer change) gets a short analysis of what follows from it, without inventing figures.",
+  current: "The subject is a current report (8-K or 6-K). Say what it discloses and why it matters for the company's figures or its risks, placed against the figures of the latest report and against what earlier filings said about the same matter. A filing that only states a fact (a vote, an officer change) gets a short analysis of what follows from it, without inventing figures. A prospectus supplement (424B) states an offering: say its size, the securities, their terms when given and the use of proceeds, and place it against the funding the company said earlier it would raise and against its debt and share count in the latest report.",
   insider: "The subject is one insider's Form 4 that the insider rules flagged; the rules that fired, the owner's trades over the past year and the other insiders' sales around it are in the first message. Read the trade against the owner's own history and the other insiders' sales, and say what it does and does not signal. Its evidence uses the event refs the first message lists, and includes one of the owner's earlier filings when one is listed.",
 };
 

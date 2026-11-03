@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { isSecUrl } from "../sec-sources.ts";
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
 import type { DisclosureFact, FilingDisclosures } from "./disclosure-extraction.ts";
 import type {
   AssetGroup, BalanceSheet, CapitalFiling, CapitalLine, CapitalQuarter, CapitalSchedule, CapitalSource, CashFlowSection, CashFlowStatement,
   EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, RpoBucket, RpoDisclosure, ScheduleBucket, ScheduleKind, SupplementalGroup,
 } from "../../analysis-contract/capital-structure.ts";
+import { daysBetween as days } from "../dates.ts";
 
 /**
  * Balance sheet and cash flow statement lines, read from the filing's own statement tables.
@@ -12,7 +14,7 @@ import type {
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v5";
+export const CAPITAL_VERSION = "sec-capital-structure.v6";
 
 type Fact = StatementCell["facts"][number];
 /** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */
@@ -21,7 +23,6 @@ type Line<G extends string> = Row & { value: number; group: G };
 type Kind = "balance" | "cashflow";
 
 const local = (concept: string) => concept.split(":").at(-1)!;
-const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86400000;
 const nextDay = (date: string) => new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 1e-9);
 const sum = (rows: Array<{ value: number }>) => rows.reduce((total, row) => total + row.value, 0);
@@ -160,6 +161,8 @@ function reconcile<T extends { value: number }>(items: T[], total: number): T[] 
 function classify<G extends string>(row: Row, rules: Array<[G, RegExp]>, fallback: G): G {
   return rules.find(([, pattern]) => pattern.test(local(row.concept)) || pattern.test(row.label))?.[0] ?? fallback;
 }
+/** The equity group a balance-sheet line falls in by its concept and label (the same rules the extractor applies). */
+export const equityGroupOf = (concept: string, label: string): EquityGroup => classify({ concept, label } as Row, EQUITY_RULES, "paidIn");
 
 const ASSET_RULES: Array<[AssetGroup, RegExp]> = [
   ["leaseAssets", /OperatingLeaseRightOfUse|operating lease right[- ]of[- ]use/i],
@@ -179,7 +182,8 @@ const LIABILITY_RULES: Array<[LiabilityGroup, RegExp]> = [
   ["payables", /AccountsPayable|Accrued|InterestPayable|TaxesPayable|EmployeeRelated|payable|accrued/i],
 ];
 const EQUITY_RULES: Array<[EquityGroup, RegExp]> = [
-  ["redeemable", /TemporaryEquity|RedeemableNoncontrolling|redeemable/i],
+  // "ConvertiblePreferredStockNonredeemableOrRedeemableIssuerOptionValue" is permanent equity (preferred the holder cannot put back); only equity redeemable at the holder's option is temporary.
+  ["redeemable", /TemporaryEquity|RedeemableNoncontrolling|^(?!.*NonredeemableOrRedeemable).*redeemable/i],
   ["noncontrolling", /MinorityInterest|noncontrolling|non-controlling/i],
   ["retained", /RetainedEarnings|AccumulatedDeficit|retained earnings|accumulated deficit/i],
   ["otherEquity", /AccumulatedOtherComprehensive|other comprehensive/i],
@@ -380,7 +384,7 @@ const RPO_AXIS = RPO + "ExpectedTimingOfSatisfactionStartDateAxis";
 const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, eighteen: 18, "twenty-four": 24, "thirty-six": 36, "forty-eight": 48, sixty: 60 };
 
 /** "P2Y", "P12M", "twelve months", "2 years" → months; anything else is unknown rather than guessed. */
-export function timingMonths(text: string | null): number | null {
+function timingMonths(text: string | null): number | null {
   if (!text) return null;
   const value = text.trim().toLowerCase();
   const iso = value.match(/^p(?:(\d+)y)?(?:(\d+)m)?$/);
@@ -400,7 +404,7 @@ const factCurrency = (f: DisclosureFact) => f.unit?.numerator[0]?.name.replace(/
  * contexts at that same instant, with the bucket length read from the timing text tagged beside them.
  * Nothing is derived: a filing that states only shares has no amounts, and vice versa.
  */
-export function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoDisclosure | null {
+function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoDisclosure | null {
   // The timing words carry an SEC transform the extractor does not implement; their source text is still exact.
   const facts = disclosures.facts.filter(f => (f.status === "parsed" || (usGaap(f, RPO_PERIOD) && f.rawValue)) && f.context?.period.kind === "instant" && f.context.period.end);
   const totals = facts.filter(f => f.kind === "numeric" && f.numericValue != null && usGaap(f, RPO) && !f.context!.dimensions.length && /^[A-Z]{3}$/.test(factCurrency(f) ?? ""));
@@ -552,7 +556,7 @@ export function extractCapitalFiling(statements: FinancialStatements, source: Ca
  * earlier in the year and counts as zero there. A row that disappears, or changes group, means the
  * presentation changed; then only the section totals are derived.
  */
-export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowStatement | null): CashFlowStatement | null {
+function quarterCashFlow(current: CashFlowStatement, prior: CashFlowStatement | null): CashFlowStatement | null {
   const span = days(current.periodStart, current.periodEnd);
   if (span >= 70 && span <= 110) return current;
   if (!prior || prior.periodStart !== current.periodStart || prior.currency !== current.currency) return null;
@@ -606,7 +610,7 @@ export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): Capit
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(v)));
-const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });
+const secUrl = z.string().refine(isSecUrl);
 const sourceSchema = z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: z.string().max(40), form: z.string().max(12) });
 const lineSchema = <G extends readonly [string, ...string[]]>(groups: G) => z.object({ id: z.string().min(1).max(200), label: z.string().max(400), concept: z.string().max(300), group: z.enum(groups), value: amount });
 const sectionSchema = <G extends readonly [string, ...string[]]>(groups: G) => z.object({ total: amount, lines: z.array(lineSchema(groups)).max(80).nullable() });

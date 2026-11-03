@@ -4,6 +4,13 @@ import type { SecRepository } from './types.ts';
 export const fiscalPeriodKey = (filing: Pick<SecFiling, 'ticker' | 'accessionNumber'>) => `sec:fiscal-period:v1:${filing.ticker}:${filing.accessionNumber}`;
 const periodic = (form: string) => /^(10-Q|10-K|20-F)(\/A)?$/.test(form);
 
+/** A DEI focus the form can carry: an annual report the fiscal year, a quarterly report one of its first three quarters. */
+function focusFits(form: string, period: string): boolean {
+  if (!/^(FY|Q[1-4]|H[12]|M9)$/.test(period)) return false;
+  if (/^(10-K|20-F)/.test(form)) return period === 'FY';
+  return !/^10-Q/.test(form) || /^Q[1-3]$/.test(period);
+}
+
 /** Read document-focus DEI facts, never comparative metric contexts or generated prose. */
 export function parseFiscalPeriod(html: string, filing: Pick<SecFiling, "form" | "reportDate" | "accessionNumber" | "documentUrl">): SecFiscalPeriod | null {
   if (!periodic(filing.form)) return null; // An 8-K document end is an event date.
@@ -41,10 +48,8 @@ export function parseFiscalPeriod(html: string, filing: Pick<SecFiling, "form" |
     const period = one('DocumentFiscalPeriodFocus');
     const end = one('DocumentPeriodEndDate');
     const transition = one('DocumentTransitionReport');
-    if (!year || !/^20\d{2}$/.test(year) || !period || !/^(FY|Q[1-4]|H[12]|M9)$/.test(period) || end !== filing.reportDate) continue;
+    if (!year || !/^20\d{2}$/.test(year) || !period || !focusFits(filing.form, period) || end !== filing.reportDate) continue;
     if (transition === 'true' || transition === '1' || (facts.has('dei:DocumentTransitionReport') && transition === undefined)) continue;
-    if (/^(10-K|20-F)/.test(filing.form) && period !== 'FY') continue;
-    if (/^10-Q/.test(filing.form) && !/^Q[1-3]$/.test(period)) continue;
     found.push({ fiscalYear: Number(year), fiscalPeriod: period as SecFiscalPeriod['fiscalPeriod'], periodEnd: end, source: 'sec_dei', sourceAccession: filing.accessionNumber, sourceUrl: filing.documentUrl });
   }
   if (!found.length || found.some(value => value.fiscalYear !== found[0].fiscalYear || value.fiscalPeriod !== found[0].fiscalPeriod)) return null;
@@ -82,9 +87,7 @@ export function fiscalPeriodsFromCompanyFacts(payload: unknown, filings: SecFili
     if (!entry) continue;
     const [year] = entry.years, [period] = entry.periods;
     if (entry.years.size !== 1 || entry.periods.size !== 1 || !entry.endsOnReportDate) continue;
-    if (!Number.isInteger(year) || (year as number) < 2000 || (year as number) > 2100 || typeof period !== 'string' || !/^(FY|Q[1-4]|H[12]|M9)$/.test(period)) continue;
-    if (/^(10-K|20-F)/.test(filing.form) && period !== 'FY') continue;
-    if (/^10-Q/.test(filing.form) && !/^Q[1-3]$/.test(period)) continue;
+    if (!Number.isInteger(year) || (year as number) < 2000 || (year as number) > 2100 || typeof period !== 'string' || !focusFits(filing.form, period)) continue;
     found.push({ fiscalYear: year as number, fiscalPeriod: period as SecFiscalPeriod['fiscalPeriod'], periodEnd: filing.reportDate, source: 'sec_dei', sourceAccession: accession, sourceUrl: filing.documentUrl });
   }
   return found;

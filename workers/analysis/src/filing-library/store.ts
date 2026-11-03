@@ -147,13 +147,6 @@ export async function libraryOutline(db: D1Database, documentId: string): Promis
   return rows.results.map(sectionOf);
 }
 
-export async function librarySections(db: D1Database, sectionIds: string[]): Promise<Array<LibrarySectionView & { documentId: string }>> {
-  if (!sectionIds.length) return [];
-  const rows = await db.prepare(`SELECT document_id, section_id, parent_id, ordinal, depth, is_leaf, canonical, item_key, title, path, xbrl_block, role, change, chars FROM sec_sections
-    WHERE section_id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(sectionIds)).all<SectionRecord & { document_id: string }>();
-  return rows.results.map(r => ({ ...sectionOf(r), documentId: r.document_id }));
-}
-
 type PassageRecord = { passage_id: string; section_id: string; ordinal: number; kind: "paragraph" | "table"; text: string; table_json: string | null; fact_refs: string; chars: number; change: string };
 const passageOf = (r: PassageRecord): LibraryPassageView => ({
   passageId: r.passage_id, sectionId: r.section_id, ordinal: r.ordinal, kind: r.kind, text: r.text, table: r.table_json ? JSON.parse(r.table_json) : null,

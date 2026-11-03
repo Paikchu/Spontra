@@ -3,6 +3,7 @@ import type { BalanceSheet, CashFlowStatement } from "../analysis-contract/capit
 import type { FindingRef } from "../analysis-contract/findings.ts";
 import { PEER_FIGURES, type PeerCompany, type PeerFigure, type PeerPair, type PeerQuarter, type PeersPublication, type PeerUnit } from "../analysis-contract/peers.ts";
 import { resolveRef, type FindingData } from "./findings.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 /* ---------- Schema ---------- */
 
@@ -11,14 +12,14 @@ const decimal = z.string().regex(/^-?\d+(?:\.\d+)?$/);
 const figures = z.object(Object.fromEntries(PEER_FIGURES.map(f => [f, decimal.optional()])) as Record<PeerFigure, z.ZodOptional<typeof decimal>>);
 const quarter = z.object({ periodEnd: date, accessions: z.array(z.string().max(40)).max(16), figures });
 const company = z.object({
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   categories: z.array(z.string().max(60)).max(16),
   newestQuarter: date.nullable(),
   quarters: z.array(quarter).max(8),
 });
 const unitKey = z.string().min(3).max(200);
 const unit = z.object({
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), unitKey, name: z.string().max(200), flowNodeId: z.string().max(160),
+  ticker: z.string().regex(TICKER_PATTERN), unitKey, name: z.string().max(200), flowNodeId: z.string().max(160),
   sectors: z.array(z.string().max(60)).max(16), periodEnd: date.nullable(), revenue: decimal.nullable(), exposure: z.number().min(0).max(2).nullable(),
 });
 const facetValue = z.enum(["same", "partial", "different", "unknown"]);

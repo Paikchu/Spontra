@@ -36,6 +36,8 @@ const listeners = new Set<() => void>();
 if (typeof document !== "undefined") document.documentElement.lang = current;
 
 export const getLocale = (): Locale => current;
+/** Whether the page reads in Chinese. */
+export const isChinese = (): boolean => current === "zh-CN";
 
 export function setLocale(next: Locale) {
   if (next === current) return;
@@ -78,7 +80,7 @@ type Message = string | ((...args: never[]) => string);
  * with the same shape, so a missing translation fails the type check rather than showing at run time.
  *
  *   const m = messages({ load: "Load failed", severity: (n: number) => `Severity ${n}` },
- *                      { load: "加载失败",    severity: (n: number) => `重要度 ${n}` });
+ *                      { load: "加载失败",    severity: (n: number) => `严重度 ${n}` });
  *   m.load; m.severity(3);
  */
 export function messages<E extends Record<string, Message>>(en: E, zh: NoInfer<{ [K in keyof E]: E[K] }>): E {

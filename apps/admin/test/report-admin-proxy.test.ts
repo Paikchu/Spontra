@@ -6,16 +6,16 @@ import { handleReportAdminProxy } from "../worker/report-admin-proxy.ts";
 test("the admin proxy passes the feature switches through", async () => {
   const seen: string[] = [];
   const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { seen.push(new URL(String(url)).pathname); return Response.json({ ok: true }); } } };
-  for (const path of ["business-map/features/tree", "business-map/companies/MSFT/features/findings", "business-map/companies/MSFT/presentation", "business-map/companies/MSFT"]) {
+  for (const path of ["business-map/features/tree", "business-map/companies/MSFT/features/findings", "business-map/features/valuation", "business-map/companies/MSFT/features/valuation", "business-map/companies/MSFT/presentation", "business-map/companies/MSFT"]) {
     const request = new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers: { origin: "https://admin.example" } });
     assert.equal((await handleReportAdminProxy(request, path.split("/"), env)).status, 200, path);
   }
-  assert.deepEqual(seen, ["/admin/business-map/features/tree", "/admin/business-map/companies/MSFT/features/findings", "/admin/business-map/companies/MSFT/presentation", "/admin/business-map/companies/MSFT"]);
+  assert.deepEqual(seen, ["/admin/business-map/features/tree", "/admin/business-map/companies/MSFT/features/findings", "/admin/business-map/features/valuation", "/admin/business-map/companies/MSFT/features/valuation", "/admin/business-map/companies/MSFT/presentation", "/admin/business-map/companies/MSFT"]);
 });
 
 test("the admin proxy refuses routes the admin does not use", async () => {
   const env = { SPONTRA_ANALYSIS: { fetch: async () => Response.json({ ok: true }) } };
-  for (const path of ["business-map/companies/MSFT/features/unknown", "business-map/pipeline", "pipeline/events"]) {
+  for (const path of ["business-map/companies/MSFT/features/unknown", "business-map/features/unknown", "business-map/pipeline", "pipeline/events"]) {
     const request = new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers: { origin: "https://admin.example" } });
     assert.equal((await handleReportAdminProxy(request, path.split("/"), env)).status, 404, path);
   }
@@ -66,4 +66,34 @@ test("the admin proxy lets one company's flow graph through, and nothing beside 
   assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow"), ["business-map", "companies", "TTMI", "flow"], env)).status, 200);
   assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow", { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), ["business-map", "companies", "TTMI", "flow"], env)).status, 404);
   assert.deepEqual(seen, ["/admin/business-map/companies/TTMI/flow"]);
+});
+
+test("the admin proxy lets the valuation runs, versions and a manual run through, but not guidance", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string, init?: RequestInit) => { seen.push(`${init?.method ?? "GET"} ${new URL(String(url)).pathname}`); return Response.json({ ok: true }); } } };
+  const headers = { origin: "https://admin.example" };
+  for (const path of ["ai/companies/MSFT/valuation", "ai/companies/MSFT/valuation/versions/2026-11-01T12:00:00.000Z"]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`), path.split("/"), env)).status, 200, path);
+  }
+  const run = "ai/companies/MSFT/valuation/runs";
+  assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${run}`, { method: "POST", body: "{}", headers }), run.split("/"), env)).status, 200, run);
+  for (const path of ["ai/companies/MSFT/guidance", "ai/companies/MSFT/guidance/runs"]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers }), path.split("/"), env)).status, 404, path);
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`), path.split("/"), env)).status, 404, path);
+  }
+  assert.deepEqual(seen, ["GET /admin/ai/companies/MSFT/valuation", "GET /admin/ai/companies/MSFT/valuation/versions/2026-11-01T12%3A00%3A00.000Z", "POST /admin/ai/companies/MSFT/valuation/runs"]);
+});
+
+test("the admin proxy reads and saves a company's valuation inputs, with room for cited targets but no more", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string, init?: RequestInit) => { seen.push(`${init?.method ?? "GET"} ${new URL(String(url)).pathname}`); return Response.json({ ok: true }); } } };
+  const headers = { origin: "https://admin.example" };
+  const path = ["business-map", "companies", "ACME", "valuation-inputs"];
+  const url = "https://admin.example/api/admin/business-map/companies/ACME/valuation-inputs";
+  assert.equal((await handleReportAdminProxy(new Request(url), path, env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request(url, { method: "POST", body: JSON.stringify({ peers: null, targets: { notes: "x".repeat(20_000) } }), headers }), path, env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request(url, { method: "POST", body: "x".repeat(70_000), headers }), path, env)).status, 413);
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/messages/read", { method: "POST", body: "x".repeat(20_000), headers }), ["business-map", "messages", "read"], env)).status, 413);
+  assert.equal((await handleReportAdminProxy(new Request(url, { method: "POST", body: "{}" }), path, env)).status, 403);
+  assert.deepEqual(seen, ["GET /admin/business-map/companies/ACME/valuation-inputs", "POST /admin/business-map/companies/ACME/valuation-inputs"]);
 });

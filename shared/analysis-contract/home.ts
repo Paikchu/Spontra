@@ -1,3 +1,5 @@
+import type { FiscalPeriodFields } from "./period.ts";
+
 /**
  * The public homepage digest: one read for every covered company.
  * Amounts are decimal strings in the filing currency (value × scale). Missing figures stay null.
@@ -24,6 +26,8 @@ export type HomeRevenue = {
   qoqPct: number | null;
 };
 
+export type HomeStatement = { currency: string; revenue: string; cost: string | null; net: string };
+
 export type HomeCompany = {
   ticker: string;
   name: string;
@@ -33,11 +37,32 @@ export type HomeCompany = {
   /** 【假设】Null until admin stores a sector. The page hides the sector filter while every value is null. */
   sector: string | null;
   status: HomeCompanyStatus;
-  latestPeriod: { periodEnd: string; fiscalLabel: string; filedAt: string | null } | null;
+  /**
+   * `fiscalLabel` and `calendarLabel` are the calendar quarter (2026-07-26 → "2026 Q3"), kept for older clients.
+   * The fiscal fields are the issuer's own quarter. `labelSource: "unknown"` means the quarter was not determined.
+   */
+  latestPeriod: ({
+    periodEnd: string;
+    periodStart: string | null;
+    fiscalLabel: string;
+    calendarLabel: string;
+    filedAt: string | null;
+  } & FiscalPeriodFields) | null;
   revenue: HomeRevenue | null;
   revenueReason: HomeRevenueReason | null;
   /** Up to eight quarters, oldest first. */
   revenueTrend: Array<{ periodEnd: string; value: string }>;
+  /**
+   * The latest quarter's statement in three figures (revenue, cost of revenue, net income), decimal strings in the
+   * filing currency, for the row's small revenue-to-profit flow. Null when the quarter does not carry them.
+   */
+  statement?: HomeStatement | null;
+  /**
+   * Operating income over revenue for the latest quarter and the quarter a year before it, in percent (31.8 = 31.8%),
+   * from the published quarters and the reports assembled behind them. Null when the latest quarter has no operating
+   * income; `yearAgoPct` null when the year-ago quarter is not held.
+   */
+  operatingMargin?: { pct: number; yearAgoPct: number | null } | null;
   findingCounts: { risk: number; strength: number; shift: number; watch: number };
   /** At most two, highest severity first. */
   topFindings: HomeFinding[];

@@ -4,9 +4,9 @@ import type { BusinessExplainerResponse } from "../../../../shared/analysis-cont
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { sha256 } from "../company-analysis/api.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { sha256 } from "../sha256.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
@@ -16,6 +16,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
 export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v5";
@@ -60,17 +61,17 @@ export async function businessExplainerFingerprint(env: AnalysisEnv, ticker: str
 }
 
 export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "explainer", params.ticker);
   const modelVersion = modelFor(env, "explainer");
   const now = await step.do("explainer-time", async () => new Date().toISOString());
   const input = await step.do("explainer-input", () => readInput(env, params.ticker));
   // The business list changed after scheduling; the next sweep starts a run for the new list.
   if (input.fingerprint !== params.fingerprint) return { status: "superseded" };
   const explainer = await runBusinessExplainer({
-    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, nodes: input.nodes,
+    ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
-    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
+    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");
@@ -90,7 +91,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
 /** Read-only: never starts research. A stored document that fails validation reads as preparing. */
 export async function readBusinessExplainerResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<BusinessExplainerResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   // The admin's display switch: hidden explanations read as hidden for readers and stay stored.
   if (options.hidden) return { schemaVersion: "business-explainer-response.v1", status: "hidden", explainer: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessExplainerCacheKey(ticker));

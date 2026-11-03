@@ -4,8 +4,8 @@ import type { CheckupNotes, FindingMaterial } from "../../../../shared/analysis-
 import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract/statement-analysis.ts";
 import { assessStatements } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
-import { sha256 } from "../company-analysis/api.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { sha256 } from "../sha256.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";
 import { SecModelOutputError } from "../model-stream.ts";
@@ -55,10 +55,11 @@ export async function checkupFingerprint(env: AnalysisEnv, ticker: string): Prom
   return (await readInput(env, ticker))?.fingerprint ?? null;
 }
 
-async function reserveTurn(env: AnalysisEnv, now: string): Promise<boolean> {
+async function reserveTurn(env: AnalysisEnv): Promise<boolean> {
+  const day = new Date().toISOString().slice(0, 10);
   const cap = Number(env.CHECKUP_DAILY_TURNS) || DEFAULT_DAILY_TURNS;
   const row = await requireDb(env).prepare("INSERT INTO feature_budget (day,feature,units) VALUES (?,?,1) ON CONFLICT(day,feature) DO UPDATE SET units=units+1 WHERE units<? RETURNING units")
-    .bind(now.slice(0, 10), "checkup-turns", cap).first<{ units: number }>().catch(() => null);
+    .bind(day, "checkup-turns", cap).first<{ units: number }>().catch(() => null);
   return !!row;
 }
 
@@ -74,7 +75,7 @@ export function checkupContent(outcomes: NoteOutcome[]): { notes: CheckupNotes["
 }
 
 export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: { act?: AgentAct; fetcher?: typeof fetch } = {}) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "analyst");
   const now = await step.do("checkup-time", async () => new Date().toISOString());
@@ -90,7 +91,7 @@ export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step
   const settled = await Promise.allSettled(input.metrics.map(async metricId => {
     const metric = metrics.find(m => m.id === metricId)!;
     return runNote({ env, ticker: params.ticker, metric, flags: input.assessment.flags.filter(f => f.metricId === metricId), data: input.data, documents: input.documents, act,
-      stage: (name, cb) => step.do(`checkup-${name}`, cb), reserveTurn: () => reserveTurn(env, now) });
+      stage: (name, cb) => step.do(`checkup-${name}`, cb), reserveTurn: () => reserveTurn(env) });
   }));
   const outcomes = settled.map((s, i): NoteOutcome => s.status === "fulfilled" ? s.value : { metricId: input.metrics[i]!, note: null, materials: [], turns: [], issues: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`] });
   const { notes, materials } = checkupContent(outcomes);

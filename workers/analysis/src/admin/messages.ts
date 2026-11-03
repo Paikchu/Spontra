@@ -11,14 +11,14 @@ import type { EventType } from '../pipeline/registry.ts';
 const RETENTION_MS = 30 * 24 * 60 * 60_000, LIST_LIMIT = 100;
 
 /** Which feature each AI run kind and pipeline task writes. */
-export const KIND_FEATURE: Record<string, Feature> = { guidance: 'reports', findings: 'findings', analyst: 'findings', items: 'findings', explainer: 'explainer', tree: 'tree' };
-export const TASK_FEATURE: Record<string, Feature> = { 'sec-report': 'reports', guidance: 'reports', memory: 'findings', 'company-analysis': 'findings', findings: 'findings', analyst: 'findings', explainer: 'explainer', tree: 'tree' };
+export const KIND_FEATURE: Record<string, Feature> = { guidance: 'reports', findings: 'findings', analyst: 'findings', items: 'findings', explainer: 'explainer', tree: 'tree', valuation: 'valuation' };
+export const TASK_FEATURE: Record<string, Feature> = { 'sec-report': 'reports', guidance: 'reports', memory: 'findings', 'company-analysis': 'findings', findings: 'findings', analyst: 'findings', explainer: 'explainer', tree: 'tree', valuation: 'valuation' };
 /** The tasks whose failed-input state holds a feature back: cleared when the feature is switched on again. */
 export const FEATURE_TASKS = (feature: Feature) => Object.entries(TASK_FEATURE).filter(([, f]) => f === feature).map(([task]) => task);
 /** The events that mean a feature published something for a company. */
 const PUBLISHED: Partial<Record<EventType, Feature>> = {
   'report.published': 'reports', 'guidance.published': 'reports', 'findings.published': 'findings', 'dossier.published': 'findings',
-  'explainer.published': 'explainer', 'tree.published': 'tree', 'items.published': 'findings',
+  'explainer.published': 'explainer', 'tree.published': 'tree', 'items.published': 'findings', 'valuation.published': 'valuation',
 };
 
 function noteStatements(db: D1Database, ticker: string, feature: Feature, outcome: AdminMessage['outcome'], detail: string | null, at: string): D1PreparedStatement[] {
@@ -44,17 +44,18 @@ export function messageStatements(db: D1Database, events: EventMessage[], at: st
 }
 
 /**
- * A failed run of a company's feature: noted in the inbox, and the company's switch turned off. Only generation stops;
- * what was written stays shown (`display` keeps its value). The reports take the findings with them, as the switch does.
- * Never throws: bookkeeping must not fail the work it describes.
+ * A failed run of a company's feature: noted in the inbox, and, once no automatic retry is left (`switchOff`), the
+ * company's switch turned off. A failure with retries still to come leaves the feature on, so the retry runs. Only
+ * generation stops; what was written stays shown (`display` keeps its value). The reports take the findings with them,
+ * as the switch does. Never throws: bookkeeping must not fail the work it describes.
  */
-export async function recordFeatureFailure(db: D1Database | undefined, ticker: string, feature: Feature | undefined, failure: string, at = new Date().toISOString()): Promise<void> {
+export async function recordFeatureFailure(db: D1Database | undefined, ticker: string, feature: Feature | undefined, failure: string, at = new Date().toISOString(), switchOff = true): Promise<void> {
   if (!db || !feature || ticker === '*') return;
   const off = (f: Feature) => db.prepare(`INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES (?, ?, 0, 1, ?)
     ON CONFLICT (ticker, feature) DO UPDATE SET generate = 0, display = coalesce(business_feature_settings.display, business_feature_settings.generate, 1), updated_at = excluded.updated_at`)
     .bind(ticker, f, at);
   try {
-    await db.batch([...noteStatements(db, ticker, feature, 'failed', failure.slice(0, 1000), at), off(feature), ...(feature === 'reports' ? [off('findings')] : [])]);
+    await db.batch([...noteStatements(db, ticker, feature, 'failed', failure.slice(0, 1000), at), ...(switchOff ? [off(feature), ...(feature === 'reports' ? [off('findings')] : [])] : [])]);
   } catch (error) {
     console.warn(JSON.stringify({ event: 'admin-message', ticker, feature, error: error instanceof Error ? error.message : String(error) }));
   }

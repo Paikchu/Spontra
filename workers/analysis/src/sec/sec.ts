@@ -1,4 +1,6 @@
 import type { AnalysisFact, ManagerReview, PublishedSecReport, SecNodeSpecV2 } from "./analysis.ts";
+import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** 8: English summaries with English-sized limits (7 was the last Chinese one). */
 export const SEC_SUMMARY_VERSION = 8;
@@ -163,8 +165,9 @@ export type SecCompany = {
 
 type SummaryFilingIdentity = Pick<SecFiling, "ticker" | "form" | "filingDate" | "accessionNumber">;
 
+/** A ticker as the request wrote it, canonical (a second share class is the class the data is kept under), with stray characters dropped. */
 export function cleanSecTicker(value: string): string {
-  return String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  return canonicalTicker(String(value ?? "")).replace(/[^A-Z0-9.-]/g, "");
 }
 
 export function cleanSecAccession(value: string): string {
@@ -337,8 +340,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
     const form = String(forms[index] ?? "");
     const primaryDocument = String(primaryDocuments[index] ?? "");
     if (!isBusinessFiling(form) || !accessionNumber || !primaryDocument) return [];
-    const accessionPath = accessionNumber.replaceAll("-", "");
-    const archiveRoot = `https://www.sec.gov/Archives/edgar/data/${company.cikNumber}/${accessionPath}`;
+    const archiveRoot = secArchiveRoot(company.cikNumber, accessionNumber);
     return [{
       ticker: company.ticker,
       cik: company.cik,
@@ -352,7 +354,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
       description: String(descriptions[index] ?? ""),
       items: String(items[index] ?? ""),
       documentUrl: `${archiveRoot}/${primaryDocument}`,
-      indexUrl: `${archiveRoot}/${accessionNumber}-index.html`,
+      indexUrl: secArchiveDocumentUrl(archiveRoot, `${accessionNumber}-index.html`),
     }];
   });
 

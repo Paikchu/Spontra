@@ -19,6 +19,17 @@ export async function tagsPlan(db: D1Database, ticker: string): Promise<TagsPlan
   return { ticker, links, nodes, units, unplaced, fingerprint };
 }
 
+/**
+ * Why a company has no tags plan, for its run's log and the admin's flow view: no business links yet, or links none of
+ * which is verified with a sector (a review that disputed every link, as Intel's did when its 10-K read without Item headings).
+ */
+export async function tagsSkipReason(db: D1Database, ticker: string): Promise<string> {
+  const links = await readLinks(db, { ticker });
+  if (!links.length) return "no business links";
+  const disputed = links.filter(l => l.status === "disputed").length;
+  return disputed ? `no verified business link (${disputed} of ${links.length} disputed)` : "no business link with a sector";
+}
+
 export type PassageRow = { passage_id: string; document_id: string; section_id: string; text: string };
 /** Each section's passages in order, at most `perSection` of them, for the sections asked; nothing parsed, a D1 read. */
 export async function sectionPassages(db: D1Database, sectionIds: string[], perSection = 12): Promise<Map<string, PassageRow[]>> {

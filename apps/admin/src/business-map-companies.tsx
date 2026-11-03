@@ -1,22 +1,25 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany, IssuerSuggestion } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
+import { PUBLIC_SITE_ORIGIN } from '@/shared/analysis-runtime/site';
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
 import { financialDate } from './financial-update-history';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
 import { runElapsed, runView } from './run-progress';
 import { FlowGraph } from './flow-graph';
+import { ValuationInputs } from './valuation-inputs';
 import { useOnReturn, usePageActive } from './admin-page';
+import { addressTicker } from './address-ticker';
 import './business-map-companies.css';
 
 const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'等待同公司任务',collect:'采集及核验最新财报',history:'补充季度历史',audit:'检查披露完整性',complete:'任务结束'};
 /** The financial map's preparation in order (financial-maintenance-runner.ts); waiting for the issuer comes before all of it. */
 const TASK_PHASES = ['identify','collect','history','audit'] as const;
 /** Which run a feature's progress line belongs to, when the feature has more than one kind of run. */
-const RUN_LABEL: Record<string,string> = {report:'财报摘要',guidance:'业绩指引',findings:'要点',analyst:'要点分析师',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图'};
+const RUN_LABEL: Record<string,string> = {report:'财报摘要',guidance:'业绩指引',findings:'要点',analyst:'要点分析师',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
 const errors: Record<string,string> = {
   SEC_ISSUER_NOT_FOUND:'SEC 目录无此代码',
   SEC_ACCESS_PAUSED:'SEC 访问受限 · 退避重试',
@@ -49,7 +52,7 @@ const errors: Record<string,string> = {
 };
 const active = new Set(['queued','running','cancel_requested']);
 /** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
-const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图'};
+const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
 /** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
 function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {
   const groups=new Map<string,{code:string;label:string;filings:string[]}>();
@@ -64,7 +67,9 @@ function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UN
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 
 export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinancials}:{onUnauthorized:()=>void;onAuthenticated:()=>void;onOpenFinancials?:(ticker:string)=>void}) {
-  const [data,setData]=useState<BusinessMapCompanies|null>(null),[ticker,setTicker]=useState(''),[search,setSearch]=useState('');
+  const [data,setData]=useState<BusinessMapCompanies|null>(null),[ticker,setTicker]=useState(''),[search,setSearch]=useState(()=>addressTicker(window.location.search));
+  // The company the page was opened for (a message's link): its row opens and comes into view once, when the list arrives.
+  const [focus,setFocus]=useState(()=>addressTicker(window.location.search));
   const [loadError,setLoadError]=useState('');
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(''),[refresh,setRefresh]=useState(0);
   const lock=useRef(false),pending=useRef(new Set<string>()),switched=useRef(0),callbacks=useRef({onUnauthorized,onAuthenticated});
@@ -72,6 +77,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinan
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2500);return()=>clearTimeout(timer);},[notice]);
   useEffect(()=>{if(!error)return;const timer=setTimeout(()=>setError(''),6000);return()=>clearTimeout(timer);},[error]);
   useEffect(()=>{callbacks.current={onUnauthorized,onAuthenticated};},[onUnauthorized,onAuthenticated]);
+  const unauthorized=useCallback(()=>callbacks.current.onUnauthorized(),[]);
   useEffect(()=>{
     const controller=new AbortController(),started=switched.current;
     void adminApi<BusinessMapCompanies>('business-map/companies',{signal:controller.signal}).then(result=>{
@@ -140,7 +146,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinan
       <thead><tr><th>公司</th><th>状态</th>
         {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
         <th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials}/>)}
+      {companies.map(company=><Company key={company.ticker} company={company} onUnauthorized={unauthorized} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -218,8 +224,8 @@ function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):
   return f.publishedAt?{status:'reviewed',text:'已生成',note:written}:{status:'unreviewed',text:'等待生成',note:'有新数据时开始'};
 }
 
-/** One company as a table row: its map state, the four feature switches and the actions; the row opens to the details. */
-function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void}) {
+/** One company as a table row: its map state, one switch per feature and the actions; the row opens to the details. */
+function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;onUnauthorized:()=>void;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -229,20 +235,21 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
   const notes=taskIssues.filter(code=>NOTE.test(code));
   const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...taskIssues.filter(code=>!NOTE.test(code)),...(c.collection?.status==='succeeded'?[]:c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
   const skipped=notes.filter(code=>!code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).length,unsupported=notes.filter(code=>code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).reduce((n,code)=>n+Number(code.split(':')[1]??0),0);
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(focused),body=useRef<HTMLTableSectionElement>(null);
+  useEffect(()=>{if(!focused)return;body.current?.scrollIntoView({block:'start'});onFocused();},[focused,onFocused]);
   const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
   const now=nowLine(c,running),problems=groupIssues(issues);
   const runs=FEATURES.flatMap(feature=>(c.features[feature].progress??[]).map((run,_,all)=>({feature,run,count:all.length})));
   const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
-  return <tbody data-open={open||undefined}>
+  return <tbody ref={body} data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span>{now&&<small className="bm-admin-now">{now}</small>}</div></td>
       {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" data-failed={!!c.features[f].failure||undefined} aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={!c.dataEnabled&&!c.features[f].on} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
-      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`} onClick={e=>{if(!onOpenFinancials||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();onOpenFinancials(c.ticker);}}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
+      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`} onClick={e=>{if(!onOpenFinancials||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();onOpenFinancials(c.ticker);}}>财报</a>{ready&&<a href={`${PUBLIC_SITE_ORIGIN}/companies/${encodeURIComponent(c.ticker)}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={7}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={FEATURES.length+3}><div className="bm-detail">
       <FlowGraph ticker={c.ticker}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}
@@ -274,6 +281,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
         <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
           {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</div></section>
       </div>
+      <ValuationInputs ticker={c.ticker} onUnauthorized={onUnauthorized}/>
     </div></td></tr>}
   </tbody>;
 }

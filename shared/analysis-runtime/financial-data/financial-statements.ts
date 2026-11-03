@@ -1,7 +1,7 @@
 import {parseMarkup, normalizedText, nodeText, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
 import {tableGrid} from './table-grid.ts';
 
-export const STATEMENTS_VERSION='sec-financial-statements.v4';
+export const STATEMENTS_VERSION='sec-financial-statements.v5';
 export interface StatementCell {
  column:number; rowSpan:number; colSpan:number; header:boolean; text:string; locator:DisclosureLocator;
  facts:{id:string;concept:string;value:string|null;status:string;period:FilingDisclosures['contexts'][number]['period']|null;unit:string|null;scale:string|null;dimensions:{axis:string;value:string}[]}[];
@@ -27,12 +27,12 @@ export function extractFinancialStatements(html:string,inventory:FilingDisclosur
  const rowTitle=(n:Element)=>{const row=ancestor(n,'tr');if(!row)return null;const t=normalizedText(row).replace(/\s+\d{1,3}$/,'').replace(/^[a-z]\)\s+/i,'').trim();return t&&!generic(t)?t:null;};
  const links=nodes.filter(n=>n.local==='a'&&n.attributes.href?.startsWith('#')).map(n=>{const text=normalizedText(n);return {node:n,title:generic(text)?rowTitle(n)??text:text,target:anchors.get(n.attributes.href.slice(1))};}).filter(x=>x.target&&x.target.start>x.node.end);
  const chapter=links.find(x=>/^(?:item\s*\d+[.\s]*)?(?:(?:unaudited|condensed|consolidated)\s+)*financial statements\b/i.test(x.title)&&!/^notes\b/i.test(x.title));
- // Foreign issuers may file a standalone statement exhibit with a table of contents
- // for the individual statements, rather than a parent Financial Statements item.
+ // Foreign issuers may file a standalone statement exhibit with a table of contents for the individual statements,
+ // rather than a parent Financial Statements item; Intel's 10-Q links its statements but not the chapter holding them.
  const statementLinks=links.filter(x=>/^(?:(?:unaudited|condensed|consolidated)\s+)*(?:balance sheets?|statements? of (?:financial position|operations|income|loss|cash flows))\b/i.test(x.title));
  const statementSet=['balance sheets?|financial position','operations|income|loss','cash flows'].every(pattern=>statementLinks.some(x=>new RegExp(pattern,'i').test(x.title)));
  const firstStatement=statementSet?statementLinks.reduce((a,b)=>a.target!.start<b.target!.start?a:b):undefined;
- const root=chapter??(/^(?:20-F|6-K)(?:\/A)?$/.test(inventory.source.form)&&firstStatement?{...firstStatement,title:'Financial Statements'}:undefined);
+ const root=chapter??(firstStatement?{...firstStatement,title:'Financial Statements'}:undefined);
  const empty:FinancialStatements={version:STATEMENTS_VERSION,status:'not_located',title:'Financial Statements',locator:null,source:inventory.source,text:'',tables:[],headings:[],coverage:{tables:0,rows:0,cells:0,facts:0,linkedFacts:0,textCharacters:0,issues:['FINANCIAL_STATEMENTS_SECTION_NOT_LOCATED']}};
  if(!root?.target)return empty;
  let sectionRoot=root.target;

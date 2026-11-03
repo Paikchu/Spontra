@@ -1,7 +1,5 @@
 import { AI_EFFORTS, AI_MODELS, type AiEffort, type AiModel } from "../../../shared/analysis-contract/ai-models-admin.ts";
 import { SEC_FALLBACK_MODEL } from "./retry-policy.ts";
-
-export const REASONING_EFFORTS = AI_EFFORTS;
 export type ReasoningEffort = AiEffort;
 
 /**
@@ -28,6 +26,10 @@ export const AI_TOOLS = {
   explainer: { label: "业务解读", reasoning: "high", model: "reasoning" },
   tree: { label: "业务脑图", reasoning: "high", model: "reasoning" },
   findings: { label: "公司要点", reasoning: "high", model: "reasoning" },
+  /** The valuation research loop: reads filings and registers evidence; the harness scores nothing it cannot cite. */
+  "valuation-research": { label: "估值研究", reasoning: "medium", model: "reasoning" },
+  /** The valuation's assumptions and composition: three coherent scenarios and the written case, over calculated figures. */
+  valuation: { label: "估值评估", reasoning: "high", model: "reasoning" },
   /** The lens agent chooses charts and layout from an already-computed observation. */
   lens: { label: "要点图表", reasoning: "low", model: "reasoning" },
   /** The analysis of one filing on the rail: reads the filing and composes a finding-shaped analysis the harness verifies. */

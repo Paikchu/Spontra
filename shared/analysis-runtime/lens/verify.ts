@@ -22,7 +22,7 @@ export type VerifiedLens = {
 /** Letters and digits only, case-folded: how a quote is matched against its passage, so punctuation and spacing differences do not matter. */
 /** A table's identity in the verified document: its declaration, which does not shift when blocks before it are dropped. */
 export const tableKey = (table: unknown) => JSON.stringify(table);
-export const compactText = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const compactText = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
 /** A quote holds when its words appear, in order, in the passage the library serves for its material now. */
 export function verifyQuote(materials: FindingMaterial[] | undefined, passages: FindingPassage[] | null | undefined, materialId: string, text: string): VerifiedQuote | null {

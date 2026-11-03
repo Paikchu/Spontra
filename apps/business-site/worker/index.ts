@@ -1,7 +1,9 @@
+import { readPriceGuide } from "@/shared/analysis-runtime/valuation/price-guide";
 
+import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
-import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
+import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
@@ -19,13 +21,17 @@ import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
+import {readInsiderTransactionsPage,readInsidersPublication} from "@/shared/analysis-runtime/insiders";
+import type {InsiderTransactionsPage,InsidersPublication} from "@/shared/analysis-contract/insiders";
 import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
-import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
+import {filingFiscalFields,formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
+import {handleTelemetry,type TelemetryNamespace} from "../src/telemetry.ts";
+export {TelemetryStore} from "./telemetry-store.ts";
 import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
@@ -37,7 +43,9 @@ export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_RE
  /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door (docs/stage-agent-design.md §3.1). */
  SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
  /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
- AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>}};
+ AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>};
+ /** Anonymous usage events. The binding stores a hash of the address, never the address itself. */
+ TELEMETRY?:TelemetryNamespace};
 /** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
 export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
  const binding=env.SPONTRA_ANALYSIS;
@@ -57,17 +65,24 @@ export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fet
 }
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
-function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
+function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":status===200?"public, max-age=14400":"no-store"}});}
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<CompleteFlowPublication>{
  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-flow`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
  if(!response.ok)throw new Error("Public source unavailable");
  const publication=await response.json() as CompleteFlowPublication;
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
- if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
+ // The issuer's fiscal calendar labels every period on the page; kept only in its own shape.
+ const issuer=publicIssuer(publication.issuer);
+ if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt,...(issuer?{issuer}:{})};
  const flow=newestPair(selectFlow(publication.flow??undefined,null,ticker));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(issuer?{issuer}:{})};
+}
+function publicIssuer(value:unknown):CompleteFlowPublication["issuer"]|null{
+ if(!value||typeof value!=="object")return null;
+ const {fiscalYearEndMonth:month,name,annualForm:form}=value as {fiscalYearEndMonth?:unknown;name?:unknown;annualForm?:unknown};
+ return {fiscalYearEndMonth:typeof month==="number"&&Number.isInteger(month)&&month>=1&&month<=12?month:null,name:typeof name==="string"&&name.trim()?name.trim().slice(0,120):null,annualForm:typeof form==="string"&&/^(?:10-K|20-F|40-F)$/.test(form)?form:null};
 }
 
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
@@ -134,7 +149,16 @@ export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<stri
   const response=await fetcher(ANALYSIS_ORIGIN+"/api/v1/findings",{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;tickers?:unknown};
-  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&/^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0,40):null;
+  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&TICKER_PATTERN.test(t)).slice(0,40):null;
+ }catch{return null;}
+}
+/** The ticker a company's data is kept under (a second share class reads as the class EDGAR lists first), or null when the read fails. */
+export async function loadPrimaryTicker(ticker:string,fetcher:typeof fetch=fetch):Promise<{ticker:string;listed:boolean}|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/tickers/${encodeURIComponent(ticker)}`,{signal:AbortSignal.timeout(5000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;requested?:unknown;ticker?:unknown;listed?:unknown};
+  return body.schemaVersion==="ticker.v1"&&body.requested===ticker&&typeof body.ticker==="string"&&TICKER_PATTERN.test(body.ticker)?{ticker:body.ticker,listed:body.listed===true}:null;
  }catch{return null;}
 }
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{
@@ -159,17 +183,37 @@ export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch,locale
  }catch{return null;}
 }
 
+/** Insider trades by person, and one page of a person's history; the figures are the filings' own, so no locale applies. */
+export async function loadInsiders(ticker:string,fetcher:typeof fetch=fetch):Promise<InsidersPublication|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/insiders`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;insiders?:unknown};
+  return body.schemaVersion==="insiders-response.v1"&&body.status==="ready"?readInsidersPublication(body.insiders,ticker):null;
+ }catch{return null;}
+}
+export async function loadInsiderTransactions(ticker:string,personKey:string,search:URLSearchParams,fetcher:typeof fetch=fetch):Promise<InsiderTransactionsPage|null>{
+ try{
+  const query=new URLSearchParams();for(const name of ["cursor","limit"]){const value=search.get(name);if(value!=null)query.set(name,value);}
+  const tail=query.size?`?${query}`:"";
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/insiders/${encodeURIComponent(personKey)}/transactions${tail}`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;transactions?:unknown};
+  return body.schemaVersion==="insider-transactions-response.v1"&&body.status==="ready"?readInsiderTransactionsPage(body.transactions,ticker,personKey):null;
+ }catch{return null;}
+}
+
 const ACCESSION=/^\d{10}-\d{2}-\d{6}$/;
-const isPeriodic=(form:string)=>/^(10-Q|10-K|20-F)(\/A)?$/.test(form);
 /** One filing as the map lists it: labels instead of metric keys, text instead of evidence ids, and never the analysis envelope. */
 export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFilingDigest{
  const group=filing.earningsGroup,summary=filing.summary,analysis=filing.analysis;
- const periodic=!!group||isPeriodic(filing.form);
+ const fields=filingFiscalFields(filing);
  const published=analysis?.publication;
  const text=(v:unknown)=>typeof v==="string"?v:"";
  return {
   accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
-  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing,locale):null,
+  periodEnd:fields?.periodEnd??null,periodLabel:fields?formatFilingPeriodLabel(filing,locale):null,
+  fiscalYear:fields?.fiscalYear??null,fiscalQuarter:fields?.fiscalQuarter??null,fiscalYearEndMonth:fields?.fiscalYearEndMonth??null,labelSource:fields?.labelSource,
   date:group?.earningsDate??filing.filingDate,
   sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
   headline:text(summary?.headline)||text(analysis?.headline),
@@ -204,14 +248,13 @@ export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch,local
 /** One filing with its full published report, for the in-page reader; only the documented envelope passes through. */
 export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDetail|null>{
  if(!ACCESSION.test(accession))return null;
- try{
   const query=snapshot?"?"+new URLSearchParams(snapshot):"";
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/filings/${accession}${query}`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
+  if(response.status===404)return null;
+  if(!response.ok)throw new Error("Filing detail source unavailable");
   const detail=await response.json() as PublicFilingDetail;
   if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
   return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing};
- }catch{return null;}
 }
 
 /** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
@@ -240,7 +283,6 @@ function readTable(v:unknown):LibraryTable|null{
  }
  return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
 }
-/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
 /** One filing rail row's analysis, re-checked for shape; null when the row has none (the map shows the filing digest). */
 export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<ItemAnalysis|null>{
  if(!ACCESSION.test(id))return null;
@@ -253,6 +295,7 @@ export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fe
  }catch{return null;}
 }
 
+/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
 export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
  if(!PASSAGE_ID.test(passageId))return null;
  try{
@@ -277,6 +320,29 @@ export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch)
  }catch{return null;}
 }
 
+/**
+ * The valuation assessment and its history, re-validated: the current report and each version through the contract reader, the
+ * version list and evidence snapshots as served. A hidden company answers hidden; an upstream failure reads as null.
+ */
+export async function loadValuation(ticker:string,path:string,params:URLSearchParams,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<Record<string,unknown>|null>{
+ try{
+  const query=path==="/valuation/versions"?`?${new URLSearchParams([...params.entries()].filter(([k])=>k==="before"||k==="limit")).toString()}`:"";
+  const target=path==="/valuation/versions"?`/api/v1/companies/${ticker}/valuation/versions${query}`:inLocale(`/api/v1/companies/${ticker}${path}`,locale);
+  const response=await fetcher(ANALYSIS_ORIGIN+target,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as Record<string,unknown>;
+  if(path==="/valuation"){
+   if(body.schemaVersion!=="valuation-response.v1"||typeof body.availability!=="string")return null;
+   const report=readValuationPublication(body.report,ticker);
+   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
+  }
+  if(path==="/valuation/versions")return body.schemaVersion==="valuation-versions.v1"?{schemaVersion:"valuation-versions.v1",ticker,items:Array.isArray(body.items)?body.items.slice(0,50):[],nextCursor:typeof body.nextCursor==="string"?body.nextCursor:null}:null;
+  if(path.includes("/evidence/"))return body.schemaVersion==="valuation-evidence.v1"&&body.evidence&&typeof body.evidence==="object"?{schemaVersion:"valuation-evidence.v1",ticker,evidence:body.evidence}:null;
+  const report=readValuationPublication(body.report,ticker);
+  return report?{schemaVersion:"valuation-version.v1",ticker,report}:null;
+ }catch{return null;}
+}
+
 /** The company's publication revisions; only known resources at well-formed times pass through. */
 export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Promise<MapRevisions|null>{
  try{
@@ -294,6 +360,16 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
 const READER_COOKIE="spontra_reader";
 const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
 const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
+/** The home digest lists newly added companies, so the edge keeps it half a minute and browsers revalidate it by ETag every time. */
+const HOME_EDGE_SECONDS=30;
+function revalidated(request:Request,response:Response):Response{
+ const etag=response.headers.get("etag");
+ const asked=request.headers.get("if-none-match");
+ if(etag&&asked&&asked.split(",").some(tag=>tag.trim().replace(/^W\//,"")===etag.replace(/^W\//,"")))return new Response(null,{status:304,headers:{...security,etag,"cache-control":"no-cache"}});
+ const out=new Response(response.body,response);
+ out.headers.set("cache-control","no-cache");
+ return out;
+}
 /**
  * The stage's public door (docs/stage-agent-design.md §3.1): same-origin requests only, limited per address, passed
  * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
@@ -301,7 +377,7 @@ const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subt
  */
 export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  const url=new URL(request.url);
- const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,"cache-control":"no-store"}});
+ const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":"no-store"}});
  if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
  const origin=request.headers.get("origin");
  const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
@@ -324,6 +400,7 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  }
  const out=new Response(response.body,{status:response.status,headers:response.headers});
  for(const [name,value] of Object.entries(security))out.headers.set(name,value);
+ if(response.status===429&&!out.headers.has("retry-after"))out.headers.set("retry-after","60");
  out.headers.set("cache-control","no-store");
  return out;
 }
@@ -332,7 +409,18 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  const url=new URL(request.url);
  if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
-  const fetcher=upstream??analysisFetcher(env);
+  if(url.pathname==="/api/business/v1/telemetry"){
+   const response=await handleTelemetry(request,env.TELEMETRY);
+   const headers=new Headers(response.headers);
+   for(const [name,value] of Object.entries(security))headers.set(name,value);
+   if(response.status===429&&!headers.has("retry-after"))headers.set("retry-after","60");
+   headers.set("cache-control","no-store");
+   return new Response(response.body,{status:response.status,headers});
+  }
+  const source=upstream??analysisFetcher(env);
+  let readFailureStatus=0, readRetryAfter:string|null=null;
+  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);if(!response.ok){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
+  const moduleJson=(body:unknown)=>{const response=json(body,readFailureStatus||200);if(readFailureStatus===429)response.headers.set("retry-after",readRetryAfter??"60");return response;};
   if(!fetcher)return json({error:"Read service unavailable"},503);
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
   if(url.pathname==="/api/business/v1/home"){
@@ -340,15 +428,29 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    const locale=homeLocale(url.searchParams);
    if(locale==="reject")return json({error:"Not found"},404);
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
-   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return revalidated(request,cached);
    let digest=null;
    try{
     const response=await fetcher(ANALYSIS_ORIGIN+inLocale("/api/v1/home",locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
     digest=response.ok?parseHomeDigest(await response.json()):null;
    }catch{digest=null;}
-   if(!digest){const failed=json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
-   const response=json(digest);response.headers.set("cache-control","public, max-age=600");
+   if(!digest){const failed=readFailureStatus?moduleJson(unavailableHome()):json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
+   const response=json(digest);response.headers.set("cache-control",`public, max-age=${HOME_EDGE_SECONDS}`);response.headers.set("etag",`W/"${(await sha256Hex(JSON.stringify(digest))).slice(0,32)}"`);
    if(cache)ctx.waitUntil(cache.put(key,response.clone()));
+   return revalidated(request,response);
+  }
+  // Which share class a ticker's data is kept under, so a link to the other class opens the same company.
+  const named=url.pathname.match(/^\/api\/business\/v1\/tickers\/([A-Z][A-Z0-9.-]{0,11})$/);
+  if(named){
+   if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
+   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+   // Only an answer the issuer directory gave is kept; one given before the directory was read is asked again.
+   const key=new Request(`${url.origin}${url.pathname}?listed=1`,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const answer=await loadPrimaryTicker(named[1]!,fetcher);
+   if(!answer){const failed=json({error:"Read service unavailable"},readFailureStatus===429?429:503);failed.headers.set("cache-control","no-store");return failed;}
+   const response=json({schemaVersion:"ticker.v1",requested:named[1],ticker:answer.ticker});
+   response.headers.set("cache-control",answer.listed?"public, max-age=86400":"no-store");
+   if(cache&&answer.listed)ctx.waitUntil(cache.put(key,response.clone()));
    return response;
   }
   if(url.pathname==="/api/business/v1/findings"){
@@ -356,15 +458,15 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
    const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
    const tickers=await loadFindingsIndex(fetcher);
-   const response=json({schemaVersion:"findings-index.v1",status:tickers?"ready":"unavailable",tickers:tickers??[]});
-   if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
+   const response=moduleJson({schemaVersion:"findings-index.v1",status:tickers?"ready":"unavailable",tickers:tickers??[]});
+   if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
@@ -372,33 +474,54 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
   const locale:Locale|null=isLocale(lang)&&lang!=="en"?lang:null;
-  // A second share class reads as the class the data is kept under.
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+  // One browser request; resource caches retain their individual revision and locale keys.
+  if(match[2]==="/opening"){
+   const revisions=await loadRevisions(match[1],fetcher)??{};
+   const entries=await Promise.all(MAP_RESOURCES.map(async resource=>{
+    const part=new URL(url.origin+`/api/business/v1/companies/${match[1]}${resource==="company"?"":`/${resource}`}`);
+    if(lang)part.searchParams.set("lang",lang);
+    if(revisions[resource])part.searchParams.set("rev",revisions[resource]!);
+    try{
+     const response=await handle(new Request(part),{...env,PUBLIC_READ_LIMIT:{limit:async()=>({success:true})}},ctx,fetcher,cache);
+     return [resource,{status:response.status,body:await response.json(),retryAfter:response.headers.get("retry-after")}];
+    }catch{return [resource,{status:503,body:null}];}
+   }));
+   const response=json({revisions,resources:Object.fromEntries(entries)});
+   response.headers.set("cache-control","no-store");
+   return response;
+  }
   // What changed since the page loaded: answered fresh every time, never from a cache.
   if(match[2]==="/revision"){const revisions=await loadRevisions(match[1],fetcher);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:revisions??{}},revisions?200:503);response.headers.set("cache-control","no-store");return response;}
-  const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+  const privateRead=match[2]==="/insiders"||match[2]?.startsWith("/insiders/")||match[2]?.startsWith("/items/");
+  const key=new Request(url.href,{method:"GET"});const cached=privateRead?undefined:await cache?.match(key);if(cached)return cached;
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
-   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
-   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=json({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
+   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
+   if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
+   if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
-   if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
+   // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
+   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);
-    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
+    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
+   // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
+   {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
-  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=json({...flow,explainer,guidance,tree});
-   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
-   const cacheable=flow.status==="ready";
+  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,guidance,tree});
+   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours (public, max-age=14400).
+   const cacheable=flow.status==="ready"&&!readFailureStatus;
    if(!cacheable)response.headers.set("cache-control","no-store");
-   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
+   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503);}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

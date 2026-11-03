@@ -292,6 +292,17 @@ export class D1CompanyAnalysisRepository {
     `).bind(now, analysisId, workflowInstanceId).run();
   }
 
+  /**
+   * A recovery whose Workflow ended without taking the run (it refused the company, or another start owned it): the
+   * attempt is spent, so the next recovery has a new id and waits its back-off instead of finding the ended one again.
+   */
+  async consumeRecovery(analysisId: string, expectedUpdatedAt: string, now: string): Promise<void> {
+    await this.database.prepare(`
+      UPDATE company_analysis_runs SET recovery_count = COALESCE(recovery_count, 0) + 1, updated_at = ?, error_code = COALESCE(error_code, 'RECOVERY_STOPPED')
+      WHERE analysis_id = ? AND updated_at = ? AND status IN ('failed', 'insufficient_data')
+    `).bind(now, analysisId, expectedUpdatedAt).run();
+  }
+
   async upsertRun(update: CompanyAnalysisRunUpdate): Promise<void> {
     await this.database.prepare(`
       INSERT INTO company_analysis_runs (

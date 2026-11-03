@@ -3,6 +3,7 @@ import {
   analysisErrorStatus,
   type AnalysisErrorCode,
 } from "./contract-support/errors.ts";
+import { sha256 as sha256Hex } from "../sha256.ts";
 
 /**
  * Response construction for the read API. One place decides status, cache policy and validators,
@@ -28,12 +29,14 @@ export function errorResponse(code: AnalysisErrorCode, message: string, extraHea
 }
 
 /**
- * Builds a data response, with a validator derived from the **entire** serialized body.
+ * Builds a data response, with a validator derived from the entire serialized body by default.
  *
  * Deriving the ETag from the whole body rather than from a data version matters here: these
  * payloads carry run-state metadata that changes while the underlying report does not, and an
  * ETag that ignored it would let a client hold "a newer run is queued" long after the run
  * finished.
+ * A caller may supply validator content to omit response-generation metadata that does not
+ * change the resource's meaning; all substantive fields must remain in that content.
  *
  * Every response is `private`: the business map decides what it caches and for how long, so no
  * shared cache between the two Workers may hold a copy.
@@ -42,9 +45,10 @@ export async function dataResponse(
   request: Request,
   payload: unknown,
   policy: ReadCachePolicy = "cacheable",
+  validatorPayload: unknown = payload,
 ): Promise<Response> {
   const body = JSON.stringify(payload);
-  const etag = `W/"${await sha256Hex(body)}"`;
+  const etag = `W/"${await sha256Hex(validatorPayload === payload ? body : JSON.stringify(validatorPayload))}"`;
   const headers: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
     "cache-control": policy === "cacheable"
@@ -66,9 +70,4 @@ function matchesEtag(header: string | null, etag: string): boolean {
   if (header.trim() === "*") return true;
   return header.split(",").map((candidate) => candidate.trim()).some((candidate) =>
     candidate === etag || candidate === etag.replace(/^W\//, ""));
-}
-
-export async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -54,8 +54,16 @@ export function form4XmlUrl(archiveRoot: string, primaryDocument: string): strin
   return `${archiveRoot}/${primaryDocument.replace(/^xsl[^/]*\//i, "")}`;
 }
 
+/** A CIK as EDGAR compares it: digits without the leading zeros some documents pad it with. */
+export const normalizeCik = (cik: string | number | null | undefined) => cik == null ? null : String(cik).trim().replace(/^0+(?=\d)/, "") || null;
+
 export function parseForm4(xml: string): InsiderTransaction | null {
   if (!/<ownershipDocument/i.test(xml)) return null;
+  // The company whose shares moved. EDGAR lists a filing under every party to it, so a holder that is itself a filer
+  // (Berkshire reporting its sales of DaVita) files Form 4s that sit in its own submission list but are about another issuer.
+  const issuer = blocks(xml, "issuer")[0] ?? "";
+  const issuerCik = normalizeCik(field(issuer, "issuerCik"));
+  const issuerTradingSymbol = field(issuer, "issuerTradingSymbol")?.toUpperCase() ?? null;
   const owner = blocks(xml, "reportingOwner")[0] ?? "";
   const ownerCik = field(owner, "rptOwnerCik")?.replace(/^0+/, "") ?? null;
   const ownerName = field(owner, "rptOwnerName");
@@ -69,8 +77,10 @@ export function parseForm4(xml: string): InsiderTransaction | null {
   const sum = (code: InsiderTransactionCode, ad: "A" | "D") => {
     const picked = lines.filter(l => !l.derivative && l.code === code && l.acquiredDisposed === ad);
     const shares = picked.reduce((s, l) => s + l.shares, 0);
-    const money = picked.reduce((s, l) => s + l.shares * (l.price ?? 0), 0);
-    return shares > 0 ? { shares, money, averagePrice: money / shares } : null;
+    const priced = picked.filter(l => l.price != null);
+    const pricedShares = priced.reduce((s, l) => s + l.shares, 0);
+    const money = priced.length === picked.length ? priced.reduce((s, l) => s + l.shares * l.price!, 0) : null;
+    return shares > 0 ? { shares, pricedShares, money, averagePrice: money == null ? null : money / shares } : null;
   };
   const sold = sum("S", "D"), bought = sum("P", "A");
   const exercised = lines.filter(l => !l.derivative && l.code === "M" && l.acquiredDisposed === "A").reduce((s, l) => s + l.shares, 0);
@@ -80,13 +90,13 @@ export function parseForm4(xml: string): InsiderTransaction | null {
   const adopted = footnotes.map(f => /adopted\s+(?:on\s+)?([A-Z][a-z]+ \d{1,2}, \d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/.exec(f)?.[1]).find(Boolean) ?? null;
   const planFlag = flag(field(xml, "aff10b5One"));
   return {
-    ownerCik, ownerName, title: field(relationship, "officerTitle"),
+    issuerCik, issuerTradingSymbol, ownerCik, ownerName, title: field(relationship, "officerTitle"),
     isDirector: flag(field(relationship, "isDirector")) === true, isOfficer: flag(field(relationship, "isOfficer")) === true, isTenPercentOwner: flag(field(relationship, "isTenPercentOwner")) === true,
     // Before the 2023 form change there was no box; a footnote naming a 10b5-1 plan still counts.
     rule10b51: planFlag ?? (footnotes.some(f => /10b5-1/i.test(f)) ? true : null),
     planAdoptedOn: adopted ? isoDate(adopted) : null,
     securityTitle: field(blocks(xml, "nonDerivativeTransaction")[0] ?? xml, "securityTitle") ?? "Common Stock",
-    lines, sold: sold && { shares: sold.shares, proceeds: sold.money, averagePrice: sold.averagePrice }, bought: bought && { shares: bought.shares, cost: bought.money, averagePrice: bought.averagePrice },
+    lines, sold: sold && { shares: sold.shares, proceeds: sold.money, averagePrice: sold.averagePrice, pricedShares: sold.pricedShares }, bought: bought && { shares: bought.shares, cost: bought.money, averagePrice: bought.averagePrice, pricedShares: bought.pricedShares },
     exercised, heldAfter, footnotes,
   };
 }

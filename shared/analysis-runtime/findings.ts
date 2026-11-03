@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
-import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
+import type { FundamentalMetricKey, FundamentalsUnavailableReason, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
 import { DERIVED_METRICS, EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type DerivedMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
 import type { EventsPublication } from "../analysis-contract/events.ts";
 import type { PeersPublication } from "../analysis-contract/peers.ts";
@@ -13,6 +13,7 @@ import type { LensDocument } from "../analysis-contract/lens.ts";
 import { lensDocumentSchemaFor } from "./lens/schema.ts";
 import { scheduleBucketAt, scheduleBucketLabel, scheduleTotalAt } from "./schedules.ts";
 import type { Locale } from "./locale.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 /* ---------- Schema ---------- */
 
@@ -38,7 +39,7 @@ const baseRef = z.union([
   z.object({ nodeId: text(200) }),
   z.object({ guidanceId: text(200) }),
   z.object({ rpoBucket: z.number().int().min(0).max(11) }),
-  z.object({ peer: z.object({ ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
+  z.object({ peer: z.object({ ticker: z.string().regex(TICKER_PATTERN), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
   z.object({ passageCell: z.object({ passageId: z.string().regex(/^[a-z0-9]{8,64}$/), row: z.number().int().min(0).max(200), col: z.number().int().min(0).max(40) }) }),
   z.object({ event: z.object({ id: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), field: z.enum(EVENT_FIELDS) }) }),
   z.object({ schedule: z.object({ kind: z.enum(["debtMaturities", "leasePaymentsDue", "purchaseObligations"]), bucket: z.union([z.number().int().min(0).max(5), z.literal("total")]) }) }),
@@ -79,7 +80,7 @@ const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   findings: z.array(finding).max(8),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
@@ -104,14 +105,28 @@ const fundamentalsSchema = z.object({ series: z.array(z.object({
   metricKey: z.enum(FUNDAMENTAL_KEYS), label: text(80), category: z.enum(["income_statement", "cash_flow", "balance_sheet", "per_share", "valuation", "ratio"]),
   unitFamily: z.enum(["currency", "percent", "per_share", "shares", "multiple"]), currency: z.string().max(8), available: z.boolean(),
   points: z.array(z.object({ periodEnd: date, valueDecimal: z.string().max(40).nullable(), sourceAccession: z.string().max(40).optional() })).max(64),
+  annual: z.array(z.object({ periodStart: date, periodEnd: date, valueDecimal: z.string().max(40), sourceAccession: z.string().max(40).optional() })).max(8).optional(),
 })).max(64) });
+/** A series this build does not know (a newer Spontra Analysis catalogue) is left out instead of failing the whole read. */
+const knownSeries = (value: unknown) => {
+  const body = value as { series?: unknown } | null;
+  return body && Array.isArray(body.series) ? { ...body, series: body.series.filter(s => FUNDAMENTAL_KEYS.includes((s as { metricKey?: FundamentalMetricKey } | null)?.metricKey as FundamentalMetricKey)) } : value;
+};
 
-/** The public subset of a fundamentals response: SEC-sourced series and points, nothing about refresh state. */
+const UNAVAILABLE_REASONS: readonly FundamentalsUnavailableReason[] = ["annual_only", "no_quarterly_values"];
+
+/**
+ * The public subset of a fundamentals response: SEC-sourced series and points, nothing about refresh state. An
+ * unavailable response (no quarterly income-statement or cash-flow value) keeps its series, which may still hold
+ * year-end balances, and says why no metric can be shown.
+ */
 export function readFindingFundamentals(value: unknown, ticker: string): FindingFundamentals | null {
-  const body = value as { ticker?: unknown; source?: unknown; status?: unknown } | null;
-  if (!body || body.ticker !== ticker || body.source !== "sec_xbrl" || body.status !== "ready") return null;
-  const parsed = fundamentalsSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  const body = value as { ticker?: unknown; source?: unknown; status?: unknown; unavailableReason?: unknown } | null;
+  if (!body || body.ticker !== ticker || body.source !== "sec_xbrl") return null;
+  const unavailable = body.status === "unavailable" && UNAVAILABLE_REASONS.includes(body.unavailableReason as FundamentalsUnavailableReason) ? body.unavailableReason as FundamentalsUnavailableReason : null;
+  if (body.status !== "ready" && !unavailable) return null;
+  const parsed = fundamentalsSchema.safeParse(knownSeries(value));
+  return parsed.success ? { ...parsed.data, ...(unavailable ? { unavailable: { reason: unavailable } } : {}) } : null;
 }
 
 export function readFindingsPublication(value: unknown, ticker: string): FindingsPublication | null {
@@ -129,9 +144,11 @@ export function readFindingsPublication(value: unknown, ticker: string): Finding
 /* ---------- Resolution ---------- */
 
 /** Everything a finding may point at, as the page already holds it. Absent data resolves to nothing, never to zero. */
-export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
+export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available" | "annual"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
 /** The part of a fundamentals response findings read; a public copy stripped to these fields is enough. */
-export type FindingFundamentals = { series: FindingFundamentalSeries[] };
+export type FindingFundamentals = { series: FindingFundamentalSeries[];
+  /** No quarterly metric can be shown, and why (`PublicFundamentalsResponse.unavailableReason`). */
+  unavailable?: { reason: FundamentalsUnavailableReason } };
 export type FindingData = {
   quarters: BusinessFlowQuarter[];
   history: RevenueHistory | null;
@@ -178,8 +195,9 @@ const DAY = 86_400_000;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
-/** The calendar month end `months` earlier; fiscal quarters are matched to it within twenty days. */
-export const shiftPeriod = (periodEnd: string, months: number) => monthEnd(monthIndex(periodEnd) + months);
+/** Shift from the nominal fiscal month: first-week closes belong to the previous month in 52/53-week calendars.
+ * Match quarters within the existing twenty-day window around the resulting month end. */
+export const shiftPeriod = (periodEnd: string, months: number) => monthEnd(monthIndex(periodEnd) - (Number(periodEnd.slice(8, 10)) <= 7 ? 1 : 0) + months);
 const finite = (v: unknown): number | null => { const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN; return Number.isFinite(n) ? n : null; };
 const sum = (lines: Array<{ value: string | number }>) => lines.reduce((total, line) => total + Number(line.value), 0);
 
@@ -434,7 +452,7 @@ function eventAt(data: FindingData, id: string, field: EventField, span: Finding
   const t = event?.insider;
   if (!event || !t) return null;
   const pick: Record<EventField, [number | null | undefined, ValueUnit]> = {
-    sharesSold: [t.sold?.shares, "shares"], proceeds: [t.sold?.proceeds, "USD"], averagePrice: [t.sold?.averagePrice ?? t.bought?.averagePrice, "per_share"],
+    sharesSold: [t.sold?.shares, "shares"], proceeds: [t.sold?.proceeds, "USD"], averagePrice: [t.sold ? t.sold.averagePrice : t.bought?.averagePrice, "per_share"],
     sharesBought: [t.bought?.shares, "shares"], cost: [t.bought?.cost, "USD"], exercised: [t.exercised, "shares"], heldAfter: [t.heldAfter, "shares"],
   };
   const [value, unit] = pick[field];
@@ -726,7 +744,9 @@ export function proseFigures(prose: string): Array<{ value: number; tolerance: n
     const number = Number(raw!.replace("−", "-").replace(/,/g, ""));
     if (!Number.isFinite(number)) continue;
     const after = prose.slice(match.index! + match[0].length);
-    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[(/^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "").toLowerCase()] ?? 1;
+    // A range writes its unit once, after the last number: "$90–95B" and "$2 to $3 billion" scale both ends.
+    const unit = /^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^\s?(?:[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
+    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
     if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
     const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;
     out.push({ value: Math.abs(number * scale), tolerance: 0.5 * 10 ** -digits * scale, raw: raw!.replace(/,/g, "").replace("−", ""), scaled: scale !== 1 });

@@ -1,11 +1,13 @@
 import {AnalysisRequestError} from '../read-api/contract-support/errors.ts';
 import {publicFlowSchema} from '../../../../shared/analysis-runtime/financial-data/schema.ts';
+import {edgarArchiveCik} from '../../../../shared/analysis-runtime/sec-sources.ts';
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import type {PublicBusinessFlow,FlowAmount,BusinessSegment} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import {historyForIssuer,readRevenueHistory} from './history.ts';
 import {historyFromSnapshot,mergeHistory,readHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Admin list metadata comes from the same verified publications as the detail view, never an
  * in-progress/failed attempt or a newly discovered filing that has not yielded usable data. */
@@ -48,7 +50,7 @@ export async function readCompletePublication(db:D1Database,cik:string):Promise<
 
 /** Data-only public projection: no AI payload, no staged partial quarters, no read-side refresh. */
 export async function readCompletePublicationForTicker(db:D1Database,ticker:string):Promise<CompleteFlowPublication>{
- ticker=ticker.trim().toUpperCase();if(!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
+ ticker=ticker.trim().toUpperCase();if(!TICKER_PATTERN.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
  // Scalar fallbacks preserve source priority without exceeding D1's compound SELECT limit.
  const resolved=await db.prepare(`SELECT COALESCE(
   (SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1),
@@ -81,10 +83,7 @@ async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:str
  * after checking every source and all amount provenance; the general flow validator stays strict. */
 export function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicBusinessFlow|null{
  if(!/^\d{10}$/.test(cik)||Number(cik)<=0)return null;
- const sameIssuer=(value:string)=>{try{
-  const url=new URL(value),sourceCik=url.pathname.match(/^\/Archives\/edgar\/data\/(\d{1,10})\//)?.[1];
-  return url.protocol==='https:'&&['sec.gov','www.sec.gov'].includes(url.hostname)&&!url.username&&!url.password&&!url.port&&!!sourceCik&&Number(sourceCik)===Number(cik);
- }catch{return false;}};
+ const sameIssuer=(value:string)=>edgarArchiveCik(value)===Number(cik);
  for(const quarter of flow.quarters){
   if(!quarter.sources.length||!quarter.sources.every(source=>sameIssuer(source.url)))return null;
   const sourceIds=new Set(quarter.sources.map(source=>source.id));

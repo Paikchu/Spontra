@@ -23,7 +23,15 @@
 
 ## 访问
 
-后台暂不设密码，打开即可使用。`spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
+后台由 Cloudflare Access 保护：`spontra-admin` 的 Worker 变量 `ACCESS_TEAM_DOMAIN`（如 `myteam.cloudflareaccess.com`）与 `ACCESS_AUD`（Access 应用的 AUD 标签）都设置后，Admin Worker 用团队域名 `/cdn-cgi/access/certs` 的公钥（RS256，缓存 10 分钟）校验每个 `/api/admin/*` 请求的 `Cf-Access-Jwt-Assertion`，核对签名、`iss`、`aud`、`exp`/`nbf`；缺少或无效令牌返回 401 `{"error":"需要登录"}`，取不到公钥返回 503，均不转发。两个值任一未设置时后台保持开放（打开即可使用），`/api/` 响应带 `x-admin-auth: unconfigured`。两个值都是公开标识，不是密钥，也不需要新增 Secret。
+
+启用步骤：
+
+1. Cloudflare Zero Trust → Access → Applications 新建 Self-hosted 应用，域名填 `spontra-admin` 的全部访问地址（含 `spontra-admin.<子域>.workers.dev` 及任何自定义域名），按需配置允许登录的策略。也可在 Workers → `spontra-admin` → Settings → Domains & Routes 为 `workers.dev` 开启 Access。
+2. 在应用的 Overview 复制 Application Audience (AUD) Tag；团队域名为 Zero Trust → Settings 中的 Team domain（`<团队>.cloudflareaccess.com`）。
+3. Workers → `spontra-admin` → Settings → Variables and Secrets 添加纯文本变量 `ACCESS_TEAM_DOMAIN` 与 `ACCESS_AUD`。不写入 `wrangler.jsonc`；自动发布以 `wrangler deploy --keep-vars` 保留控制台设置的变量。
+
+`spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
 
 Spontra Analysis 默认入口的 `/admin/*` 不变：仍需 `POST /admin/session`（`x-report-admin-password`）换取 8 小时签名会话，`REPORT_ADMIN_RATE_LIMIT` 限制尝试次数。
 
@@ -33,11 +41,11 @@ Admin Worker：`financials`、`business-map`、`ai`、`library` 的白名单路�
 
 Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认入口的管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
-后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `SPONTRA_ANALYSIS`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
+后台代码位于 `apps/admin/`，部署为 `spontra-admin`，绑定 `ASSETS`、`SPONTRA_ANALYSIS`（`spontra-analysis` 的 `AdminGateway` 入口）和 `BUSINESS_SITE`（`spontra-business-map`，供「使用情况」页读取）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，白名单中的「地图」链接指向 `spontra-business-map`。
 
 推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 默认入口的管理接口仍要求签名会话。
 
-本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
+后台登录见上文「访问」（Cloudflare Access，仅作用于 admin Worker，主站保持公开）。仅推送成功不能证明线上部署成功。
 
 ## 财报数据维护
 
@@ -95,8 +103,16 @@ Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认
 
 白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每家公司每个功能一个开关：开 = 生成并展示，关 = 不再生成且对读者隐藏（已生成的内容保留在库里）。表头每列旁是该功能的全局生成开关，只暂停生成，不影响展示。生成进度不放在行里：展开一行，顶部四块显示各功能的状态（正在生成、排队中、上次生成失败、已生成及时间、等待生成、已关闭、已全局暂停），状态取自 SEC 报告任务、AI 运行记录与 `pipeline_due` 中的待办。设计与取舍见 [whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
 
-选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Spontra Analysis 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
+选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），是各功能唯一的公司名单：没有记录的公司就是关闭；部署变量只保留全局开关（`SEC_AI_ENABLED`、`BUSINESS_TREE_ENABLED`、`VALUATION_ENABLED`），不列公司（2026-11-02 起，migration 0043 把原 `SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS` 默认名单写成显式记录；线上若残留这些变量也会被忽略）。白名单同理，`financial_company_settings` 取代 `SEC_DATA_TICKERS`。Spontra Analysis 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS`、`SEC_DATA_TICKERS` 只在进程内承载解析结果。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
 
 每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings、events 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`、`events`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
 
 接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{on}`）、`POST /api/admin/business-map/features/:feature`（`{on}`，全局生成）。
+
+## 估值输入（2026-11-02）
+
+白名单详情底部的"估值输入"区按公司维护三项：**可比公司**（逗号或空格分隔的代码，留空则按业务标签选择可比公司）、**管理层目标**（`{asOf, sources, targets}` JSON，留空则没有管理层情景）和**方法更新时自动重估**（勾选后，估值方法版本升级会在材料未变时重估该公司；不勾选则保留旧报告直到新一期材料或手动运行）。保存时由服务端校验，未通过时在原处显示原因。财年结束月份取自公司财报，不由人工填写；`asOf` 早于研究日 540 天以上的目标不再使用。
+
+存于 `valuation_company_inputs`（migration 0042，原 `valuation/curated/*.json` 的内容原样迁入）。保存会发出 `feature.settings`（`detail.feature = valuation`），管理层目标变化会改变估值输入指纹，从而触发重估；只改可比公司不会触发，需要在 AI 运行页手动运行。接口：`GET` / `POST /api/admin/business-map/companies/:ticker/valuation-inputs`（`{peers, targets, reassess}`，正文上限 64 KB）。
+
+公司名称与股票类别不再写在代码里：EDGAR 的交易所目录（`catalog:issuer-directory:v2`）给出代码对应的发行人与 CIK，同一发行人的第二类股票按 EDGAR 先列出的类别读取（如 GOOG → GOOGL）；Nasdaq Trader 的上市目录（`catalog:listings:v1`）提供公司名称与是否 ETF。两份目录由 SEC 发现任务每天最多读取一次，其余读取只读存储副本。

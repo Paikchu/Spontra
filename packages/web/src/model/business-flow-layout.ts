@@ -1,6 +1,6 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { FinancialGraph, SankeyNode } from "./business-flow-sankey";
-import { compactMoney } from "@/shared/analysis-runtime/locale";
+import { compactMoney, compactNumber, MINUS } from "@/shared/analysis-runtime/locale";
 import { getLocale } from "@/packages/web/src/i18n/core";
 import { flowWords } from "./business-flow-model";
 
@@ -217,11 +217,9 @@ const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: 
 /** Short label for the diagram only; exact amounts stay in the ledger. Chinese counts in 万 and 亿 ("757亿美元"). */
 export function compactFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
   if (value == null || !Number.isFinite(value)) return flowWords.notDisclosed;
-  const amount = value * quarter.scale, abs = Math.abs(amount);
+  const amount = value * quarter.scale;
   if (getLocale() === "zh-CN") return compactMoney(amount, quarter.currency, "zh-CN");
-  const [divisor, suffix] = abs >= 1e12 ? [1e12, "T"] : abs >= 1e9 ? [1e9, "B"] : abs >= 1e6 ? [1e6, "M"] : abs >= 1e3 ? [1e3, "K"] : [1, ""];
-  const digits = abs / divisor >= 100 || !suffix ? 0 : 1;
-  const text = (abs / divisor).toFixed(digits) + suffix;
+  const text = compactNumber(Math.abs(amount), "en");
   const symbol = symbols[quarter.currency];
-  return (amount < 0 ? "−" : "") + (symbol ? symbol + text : `${text} ${quarter.currency}`);
+  return (amount < 0 && /[1-9]/.test(text) ? MINUS : "") + (symbol ? symbol + text : `${text} ${quarter.currency}`);
 }

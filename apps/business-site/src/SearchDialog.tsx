@@ -4,6 +4,7 @@ import { messages, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { CompanyLogo } from "./CompanyMark";
 import { searchRows, tickerToOpen, type CatalogCompany, type CatalogStatus, type SearchRow } from "./home-search";
+import { track } from "./track";
 
 const m = messages({
   open: "Open", current: "Current", recent: "Recently viewed", popular: "Popular", companies: "Companies",
@@ -74,7 +75,9 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false,
 
   function choose(index: number) {
     const ticker = tickerToOpen(options[index]);
-    if (ticker) pick(ticker);
+    const q = query.slice(0, 40);
+    if (q || ticker) track("search_submit", { q, results: companyCount, empty: q && companyCount === 0 ? 1 : 0 });
+    if (ticker) { track("search_select", { ticker }); pick(ticker); }
   }
 
   return <div className="search-panel" data-inline={inline || undefined} data-open={open || undefined}

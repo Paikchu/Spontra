@@ -1,8 +1,7 @@
-import { companyName } from "../catalog/security-directory.ts";
+import { securities } from "../catalog/issuer-directory.ts";
 import { shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { flowForIssuer } from "../financial-data/publication.ts";
 import { historyForIssuer } from "../financial-data/history.ts";
-import { authoredFindings } from "../findings/read.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenueReason } from "../../../../shared/analysis-contract/home.ts";
@@ -10,36 +9,34 @@ import type { RevenueHistory } from "../../../../shared/analysis-contract/revenu
 import { checkCompleteFlow, newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { publicFlowSchema } from "../../../../shared/analysis-runtime/financial-data/schema.ts";
 import { readHistory } from "../../../../shared/analysis-runtime/financial-data/history.ts";
-import { canonicalTicker, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { canonicalTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
+import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import { localize, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
+import { fiscalFields, readFiscalFocus } from "./fiscal-periods.ts";
 
 /**
- * 【假设】Popular tickers until an admin list exists. Names that are not covered are dropped.
+ * Popular: the covered companies with findings, the freshest filing first, then the rest the same way.
  * 【假设】Chinese names, extra aliases and sectors are not in the filings. Leave a ticker out
  * and the page searches its English name only, and hides the sector filter while every sector is null.
- * 【假设】`fiscalLabel` is the calendar quarter of the period end (2026-06-30 → "2026 Q2"), not the issuer's fiscal calendar.
+ * `fiscalLabel` / `calendarLabel` stay the calendar quarter of the period end (2026-07-26 → "2026 Q3") for older clients.
+ * `fiscalYear` / `fiscalQuarter` are the issuer's own quarter, from the fiscal-year-end month and any cached DEI focus.
  * 【假设】Amounts stay in the filing currency. No exchange rate is applied.
  */
-export const HOME_POPULAR_TICKERS = ["NBIS", "META", "TSM", "CRWV", "TTMI"];
 export type HomeCatalogNote = { nameZh?: string; aliases?: string[]; sector?: string };
 export const HOME_CATALOG_NOTES: Record<string, HomeCatalogNote> = {};
 
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const MAX_COMPANIES = 40;
 const NAME_STOP = new Set(["INC", "INCORPORATED", "CORPORATION", "CORP", "LTD", "LIMITED", "PLC", "GROUP", "COMPANY", "HOLDINGS", "THE", "AND", "CLASS", "COMMON", "STOCK", "SHARES", "NV", "SA", "AG", "CO"]);
 
-export type HomeDigestEnv = FeatureDefaultsEnv & { SEC_DATA_TICKERS?: string };
+export type HomeDigestEnv = FeatureDefaultsEnv;
 
 type Point = { periodEnd: string; value: number; currency: string; filedAt: string | null };
 
-/** Calendar quarter of a period end. See HOME_CATALOG_NOTES for the assumption. */
+/** Calendar quarter of a period end. Older clients still read this; the page labels the issuer quarter. */
 export function fiscalLabel(periodEnd: string): string {
-  const [year, month] = periodEnd.split("-");
-  const m = Number(month);
-  if (!year || !(m >= 1 && m <= 12)) return periodEnd;
-  return `${year} Q${Math.ceil(m / 3)}`;
+  return calendarLabel(periodEnd);
 }
 
 function baseDecimal(value: string, scale: number): string | null {
@@ -96,6 +93,30 @@ function historyOf(payload: string | undefined, ticker: string, cik: string | nu
   return readHistory(raw, ticker) ?? (cik ? historyForIssuer(raw, cik, ticker) : null);
 }
 
+/** Revenue, cost of revenue and net income of one quarter, as the home row draws them; null without revenue and net. */
+function statementOf(quarter: PublicBusinessFlow["quarters"][number]): HomeCompany["statement"] {
+  const figure = (key: "revenue" | "cost" | "net") => { const raw = quarter.figures[key]?.value; return raw == null ? null : baseDecimal(raw, quarter.scale); };
+  const revenue = figure("revenue"), net = figure("net");
+  if (revenue == null || net == null || !(Number(revenue) > 0)) return null;
+  return { currency: quarter.currency, revenue, cost: figure("cost"), net };
+}
+
+type MarginRow = { ticker: string; periodEnd: string | null; currency: string | null; revenue: string | number | null; operating: string | number | null };
+const marginPct = (row: Pick<MarginRow, "revenue" | "operating">) => {
+  const revenue = Number(row.revenue), operating = Number(row.operating);
+  return row.revenue != null && row.operating != null && Number.isFinite(revenue) && Number.isFinite(operating) && revenue > 0 ? Math.round(operating / revenue * 10_000) / 100 : null;
+};
+
+/** The latest quarter's operating margin and the year-ago quarter's (365 days back, 20 days either way), same currency. */
+function operatingMarginOf(latest: PublicBusinessFlow["quarters"][number], rows: MarginRow[]): HomeCompany["operatingMargin"] {
+  const pct = marginPct({ revenue: latest.figures.revenue?.value ?? null, operating: latest.figures.operating?.value ?? null });
+  if (pct == null) return null;
+  const target = Date.parse(latest.periodEnd) - 365 * 86_400_000;
+  const yearAgo = rows.filter(row => row.periodEnd && row.currency === latest.currency && Math.abs(Date.parse(row.periodEnd) - target) <= 20 * 86_400_000 && marginPct(row) != null)
+    .sort((a, b) => Math.abs(Date.parse(a.periodEnd!) - target) - Math.abs(Date.parse(b.periodEnd!) - target))[0];
+  return { pct, yearAgoPct: yearAgo ? marginPct(yearAgo) : null };
+}
+
 function pointsOf(flow: PublicBusinessFlow | null, history: RevenueHistory | null): Point[] {
   const byEnd = new Map<string, Point>();
   for (const quarter of history?.quarters ?? []) {
@@ -126,7 +147,7 @@ function prior(points: Point[], latest: Point, targetDays: number, slackDays: nu
 }
 
 function findingsOf(raw: unknown, ticker: string, table: TranslationTable | null): FindingsPublication | null {
-  const publication = (raw ? readFindingsPublication(raw, ticker) : null) ?? authoredFindings(ticker);
+  const publication = raw ? readFindingsPublication(raw, ticker) : null;
   return publication ? localize("findings", publication, table) : null;
 }
 
@@ -141,25 +162,17 @@ function projectFindings(publication: FindingsPublication | null): { counts: Hom
   return { counts, top };
 }
 
-function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: number }>): Set<string> {
-  let enabled: Set<string>;
-  try { enabled = financialPolicy({ SEC_DATA_TICKERS: env.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: env.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" }).dataTickers; }
-  catch { enabled = new Set(); }
-  for (const row of rows) {
-    const ticker = canonicalTicker(row.ticker);
-    if (!TICKER.test(ticker)) continue;
-    if (row.enabled) enabled.add(ticker);
-    else enabled.delete(ticker);
-  }
-  return enabled;
+/** The whitelist as the admin keeps it: the companies switched on, and nothing a deployment lists. */
+function dataTickers(rows: Array<{ ticker: string; enabled: number }>): Set<string> {
+  return new Set(rows.filter(row => row.enabled).map(row => canonicalTicker(row.ticker)).filter(ticker => TICKER_PATTERN.test(ticker)));
 }
 
 /**
  * Covered companies for the public homepage, from publications already stored.
  * Read-only: no model call, no SEC fetch, no write.
  */
-export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, issuers, settings, translations, findingsShown] = await Promise.all([
+export async function readHomeDigest(db: D1Database, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
+  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
@@ -167,8 +180,18 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     db.prepare(`SELECT substr(cache_key, 24) ticker, payload FROM sec_cache WHERE cache_key >= 'admin:financial-issuer:' AND cache_key < 'admin:financial-issuer;'`).all<{ ticker: string; payload: string }>(),
     db.prepare(`SELECT ticker, enabled FROM financial_company_settings`).all<{ ticker: string; enabled: number }>().catch(() => ({ results: [] as Array<{ ticker: string; enabled: number }> })),
     locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
-    shownFilter(db, env, "findings"),
+    shownFilter(db, "findings"),
+    readFiscalFocus(db),
+    // The older quarters assembled behind each publication, only the figures an operating margin needs.
+    db.prepare(`SELECT substr(c.cache_key, 20) ticker, json_extract(q.value, '$.periodEnd') periodEnd, json_extract(q.value, '$.currency') currency,
+        json_extract(q.value, '$.figures.revenue.value') revenue, json_extract(q.value, '$.figures.operating.value') operating
+      FROM sec_cache c, json_each(c.payload, '$.reports.quarters') q
+      WHERE c.cache_key >= 'sec:map-derived:v1:' AND c.cache_key < 'sec:map-derived:v1;' AND json_valid(c.payload)`)
+      .all<MarginRow>().catch(() => ({ results: [] as MarginRow[] })),
+    securities(db),
   ]);
+  const marginRows = new Map<string, MarginRow[]>();
+  for (const row of reportFigures.results) { const ticker = canonicalTicker(row.ticker); marginRows.set(ticker, [...marginRows.get(ticker) ?? [], row]); }
 
   const historyByCik = new Map(histories.results.map(row => [row.cache_key.slice("sec:revenue-history:v1:".length), row.payload]));
   const findingsByTicker = new Map(findings.results.map(row => [canonicalTicker(row.ticker), jsonRow(row.payload)]));
@@ -184,7 +207,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     if (Object.keys(table).length) translationByTicker.set(canonicalTicker(row.cache_key.slice(translationPrefix.length)), table);
   }
 
-  const enabled = dataTickers(env, settings.results);
+  const enabled = dataTickers(settings.results);
   const seen = new Set<string>();
   let damaged = false;
   let lastUpdatedAt: string | null = null;
@@ -192,7 +215,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
 
   const consider = (ticker: string, cik: string | null, payload: string | null, publishedAt: string | null) => {
     const canonical = canonicalTicker(ticker);
-    if (!TICKER.test(canonical) || seen.has(canonical)) return;
+    if (!TICKER_PATTERN.test(canonical) || seen.has(canonical)) return;
     seen.add(canonical);
     let flow: PublicBusinessFlow | null = null;
     if (payload) {
@@ -206,7 +229,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     const flowLatest = flow ? [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0] : null;
     const periodEnd = flowLatest?.periodEnd ?? latest?.periodEnd ?? null;
     const note = notes[canonical];
-    const name = companyName(canonical) ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
+    const name = named(canonical)?.name ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
     const shown = findingsShown(canonical);
     const publication = shown ? findingsOf(findingsByTicker.get(canonical), canonical, translationByTicker.get(canonical) ?? null) : null;
     const { counts, top } = projectFindings(publication);
@@ -221,6 +244,8 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       revenueReason = "NOT_DISCLOSED";
     }
     const trend = points.slice(-8).map(point => ({ periodEnd: point.periodEnd, value: baseDecimal(String(point.value), 1)! }));
+    const statement = flowLatest ? statementOf(flowLatest) : null;
+    const operatingMargin = flowLatest ? operatingMarginOf(flowLatest, [...(marginRows.get(canonical) ?? []), ...(flow?.quarters ?? []).map(q => ({ ticker: canonical, periodEnd: q.periodEnd, currency: q.currency, revenue: q.figures.revenue?.value ?? null, operating: q.figures.operating?.value ?? null }))]) : null;
     lastUpdatedAt = later(lastUpdatedAt, later(publishedAt, history?.updatedAt ?? null));
     companies.push({
       ticker: canonical,
@@ -229,10 +254,12 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       aliases: aliasesFrom(name, canonical, note?.aliases ?? []),
       sector: note?.sector ?? null,
       status: flow ? (revenue ? "ready" : "partial") : "preparing",
-      latestPeriod: periodEnd ? { periodEnd, fiscalLabel: fiscalLabel(periodEnd), filedAt: flowLatest?.reportedAt?.slice(0, 10) ?? latest?.filedAt ?? null } : null,
+      latestPeriod: periodEnd ? { periodEnd, periodStart: flowLatest?.periodStart ?? null, fiscalLabel: fiscalLabel(periodEnd), calendarLabel: fiscalLabel(periodEnd), filedAt: flowLatest?.reportedAt?.slice(0, 10) ?? latest?.filedAt ?? null, ...fiscalFields(canonical, periodEnd, focus) } : null,
       revenue,
       revenueReason,
       revenueTrend: trend,
+      statement,
+      operatingMargin,
       findingCounts: counts,
       topFindings: top,
     });
@@ -247,9 +274,9 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
   const have = new Set(capped.map(company => company.ticker));
   const popular: string[] = [];
   const push = (ticker: string) => { if (have.has(ticker) && !popular.includes(ticker) && popular.length < 5) popular.push(ticker); };
-  for (const ticker of HOME_POPULAR_TICKERS) push(canonicalTicker(ticker));
-  for (const company of capped) if (Object.values(company.findingCounts).some(count => count > 0)) push(company.ticker);
-  for (const company of capped) push(company.ticker);
+  const fresh = [...capped].sort((a, b) => (b.latestPeriod?.filedAt ?? "").localeCompare(a.latestPeriod?.filedAt ?? "") || a.ticker.localeCompare(b.ticker));
+  for (const company of fresh) if (Object.values(company.findingCounts).some(count => count > 0)) push(company.ticker);
+  for (const company of fresh) push(company.ticker);
 
   return {
     schemaVersion: "home-digest.v1",

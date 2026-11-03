@@ -5,7 +5,6 @@ import type { ComposedAnalysis } from "./findings.ts";
  * Form 4 the insider rules flagged for attention.
  */
 export type ItemKind = "report" | "current" | "insider";
-export const ITEM_KINDS = ["report", "current", "insider"] as const;
 
 /**
  * The analysis of one rail row, written when the filing arrives by the same agent loop, tools and verifiers the

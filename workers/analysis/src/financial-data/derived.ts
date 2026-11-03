@@ -1,4 +1,5 @@
 import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
+import { edgarArchiveCik } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import type { BusinessFlowQuarter, PublicBusinessFlow } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { PublicCapitalStructure } from '../../../../shared/analysis-contract/capital-structure.ts';
 import { checkCompleteQuarter } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -6,12 +7,13 @@ import { readReportHistory } from '../../../../shared/analysis-runtime/financial
 import { D1SecRepository } from '../sec/d1.ts';
 import { assembleCapital } from './capital-history.ts';
 import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from './disclosure-audit.ts';
-import { extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
+import { extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { fiscalFourthQuarters, priorPresentationOnly, priorYearsUnchanged } from './period-review.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 import { namesMembers, storedMemberLabels } from './member-labels.ts';
 import { storedCalculation } from './calculation.ts';
+import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
 
 /**
  * Everything the business map reads beyond the published latest pair is prepared here, by the `map-derive` task
@@ -19,7 +21,7 @@ import { storedCalculation } from './calculation.ts';
  * quarterly statements once and the result stored, then each company's older quarters and capital structure are
  * assembled into one snapshot. A read is a single D1 lookup, whatever the size of the filings behind it.
  */
-export const REPORT_QUARTERS_VERSION = `report-quarters.v2:${SEC_FLOW_PARSER_VERSION}`;
+export const REPORT_QUARTERS_VERSION = `report-quarters.v3:${SEC_FLOW_PARSER_VERSION}`;
 /** How a period is chosen among the filings that present it (`supersedes`); a new rule rebuilds every snapshot without parsing again. */
 export const REPORT_SELECTION_VERSION = 'report-selection.v2';
 const quartersPrefix = (ticker: string) => `sec:report-quarters:v1:${ticker}:`;
@@ -71,7 +73,6 @@ export function unarchivedSources(flow: PublicBusinessFlow, audits: StoredAudit[
 }
 
 const issuerOf = (r: StoredAudit) => r.source.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1];
-const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86400000;
 
 /**
  * Filings that may carry the older quarterly statements, in the order their quarters are preferred: newest filing first.
@@ -86,11 +87,10 @@ export function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 2);
   const candidates = audits.filter(r => {
     try {
-      const url = new URL(r.source.documentUrl), cik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d+)\//)?.[1];
+      const cik = edgarArchiveCik(r.source.documentUrl);
       return r.rawKey?.startsWith('financial-disclosures/') && r.sourceBytes > 0 && r.sourceBytes <= SEC_DOCUMENT_MAX_BYTES
         && /^10-[QK](?:\/A)?$|^[86]-K$/.test(r.source.form) && /^\d{10}-\d{2}-\d{6}$/.test(r.source.accessionNumber)
-        && Date.parse(r.source.filedAt) > cutoff.getTime() && url.protocol === 'https:' && url.hostname === 'www.sec.gov'
-        && !url.username && !url.password && !!cik && Number(cik) === Number(issuer);
+        && Date.parse(r.source.filedAt) > cutoff.getTime() && cik !== null && cik === Number(issuer);
     } catch { return false; }
   });
   // On the same day, earnings exhibits carry the cleanest quarter-only tables, then 10-Qs, then 10-Ks, then other current reports.
@@ -137,11 +137,11 @@ function priorAnnualReport(audits: StoredAudit[], annual: StoredAudit): StoredAu
     .sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt))[0] ?? null;
 }
 
-async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, industry: Industry): Promise<ReadFiling | null> {
+async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, industry: Industry): Promise<ReadFiling> {
   const raw = await env.SEC_FILINGS.get(record.rawKey);
-  if (!raw) return null;
+  if (!raw) throw new Error(`Archived filing ${record.documentId} missing from R2`);
   const html = await raw.text();
-  if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) return null;
+  if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) throw new Error(`Archived filing ${record.documentId} size does not match its inventory`);
   const cik = issuerOf(record)!.padStart(10, '0');
   const needed = namesMembers(html), memberLabels = needed ? await storedMemberLabels(env.DB, record.source.accessionNumber) : null;
   const structure = needed ? await storedCalculation(env.DB, record.source.accessionNumber) : null;
@@ -162,7 +162,7 @@ export function filingQuarters(filing: { html: string; source: DocumentSource },
   const reviewed = priorPresentationOnly(filing.html);
   let quarters = extractDisclosedQuarters(filing.html, filing.source, [], reviewed).quarters;
   const worded = !!thirdQuarter && reviewed && priorPresentationOnly(thirdQuarter.html);
-  if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && (worded || priorAnnual)) {
+  if (thirdQuarter && (worded || priorAnnual)) {
     const annual = readReportedFacts(filing.html, filing.source), nineMonths = readReportedFacts(thirdQuarter.html, thirdQuarter.source);
     if (!annual.issues.length && !nineMonths.issues.length) {
       const fourth = fiscalFourthQuarters(annual.facts, nineMonths.facts, filing.source.revenueStructure);
@@ -173,16 +173,13 @@ export function filingQuarters(filing: { html: string; source: DocumentSource },
   return quarters.filter(q => checkCompleteQuarter(q).complete);
 }
 
-async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, earlier: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters | null> {
+async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, earlier: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters> {
   const filing = await readFiling(env, record, industry);
-  if (!filing) return null;
   const thirdQuarter = partner ? await readFiling(env, partner, industry) : null;
-  if (partner && !thirdQuarter) return null;
   // The previous annual report is read only when either report notes reclassified or recast prior periods.
   const priorAnnual = thirdQuarter && earlier && !(priorPresentationOnly(filing.html) && priorPresentationOnly(thirdQuarter.html)) ? await readFiling(env, earlier, industry) : null;
-  let quarters: BusinessFlowQuarter[] = [];
-  try { quarters = filingQuarters(filing, thirdQuarter, priorAnnual); }
-  catch { /* An unsupported layout yields no quarters, and is recorded so it is not parsed again. */ }
+  // Unsupported layouts return no quarters normally; exceptions are failed parses, never cacheable results.
+  const quarters = filingQuarters(filing, thirdQuarter, priorAnnual);
   const read = [filing.labels, thirdQuarter?.labels], labels: Labels = read.includes('missing') ? 'missing' : read.includes('named') ? 'named' : 'unneeded';
   return { documentId: record.documentId, contentSha256, version: REPORT_QUARTERS_VERSION, industry, labels, quarters };
 }
@@ -226,8 +223,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
       if (bytes > budget) { oversized.push(record.documentId); continue; }
       if (spent + bytes > budget) { pending++; continue; }
       spent += bytes;
-      const parsed = await parseFiling(env, record, partner, earlier, contentSha256, industry).catch(() => null);
-      if (!parsed) continue;
+      const parsed = await parseFiling(env, record, partner, earlier, contentSha256, industry);
       await repository.setCache(quartersPrefix(ticker) + record.documentId, parsed, new Date().toISOString());
       entry = parsed;
     }

@@ -6,11 +6,13 @@ import type { BusinessFlowQuarter, FlowAmount, PublicBusinessFlow } from "../../
 import type { RevenueHistory } from "../../../shared/analysis-contract/revenue-history.ts";
 import { handleMapRead } from "../src/read-api/router.ts";
 import { readHomeDigest } from "../src/read-api/home-digest.ts";
+import { switchOn, UNSEEDED } from "./fixtures/company-settings.ts";
 
 function database(): D1Database {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter(name => name.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  sqlite.exec(UNSEEDED);
   const statement = (sql: string, values: unknown[] = []) => ({
     bind: (...next: unknown[]) => statement(sql, next),
     run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
@@ -94,15 +96,16 @@ async function seed(db: D1Database) {
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('findings:v2:HIDE', ?, '2026-08-07T00:00:00Z')", JSON.stringify(findings("HIDE")));
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('admin:financial-issuer:ACME', ?, '2026-08-07T00:00:00Z')", JSON.stringify({ name: "Acme Cloud Inc." }));
   await insert("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('i18n:v1:zh-CN:findings:ACME', ?, '2026-08-07T00:00:00Z')", JSON.stringify({ strings: { "Cloud demand outran capacity": "云需求超过产能" } }));
-  await insert("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('HIDE', 'findings', 0, 0, '2026-08-01T00:00:00Z')");
+  await switchOn(db, ["ACME", "HIDE", "WAIT", "BAD"], { reports: ["ACME", "HIDE"], findings: ["ACME"] });
+  await insert("INSERT OR REPLACE INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('HIDE', 'findings', 0, 0, '2026-08-01T00:00:00Z')");
 }
 
-const env = { SEC_DATA_TICKERS: "ACME,HIDE,WAIT,BAD", SEC_AI_TICKERS: "ACME,HIDE", SEC_AI_ENABLED: "true" };
+const env = { SEC_AI_ENABLED: "true" };
 
 test("the homepage digest lists covered companies and refuses to invent a missing one", async () => {
   const db = database();
   await seed(db);
-  const digest = await readHomeDigest(db, env, null, new Date("2026-10-23T02:00:00Z"), { ACME: { nameZh: "艾克米", aliases: ["ACMECLOUD"], sector: "ai-cloud" } });
+  const digest = await readHomeDigest(db, null, new Date("2026-10-23T02:00:00Z"), { ACME: { nameZh: "艾克米", aliases: ["ACMECLOUD"], sector: "ai-cloud" } });
   assert.equal(digest.schemaVersion, "home-digest.v1");
   assert.equal(digest.status, "partial");
   assert.equal(digest.generatedAt, "2026-10-23T02:00:00.000Z");
@@ -116,7 +119,10 @@ test("the homepage digest lists covered companies and refuses to invent a missin
   assert.ok(acme.aliases.includes("ACMECLOUD"));
   assert.equal(acme.sector, "ai-cloud");
   assert.equal(acme.status, "ready");
-  assert.deepEqual(acme.latestPeriod, { periodEnd: "2026-06-30", fiscalLabel: "2026 Q2", filedAt: "2026-08-07" });
+  assert.deepEqual(acme.latestPeriod, {
+    periodEnd: "2026-06-30", periodStart: "2026-04-01", fiscalLabel: "2026 Q2", calendarLabel: "2026 Q2", filedAt: "2026-08-07",
+    fiscalYear: null, fiscalQuarter: null, fiscalYearEndMonth: null, labelSource: "unknown",
+  });
   assert.equal(acme.revenue?.value, "110");
   assert.equal(acme.revenue?.currency, "USD");
   assert.equal(acme.revenue?.yoyPct, 10);
@@ -141,10 +147,28 @@ test("the homepage digest lists covered companies and refuses to invent a missin
   assert.equal(bad.revenue, null);
 });
 
+test("popular companies are the covered ones with findings, freshest filing first, then the rest", async () => {
+  const db = database();
+  await seed(db);
+  const digest = await readHomeDigest(db, null, new Date("2026-10-23T02:00:00Z"));
+  assert.deepEqual(digest.popular, ["ACME", "HIDE", "BAD", "WAIT"]);
+});
+
+test("the issuer's fiscal calendar comes from its stored submissions, else its latest annual report", async () => {
+  const db = database();
+  await seed(db);
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:discovery:v1:ACME', ?, '2026-10-23T00:00:00Z')").bind(JSON.stringify({ cik: "0000320193", accessions: [], checkedAt: "2026-10-23T00:00:00Z", fiscalYearEnd: "0930", name: "ACME CLOUD INC" })).run();
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:fiscal-period:v1:HIDE:0000320194-26-000001', ?, '2026-10-23T00:00:00Z')").bind(JSON.stringify({ fiscalYear: 2025, fiscalPeriod: "FY", periodEnd: "2026-01-31", source: "sec_dei", sourceAccession: "0000320194-26-000001", sourceUrl: FILING })).run();
+  const digest = await readHomeDigest(db, null, new Date("2026-10-23T02:00:00Z"));
+  const period = (ticker: string) => digest.companies.find(company => company.ticker === ticker)?.latestPeriod;
+  assert.deepEqual([period("ACME")?.fiscalYearEndMonth, period("ACME")?.fiscalYear, period("ACME")?.fiscalQuarter, period("ACME")?.labelSource], [9, 2026, 3, "derived"]);
+  assert.deepEqual([period("HIDE")?.fiscalYearEndMonth, period("HIDE")?.fiscalYear, period("HIDE")?.fiscalQuarter], [1, 2027, 2]);
+});
+
 test("Chinese titles come from the translation table and nowhere else", async () => {
   const db = database();
   await seed(db);
-  const digest = await readHomeDigest(db, env, "zh-CN", new Date("2026-10-23T02:00:00Z"));
+  const digest = await readHomeDigest(db, "zh-CN", new Date("2026-10-23T02:00:00Z"));
   const acme = digest.companies.find(company => company.ticker === "ACME")!;
   assert.equal(acme.topFindings.find(finding => finding.id === "f-risk")?.title, "云需求超过产能");
   assert.equal(acme.topFindings.find(finding => finding.id === "f-strength")?.title, "Cash stayed ahead of the build");
@@ -161,4 +185,19 @@ test("the read route serves the digest and rejects a stray query", async () => {
   assert.equal(body.companies?.some(company => company.ticker === "ZZZZ"), false);
   const rejected = await handleMapRead(new Request("https://analysis.internal/api/v1/home?lang=zh-CN"), { DB: db, ...env });
   assert.equal(rejected.status, 404);
+});
+
+test("R29: the latest quarter's operating margin comes with the year-ago quarter's, from the reports assembled behind the publication", async () => {
+  const db = database();
+  await seed(db);
+  const yearAgo = quarter("2025-04-01", "2025-06-30", "100", "50", "50", "0", "50", "10", "40");
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:map-derived:v1:ACME', ?, '2026-08-07T00:00:00Z')")
+    .bind(JSON.stringify({ ticker: "ACME", flowKey: "x", inputs: "x", builtAt: "2026-08-07T00:00:00Z", reports: { schemaVersion: "business-flow.v1", ticker: "ACME", fetchedAt: null, quarters: [yearAgo] }, capital: null, pendingFilings: 0 })).run();
+  const digest = await readHomeDigest(db, null, new Date("2026-08-10T02:00:00Z"));
+  // 70 / 110 now against 50 / 100 a year before.
+  assert.deepEqual(digest.companies.find(c => c.ticker === "ACME")!.operatingMargin, { pct: 63.64, yearAgoPct: 50 });
+  // Without the older reports the year-ago margin is unknown, never guessed.
+  const bare = database();
+  await seed(bare);
+  assert.deepEqual((await readHomeDigest(bare, null, new Date("2026-08-10T02:00:00Z"))).companies.find(c => c.ticker === "ACME")!.operatingMargin, { pct: 63.64, yearAgoPct: null });
 });

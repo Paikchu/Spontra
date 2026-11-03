@@ -1,0 +1,559 @@
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/packages/web/src/ui/button";
+import { labels, messages, useLocale } from "@/packages/web/src/i18n";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
+import { DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
+import type { ValuationPriceGuide } from "@/shared/analysis-contract/price-guide";
+import { priceGuideOf } from "@/shared/analysis-runtime/valuation/price-guide";
+import { fetchValuationVersion } from "./company-data";
+import { type VersionRead, versionLoading, versionSettled, versionView } from "./valuation-version";
+import { track } from "./track";
+import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
+import "./valuation.css";
+
+/**
+ * Price guidance leads with the supported normal range and its reference quote. Stress scenarios stay under their own
+ * disclosure; research scores, assumptions and source snapshots explain the assessment. Spontra Analysis owns every value.
+ */
+const m = messages({
+  title: "Valuation assessment", 
+  score: "Composite score", unscored: "Not scored", confidence: "Confidence", 
+  researchDate: "Research date", financialBase: "Statements to", version: "Version", current: "Current", generated: (date: string) => `Generated ${date}`,
+  preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
+  failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
+  insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
+  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; the previous report is retained",
+  dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
+  readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
+  
+  range: "Value per share", bear: "Bear", base: "Base", bull: "Bull", expected: "Expected", price: "Reference close", priceDate: (date: string) => `Close of ${date}`,
+  marginOfSafety: "Margin of safety", baseUpside: "To base value", expectedUpside: "To expected value", downside: "Bear case vs. price", noQuote: "No usable reference close",
+  model: "Model", 
+  discountRate: "Discount rate", wacc: "WACC", costOfEquity: "Cost of equity", shares: "Economic shares", dilution: (value: string) => ` (incl. dilution reserve ${value})`, rateBasis: (basis: string) => ` (${basis})`, bridge: "Equity bridge", nonOperating: "Non-operating assets", claims: "Debt and other claims",
+  scenarios: "Scenarios", probability: "Probability", perShareValue: "Per share", terminalShare: "Terminal value share", growth: "Revenue growth", margin: "Operating margin", drivers: "Average over five years",
+  sensitivities: "Sensitivity of the base value", implied: "What the price implies", impliedText: (implied: string, base: string) => `A constant revenue growth of ${implied} a year reproduces the reference close; the base case averages ${base}.`, impliedNotConverged: "The reference close lies outside what the model's growth range can reproduce.",
+  limitations: "Model limitations", inputs: "Model inputs", triggers: "Triggers", invalidation: "Invalidation", showModel: "Show model inputs", hideModel: "Hide model inputs",
+  summary: "Summary", thesis: "Thesis", expectationsGap: "Expectations gap", catalysts: "Catalysts", counterEvidence: "Counter-evidence", nextChecks: "Next checks", modelNotes: "Model notes",
+  evidence: "Supporting evidence", counter: "Against", gaps: "Gaps", nextCheck: "Next check", diagnostics: "Diagnostics", sources: "Sources", source: "Source", openSource: "Open the filing", snapshot: "As read when the report was written", close: "Close",
+  history: "History of each factor", years: (n: number) => `${n} years`, median: "Median", rangeLabel: "Range",
+  // valuation.calc.v4: the methods and their judged weights, the four scenarios and their probabilities, the comparable set, the checks, management's targets and the consensus.
+  expectedValue: "Scenario-weighted value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
+  methods: "Valuation methods", methodLow: "Low (peer p25)", methodBase: "Base (peer median)", methodHigh: "High (peer p75)", weightCol: "Weight", notApplied: "Not applied", why: "Why",
+  dcfValue: "Cash-flow value", weightedValue: "Weighted value", management: "Management", probabilities: "Scenario probabilities", managementScenarioNote: "Computed by code from management's cited targets on the base case's rate, shares, bridge and horizon; weighed by its judged probability, never the base.",
+  yearlyForecast: "Base case yearly forecast", forecastYear: (year: number) => `Year ${year}`, revenueCol: "Revenue", nopatCol: "NOPAT", capexCol: "CapEx", depreciationCol: "D&A", workingCapitalCol: "ΔNWC", fcffCol: "FCFF", reinvestmentCol: "Reinvestment", adjustmentCol: "Adjustment",
+  explicitCapitalPlan: "Uses the annual capital plan: FCFF = NOPAT + D&A − CapEx − ΔNWC, plus any adjustment shown. No additional sales-to-capital reinvestment or build capex is deducted.",
+  salesCapitalPlan: "Reinvestment is estimated from revenue changes and includes any additional construction spending. FCFF = NOPAT − reinvestment, plus any adjustment shown.",
+  revenuePath: "Revenue path", marginPath: "Margin path", capexPath: "Capex path", rateSources: "Discount rate sources",
+  peers: "Comparable set", peerBasisLabel: "Basis", peerQuartiles: (p25: string, median: string, p75: string) => `p25 ${p25} · median ${median} · p75 ${p75}`, peerNone: "No peer multiples were available; the cash-flow model stands alone.",
+  checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
+  managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
+  consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
+  pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment", historicalAssessment: "Assessment at the time",
+  below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
+  noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
+  versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
+}, {
+  title: "估值评估",
+  score: "综合分", unscored: "未评分", confidence: "置信度",
+  researchDate: "研究日期", financialBase: "财务基期", version: "版本", current: "当前", generated: (date: string) => `生成于 ${date}`,
+  preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
+  failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
+  insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
+  updating: "新的评估正在进行", updateFailed: "最近一次评估未完成，暂保留上一版报告",
+  dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
+  readThesis: "展开完整论证", hideThesis: "收起完整论证",
+ 
+  range: "每股价值", bear: "悲观", base: "基准", bull: "乐观", expected: "期望", price: "参考收盘价", priceDate: (date: string) => `${date} 收盘`,
+  marginOfSafety: "安全边际", baseUpside: "至基准价值", expectedUpside: "至期望价值", downside: "悲观情景相对现价", noQuote: "无可用参考收盘价",
+  model: "模型",
+  discountRate: "折现率", wacc: "加权平均资本成本", costOfEquity: "权益成本", shares: "经济股数", dilution: (value: string) => `（含稀释储备 ${value}）`, rateBasis: (basis: string) => `（${basis}）`, bridge: "股权桥接", nonOperating: "非经营资产", claims: "债务及其他索偿",
+  scenarios: "情景", probability: "概率", perShareValue: "每股", terminalShare: "终值占比", growth: "收入增长", margin: "营业利润率", drivers: "五年平均",
+  sensitivities: "基准价值的敏感性", implied: "现价隐含的预期", impliedText: (implied: string, base: string) => `收入每年恒定增长 ${implied} 即可复现参考收盘价；基准情景平均为 ${base}。`, impliedNotConverged: "参考收盘价超出模型增长区间能复现的范围。",
+  limitations: "模型局限", inputs: "模型输入", triggers: "触发信号", invalidation: "失效条件", showModel: "展开模型输入", hideModel: "收起模型输入",
+  summary: "结论", thesis: "论证", expectationsGap: "预期差", catalysts: "催化", counterEvidence: "反证", nextChecks: "下一验证点", modelNotes: "模型说明",
+  evidence: "支持证据", counter: "反证", gaps: "缺口", nextCheck: "下一验证点", diagnostics: "诊断指标", sources: "来源", source: "来源", openSource: "打开申报原文", snapshot: "报告写成时读取的快照", close: "关闭",
+  history: "各因子历史", years: (n: number) => `${n} 年`, median: "中位数", rangeLabel: "区间",
+  expectedValue: "情景加权值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
+  methods: "估值方法", methodLow: "低（同业 25 分位）", methodBase: "基准（同业中位）", methodHigh: "高（同业 75 分位）", weightCol: "权重", notApplied: "未采用", why: "理由",
+  dcfValue: "现金流折现值", weightedValue: "加权价值", management: "管理层", probabilities: "情景概率", managementScenarioNote: "由代码按管理层引用的目标、在基准情景的折现率、股数、桥接与期限上算出；按其判断的概率加权，从不作为基准。",
+  yearlyForecast: "基准情景逐年预测", forecastYear: (year: number) => `第 ${year} 年`, revenueCol: "收入", nopatCol: "税后经营利润", capexCol: "资本开支", depreciationCol: "折旧摊销", workingCapitalCol: "营运资本变动", fcffCol: "企业自由现金流", reinvestmentCol: "再投资", adjustmentCol: "调整",
+  explicitCapitalPlan: "按逐年资本计划计算：企业自由现金流 = 税后经营利润 + 折旧摊销 − 资本开支 − 营运资本变动，另加表中列示的调整；不再重复扣减按销售资本比估算的再投资或额外建设资本开支。",
+  salesCapitalPlan: "再投资按收入变化估算，并包含额外建设支出。企业自由现金流 = 税后经营利润 − 再投资，另加表中列示的调整。",
+  revenuePath: "收入路径", marginPath: "利润率路径", capexPath: "资本开支路径", rateSources: "折现率来源",
+  peers: "可比公司", peerBasisLabel: "依据", peerQuartiles: (p25: string, median: string, p75: string) => `25 分位 ${p25} · 中位 ${median} · 75 分位 ${p75}`, peerNone: "没有可用的同业倍数；仅有现金流模型。",
+  checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
+  managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
+  consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
+  pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价", historicalAssessment: "当时评价",
+  below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
+  noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
+  noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "当前估值需要重新评估。",
+  versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
+});
+const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
+const PEER_BASIS = labels({ curated: "Curated set", ranking: "Business-tag peers", unit: "Segment peers", category: "Same category", none: "None" }, { curated: "人工选定", ranking: "业务标签同业", unit: "业务板块同业", category: "同类公司", none: "无" });
+const GATE_STATUS = labels({ pass: "Pass", flag: "Flag", fail: "Fail" }, { pass: "通过", flag: "提示", fail: "未通过" });
+const GATE = labels({ terminal_share: "Terminal value share", non_negative_scenarios: "Non-negative scenarios", terminal_growth: "Terminal growth", cited_inputs: "Cited inputs", rpo_floor: "Contracted revenue floor", implied_multiple_vs_history: "Implied multiple vs history", method_dispersion: "Method dispersion", management_targets: "Management targets", consensus_divergence: "Consensus divergence", consensus_unavailable: "Consensus", method_unavailable: "Unapplied method", method_zero_weight: "Unweighted method" },
+  { terminal_share: "终值占比", non_negative_scenarios: "情景非负", terminal_growth: "终值增长", cited_inputs: "引用输入核对", rpo_floor: "合同收入下限", implied_multiple_vs_history: "隐含倍数与历史", method_dispersion: "方法离散度", management_targets: "管理层目标", consensus_divergence: "与市场共识偏离", consensus_unavailable: "市场共识", method_unavailable: "未能采用的方法", method_zero_weight: "未加权的方法" });
+const RATE_COMPONENT = labels({ riskFree: "Risk-free rate", beta: "Beta", equityRiskPremium: "Equity risk premium", costOfDebt: "Cost of debt", taxRate: "Tax rate", equityWeight: "Equity weight" }, { riskFree: "无风险利率", beta: "贝塔", equityRiskPremium: "股权风险溢价", costOfDebt: "债务成本", taxRate: "税率", equityWeight: "权益权重" });
+const VERDICT = labels({ supported: "Evidence supports mispricing", not_supported: "Mispricing not supported", pending: "Pending verification" }, { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" });
+const PRICE_TONE: Record<"below" | "within" | "above", string> = { below: "up", within: "neutral", above: "loss" };
+function guideReason(reason: Extract<ValuationPriceGuide, { status: "unavailable" }>["reason"]): string {
+  switch (reason) {
+    case "no_range": return m.noRange;
+    case "non_positive_range": return m.noPositiveRange;
+    case "no_quote": return m.noQuoteGuide;
+    case "unusable_quote": return m.unusableQuote;
+    case "stale_quote": return m.staleQuote;
+    case "currency_mismatch": return m.currencyMismatch;
+    case "incomplete_research": return m.incompleteResearch;
+    case "unresolved_evidence": return m.unresolvedEvidence;
+    case "report_updating": return m.reportUpdating;
+  }
+}
+const CONF = labels({ high: "High", medium: "Medium", low: "Low" }, { high: "高", medium: "中", low: "低" });
+const DIM = labels({ businessQuality: "Business quality", growthExecution: "Growth delivery", valuationSafety: "Valuation safety", mispricingCatalysts: "Mispricing and catalysts", financialResilience: "Financial resilience" }, { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" });
+const MODEL_TYPE = labels({ fcff: "Free cash flow to the firm (driver-based)", fcfe: "Free cash flow to equity", revenue_fcfe: "Revenue-driven equity cash flow", residual_income: "Residual income", earnings_multiple: "Guided earnings multiple", reported_earnings_multiple: "Reported earnings multiple", proforma_earnings_multiple: "Pro forma earnings multiple", asset_nav: "Net asset value", affo_multiple: "AFFO multiple", affo_dcf: "AFFO discounted cash flow" }, { fcff: "企业自由现金流（驱动因子）", fcfe: "股权自由现金流", revenue_fcfe: "收入驱动股权现金流", residual_income: "剩余收益", earnings_multiple: "指引盈利倍数", reported_earnings_multiple: "已报盈利倍数", proforma_earnings_multiple: "备考盈利倍数", asset_nav: "资产净值", affo_multiple: "AFFO 倍数", affo_dcf: "AFFO 现金流折现" });
+const FACTOR = labels({ revenueGrowth: "Revenue growth", operatingMargin: "Operating margin", netMargin: "Net margin", fcfMargin: "Free cash flow margin", capexToRevenue: "Capex to revenue", sbcToRevenue: "Stock compensation to revenue", returnOnEquity: "Return on equity", discountRate: "Discount rate", salesToCapital: "Sales to capital", terminalGrowth: "Terminal growth", capex: "Capital expenditure", terminalRoic: "Terminal ROIC", roe: "Return on equity", terminalRoe: "Terminal ROE", multiple: "Multiple", assetPrices: "Asset prices", afterSbcEquityCashMargin: "Equity cash margin" }, { revenueGrowth: "收入增长", operatingMargin: "营业利润率", netMargin: "净利率", fcfMargin: "自由现金流率", capexToRevenue: "资本开支占收入", sbcToRevenue: "股权激励占收入", returnOnEquity: "净资产收益率", discountRate: "折现率", salesToCapital: "销售资本比", terminalGrowth: "终值增长", capex: "资本开支", terminalRoic: "终期 ROIC", roe: "净资产收益率", terminalRoe: "终期 ROE", multiple: "倍数", assetPrices: "资产价格", afterSbcEquityCashMargin: "权益现金利润率" });
+const DIAG = labels({ revenueGrowthTtm: "Revenue growth (TTM)", roic: "ROIC", accrualRatio: "Accrual ratio", fcfConversion: "FCF conversion", sbcToRevenue: "SBC / revenue", capexToDa: "Capex / D&A", netDebtToEbitda: "Net debt / EBITDA", interestCoverage: "Interest coverage", dilutionCagr: "Share count change", cashRunwayYears: "Cash runway", debtDueCoverage: "Cash / debt due" },
+  { revenueGrowthTtm: "收入增长（近四季）", roic: "投入资本回报率", accrualRatio: "应计比率", fcfConversion: "自由现金流转化", sbcToRevenue: "股权激励占收入", capexToDa: "资本开支 / 折旧摊销", netDebtToEbitda: "净债务 / EBITDA", interestCoverage: "利息覆盖倍数", dilutionCagr: "股数年化变化", cashRunwayYears: "现金跑道", debtDueCoverage: "现金 / 一年内到期债务" });
+
+const pct = (v: number | null | undefined, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "" : "−"}${(Math.abs(v) * 100).toFixed(digits)}%`;
+const signedPct = (v: number | null | undefined) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${(Math.abs(v) * 100).toFixed(1)}%`;
+const day = (iso: string) => iso.slice(0, 10);
+/** A figure the model produced; one it could not is left out rather than shown as a dash. */
+const has = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
+const isEvidenceId = (id: string) => /^e[0-9a-f]{10}$/.test(id);
+
+/** Footnote numbers and source names for the evidence the report cites, in reading order. */
+type Footnotes = { order: Map<string, number>; names: Map<string, string> };
+const FootnotesContext = createContext<Footnotes>({ order: new Map(), names: new Map() });
+
+function sourceName(e: ValuationEvidence): string {
+  const leaf = pathLeaf(e.path);
+  return leaf && leaf !== e.title ? `${e.title} · ${leaf}` : e.title;
+}
+
+/** One or more citations as superscript footnote numbers; each opens its source's snapshot. */
+function Cites({ ids, onCite, counter }: { ids: string[]; onCite: (id: string) => void; counter?: boolean }) {
+  const { order, names } = useContext(FootnotesContext);
+  return <sup className={`val-refs${counter ? " val-refs--counter" : ""}`}>
+    {ids.map((id, i) => {
+      const n = order.get(id);
+      return <Fragment key={`${id}-${i}`}>{i > 0 && ","}<Button variant="unstyled" type="button" className="val-ref" title={names.get(id)} aria-label={m.citedAs(String(n ?? "?"))} onClick={() => onCite(id)}>{n ?? "?"}</Button></Fragment>;
+    })}
+  </sup>;
+}
+
+/** Generated prose with its evidence citations turned into footnote numbers. */
+function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" | "span" }) {
+  return <Tag lang={langOf(text)}>{proseParts(text).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
+}
+
+/** A long section: paragraphs, with the report's run-in capitalised headings lifted out as headings. */
+function ProseBlocks({ text, onCite }: { text: string; onCite: (id: string) => void }) {
+  return <>{proseBlocks(text).map((block, i) => <Fragment key={i}>
+    {block.heading && <h5 className="val-runhead" lang={langOf(block.heading)}>{block.heading}</h5>}
+    {block.text && <Prose text={block.text} onCite={onCite} />}
+  </Fragment>)}</>;
+}
+
+/** A listed citation: registered evidence is a footnote; a fact or diagnostic id is named in full. */
+function Cite({ id, counter, onCite }: { id: string; counter?: boolean; onCite: (id: string) => void }) {
+  if (!isEvidenceId(id)) return <code className="val-fact-ref">{id}</code>;
+  return <Cites ids={[id]} counter={counter} onCite={onCite} />;
+}
+
+function FairValue({ report, guide, onCite }: { report: ValuationPublication; guide: ValuationPriceGuide; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const fair = report.model?.fairValueRange;
+  const supported = fair?.status === "available" && (guide.status === "available" || guide.reason === "no_quote" || guide.reason === "unusable_quote" || guide.reason === "stale_quote" || guide.reason === "currency_mismatch");
+  const assumptions = supported ? report.model?.scenarios.base.assumptions : null;
+  return <section className="val-block val-fair" aria-label={m.pricePosition}>
+    <h3>{m.fairRange}</h3>
+    <p className="val-fair-value">{supported ? `${perShare(fair.low, report.currency, locale)} – ${perShare(fair.high, report.currency, locale)}` : "—"}</p>
+    <dl className="val-stats">
+      <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+      {supported && <div><dt>{m.centralValue}</dt><dd>{perShare(fair.base, report.currency, locale)}</dd></div>}
+    </dl>
+    {guide.status === "unavailable" && <p className="val-list-line">{guideReason(guide.reason)}</p>}
+    {fair?.status === "unavailable" && fair.reason && <Prose text={fair.reason} onCite={onCite} />}
+    {supported && <>
+      <p><Prose as="span" text={fair.rationale} onCite={onCite} /> {fair.evidenceIds.length > 0 && <Cites ids={fair.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>
+      {assumptions && <div className="val-why-list"><h4>{m.keyAssumptions}</h4>
+        {(["revenue", "margin", "capex"] as const).map(key => <p key={key} className="val-why"><b>{m[key === "revenue" ? "revenuePath" : key === "margin" ? "marginPath" : "capexPath"]}</b><Prose as="span" text={assumptions[key].rationale} onCite={onCite} /> <Cites ids={assumptions[key].evidenceIds.filter(isEvidenceId)} onCite={onCite} /></p>)}
+      </div>}
+    </>}
+  </section>;
+}
+
+function RangeBar({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model) return null;
+  const { range } = model;
+  const values = [range.low, range.base, range.high, range.expected ?? range.base, range.price ?? range.base].filter(v => Number.isFinite(v));
+  const lo = Math.min(...values, 0), hi = Math.max(...values) * 1.08 || 1;
+  const x = (v: number) => `${((v - lo) / (hi - lo) * 100).toFixed(2)}%`;
+  const money = (v: number) => perShare(v, model.currency, locale);
+  const marks: Array<[string, number, string]> = [[m.bear, range.low, "bear"], [m.base, range.base, "base"], [m.bull, range.high, "bull"]];
+  // The expected value sits on its own mark unless it all but coincides with another, which then carries both names.
+  if (range.expected != null) {
+    const near = marks.find(([, v]) => Math.abs(v - range.expected!) <= (hi - lo) * 0.02);
+    if (near) near[0] = `${near[0]} · ${m.expected}`; else marks.push([m.expected, range.expected, "expected"]);
+  }
+  return <div className="val-range" role="img" aria-label={[m.range, ...marks.map(([label, v]) => `${label} ${money(v)}`), ...(range.price != null ? [`${m.price} ${money(range.price)}`] : [])].join(" · ")}>
+    <div className="val-range-track">
+      <span className="val-range-band" style={{ left: x(range.low), width: `calc(${x(range.high)} - ${x(range.low)})` }} />
+      {marks.map(([label, v, kind]) => <span key={kind} className="val-range-mark" data-kind={kind} style={{ left: x(v) }}><i /><b>{money(v)}</b><small>{label}</small></span>)}
+      {range.price != null && <span className="val-range-mark val-range-price" style={{ left: x(range.price) }}><i /><b>{money(range.price)}</b><small>{m.price}</small></span>}
+    </div>
+  </div>;
+}
+
+function Sensitivities({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model?.sensitivities.length) return null;
+  const max = Math.max(...model.sensitivities.map(s => Math.abs(s.changePercent)), 1);
+  return <ol className="val-sens" aria-label={m.sensitivities}>
+    {model.sensitivities.map(s => <li key={s.factor}>
+      <span className="val-sens-label">{FACTOR[s.factor as keyof typeof FACTOR] ?? s.factor} <small>{s.step}</small></span>
+      <span className="val-sens-bar"><i data-sign={s.changePercent >= 0 ? "up" : "down"} style={{ width: `${Math.abs(s.changePercent) / max * 100}%` }} /></span>
+      <b>{s.changePercent >= 0 ? "+" : "−"}{Math.abs(s.changePercent).toFixed(1)}% · {perShare(s.perShare, model.currency, locale)}</b>
+    </li>)}
+  </ol>;
+}
+
+const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / Math.max(list.length, 1);
+
+function YearlyForecast({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  const scenario = report.model?.scenarios.base;
+  if (!scenario || scenario.drivers.modelType !== "fcff" || !scenario.result.yearly.length) return null;
+  const { path } = scenario.drivers;
+  const explicit = !!path.capitalPlan;
+  const adjusted = path.normalization?.some(value => value !== 0);
+  const money = (value: number | null | undefined) => value == null ? "—" : compactMoney(value, report.currency, locale);
+  return <details className="val-fold val-yearly">
+    <summary>{m.yearlyForecast}</summary>
+    <div className="val-fold-body">
+      <p className="val-list-line">{explicit ? m.explicitCapitalPlan : m.salesCapitalPlan}</p>
+      <table className="val-table val-table--yearly" tabIndex={0} aria-label={m.yearlyForecast}><thead><tr><th>{m.yearCol}</th><th>{m.revenueCol}</th><th>{m.nopatCol}</th>
+        {explicit ? <><th>{m.capexCol}</th><th>{m.depreciationCol}</th><th>{m.workingCapitalCol}</th></> : <th>{m.reinvestmentCol}</th>}
+        {adjusted && <th>{m.adjustmentCol}</th>}<th>{m.fcffCol}</th>
+      </tr></thead><tbody>
+        {scenario.result.yearly.map(row => <tr key={row.year}><th>{m.forecastYear(row.year)}</th><td>{money(row.revenue)}</td><td>{money(row.nopat)}</td>
+          {explicit ? <><td>{money(row.capex)}</td><td>{money(row.depreciation)}</td><td>{money(row.workingCapitalChange)}</td></> : <td>{money(row.reinvestment)}</td>}
+          {adjusted && <td>{money(path.normalization?.[row.year - 1])}</td>}<td>{money(row.cashFlow)}</td>
+        </tr>)}
+      </tbody></table>
+    </div>
+  </details>;
+}
+
+function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const [open, setOpen] = useState(false);
+  const model = report.model;
+  if (!model) return null;
+  const rate = model.discountRate;
+  const rows: Array<[keyof typeof m & ("bear" | "base" | "management" | "bull"), ScenarioEntry]> = [["bear", model.scenarios.bear], ["base", model.scenarios.base], ...(model.managementScenario ? [["management", model.managementScenario] as ["management", ScenarioEntry]] : []), ["bull", model.scenarios.bull]];
+  const weighted = rows.some(([, s]) => s.valuation);
+  return <section className="val-block">
+    <h3>{m.model}</h3>
+    <p className="val-model-line">{MODEL_TYPE[model.modelType]} · {m.discountRate} {pct(rate.value)}{m.rateBasis(rate.basis === "wacc" ? m.wacc : m.costOfEquity)} · {m.shares} {compactShares(model.shares.economic, locale)}{model.shares.dilutionReserve ? m.dilution(compactShares(model.shares.dilutionReserve, locale)) : ""}</p>
+    <table className="val-table"><thead><tr><th>{m.scenarios}</th><th>{weighted ? m.dcfValue : m.perShareValue}</th>{weighted && <th>{m.weightedValue}</th>}<th>{m.probability}</th><th>{m.growth}</th><th>{m.margin}</th><th>{m.terminalShare}</th></tr></thead><tbody>
+      {rows.map(([key, s]) => { const d = s.drivers as { path?: { revenueGrowth?: number[]; operatingMargin?: number[] } };
+        return <tr key={key}><th>{m[key]}</th><td>{perShare(s.result.perShare, model.currency, locale)}</td>{weighted && <td>{s.valuation ? perShare(s.valuation.perShare, model.currency, locale) : "—"}</td>}<td>{s.probability != null ? pct(s.probability, 0) : "—"}</td><td>{d.path?.revenueGrowth ? pct(avg(d.path.revenueGrowth)) : "—"}</td><td>{d.path?.operatingMargin ? pct(avg(d.path.operatingMargin)) : "—"}</td><td>{s.result.terminalShare != null ? pct(s.result.terminalShare, 0) : "—"}</td></tr>; })}
+    </tbody></table>
+    <YearlyForecast report={report} />
+    {model.scenarioProbabilities && <div className="val-why-list"><h5>{m.probabilities}</h5>
+      {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
+    </div>}
+    {model.implied && <p className="val-implied"><b>{m.implied}</b> {model.implied.converged ? m.impliedText(pct(model.implied.implied), pct(model.implied.baseAverage)) : m.impliedNotConverged}</p>}
+    <h4>{m.sensitivities}</h4>
+    <Sensitivities report={report} />
+    <Button variant="unstyled" type="button" className="val-toggle" aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? m.hideModel : m.showModel}</Button>
+    {open && <div className="val-model-detail">
+      {rows.map(([key, s]) => <div key={key} className="val-scenario">
+        <h5>{m[key]}</h5>
+        {key === "management" && <p className="val-list-line">{m.managementScenarioNote}</p>}
+        <Prose text={s.narrative} onCite={onCite} />
+        {s.assumptions && <p className="val-chips"><span><b>{m.revenuePath}</b> <Prose as="span" text={s.assumptions.revenue.rationale} onCite={onCite} /><Cites ids={s.assumptions.revenue.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span><span><b>{m.marginPath}</b> <Prose as="span" text={s.assumptions.margin.rationale} onCite={onCite} /><Cites ids={s.assumptions.margin.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span><span><b>{m.capexPath}</b> <Prose as="span" text={s.assumptions.capex.rationale} onCite={onCite} /><Cites ids={s.assumptions.capex.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span></p>}
+        {s.triggers.length > 0 && <p className="val-list-line"><b>{m.triggers}</b> {s.triggers.map((t, i) => <span key={i} lang={langOf(t)}>{t}{i < s.triggers.length - 1 ? "; " : ""}</span>)}</p>}
+        {s.invalidation.length > 0 && <p className="val-list-line"><b>{m.invalidation}</b> {s.invalidation.map((t, i) => <span key={i} lang={langOf(t)}>{t}{i < s.invalidation.length - 1 ? "; " : ""}</span>)}</p>}
+        {key === "management" && model.managementScenario && model.managementScenario.sources.length > 0 && <p className="val-list-line"><b>{m.targetSources}</b> {model.managementScenario.sources.map((src, i) => <span key={src.id} lang="en"><a href={src.url} target="_blank" rel="noreferrer noopener">{src.title}</a> ({src.date}){i < model.managementScenario!.sources.length - 1 ? "; " : ""}</span>)}</p>}
+      </div>)}
+      <p className="val-list-line"><b>{m.bridge}</b> {m.nonOperating} {compactMoney(model.bridge.nonOperatingAssets, model.currency, locale)} · {m.claims} {compactMoney(model.bridge.debtAndClaims, model.currency, locale)}</p>
+      <p className="val-list-line" lang={langOf(rate.rationale)}><b>{m.discountRate}</b> {rate.rationale}</p>
+      {rate.sources && <p className="val-chips"><b>{m.rateSources}</b>{DISCOUNT_RATE_COMPONENTS.map(key => <span key={key}><b>{RATE_COMPONENT[key]}</b> <span lang="en">{rate.sources![key].source}</span><Cites ids={rate.sources![key].evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span>)}</p>}
+      {model.limitations.length > 0 && <p className="val-list-line"><b>{m.limitations}</b> {model.limitations.map((t, i) => <span key={i} lang={langOf(t)}>{t} </span>)}</p>}
+      <table className="val-table val-table--facts"><thead><tr><th>{m.inputs}</th><th></th><th></th></tr></thead><tbody>
+        {report.facts.map(f => <tr key={f.id}><th lang="en">{f.label}</th><td>{f.unit === "ratio" ? pct(f.value) : f.unit === "shares" ? compactShares(f.value, locale) : compactMoney(f.value, f.currency, locale)}</td><td><small>{f.periodEnd ?? ""} · {f.basis}</small></td></tr>)}
+      </tbody></table>
+    </div>}
+  </section>;
+}
+
+/** The methods on the base path with their judged weights and the reasons; absent on reports written before the cross-check. */
+function Methods({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model?.methods?.length) return null;
+  const money = (v: number | null) => v != null ? perShare(v, model.currency, locale) : "—";
+  return <section className="val-block">
+    <h3>{m.methods}</h3>
+    <table className="val-table"><thead><tr><th>{m.methods}</th><th>{m.methodLow}</th><th>{m.methodBase}</th><th>{m.methodHigh}</th><th>{m.weightCol}</th></tr></thead><tbody>
+      {model.methods.map(method => <tr key={method.method}><th>{METHOD[method.method]}{method.base == null && <small> · {m.notApplied}</small>}</th><td>{money(method.low)}</td><td>{money(method.base)}</td><td>{money(method.high)}</td><td>{pct(method.weight, 0)}</td></tr>)}
+    </tbody></table>
+    {model.methodWeights && <div className="val-why-list">
+      {VALUATION_METHODS.map(key => { const w = model.methodWeights![key]; const method = model.methods!.find(x => x.method === key); return <p key={key} className="val-why"><b>{METHOD[key]} {pct(w.weight, 0)}</b> <Prose as="span" text={w.rationale} onCite={onCite} /> <Cites ids={w.evidenceIds.filter(isEvidenceId)} onCite={onCite} />{method && method.base == null && method.notes[0] && <small lang="en"> · {method.notes[0]}</small>}</p>; })}
+    </div>}
+    {model.peers ? <p className="val-list-line"><b>{m.peers}</b> {PEER_BASIS[model.peers.basis ?? "ranking"]} · <span lang="en">{model.peers.peers.join(", ")}</span>{model.peers.evToEbitda && <> · EV/EBITDA {m.peerQuartiles(`${model.peers.evToEbitda.p25.toFixed(1)}×`, `${model.peers.evToEbitda.median.toFixed(1)}×`, `${model.peers.evToEbitda.p75.toFixed(1)}×`)}</>}{model.peers.peRatio && <> · P/E {m.peerQuartiles(`${model.peers.peRatio.p25.toFixed(1)}×`, `${model.peers.peRatio.median.toFixed(1)}×`, `${model.peers.peRatio.p75.toFixed(1)}×`)}</>}{model.peers.notes.length > 0 && <small lang="en"> · {model.peers.notes.join("; ")}</small>}</p> : <p className="val-list-line"><b>{m.peers}</b> {m.peerNone}</p>}
+  </section>;
+}
+
+/** Management's cited targets beside the base path, the model's explanation of the gap, and the consensus or why none could be cited. */
+function Anchors({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model) return null;
+  const comparison = model.managementComparison ?? null, consensus = model.consensus ?? null, note = model.consensusNote ?? null;
+  if (!comparison && !consensus && !note) return null;
+  return <section className="val-block">
+    {comparison && <>
+      <h3>{m.managementTargets}</h3>
+      <table className="val-table"><thead><tr><th>{m.yearCol}</th><th>{m.targetCol}</th><th>{m.baseCol}</th><th>{m.gapCol}</th></tr></thead><tbody>
+        {comparison.rows.map(row => <tr key={`${row.metric}-${row.fiscalYear}`}><th>{m.fiscalYear(row.fiscalYear)} · {row.year}</th><td>{compactMoney(row.target, model.currency, locale)}</td><td>{compactMoney(row.base, model.currency, locale)}</td><td data-sign={row.gap >= 0 ? "up" : "down"}>{signedPct(row.gap)}</td></tr>)}
+      </tbody></table>
+      {comparison.explanation && <p className="val-why"><b>{m.why}</b> <Prose as="span" text={comparison.explanation} onCite={onCite} /> <Cites ids={comparison.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></p>}
+    </>}
+    {(consensus || note) && <>
+      <h3>{m.consensus}</h3>
+      {consensus ? <dl className="val-stats">
+        <div><dt>{m.consensusMean}</dt><dd>{perShare(consensus.mean, model.currency, locale)}{consensus.asOf && <small>{m.asOf(consensus.asOf)}</small>}</dd></div>
+        {consensus.low != null && consensus.high != null && <div><dt>{m.consensusRange}</dt><dd>{perShare(consensus.low, model.currency, locale)} – {perShare(consensus.high, model.currency, locale)}</dd></div>}
+        {consensus.count != null && <div><dt>{m.source}</dt><dd>{m.analysts(consensus.count)}{note?.source && <small lang="en">{note.source}</small>}</dd></div>}
+      </dl> : <p className="val-why"><b>{m.consensusUnavailable}</b> {note?.reason && <Prose as="span" text={note.reason} onCite={onCite} />}</p>}
+      {consensus?.evidenceId && isEvidenceId(consensus.evidenceId) && <p className="val-list-line"><b>{m.source}</b> <Cites ids={[consensus.evidenceId]} onCite={onCite} /></p>}
+    </>}
+  </section>;
+}
+
+/** The calculator's checks: each gate's status and the figures behind it. */
+function Checks({ report }: { report: ValuationPublication }) {
+  const gates = report.model?.gates;
+  if (!gates?.length) return null;
+  return <section className="val-block">
+    <h3>{m.checks}</h3>
+    <table className="val-table val-table--checks"><thead><tr><th>{m.checks}</th><th>{m.checkStatus}</th><th>{m.checkDetail}</th></tr></thead><tbody>
+      {gates.map((g, i) => <tr key={`${g.key}-${i}`} data-status={g.status}><th>{GATE[g.key as keyof typeof GATE] ?? <span lang="en">{g.key}</span>}</th><td><i className="val-gate" data-status={g.status} aria-hidden="true" />{GATE_STATUS[g.status]}</td><td lang="en">{g.detail}</td></tr>)}
+    </tbody></table>
+  </section>;
+}
+
+/** The five dimensions, each a row that says its score and why in one line, opening to the full rationale. */
+function Dimensions({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  return <section className="val-block">
+    <h3>{m.researchAssessment}</h3>
+    <p className="val-score-line">{VERDICT[report.verdict]} · {report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored} · {m.confidence} {CONF[report.confidence]}</p>
+    <ol className="val-dims" aria-label={m.dimensions}>
+      {report.dimensions.map(d => <li key={d.key} className="val-dim">
+        <details>
+          <summary>
+            <span className="val-dim-name">{DIM[d.key]}</span>
+            <strong className="val-dim-score">{d.score != null ? d.score.toFixed(1) : "—"}</strong>
+            <i className="val-dim-bar" aria-hidden="true"><b style={{ width: `${(d.score ?? 0) * 10}%` }} /></i>
+            <span className="val-dim-lead"><span lang={langOf(d.rationale)}>{leadSentence(d.rationale)}</span>{d.confidence !== "medium" && <small> · {m.confidence} {CONF[d.confidence]}</small>}</span>
+          </summary>
+          <div className="val-dim-body">
+            <Prose text={d.rationale} onCite={onCite} />
+            <p className="val-chips">
+              {d.supportingEvidenceIds.length > 0 && <span><b>{m.evidence}</b> {d.supportingEvidenceIds.map(id => <Cite key={id} id={id} onCite={onCite} />)}</span>}
+              {d.counterEvidenceIds.length > 0 && <span><b>{m.counter}</b> {d.counterEvidenceIds.map(id => <Cite key={id} id={id} counter onCite={onCite} />)}</span>}
+              <span><b>{m.confidence}</b> {CONF[d.confidence]} · {m.weight(pct(DIMENSION_WEIGHTS[d.key], 0))}</span>
+            </p>
+            {d.gaps.length > 0 && <p className="val-list-line"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{g}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
+            <p className="val-list-line"><b>{m.nextCheck}</b> <span lang={langOf(d.nextCheck)}>{d.nextCheck}</span></p>
+          </div>
+        </details>
+      </li>)}
+    </ol>
+  </section>;
+}
+
+function Sources({ report, open, onOpen, onClose }: { report: ValuationPublication; open: string | null; onOpen: (id: string) => void; onClose: () => void }) {
+  const { order } = useContext(FootnotesContext);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const shown = report.evidence.find(e => e.evidenceId === open) ?? null;
+  const listed = [...report.evidence].sort((a, b) => (order.get(a.evidenceId) ?? Infinity) - (order.get(b.evidenceId) ?? Infinity));
+  useEffect(() => { const d = dialog.current; if (!d) return; if (shown && !d.open) d.showModal(); else if (!shown && d.open) d.close(); }, [shown]);
+  return <section className="val-block">
+    <h3>{m.sources}</h3>
+    <ol className="val-sources">
+      {listed.map(e => <li key={e.evidenceId}><Button variant="unstyled" type="button" className="val-source" onClick={() => onOpen(e.evidenceId)}><b>{order.get(e.evidenceId) ?? "—"}</b><span lang="en">{sourceName(e)}</span><small>{e.publishedAt ? day(e.publishedAt) : ""}</small></Button></li>)}
+    </ol>
+    <dialog ref={dialog} className="val-dialog" onClose={onClose} aria-label={m.source}>
+      {shown && <div className="val-dialog-body">
+        <header><h3 lang="en">{shown.title}</h3><Button variant="unstyled" type="button" className="icon-button" aria-label={m.close} onClick={onClose}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg></Button></header>
+        <p className="val-dialog-meta">{shown.path && <span lang="en">{shown.path}</span>}{shown.publishedAt && <span>{day(shown.publishedAt)}</span>}<span>{m.snapshot}</span></p>
+        <blockquote lang="en">{shown.excerpt}</blockquote>
+        {shown.url && <a href={shown.url} target="_blank" rel="noreferrer noopener" onClick={() => track("source_click", { ticker: report.ticker })}>{m.openSource}</a>}
+      </div>}
+    </dialog>
+  </section>;
+}
+
+function Status({ valuation }: { valuation: ValuationResponse }) {
+  const attempt = valuation.latestAttempt;
+  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt && ["failed", "empty", "superseded", "cancelled"].includes(attempt.status) ? m.updateFailed : m.updating}</p>;
+  if (valuation.report?.reportStatus === "insufficient") return <p className="val-banner" data-tone="warn"><b>{m.insufficient}</b> {m.insufficientNote}</p>;
+  return null;
+}
+
+/** The judgements of a valuation.calc.v4 model in reading order: weights, probabilities, path assumptions, the comparison, the consensus, the rate sources. */
+function judgementTexts(model: ValuationPublication["model"]): string[] {
+  if (!model) return [];
+  const ids = (list: string[]) => list.filter(isEvidenceId).map(id => `[${id}]`).join("");
+  return [
+    ...VALUATION_METHODS.map(k => model.methodWeights ? `${model.methodWeights[k].rationale} ${ids(model.methodWeights[k].evidenceIds)}` : ""),
+    ...EXTENDED_SCENARIO_KEYS.map(k => model.scenarioProbabilities ? `${model.scenarioProbabilities[k].rationale} ${ids(model.scenarioProbabilities[k].evidenceIds)}` : ""),
+    ...(["bear", "base", "bull"] as const).flatMap(k => { const a = model.scenarios[k].assumptions; return a ? [`${a.revenue.rationale} ${ids(a.revenue.evidenceIds)}`, `${a.margin.rationale} ${ids(a.margin.evidenceIds)}`, `${a.capex.rationale} ${ids(a.capex.evidenceIds)}`] : []; }),
+    model.managementScenario ? `${model.managementScenario.narrative} ${ids(model.managementScenario.evidenceIds)}` : "",
+    model.managementComparison ? `${model.managementComparison.explanation} ${ids(model.managementComparison.evidenceIds)}` : "",
+    model.consensusNote?.reason ?? "", model.consensus?.evidenceId ? `[${model.consensus.evidenceId}]` : "",
+    ...DISCOUNT_RATE_COMPONENTS.map(k => model.discountRate.sources ? ids(model.discountRate.sources[k].evidenceIds) : ""),
+  ].filter(Boolean);
+}
+
+/** Footnotes numbered as the report reads: the written case first, then the dimensions and scenarios, then the rest. */
+function footnotesOf(report: ValuationPublication): Footnotes {
+  const s = report.sections;
+  const fair = report.model?.fairValueRange;
+  const assumptions = report.model?.scenarios.base.assumptions;
+  const fairTexts = fair ? [fair.status === "available" ? fair.rationale : fair.reason, ...fair.evidenceIds,
+    ...(fair.status === "available" && assumptions ? [assumptions.revenue, assumptions.margin, assumptions.capex].flatMap(a => [a.rationale, ...a.evidenceIds]) : [])] : [];
+  const texts = [...fairTexts, s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
+    ...report.dimensions.flatMap(d => [d.rationale, ...d.supportingEvidenceIds, ...d.counterEvidenceIds]),
+    ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : []),
+    ...judgementTexts(report.model)];
+  return { order: citationOrder(texts, report.evidence.map(e => e.evidenceId)), names: new Map(report.evidence.map(e => [e.evidenceId, sourceName(e)])) };
+}
+
+export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
+  const locale = useLocale();
+  const [versionId, setVersionId] = useState<string | null>(null);
+  const [read, setRead] = useState<VersionRead | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  // Another company starts on its current version with no source open.
+  const [shownTicker, setShownTicker] = useState(ticker);
+  if (shownTicker !== ticker) { setShownTicker(ticker); setVersionId(null); setRead(null); setOpen(null); }
+  // The current version is read from the response; a loaded older one is let go.
+  const current = !versionId || versionId === valuation.report?.versionId;
+  if (current && read) setRead(null);
+  useEffect(() => {
+    if (!versionId || versionId === valuation.report?.versionId) return;
+    const c = new AbortController();
+    // A read that does not answer, or answers with no report, is this version's failure and shows as such.
+    void fetchValuationVersion(ticker, versionId, c.signal).catch(() => null).then(r => { if (!c.signal.aborted) setRead(versionSettled(versionId, r)); });
+    return () => c.abort();
+  }, [ticker, versionId, valuation.report?.versionId, locale]);
+  // A new pick starts from its own loading state; nothing read for the previous pick carries over.
+  const pick = (id: string) => { setVersionId(id); setRead(versionLoading(id)); };
+  const view = versionView(versionId, valuation.report, read);
+  const report = view.phase === "ready" ? view.report : null;
+  const gaps = useMemo(() => report ? [...new Map(report.gaps.map(g => [g.code + (g.field ?? ""), g])).values()] : [], [report]);
+  const footnotes = useMemo(() => report ? footnotesOf(report) : null, [report]);
+  const picker = valuation.versions.length > 1 && <div><dt>{m.version}</dt><dd><select className="val-select" value={versionId ?? valuation.report?.versionId ?? ""} onChange={e => pick(e.target.value)} aria-label={m.version}>
+    {valuation.versions.map(v => <option key={v.versionId} value={v.versionId}>{day(v.generatedAt)}{v.versionId === valuation.report?.versionId ? ` · ${m.current}` : ""}</option>)}
+  </select></dd></div>;
+  if (view.phase !== "ready") {
+    const failed = view.phase === "failed";
+    return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
+      <div className="lens-empty val-empty"><dl className="val-dates">{picker}</dl><h2>{failed ? m.versionFailed : m.versionLoading}</h2>{failed ? <p>{m.versionFailedNote}</p> : <i className="lens-loading" />}</div>
+    </section>;
+  }
+  if (!report || !footnotes) {
+    const failed = valuation.availability === "failed";
+    return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
+      <div className="lens-empty val-empty"><h2>{failed ? m.failed : m.preparing}</h2><p>{failed ? m.failedNote : m.preparingNote}</p>{!failed && <i className="lens-loading" />}</div>
+    </section>;
+  }
+  const range = report.model?.range ?? null;
+  const guide: ValuationPriceGuide = current
+    ? valuation.priceGuide?.reportVersionId === report.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: report.versionId, quote: null, reason: report.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" }
+    : priceGuideOf({ report, quote: report.quote, asOf: report.researchAsOf, outdated: false });
+  const sections = report.sections;
+  const folded = Boolean(sections.thesis || sections.expectationsGap || sections.modelNotes);
+  return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
+    <div className="lens-doc val-doc">
+      <header className="val-head">
+        <div className="val-verdict" data-tone={guide.status === "available" ? PRICE_TONE[guide.position] : "neutral"}>
+          <strong className="val-verdict-label">{guide.status === "available" ? m[guide.position] : m.unable}</strong>
+          <span className="val-score-line">{current ? m.pricePosition : m.historicalAssessment}</span>
+        </div>
+        <dl className="val-dates">
+          <div><dt>{m.researchDate}</dt><dd>{day(report.researchAsOf)}</dd></div>
+          <div><dt>{m.financialBase}</dt><dd>{report.financialPeriodEnd}</dd></div>
+          {picker}
+        </dl>
+      </header>
+      {current && <Status valuation={valuation} />}
+      <FairValue report={report} guide={guide} onCite={setOpen} />
+      {report.model && <section className="val-block"><details className="val-fold val-stress">
+        <summary>{m.stressScenarios}</summary>
+        <div className="val-fold-body">
+        <h3>{m.range}</h3>
+        <RangeBar report={report} />
+        {range && range.low < 0 && <p className="val-list-line">{m.equityShortfall}</p>}
+        <dl className="val-stats">
+          <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+          {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}
+          {has(range?.marginOfSafety) && <div><dt>{m.marginOfSafety}</dt><dd data-sign={range!.marginOfSafety! >= 0 ? "up" : "down"}>{pct(range!.marginOfSafety)}</dd></div>}
+          {has(range?.baseUpside) && <div><dt>{m.baseUpside}</dt><dd>{signedPct(range!.baseUpside)}</dd></div>}
+          {has(range?.expectedUpside) && <div><dt>{m.expectedUpside}</dt><dd>{signedPct(range!.expectedUpside)}</dd></div>}
+          {has(range?.downsideCoverage) && <div><dt>{m.downside}</dt><dd>{signedPct(range!.downsideCoverage)}</dd></div>}
+        </dl>
+        {has(range?.expected) && report.model!.scenarioProbabilities && <p className="val-list-line">{m.expectedNote}</p>}
+        <Model report={report} onCite={setOpen} />
+        </div>
+      </details></section>}
+      <Dimensions report={report} onCite={setOpen} />
+      <section className="val-block val-sections">
+        <h3>{m.summary}<SourceLanguage of={[sections.summary, sections.thesis]} /></h3>
+        <ProseBlocks text={sections.summary} onCite={setOpen} />
+        {folded && <details className="val-fold">
+          <summary><span className="val-fold-open">{m.readThesis}</span><span className="val-fold-close">{m.hideThesis}</span></summary>
+          <div className="val-fold-body">
+            {sections.thesis && <><h4>{m.thesis}</h4><ProseBlocks text={sections.thesis} onCite={setOpen} /></>}
+            {sections.expectationsGap && <><h4>{m.expectationsGap}</h4><ProseBlocks text={sections.expectationsGap} onCite={setOpen} /></>}
+            {sections.modelNotes && <><h4>{m.modelNotes}</h4><ProseBlocks text={sections.modelNotes} onCite={setOpen} /></>}
+          </div>
+        </details>}
+        {sections.catalysts.length > 0 && <><h4>{m.catalysts}</h4><ul>{sections.catalysts.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+        {sections.counterEvidence.length > 0 && <><h4>{m.counterEvidence}</h4><ul>{sections.counterEvidence.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+        {sections.nextChecks.length > 0 && <><h4>{m.nextChecks}</h4><ul>{sections.nextChecks.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+      </section>
+      {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")} title={g.code}><span lang={langOf(g.message)}>{g.message}</span>{g.evidenceIds.length > 0 && <Cites ids={g.evidenceIds} onCite={setOpen} />}</li>)}</ul></section>}
+      <Methods report={report} onCite={setOpen} />
+      <Anchors report={report} onCite={setOpen} />
+      <Checks report={report} />
+      {report.diagnostics.some(d => d.value != null) && <section className="val-block">
+        <h3>{m.diagnostics}</h3>
+        <dl className="val-stats val-stats--diag">
+          {report.diagnostics.filter(d => d.value != null).map(d => <div key={d.key}><dt>{DIAG[d.key as keyof typeof DIAG] ?? d.label}</dt><dd>{d.unit === "percent" ? pct(d.value) : d.unit === "x" ? `${d.value!.toFixed(2)}×` : d.unit === "years" ? d.value!.toFixed(1) : d.value!.toFixed(2)}</dd></div>)}
+        </dl>
+      </section>}
+      {report.distributions.length > 0 && <section className="val-block">
+        <h3>{m.history}</h3>
+        <table className="val-table"><thead><tr><th></th><th>{m.median}</th><th>{m.rangeLabel}</th><th></th></tr></thead><tbody>
+          {report.distributions.map(d => <tr key={d.factor}><th>{FACTOR[d.factor as keyof typeof FACTOR] ?? d.factor}</th><td>{pct(d.median)}</td><td>{pct(d.min)} – {pct(d.max)}</td><td><small>{m.years(d.periods.length)}</small></td></tr>)}
+        </tbody></table>
+      </section>}
+      <Sources report={report} open={open} onOpen={setOpen} onClose={() => setOpen(null)} />
+      <p className="val-foot">{m.generated(day(report.generatedAt))} · {report.methodVersion} · {report.calculatorVersion}</p>
+    </div>
+  </section></FootnotesContext.Provider>;
+}

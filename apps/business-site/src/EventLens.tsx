@@ -7,7 +7,7 @@ import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
-import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
+import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, partialDollars, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 
 const ITEM_LABEL = labels({
@@ -26,7 +26,7 @@ const CATEGORY = labels<NonNullable<NonNullable<CompanyEvent["summary"]>["eventC
   { earnings_update: "业绩更新", guidance: "业绩指引", "m&a": "并购", executive: "管理层", legal: "法律", other: "其他" });
 
 const m = messages({
-  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", newer: "Newer event", older: "Older event", close: "Close event",
+  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", close: "Close event",
   analystView: "Analyst view", aiSummary: "AI summary", noSummary: "No summary",
   footnotes: (n: number) => `${n} filing ${n === 1 ? "footnote" : "footnotes"}`, edgarIndex: "EDGAR filing index", filing: (form: string) => `${form} filing`,
   form: "Form", eventDate: "Event date", items: "Items", item: (code: string) => `Item ${code}`, document: "Document", exhibits: "Exhibits", summaryCategory: "Summary category",
@@ -40,7 +40,7 @@ const m = messages({
   directHolding: "Direct holding", sale: "Sale",
   stake: "Stake", ofOutstanding: (count: string, asOf: string) => `Direct holding ÷ ${count} outstanding as of ${asOf}`,
 }, {
-  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", newer: "较新事件", older: "较早事件", close: "关闭事件",
+  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", close: "关闭事件",
   analystView: "分析观点", aiSummary: "AI 摘要", noSummary: "无摘要",
   footnotes: (n: number) => `文件脚注 ${n} 条`, edgarIndex: "EDGAR 文件索引", filing: (form: string) => `${form} 文件`,
   form: "文件类型", eventDate: "事件日期", items: "事项", item: (code: string) => `Item ${code}`, document: "文档", exhibits: "附件", summaryCategory: "摘要类别",
@@ -62,7 +62,7 @@ const m = messages({
  * the same single-column document; the summary's headline is the title, so it is not repeated. The tag on an insider
  * sale is rule-based.
  */
-export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose, onStep, index, count }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose }: {
   event: CompanyEvent;
   publication: EventsPublication;
   ticker: string;
@@ -70,9 +70,6 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   updates: number;
   nodeColor: (id: string) => string;
   onClose: () => void;
-  onStep: (delta: 1 | -1) => void;
-  index: number;
-  count: number;
 }) {
   const counts = useMemo(() => shareCounts(data.fundamentals), [data.fundamentals]);
   const insider = useMemo(() => insiderLens(publication, event, counts), [publication, event, counts]);
@@ -89,7 +86,6 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <span className="lens-basis">{event.form} · {m.filed} {event.filedAt}{event.eventDate !== event.filedAt ? ` · ${m.eventOn} ${event.eventDate}` : ""}</span>
       </div>
       <div className="lens-nav">
-        <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.newer} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.older} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
@@ -137,7 +133,7 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
       <TableRow><TableHead scope="row">{m.role}</TableHead><TableCell><b>{role}</b></TableCell></TableRow>
       {t.sold && <>
         <TableRow><TableHead scope="row">{m.sharesSold}</TableHead><TableCell><b>{shares(t.sold.shares)}</b></TableCell></TableRow>
-        <TableRow><TableHead scope="row">{m.avgPrice}</TableHead><TableCell><b>{perShare(t.sold.averagePrice, "USD", getLocale())}</b></TableCell></TableRow>
+        <TableRow><TableHead scope="row">{m.avgPrice}</TableHead><TableCell><b>{t.sold.averagePrice != null ? perShare(t.sold.averagePrice, "USD", getLocale()) : "—"}</b></TableCell></TableRow>
         <TableRow><TableHead scope="row">{m.proceeds}</TableHead><TableCell><b>{dollars(t.sold.proceeds)}</b></TableCell></TableRow>
       </>}
       {!t.sold && t.bought && <>
@@ -149,7 +145,7 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
       <TableRow><TableHead scope="row">{m.heldAfter}</TableHead><TableCell><b>{t.heldAfter != null ? shares(t.heldAfter) : m.notDisclosed}</b></TableCell></TableRow>
       {model.stake && <TableRow><TableHead scope="row">{m.stake}</TableHead><TableCell><b>{model.stake.before != null && model.stake.before !== model.stake.after ? `${stake(model.stake.before)} → ` : ""}{stake(model.stake.after!)}</b><em>{m.ofOutstanding(shares(model.stake.outstanding.shares), shortPeriod(model.stake.outstanding.date))}</em></TableCell></TableRow>}
       <TableRow><TableHead scope="row">{m.plan}</TableHead><TableCell><b>{t.rule10b51 === true ? m.yes : t.rule10b51 === false ? m.no : m.notMarked}</b>{t.planAdoptedOn && <em>{m.adopted(t.planAdoptedOn)}</em>}</TableCell></TableRow>
-      <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(dollars(model.cadence.totalProceeds))}</em></TableCell></TableRow>
+      <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(partialDollars(model.cadence.sales.map(s => s.proceeds)))}</em></TableCell></TableRow>
       <TableRow><TableHead scope="row">{m.otherSellers}</TableHead><TableCell><b>{m.people(model.cluster.length)}</b><em>{m.window(INSIDER_RULES.clusterDays)}</em></TableCell></TableRow>
     </TableBody></Table>
     {model.cluster.length > 0 && <ul className="event-cluster">{model.cluster.map(c => <li key={c.id}><span>{c.ownerName}{c.title ? ` · ${c.title}` : ""}</span><span>{shortDate(c.date)} · {dollars(c.proceeds)}</span></li>)}</ul>}
@@ -176,7 +172,8 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
   // The staircase: hold flat from each filing to the next, then step to the new level.
   const d = path.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(2)},${y(i ? path[i - 1].held : p.held + p.sold - p.bought - p.exercised).toFixed(2)}L${x(p.date).toFixed(2)},${y(p.held).toFixed(2)}`).join("") + `L96,${y(path[path.length - 1].held).toFixed(2)}`;
   const sales = path.filter(p => p.sold > 0);
-  const maxProceeds = Math.max(1, ...sales.map(p => p.proceeds));
+  // A sale with unknown proceeds (an unpriced line) takes the smallest dot: there is no figure to size it by.
+  const maxProceeds = Math.max(1, ...sales.flatMap(p => p.proceeds != null ? [p.proceeds] : []));
   return <div className="insider-ladder" role="img" aria-label={m.path(event.insider!.ownerName, path[0].date, path[path.length - 1].date, sales.length)}>
     <div className="lens-legend"><span><i className="ladder-step" />{m.directHolding}</span><span><i className="ladder-dot" />{m.sale}</span><span><i className="ladder-dot ladder-dot--planned" />{m.plan}</span></div>
     <div className="ladder-plot">
@@ -186,7 +183,7 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
       </svg>
       <div className="ladder-marks">
         {sales.map(p => {
-          const size = 8 + Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18;
+          const size = 8 + (p.proceeds != null ? Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18 : 0);
           return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
             style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(p.proceeds)}`} />;
         })}

@@ -1,3 +1,5 @@
+import type { FiscalPeriodFields } from "./period.ts";
+
 export const FLOW_METRICS = ["revenue", "cost", "gross", "research", "sales", "administration", "operatingExpenses", "operating", "other", "pretax", "tax", "net"] as const;
 export type FlowMetric = (typeof FLOW_METRICS)[number];
 export type FlowSource = { id: string; title: string; url: string; publishedAt?: string | null };
@@ -83,7 +85,7 @@ export type BusinessFlowQuarter = {
   basisChanges?: FlowMetric[];
 
   sources: FlowSource[];
-};
+} & Partial<FiscalPeriodFields>;
 /** Optional published company-analysis resource; no personal portfolio information. */
 export type PublicBusinessFlow = {
   schemaVersion: "business-flow.v1";

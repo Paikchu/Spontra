@@ -3,6 +3,7 @@ import { completeProductName, harnessSections, SECTION_LIMITS } from "../../../.
 import { compactName, issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
+import { isSecUrl, SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type ExplainerNode = { nodeId: string; name: string; parentId: string | null; hint: string };
 /** A filing the published flow itself was read from. */
@@ -87,7 +88,7 @@ export async function runBusinessExplainer(input: {
   const sourceFor = (doc: EvidenceDocument) => {
     let source = [...sources.values()].find(s => s.url === doc.url);
     if (!source) {
-      source = { id: `s${sources.size + 1}`, title: doc.title.slice(0, 300) || hostname(doc.url), url: doc.url, kind: isSec(doc.url) ? "sec" : "web", publishedAt: doc.publishedAt };
+      source = { id: `s${sources.size + 1}`, title: doc.title.slice(0, 300) || hostname(doc.url), url: doc.url, kind: isSecUrl(doc.url) ? "sec" : "web", publishedAt: doc.publishedAt };
       sources.set(source.id, source);
     }
     return source;
@@ -135,8 +136,8 @@ async function collectFilings(input: { companyName: string; filings?: ExplainerF
   // one filed within about the last two years.
   const year = Number(input.now.slice(0, 4));
   try {
-    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1}`, maxResults: 10, depth: "advanced", includeDomains: ["sec.gov"] }, scope);
-    const annual = result.data.results.filter(h => isSec(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
+    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1}`, maxResults: 10, depth: "advanced", includeDomains: [SEC_DOMAIN] }, scope);
+    const annual = result.data.results.filter(h => isSecUrl(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
       .sort((a, b) => (accessionYear(b.url) ?? 0) - (accessionYear(a.url) ?? 0))[0];
     if (annual && !documents.some(d => d.url === annual.url)) documents.push(documentFor(annual, null));
   } catch { /* The flow's own filing still anchors the explanation. */ }
@@ -166,7 +167,7 @@ async function collectGroup(input: { companyName: string; search: ExplainerSearc
   const token = input.companyName.toLowerCase().split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? "";
   // An old filing describes businesses that may since have been renamed or regrouped.
   const stale = (h: SearchHit) => (accessionYear(h.url) ?? year) < year - 1;
-  const rank = (h: SearchHit) => stale(h) ? 4 : isSec(h.url) ? 0 : token && hostname(h.url).includes(token) ? 1 : /investor|\bir\./i.test(h.url) ? 2 : 3;
+  const rank = (h: SearchHit) => stale(h) ? 4 : isSecUrl(h.url) ? 0 : token && hostname(h.url).includes(token) ? 1 : /investor|\bir\./i.test(h.url) ? 2 : 3;
   const ranked = [...hits].sort((a, b) => rank(a) - rank(b));
   const terms = keywords([group.root.hint, ...group.children.map(c => c.hint)]);
   const read: EvidenceDocument[] = [];
@@ -382,9 +383,4 @@ function isHttps(value: string): boolean {
 
 function hostname(value: string): string {
   try { return new URL(value).hostname.toLowerCase(); } catch { return ""; }
-}
-
-function isSec(value: string): boolean {
-  const host = hostname(value);
-  return isHttps(value) && (host === "sec.gov" || host.endsWith(".sec.gov"));
 }

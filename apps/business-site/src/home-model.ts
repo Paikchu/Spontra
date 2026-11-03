@@ -1,7 +1,9 @@
 import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenue, HomeRevenueReason } from "../../../shared/analysis-contract/home.ts";
+import type { FiscalLabelSource } from "../../../shared/analysis-contract/period.ts";
+import { calendarLabel, resolvePeriod } from "../../../shared/analysis-runtime/fiscal-label.ts";
 import { isLocale, type Locale } from "../../../shared/analysis-runtime/locale.ts";
+import { TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 const REASONS = new Set<HomeRevenueReason>(["NOT_DISCLOSED", "MISSING_TWO_QUARTERS"]);
 const COMPANY_STATUS = new Set<HomeCompany["status"]>(["ready", "preparing", "partial"]);
@@ -55,7 +57,7 @@ function company(value: unknown): HomeCompany | null {
   const ticker = text(row.ticker);
   const name = text(row.name);
   const status = row.status;
-  if (!ticker || !TICKER.test(ticker) || !name || typeof status !== "string" || !COMPANY_STATUS.has(status as HomeCompany["status"])) return null;
+  if (!ticker || !TICKER_PATTERN.test(ticker) || !name || typeof status !== "string" || !COMPANY_STATUS.has(status as HomeCompany["status"])) return null;
   if (!(row.nameZh === null || typeof row.nameZh === "string")) return null;
   if (!(row.sector === null || typeof row.sector === "string")) return null;
   if (!Array.isArray(row.aliases) || row.aliases.some(alias => typeof alias !== "string")) return null;
@@ -66,7 +68,25 @@ function company(value: unknown): HomeCompany | null {
   if (row.latestPeriod !== null) {
     const period = record(row.latestPeriod);
     if (!period || !text(period.periodEnd) || !text(period.fiscalLabel) || !(period.filedAt === null || typeof period.filedAt === "string")) return null;
-    latestPeriod = { periodEnd: period.periodEnd as string, fiscalLabel: period.fiscalLabel as string, filedAt: period.filedAt as string | null };
+    const periodEnd = period.periodEnd as string;
+    if (period.periodStart != null && typeof period.periodStart !== "string") return null;
+    const source = period.labelSource;
+    const labelSource: FiscalLabelSource | null = source === "xbrl" || source === "derived" || source === "unknown" ? source : null;
+    const resolved = resolvePeriod({
+      ticker,
+      periodEnd,
+      periodStart: typeof period.periodStart === "string" ? period.periodStart : null,
+      fiscalYear: typeof period.fiscalYear === "number" ? period.fiscalYear : null,
+      fiscalQuarter: typeof period.fiscalQuarter === "number" ? period.fiscalQuarter : null,
+      fiscalYearEndMonth: typeof period.fiscalYearEndMonth === "number" ? period.fiscalYearEndMonth : null,
+      labelSource,
+    });
+    const calendar = typeof period.calendarLabel === "string" && period.calendarLabel ? period.calendarLabel : calendarLabel(periodEnd);
+    latestPeriod = {
+      periodEnd, periodStart: resolved.periodStart, fiscalLabel: period.fiscalLabel as string, calendarLabel: calendar,
+      filedAt: period.filedAt as string | null, fiscalYear: resolved.fiscalYear, fiscalQuarter: resolved.fiscalQuarter,
+      fiscalYearEndMonth: resolved.fiscalYearEndMonth, labelSource: resolved.labelSource,
+    };
   }
   if (!Array.isArray(row.revenueTrend)) return null;
   const revenueTrend: HomeCompany["revenueTrend"] = [];
@@ -77,6 +97,16 @@ function company(value: unknown): HomeCompany | null {
     if (!periodEnd || !amount) return null;
     revenueTrend.push({ periodEnd, value: amount });
   }
+  let statement: HomeCompany["statement"] = null;
+  if (row.statement != null) {
+    const item = record(row.statement);
+    const currency = item && text(item.currency), revenueAmount = item && decimal(item.revenue), net = item && decimal(item.net);
+    const cost = item && item.cost != null ? decimal(item.cost) : null;
+    if (currency && revenueAmount && net) statement = { currency, revenue: revenueAmount, cost, net };
+  }
+  const margin = record(row.operatingMargin);
+  const marginPct = margin ? finiteOrNull(margin.pct) : undefined, yearAgoPct = margin ? finiteOrNull(margin.yearAgoPct) : undefined;
+  const operatingMargin = marginPct != null && yearAgoPct !== undefined ? { pct: marginPct, yearAgoPct } : null;
   const counts = record(row.findingCounts);
   const count = (key: string) => counts && typeof counts[key] === "number" && Number.isInteger(counts[key]) && (counts[key] as number) >= 0 ? counts[key] as number : null;
   const risk = count("risk");
@@ -94,7 +124,7 @@ function company(value: unknown): HomeCompany | null {
   return {
     ticker, name, nameZh: row.nameZh, aliases: row.aliases as string[], sector: row.sector,
     status: status as HomeCompany["status"], latestPeriod, revenue: parsedRevenue,
-    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend,
+    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend, statement, operatingMargin,
     findingCounts: { risk, strength, shift, watch }, topFindings,
   };
 }

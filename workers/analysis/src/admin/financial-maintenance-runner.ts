@@ -1,10 +1,11 @@
 import type { AnalysisEnv } from "../operations.ts";
 import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { aiIsEnabled, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
 import { archivingReader } from "../sec-archive/index.ts";
 import { collectComplete } from "../financial-data/collect.ts";
+import { republishStoredFinancials } from "../financial-data/republish.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { D1CompleteStore, type Job } from "../financial-data/store.ts";
 import { rereadHistoryFiling, runHistoryStep } from "../financial-data/history.ts";
@@ -12,18 +13,19 @@ import { listFilingDisclosureAudits } from "../financial-data/disclosure-audit.t
 import { FinancialMaintenanceStore, type MaintenanceRow, type MaintenanceState } from "./financial-maintenance-store.ts";
 
 export interface MaintenanceDependencies {
-  reader(env: AnalysisEnv, ticker: string): SecReader;
+  reader(env: AnalysisEnv, ticker: string, options?: {silentArchive?: boolean}): SecReader;
   discover: typeof discoverDataIssuer;
   collect(env: AnalysisEnv, job: Job, reader: SecReader): Promise<{ published: boolean; reasons: string[] }>;
   history: typeof runHistoryStep;
   reread: typeof rereadHistoryFiling;
+  republish?: typeof republishStoredFinancials;
 }
 const dependencies: MaintenanceDependencies = {
-  reader: (env, ticker) => archivingReader({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker),
+  reader: (env, ticker, options) => archivingReader({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, null, { announce: !options?.silentArchive }),
   discover: discoverDataIssuer,
   // The earnings release is read as the collect task reads it, so an admin collection never publishes an older pair
   // than the one the release already put on the map.
-  collect: (env, job, reader) => collectComplete(job, financialPolicy({ SEC_DATA_TICKERS: job.ticker, SEC_AI_ENABLED: "false" }),
+  collect: (env, job, reader) => collectComplete(job, new Set([job.ticker]),
     new D1CompleteStore(env.DB!), j => readSecDocumentBatch(j, reader, 1), (j, previous) => readReleaseQuarter(j, previous, reader)),
   history: runHistoryStep,
   reread: rereadHistoryFiling,
@@ -54,7 +56,7 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
   }
   const outcome = async () => ({ processed: true, taskId: row.task_id, stage: row.stage,
     ...(!await store.hasActiveDataTasks() ? { blocksDataSweep: false } : {}) });
-  const state = JSON.parse(row.state_json) as MaintenanceState, reader = deps.reader(env, row.ticker);
+  const state = JSON.parse(row.state_json) as MaintenanceState, reader = deps.reader(env, row.ticker, {silentArchive: row.action === "reread"});
   const issues = JSON.parse(row.issues_json) as string[];
   const finish = (stage: string, options: Partial<Parameters<typeof store.finishStep>[1]> = {}) => store.finishStep(row,
     { stage, state, issues, ...options }, new Date());
@@ -85,16 +87,25 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
       await finish("collect", { completedSteps: 1 });
     } else if (row.stage === "reread") {
       try {
-        const result = await deps.reread(env.DB, reader, { ticker: row.ticker, cik: state.cik! }, row.accession_number!, new Date());
+        const result = await deps.reread(env.DB, reader, { ticker: row.ticker, cik: state.cik! }, row.accession_number!, new Date(), {
+          checkpointKey: `sec:filing-reread:${row.task_id}`, maxDocuments: 1,
+          guard: {taskId:row.task_id,leaseToken:row.lease_token!}, heartbeat:()=>store.heartbeat(row),
+        });
+        if (result.pending) { await finish("reread"); return outcome(); }
         state.reread = { form: result.form, filedAt: result.filedAt, replaced: result.replaced, quarters: result.quarters };
         issues.push(...result.issues);
         // No quarter, and the filing never printed one: nothing was replaced, and retrying reads the same pages.
-        const noQuarter = result.quarters.length === 0 && !(result.issues.length > 0 && result.issues.every(issue => /:NO_QUARTERLY_PERIOD$/.test(issue)));
-        await finish("complete", { ...taskStatus(issues, noQuarter), completedSteps: 2, issues: [...new Set(issues)].slice(-100) });
+        const updated = result.historyUpdated ?? result.quarters.length > 0;
+        const noQuarter = !updated && !(result.issues.length > 0 && result.issues.every(issue => /:NO_QUARTERLY_PERIOD$/.test(issue)));
+        await finish(!updated ? "complete" : "republish", {
+          ...(!updated ? taskStatus(issues, noQuarter) : {}), completedSteps: 2, issues: [...new Set(issues)].slice(-100) });
       } catch (error) {
         if (error instanceof Error && error.message === "FILING_NOT_IN_HISTORY_WINDOW") await finish("reread", { status: "failed", errorCode: error.message });
         else throw error;
       }
+    } else if (row.stage === "republish") {
+      await (deps.republish ?? republishStoredFinancials)(env.DB, {ticker:row.ticker,cik:state.cik!,taskId:row.task_id,leaseToken:row.lease_token!});
+      await finish("complete", {...taskStatus(issues), completedSteps:3});
     } else if (row.stage === "collect") {
       await collectStep(env, deps, row, state, reader);
       const result = await env.DB.prepare("SELECT status,reasons_json FROM financial_collection_jobs WHERE job_id=?").bind(state.collectionJobId).first<{ status: string; reasons_json: string }>();
@@ -150,6 +161,9 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
     // Provider messages can contain query strings, credentials or raw document text; never persist them.
     if (error instanceof Error && ["SEC_ISSUER_NOT_FOUND", "ISSUER_IDENTITY_MISMATCH"].includes(error.message)) {
       await finish(row.stage, { status: "failed", errorCode: error.message });
+    } else if (error instanceof Error && error.message.startsWith("REPUBLICATION_")) {
+      // A history-only issuer may have no complete pair to rebuild. Never claim publication succeeded.
+      await finish(row.stage, {status:"partial",errorCode:error.message});
     } else await store.failStep(row, new Date());
   }
   return outcome();

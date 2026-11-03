@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 import { libraryHash, parseFilingDocument } from "../../../shared/analysis-runtime/filing-library/parse.ts";
 
 const p = (text: string, style = "") => `<p style="font-size:10pt;${style}"><span style="font-size:10pt">${text}</span></p>`;
@@ -254,7 +255,7 @@ test("an earnings release yields the next quarter only when every line reconcile
   const src = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/10q.htm";
   const amount = (value: number, key: string) => ({ value: String(value), basis: "reported" as const, definition: key, comparabilityKey: `k:${key}`, sourceIds: ["A"], lineage: [{ accession: "A", url: src, concept: key, contextId: "c", periodStart: "2026-04-01", periodEnd: "2026-06-30", dimensions: {}, parserVersion: "v" }] });
   const derived = (value: number, key: string) => ({ ...amount(value, key), basis: "derived" as const, formula: "f" });
-  const previous: any = {
+  const previous: BusinessFlowQuarter = {
     id: "2026-06-30", incomeModel: "standard", label: "Q", periodStart: "2026-04-01", periodEnd: "2026-06-30", periodType: "3M", currency: "USD", scale: 1, basisLabel: "b", reportedAt: null,
     figures: { revenue: amount(1000e6, "revenue"), cost: amount(400e6, "cost"), gross: amount(600e6, "gross"), operatingExpenses: derived(300e6, "operatingExpenses"), operating: amount(300e6, "operating"), other: derived(10e6, "other"), pretax: amount(310e6, "pretax"), tax: amount(60e6, "tax"), net: amount(250e6, "net"), research: amount(200e6, "research") },
     expenseComponents: [{ id: "ResearchAndDevelopmentExpense", name: "Research and development", group: "research", amount: amount(200e6, "rd") }, { id: "SellingGeneralAndAdministrativeExpense", name: "Selling, general and administrative", group: "other", amount: amount(100e6, "sga") }],
@@ -275,7 +276,7 @@ test("an earnings release yields the next quarter only when every line reconcile
   assert.deepEqual(read.issues, []);
   const q = read.quarter!;
   assert.equal(q.periodEnd, "2026-09-30");
-  assert.deepEqual(Object.fromEntries(Object.entries(q.figures).map(([k, v]: any) => [k, Number(v.value) / 1e6])), { revenue: 1200, cost: 450, gross: 750, operating: 405, pretax: 390, net: 310, tax: 80, operatingExpenses: 345, other: -15, research: 230 });
+  assert.deepEqual(Object.fromEntries(Object.entries(q.figures).map(([k, v]) => [k, Number(v!.value) / 1e6])), { revenue: 1200, cost: 450, gross: 750, operating: 405, pretax: 390, net: 310, tax: 80, operatingExpenses: 345, other: -15, research: 230 });
   assert.deepEqual(q.expenseComponents!.map(c => [c.id, Number(c.amount.value) / 1e6]), [["ResearchAndDevelopmentExpense", 230], ["SellingGeneralAndAdministrativeExpense", 120], ["release-restructuring", -5]]);
   assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue!.value) / 1e6]), [["x:CloudMember", 850], ["x:DevicesMember", 350]]);
   assert.equal(q.figures.revenue!.comparabilityKey, "k:revenue");

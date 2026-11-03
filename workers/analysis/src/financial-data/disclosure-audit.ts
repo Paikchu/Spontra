@@ -1,4 +1,5 @@
 import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
+import { edgarArchiveCik } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import {extractFinancialStatements, STATEMENTS_VERSION, type FinancialStatements} from "../../../../shared/analysis-runtime/financial-data/financial-statements.ts";
 import { DISCLOSURE_EXTRACTION_VERSION, extractFilingDisclosures, type FilingDisclosures } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import type { DisclosureAuditSummary, DisclosureAuditPage } from "../../../../shared/analysis-contract/disclosure-audit.ts";
@@ -8,6 +9,8 @@ import type { DocumentSource } from "./parser.ts";
 import { canonicalSecHtml } from "./provider.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 type ArchiveBucket = {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
@@ -23,16 +26,15 @@ export type StoredAudit = DisclosureAuditSummary & { rawKey: string; inventoryKe
 export const disclosureAuditPrefix = (ticker: string) => `sec:disclosure-audit:v1:${ticker}:`;
 export const ARCHIVE_PREFIX = "financial-disclosures/";
 const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("");
-const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statements, capital: _capital, ...value}: StoredAudit): DisclosureAuditSummary => value;
+const summary = (value: StoredAudit): DisclosureAuditSummary => omit(value, "rawKey", "inventoryKey", "statementsKey", "capital");
 
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, served: string,
-  metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null): Promise<DisclosureAuditSummary> {
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
+  metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null, options: {announce?: boolean} = {}): Promise<DisclosureAuditSummary> {
+  if (!TICKER_PATTERN.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
   // Hash and store what was filed, not what sec.gov wrapped around it, so the same document keeps one address.
   const html = canonicalSecHtml(served);
-  const url = new URL(source.url);
-  if (url.protocol !== "https:" || url.hostname !== "www.sec.gov" || !url.pathname.startsWith("/Archives/edgar/data/")) throw new Error("INVALID_DISCLOSURE_SOURCE");
+  if (edgarArchiveCik(source.url) === null) throw new Error("INVALID_DISCLOSURE_SOURCE");
   const sourceBytes = new TextEncoder().encode(html).byteLength;
   if (!sourceBytes || sourceBytes > SEC_DOCUMENT_MAX_BYTES) throw new Error("DISCLOSURE_DOCUMENT_TOO_LARGE");
   const [contentSha256, documentId] = await Promise.all([digest(html), digest(source.url)]);
@@ -66,9 +68,10 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   await env.DB.batch([
     env.DB.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(cacheKey, JSON.stringify(record), archivedAt),
-    outboxStatement(env.DB, { type: "filing.archived", ticker, cik: source.cik || null, detail, causeId }, archivedAt),
+    // Deterministic maintenance keeps its audit without dispatching downstream model consumers.
+    ...(options.announce === false ? [] : [outboxStatement(env.DB, { type: "filing.archived", ticker, cik: source.cik || null, detail, causeId }, archivedAt)]),
     ...superseded.map(key => env.DB.prepare("INSERT INTO pipeline_superseded (key, ticker, superseded_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING").bind(key, ticker, archivedAt)),
-    ...(superseded.length ? [outboxStatement(env.DB, { type: "archive.superseded", ticker, cik: source.cik || null, detail, causeId }, archivedAt)] : []),
+    ...(superseded.length && options.announce !== false ? [outboxStatement(env.DB, { type: "archive.superseded", ticker, cik: source.cik || null, detail, causeId }, archivedAt)] : []),
   ]);
   return summary(record);
 }

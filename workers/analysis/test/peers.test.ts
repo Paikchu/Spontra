@@ -4,6 +4,7 @@ import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/busi
 import type { CapitalQuarter, CashFlowStatement } from "../../../shared/analysis-contract/capital-structure.ts";
 import { PEER_FIGURES, type PeerCompany } from "../../../shared/analysis-contract/peers.ts";
 import type { FindingData } from "../../../shared/analysis-runtime/findings.ts";
+import { omit } from "../../../shared/analysis-runtime/omit.ts";
 import { alignedPeerQuarter, changedPeers, citedPeers, depreciationOf, peersFor, liabilityGroupTotal, peerQuartersFrom, readPeersPublication } from "../../../shared/analysis-runtime/peers.ts";
 import { EVENT_TYPES, SUBSCRIPTIONS, TASKS, validateRegistry } from "../src/pipeline/registry.ts";
 
@@ -171,7 +172,7 @@ test("a company's page carries only the peers it cites, so another company's qua
   assert.deepEqual(peersFor(after, citedPeers(findings))?.companies.map(c => c.ticker), ["ORCL"]);
   assert.equal(peersFor(after, new Set()), null);
   // What NBIS's page reads compares equal across AMZN's new quarter (generatedAt is bookkeeping the page ignores).
-  const { generatedAt: _a, ...cutBefore } = peersFor(before, citedPeers(findings))!;
-  const { generatedAt: _b, ...cutAfter } = peersFor(after, citedPeers(findings))!;
+  const cutBefore = omit(peersFor(before, citedPeers(findings))!, "generatedAt");
+  const cutAfter = omit(peersFor(after, citedPeers(findings))!, "generatedAt");
   assert.deepEqual(cutBefore, cutAfter);
 });

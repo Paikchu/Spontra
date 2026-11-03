@@ -1,6 +1,6 @@
 import type {Job} from './store.ts';
 /** Explicit opt-in. No model key or Workflow binding belongs to this subsystem. */
-export interface DataOnlyEnv {DB:D1Database;SEC_USER_AGENT:string;SEC_DATA_TICKERS?:string;SEC_TRACKED_TICKERS?:string;SEC_DATA_COLLECTION_ENABLED?:string;}
+export interface DataOnlyEnv {DB:D1Database;SEC_USER_AGENT:string;SEC_DATA_TICKERS?:string;SEC_DATA_COLLECTION_ENABLED?:string;}
 
 const ACTIVE="('queued','retry','running')";
 

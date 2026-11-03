@@ -13,7 +13,7 @@ import type {
   PublicFundamentalSeries,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
 import { compactMoney, compactNumber, compactShares, currencyName, MINUS } from "../../../../shared/analysis-runtime/locale.ts";
-import { getLocale, labels, messages } from "../i18n/index.ts";
+import { isChinese as zh, labels, messages } from "../i18n/index.ts";
 // Defined in the contract so Spontra Analysis enforces the same ceilings; re-exported so every
 // existing consumer keeps its import path.
 export { FUNDAMENTAL_CHART_MAX_AXES, FUNDAMENTAL_CHART_MAX_SERIES };
@@ -31,14 +31,13 @@ export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful";
 const m = messages({
   notMeaningfulLabel: FUNDAMENTAL_NOT_MEANINGFUL_LABEL, notMeaningfulHint: FUNDAMENTAL_NOT_MEANINGFUL_HINT, noData: "No data",
 }, {
-  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "无数据",
+  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "缺数据",
 });
 const TRANSFORM_SUFFIX = labels<FundamentalTransform>({
   value: "", qoq_growth: " · QoQ growth", yoy_growth: " · YoY growth", qoq_change: " · QoQ change", yoy_change: " · YoY change",
 }, {
   value: "", qoq_growth: " · 环比增长", yoy_growth: " · 同比增长", qoq_change: " · 环比变动", yoy_change: " · 同比变动",
 });
-const zh = () => getLocale() === "zh-CN";
 
 export type FundamentalChartAxisSide = "left" | "right";
 
@@ -394,10 +393,6 @@ function formatCurrency(value: number, code: string, options: Intl.NumberFormatO
   } catch {
     return null;
   }
-}
-
-export function formatFundamentalAxisTick(value: number, axis: FundamentalChartAxis): string {
-  return formatFundamentalChartValue(value, axis);
 }
 
 export function formatFundamentalPeriod(periodEnd: string): string {

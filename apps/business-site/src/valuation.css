@@ -1,0 +1,146 @@
+/* The valuation assessment on the stage: one reading column like the lens documents, with its own figures and charts. */
+.val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
+.val-panel--empty { display: grid; }
+.val-empty { gap: 8px; align-content: center; text-align: center; padding: 40px 0; }
+.val-empty h2 { margin: 0; font-size: 15px; font-weight: 620; color: var(--foreground); }
+.val-empty p { margin: 0; max-width: 46ch; color: var(--muted-foreground); font-size: 13px; }
+.val-empty .lens-loading { width: 160px; }
+/* One reading column: the measure keeps paragraphs under about 75 characters. */
+.val-doc { --lens-measure: 700px; grid-template-columns: minmax(0, 1fr); gap: 22px 0; }
+.val-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
+.val-verdict { display: grid; gap: 3px; }
+.val-verdict-label { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 22px; font-weight: 500; letter-spacing: -.01em; line-height: 1.2; color: var(--foreground); }
+.val-verdict-label::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--tone, var(--muted-foreground)); }
+.val-verdict[data-tone="up"] { --tone: var(--up); }
+.val-verdict[data-tone="loss"] { --tone: var(--loss); }
+.val-score-line { font-size: 13px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.val-dates { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; font-size: 12.5px; }
+.val-dates div { display: grid; gap: 2px; }
+.val-dates dt { color: var(--faint); }
+.val-dates dd { margin: 0; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.val-select { max-width: 200px; padding: 2px 22px 2px 8px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 12px; }
+.val-banner { margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--foreground); background: color-mix(in srgb, var(--chart-3) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--chart-3) 30%, transparent); }
+.val-banner[data-tone="info"] { background: color-mix(in srgb, var(--up) 8%, var(--surface)); border-color: color-mix(in srgb, var(--up) 25%, transparent); }
+.val-banner b { font-weight: 620; margin-right: 6px; }
+/* Each dimension is one row: name, score, bar, and the sentence behind the score; the row opens to the full rationale. */
+.val-dims { display: grid; margin: 0; padding: 0; list-style: none; }
+.val-dim { border-top: 1px solid var(--hairline); }
+.val-dim:first-child { border-top: 0; }
+.val-dim summary { display: grid; grid-template-columns: minmax(120px, 160px) 34px 72px minmax(0, 1fr); align-items: baseline; gap: 6px 12px; padding: 9px 0; cursor: pointer; list-style: none; font-size: 13.5px; }
+.val-dim summary::-webkit-details-marker { display: none; }
+.val-dim summary:hover .val-dim-name { color: var(--foreground); }
+.val-dim-name { font-weight: 620; color: var(--foreground); }
+.val-dim-score { font-weight: 620; font-variant-numeric: tabular-nums; text-align: right; }
+.val-dim-bar { display: block; align-self: start; margin-top: 8px; height: 5px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.val-dim-bar b { display: block; height: 100%; border-radius: 3px; background: var(--chart-2); transition: width .4s var(--ease); }
+.val-dim-lead { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--muted-foreground); line-height: 1.5; }
+.val-dim-lead small { font-size: 12px; color: var(--faint); }
+/* Open, the full rationale replaces the lead. */
+.val-dim[open] .val-dim-lead { display: none; }
+.val-dim-body { display: grid; gap: 6px; padding: 2px 0 12px; }
+.val-block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.val-block h3 { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; }
+.val-block h4 { margin: 8px 0 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; color: var(--foreground); }
+/* The report's own run-in headings ("PUBLIC FACTS", "READ-THROUGH"), lifted out of the paragraphs. */
+.val-runhead { margin: 6px 0 -4px; font-size: 11.5px; font-weight: 620; letter-spacing: .05em; color: var(--muted-foreground); }
+.val-fold { display: grid; gap: 10px; }
+.val-fold > summary { justify-self: start; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; color: var(--chart-2); text-decoration: underline; text-underline-offset: 3px; }
+.val-fold > summary::-webkit-details-marker { display: none; }
+.val-fold:not([open]) .val-fold-close, .val-fold[open] .val-fold-open { display: none; }
+.val-fold-body { display: grid; gap: 10px; }
+.val-block h5 { margin: 0; font-size: 13px; font-weight: 620; }
+.val-block p, .val-block li { margin: 0; font-size: 14px; line-height: 1.65; color: var(--foreground); }
+.val-block ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.val-list-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
+.val-list-line b { margin-right: 6px; font-weight: 620; color: var(--foreground); }
+.val-model-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
+.val-implied { padding: 8px 12px; border-radius: 10px; background: var(--fill); font-size: 13px !important; }
+.val-implied b { margin-right: 6px; font-weight: 620; }
+.val-range { padding: 30px 24px 36px; }
+.val-range-track { position: relative; height: 6px; border-radius: 3px; background: var(--fill); }
+.val-range-band { position: absolute; top: 0; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--chart-2) 35%, transparent); }
+.val-range-mark { position: absolute; top: 50%; display: grid; justify-items: center; transform: translate(-50%, -50%); font-variant-numeric: tabular-nums; }
+.val-range-mark i { width: 10px; height: 10px; border-radius: 50%; background: var(--chart-2); border: 2px solid var(--background); }
+.val-range-mark b { position: absolute; top: -24px; white-space: nowrap; font-size: 12px; font-weight: 620; }
+.val-range-mark small { position: absolute; top: 14px; white-space: nowrap; font-size: 11px; color: var(--faint); }
+.val-range-mark[data-kind="expected"] i { background: var(--chart-4); }
+.val-range-mark[data-kind="base"] i { width: 12px; height: 12px; }
+.val-range-price i { width: 3px; height: 22px; border-radius: 2px; border: 0; background: var(--foreground); }
+.val-range-price b { top: -28px; }
+.val-range-price small { top: 16px; }
+.val-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
+.val-stats div { display: grid; gap: 2px; }
+.val-stats dt { font-size: 12px; color: var(--faint); }
+.val-stats dd { margin: 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.val-stats dd small { display: block; font-size: 11.5px; font-weight: 400; color: var(--faint); }
+.val-stats dd[data-sign="up"] { color: var(--up); }
+.val-stats dd[data-sign="down"] { color: var(--loss); }
+.val-stats--diag dd { font-size: 14px; }
+.val-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+/* Narrow screens scroll a wide table sideways instead of widening the column. */
+@media (max-width: 960px) { .val-table { display: block; overflow-x: auto; } }
+.val-table th, .val-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--hairline); }
+.val-table th { font-weight: 500; color: var(--muted-foreground); }
+.val-table tbody th, .val-table th:first-child { text-align: left; }
+.val-table tbody th { color: var(--foreground); font-weight: 600; }
+.val-table--facts { font-size: 12.5px; }
+.val-table--facts tbody th { font-weight: 500; }
+.val-sens { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.val-sens li { display: grid; grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) minmax(120px, auto); align-items: center; gap: 10px; font-size: 13px; }
+.val-sens-label small { color: var(--faint); margin-left: 4px; }
+.val-sens-bar { display: block; height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.val-sens-bar i { display: block; height: 100%; border-radius: 4px; background: var(--up); }
+.val-sens-bar i[data-sign="down"] { background: var(--loss); }
+.val-sens b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.val-toggle { justify-self: start; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); color: var(--muted-foreground); font-size: 12px; }
+.val-toggle:hover { color: var(--foreground); }
+.val-model-detail { display: grid; gap: 12px; }
+.val-scenario { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--fill); }
+.val-chips { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px !important; color: var(--muted-foreground) !important; }
+.val-chips b { margin-right: 4px; font-weight: 620; }
+/* The judgements behind the figures (method weights, scenario probabilities, the management gap, the consensus): one line each with its reason. */
+.val-why-list { display: grid; gap: 4px; }
+.val-why-list h5 { margin: 4px 0 0; }
+.val-why { font-size: 13px !important; line-height: 1.55 !important; color: var(--muted-foreground) !important; }
+.val-why b { margin-right: 6px; font-weight: 620; color: var(--foreground); white-space: nowrap; }
+.val-why small { color: var(--faint); }
+.val-table td[data-sign="up"] { color: var(--up); }
+.val-table td[data-sign="down"] { color: var(--loss); }
+.val-table--checks td:nth-child(2) { white-space: nowrap; }
+.val-table--checks td:last-child { text-align: left; font-size: 12.5px; color: var(--muted-foreground); }
+.val-gate { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--up); vertical-align: 0; }
+.val-gate[data-status="flag"] { background: var(--chart-3); }
+.val-gate[data-status="fail"] { background: var(--loss); }
+/* Citations are footnote numbers in the margin of the sentence, numbered in reading order and listed under Sources. */
+.val-refs { margin-left: 3px; font-size: 11.5px; line-height: 1; vertical-align: baseline; color: var(--chart-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val-refs::before { content: "["; }
+.val-refs::after { content: "]"; }
+.val-ref { appearance: none; padding: 0 1px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.val-ref:hover { text-decoration: underline; text-underline-offset: 2px; }
+.val-refs--counter { color: var(--loss); }
+.val-fact-ref { display: inline-block; margin: 0 2px; padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 11px; line-height: 18px; color: var(--muted-foreground); background: var(--fill); }
+.val-gaps ul { list-style: none; padding: 0; }
+.val-gaps li { font-size: 13px; color: var(--muted-foreground); }
+.val-sources { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.val-source { appearance: none; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; padding: 5px 8px; border: 0; border-radius: 8px; background: none; text-align: left; font: inherit; font-size: 13px; color: var(--foreground); cursor: pointer; }
+.val-source:hover { background: var(--fill); }
+.val-source b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--chart-2); text-align: right; }
+.val-source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.val-source small { color: var(--faint); font-variant-numeric: tabular-nums; }
+.val-dialog { width: min(680px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-raised); color: var(--foreground); box-shadow: var(--shadow-overlay); }
+.val-dialog::backdrop { background: #0008; }
+.val-dialog-body { display: grid; gap: 12px; padding: 18px 20px 20px; }
+.val-dialog-body header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.val-dialog-body h3 { margin: 0; font-size: 15px; font-weight: 620; }
+.val-dialog-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 12px; color: var(--faint); }
+.val-dialog-body blockquote { margin: 0; padding: 10px 14px; border-left: 2px solid color-mix(in srgb, var(--chart-2) 55%, transparent); background: color-mix(in srgb, var(--chart-2) 5%, transparent); border-radius: 0 10px 10px 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; max-height: 50vh; overflow: auto; }
+.val-dialog-body a { justify-self: start; color: var(--brand); font-size: 13px; }
+.val-foot { margin: 0; font-size: 11.5px; color: var(--faint); }
+/* The stage holds the valuation as one scrolling column under its tab row. */
+.stage[data-view="valuation"] { grid-template-rows: auto minmax(0, 1fr); padding-bottom: 12px; }
+@media (max-width: 960px) { .val-dim summary { grid-template-columns: minmax(0, 1fr) 34px 72px; } .val-dim-lead { grid-column: 1 / -1; } .val-sens li { grid-template-columns: minmax(100px, 150px) minmax(0, 1fr); } .val-sens b { grid-column: 1 / -1; text-align: left; } }
+
+.val-fair .val-fair-value { font-family: var(--display); font-size: 28px; font-weight: 500; line-height: 1.3; letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
+.val-stress > .val-fold-body { padding-top: 16px; }
+
+.val-table--yearly { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }

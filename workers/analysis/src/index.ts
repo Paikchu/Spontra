@@ -1,15 +1,16 @@
+import { executeValuationEvaluation, type ValuationEvaluationParams } from "./valuation/evaluation.ts";
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
-import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
 import { readHomeDigest } from "./read-api/home-digest.ts";
 import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
 import { handleStageRequest } from "./stage/gateway.ts";
 import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
-import { assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
-import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
+import { assertFeatureTicker, assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
+import { executeCompanyAnalysisWorkflow } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "./operations.ts";
 import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
@@ -18,6 +19,7 @@ import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type Workflow
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business-tree/workflow.ts";
+import { executeValuationWorkflow, type ValuationWorkflowParams } from "./valuation/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { createAdminSession } from "./admin/auth.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
@@ -39,16 +41,16 @@ const WORKFLOW_RETRY = {
     delay: ({ ctx }: { ctx: WorkflowStepContextLike }) => retryDelayForAttempt(ctx.attempt),
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
-};
+} satisfies WorkflowStepConfig;
 
 function durableSteps(step: WorkflowStep, env: AnalysisEnv, instanceId: string): WorkflowStepLike {
-  const dynamicStep = step as unknown as {
-    do<T>(name: string, config: typeof WORKFLOW_RETRY, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T>;
-  };
   return {
     async do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T> {
-      const stored = await dynamicStep.do(name, WORKFLOW_RETRY, async (context) => {
-        try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)); }
+      type Stored = Awaited<ReturnType<typeof storeWorkflowResult<T>>>;
+      const stored = await step.do(name, WORKFLOW_RETRY, async (context) => {
+        // The domain leaves T unconstrained. Keep assertions at the stored-payload
+        // boundary so the platform checks config and callback context directly.
+        try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)) as Rpc.Serializable<unknown>; }
         catch (error) {
           if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
             // The request layer redacts the credential before constructing this message.
@@ -58,7 +60,7 @@ function durableSteps(step: WorkflowStep, env: AnalysisEnv, instanceId: string):
         }
       });
       for (let attempt = 0; ; attempt++) {
-        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored); }
+        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored as Stored); }
         catch (error) {
           if (attempt >= 2 || /integrity|Invalid stored|missing/.test(String(error))) throw error;
           await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 3 ** attempt));
@@ -97,7 +99,7 @@ export class MapReads extends WorkerEntrypoint<AnalysisEnv> {
   homeDigest(locale?: string | null) {
     if (!this.env.DB) return Promise.reject(new Error("The analysis store is not available on this deployment."));
     const lang = isLocale(locale) && locale !== "en" ? locale : null;
-    return readHomeDigest(this.env.DB, this.env, lang);
+    return readHomeDigest(this.env.DB, lang);
   }
 }
 
@@ -120,6 +122,17 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<AnalysisEnv, Busine
 
 /** Index cards for one company's recent library sections; each batch of sections is a durable step. */
 /** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
+/** The valuation assessment of one company (docs/valuation-assessment-design.md); its run and versions are recorded for the admin. */
+export class ValuationWorkflow extends WorkflowEntrypoint<AnalysisEnv, ValuationWorkflowParams | ValuationEvaluationParams> {
+  async run(event: WorkflowEvent<ValuationWorkflowParams | ValuationEvaluationParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    const params = event.payload;
+    if ("evaluationId" in params) return executeValuationEvaluation(params, durableSteps(step, env, event.instanceId), env, event.instanceId);
+    const run = { env, kind: "valuation" as const, ticker: params.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeValuationWorkflow(params, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
+  }
+}
+
 export class TranslateWorkflow extends WorkflowEntrypoint<AnalysisEnv, TranslateParams> {
   async run(event: WorkflowEvent<TranslateParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
@@ -199,7 +212,7 @@ export class GuidanceWorkflow extends WorkflowEntrypoint<AnalysisEnv, GuidanceWo
 export class SecMemoryWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecMemoryWorkflowParams> {
   async run(event: WorkflowEvent<SecMemoryWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
-    assertTrackedTicker(env,event.payload.ticker);
+    assertFeatureTicker(env,"findings",event.payload.ticker);
     return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, env, event.instanceId), env);
   }
 }
@@ -207,12 +220,12 @@ export class SecMemoryWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecMemory
 export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, CompanyAnalysisWorkflowParams> {
   async run(event: WorkflowEvent<CompanyAnalysisWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
-    assertTrackedTicker(env,event.payload.ticker);
+    assertFeatureTicker(env,"findings",event.payload.ticker);
     return executeCompanyAnalysisWorkflow(
       event.payload,
       event.instanceId,
       event.timestamp,
-      step as unknown as CompanyWorkflowStep,
+      step,
       env,
     );
   }

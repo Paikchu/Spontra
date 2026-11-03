@@ -10,23 +10,28 @@ import { readPeersResponse } from "../peers/read.ts";
 import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
 import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { readEventsResponse } from "../events/read.ts";
+import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
 import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { listedIssuer, primaryTicker, securities, storedIssuerDirectory } from "../catalog/issuer-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
 import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { readTranslationTable } from "../translation/translate.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
+import { readValuationResponse, ValuationStore } from "../valuation/store.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
+import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
+import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -57,11 +62,15 @@ type RouteMatch =
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
+  | { kind: "insiders"; ticker: string }
+  | { kind: "insider-transactions"; ticker: string; personKey: string }
   | { kind: "item"; ticker: string; id: string }
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
+  | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
   | { kind: "findings-index" }
+  | { kind: "ticker"; ticker: string }
   | { kind: "home" };
 
 
@@ -74,13 +83,13 @@ function withoutSummary(filing: PublicSecFiling): PublicSecFiling {
  * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
  * read from what is stored rather than from a list kept in the page.
  */
-async function findingsIndex(request: Request, database: D1Database, env: FeatureDefaultsEnv): Promise<Response> {
+async function findingsIndex(request: Request, database: D1Database): Promise<Response> {
   const [rows, shown] = await Promise.all([
     database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>(),
-    shownFilter(database, env, "findings"),
+    shownFilter(database, "findings"),
   ]);
   // A company whose findings are switched off is left off the home page as well as its own.
-  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t) && shown(t));
+  const tickers = rows.results.map(r => r.ticker).filter(t => TICKER_PATTERN.test(t) && shown(t));
   return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
 }
 
@@ -106,27 +115,44 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
-    if (route.kind === "findings-index") return await findingsIndex(request, env.DB, env);
-    if (route.kind === "home") return await home(request, env.DB, env);
+    if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
+    if (route.kind === "home") return await home(request, env.DB);
+    if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
 }
 
+/**
+ * The ticker a company's data is kept under, for a ticker as typed or linked: a second share class answers with the
+ * class EDGAR lists first for its issuer (catalog/issuer-directory.ts); any other ticker answers with itself.
+ */
+async function primary(request: Request, database: D1Database, ticker: string): Promise<Response> {
+  const requested = normalizeTicker(ticker);
+  if (!requested) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+  const directory = await storedIssuerDirectory(database);
+  // `listed` says the directory knew the ticker, so a reader may keep the answer; before EDGAR was first read it is false.
+  return dataResponse(request, { schemaVersion: "ticker.v1", requested, ticker: primaryTicker(directory, requested), listed: listedIssuer(directory, requested) !== null }, "no-store");
+}
+
 /** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
-async function home(request: Request, database: D1Database, env: HomeDigestEnv): Promise<Response> {
+async function home(request: Request, database: D1Database): Promise<Response> {
   const url = new URL(request.url);
   if ([...url.searchParams.keys()].some(key => key !== "locale")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
   const requested = url.searchParams.get("locale");
   if (requested != null && !isLocale(requested)) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
   const locale = isLocale(requested) && requested !== "en" ? requested : null;
-  return dataResponse(request, await readHomeDigest(database, env, locale), "cacheable");
+  const digest = await readHomeDigest(database, locale);
+  // Generation time changes on every read, even when the homepage content is unchanged.
+  const validatorPayload = omit(digest, "generatedAt");
+  return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
-  const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
+  const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, ticker.trim().toUpperCase(), feature);
+  const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
   // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
@@ -149,22 +175,29 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       );
       // Report summaries hidden by the admin: the filings are still listed, as filings, without what the model wrote.
       const filings = await hidden("reports", page.ticker) ? page.filings.map(withoutSummary) : page.filings;
-      return dataResponse(request, { ...page, filings: await translated("filings", filings) });
+      const calendar = await issuerCalendar(page.ticker);
+      return dataResponse(request, { ...page, filings: (await translated("filings", filings)).map(f => ({ ...f, fiscalYearEndMonth: calendar.fiscalYearEndMonth })) });
     }
     case "filing": {
       const detail = await getPublicFiling(new D1SecRepository(database), route.ticker, route.accession,
         url.searchParams.has("reportVersion") || url.searchParams.has("reportDate")
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
-      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: withoutSummary(detail.filing) }, "no-store");
+      const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
+      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
-      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis } });
+      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
       if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
       if(payload.flow){const flow=await translated("flow",{flow:payload.flow,reports:payload.reports??null});payload.flow=flow.flow;payload.reports=flow.reports;}
+      const focus = await readFiscalFocus(database, route.ticker);
+      if (payload.flow) payload.flow = stampFlow(payload.flow, focus);
+      if (payload.reports) payload.reports = stampFlow(payload.reports, focus);
+      if (payload.history) payload.history = stampHistory(payload.history, focus);
+      payload.issuer = focus.issuers.get(route.ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {
@@ -205,11 +238,45 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    // Insider trades by person: the filings' own figures, so no switch hides them and no translation applies.
+    case "insiders": {
+      const payload = await readInsidersResponse(database, route.ticker);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
+    case "insider-transactions": {
+      const payload = await readInsiderTransactionsResponse(database, route.ticker, route.personKey, url.searchParams.get("cursor"), url.searchParams.get("limit"));
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     // One rail row's analysis, under the AI analysis switch; the analysis is applied in the reader's language like a finding.
     case "item": {
       const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("findings") });
       if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
+    // The valuation (docs/valuation-assessment-implementation.md §6): hidden answers 200 with nothing; history and evidence
+    // behind the switch answer 404 so an old link cannot read around it. The report's prose is applied in the reader's
+    // language per version; its figures, ids and quoted excerpts stay as written.
+    case "valuation": {
+      const ticker = route.ticker.trim().toUpperCase();
+      const off = await hidden("valuation");
+      if (route.list || route.versionId) {
+        if (off) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+        const store = new ValuationStore(database);
+        if (route.list) {
+          const before = url.searchParams.get("before") ?? undefined, limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 50);
+          const items = await store.versions(ticker, limit, before);
+          return dataResponse(request, { schemaVersion: "valuation-versions.v1", ticker, items, nextCursor: items.length === limit ? items[items.length - 1]!.versionId : null }, "no-store");
+        }
+        if (route.evidenceId) {
+          const evidence = await store.evidence(ticker, route.versionId!, route.evidenceId);
+          return evidence ? dataResponse(request, { schemaVersion: "valuation-evidence.v1", ticker, evidence }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+        }
+        const report = await store.version(ticker, route.versionId!);
+        return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId) }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      }
+      const payload = await readValuationResponse(database, ticker, { hidden: off });
+      if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
+      return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
     case "passage": {
       const payload = await readPublicPassage(database, route.ticker, route.passageId);
@@ -220,9 +287,11 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const payload = await getSecFundamentals(database, query);
       // Preserved from the pre-backend behaviour: a ticker the directory does not know as a stock
       // has no fundamentals to collect, and says so, rather than reporting an empty pending set.
-      if (payload.status === "pending" && findSecurity(query.ticker)?.type !== "stock") {
+      if (payload.status === "pending" && (await securities(database))(query.ticker)?.etf !== false) {
         return errorResponse("FUNDAMENTALS_NOT_AVAILABLE", "Fundamentals are unavailable for this ticker.");
       }
+      const focus = await readFiscalFocus(database, query.ticker);
+      payload.periods = payload.periods.map(period => ({ ...period, ...fiscalFields(query.ticker, period.periodEnd, focus) }));
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
   }
@@ -231,6 +300,19 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
+  const named = /^\/api\/v1\/tickers\/([^/]+)\/?$/.exec(pathname);
+  if (named) { const ticker = safeDecode(named[1]!); return ticker === null ? null : { kind: "ticker", ticker }; }
+  const valuation = /^\/api\/v1\/companies\/([^/]+)\/valuation(?:\/(versions)(?:\/([0-9a-f]{8,64})(?:\/evidence\/(e[0-9a-f]{6,20}))?)?)?\/?$/.exec(pathname);
+  if (valuation) {
+    const ticker = safeDecode(valuation[1]!);
+    return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
+  }
+  const insiders = /^\/api\/v1\/companies\/([^/]+)\/insiders(?:\/([^/]+)\/transactions)?\/?$/.exec(pathname);
+  if (insiders) {
+    const ticker = safeDecode(insiders[1]!), personKey = insiders[2] === undefined ? undefined : safeDecode(insiders[2]);
+    if (ticker === null || personKey === null) return null;
+    return personKey === undefined ? { kind: "insiders", ticker } : { kind: "insider-transactions", ticker, personKey };
+  }
   const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);

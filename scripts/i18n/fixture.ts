@@ -3,6 +3,7 @@
  * the API. Figures are made up and only need to be internally consistent; names and generated text are English,
  * as the API delivers them.
  */
+import type { ValuationDimension, ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
 import type { BusinessFlowQuarter, FlowAmount, PublicBusinessFlow } from "../../shared/analysis-contract/business-flow.ts";
 import type { BusinessExplainer } from "../../shared/analysis-contract/business-explainer.ts";
 import type { BusinessTree } from "../../shared/analysis-contract/business-tree.ts";
@@ -186,10 +187,12 @@ export const explainer: BusinessExplainer = {
 
 export const company: CompleteFlowPublication & { explainer: BusinessExplainer; guidance: GuidancePublication; tree: BusinessTree } = {
   schemaVersion: "complete-business-flow.v1", status: "ready", flow, reasons: [], outdated: false, lastAttemptAt: null, history, reports: null, explainer, guidance, tree,
+  // A fiscal year that ends in May, so the header's fiscal-year explanation renders in both languages.
+  issuer: { name: "Acme Corp", fiscalYearEndMonth: 5 },
 };
 
 const insider = (id: string, date: string, over: Partial<NonNullable<CompanyEvent["insider"]>>): CompanyEvent => ({
-  id, ticker: TICKER, form: "4", filedAt: date, eventDate: date, items: [], class: "insider", description: "", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null,
+  id, ticker: TICKER, form: "4", filedAt: date, eventDate: date, items: [], class: "insider", description: "", title: null, importance: "routine", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null,
   insider: { ownerCik: "9", ownerName: "Jane Q Officer", title: "Chief Financial Officer", isDirector: false, isOfficer: true, isTenPercentOwner: false, rule10b51: true, planAdoptedOn: "2025-11-02",
     securityTitle: "Common Stock", lines: [{ date, code: "S", acquiredDisposed: "D", shares: 120_000, price: 182.4, ownedAfter: 880_000, ownership: "D", derivative: false }],
     sold: { shares: 120_000, proceeds: 21_888_000, averagePrice: 182.4 }, bought: null, exercised: 0, heldAfter: 880_000, footnotes: ["Weighted average price."], ...over },
@@ -201,10 +204,10 @@ export const events: EventsPublication = {
     insider("e-sale-0", "2026-05-06", { lines: [{ date: "2026-05-06", code: "S", acquiredDisposed: "D", shares: 100_000, price: 160, ownedAfter: 1_000_000, ownership: "D", derivative: false }], sold: { shares: 100_000, proceeds: 16_000_000, averagePrice: 160 }, heldAfter: 1_000_000 }),
     insider("e-grant", "2026-07-15", { sold: null, lines: [{ date: "2026-07-15", code: "A", acquiredDisposed: "A", shares: 5000, price: 0, ownedAfter: 1_005_000, ownership: "D", derivative: false }] }),
     insider("e-buy", "2026-06-20", { ownerName: "John Director", isDirector: true, isOfficer: false, title: null, rule10b51: null, sold: null, bought: { shares: 10_000, cost: 1_650_000, averagePrice: 165 }, lines: [{ date: "2026-06-20", code: "P", acquiredDisposed: "A", shares: 10_000, price: 165, ownedAfter: 50_000, ownership: "D", derivative: false }], heldAfter: 50_000 }),
-    { id: "e-8k", ticker: TICKER, form: "8-K", filedAt: "2026-07-30", eventDate: "2026-07-30", items: ["2.02", "9.01"], class: "earnings", description: "Results of Operations", edgarUrl: SRC, documentUrl: SRC,
+    { id: "e-8k", ticker: TICKER, form: "8-K", filedAt: "2026-07-30", eventDate: "2026-07-30", items: ["2.02", "9.01"], class: "earnings", description: "Results of Operations", title: "Results of Operations", importance: "key", edgarUrl: SRC, documentUrl: SRC,
       exhibits: [{ type: "EX-99.1", title: "Press release", url: SRC }],
       summary: { headline: "Generated event headline.", bullets: [{ label: "Revenue", detail: "Generated detail.", importance: "high" }], analystView: "Generated analyst view.", eventCategory: "earnings_update", generatedAt: "2026-07-30T00:00:00Z" }, insider: null },
-    { id: "e-exec", ticker: TICKER, form: "8-K", filedAt: "2026-06-02", eventDate: "2026-06-01", items: ["5.02"], class: "executive", description: "8-K", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null, insider: null },
+    { id: "e-exec", ticker: TICKER, form: "8-K", filedAt: "2026-06-02", eventDate: "2026-06-01", items: ["5.02"], class: "executive", description: "8-K", title: null, importance: "key", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null, insider: null },
   ],
 };
 
@@ -227,6 +230,59 @@ export const filings: PublicFilingDigestPage = {
  * The Chinese Spontra Analysis would serve for the fixture's generated prose, per resource, as the translator writes it:
  * figures in Chinese units, names kept. The page check renders the company with these applied.
  */
+const dimension = (key: ValuationDimension["key"], score: number | null, rationale: string, nextCheck: string): ValuationDimension => ({ key, score, confidence: "medium", rationale, supportingEvidenceIds: ["e0123456789"], counterEvidenceIds: [], gaps: [], nextCheck });
+const why = (rationale: string) => ({ rationale, evidenceIds: ["e0123456789"] });
+/** A scenario as valuation.calc.v4 publishes it: the DCF result and the method-weighted value (the multiples 20% above the DCF here). */
+const scenarioOf = (narrative: string, growth: number, margin: number, perShareValue: number, probability: number) => ({
+  narrative, probability, triggers: ["Generated trigger."], invalidation: ["Generated invalidation."], evidenceIds: ["e0123456789"],
+  assumptions: { revenue: why("Generated revenue assumption."), margin: why("Generated margin assumption."), capex: why("Generated capex assumption.") },
+  drivers: { modelType: "fcff" as const, revenue0: 32_000_000_000, path: { revenueGrowth: [growth, growth, growth, growth, growth], operatingMargin: [margin, margin, margin, margin, margin], taxRate: [0.2, 0.2, 0.2, 0.2, 0.2], salesToCapital: [2, 2, 2, 2, 2] }, terminalGrowth: 0.03, terminalRoic: 0.15 },
+  result: { perShare: perShareValue, equityValue: perShareValue * 1_000_000_000, enterpriseValue: perShareValue * 1_000_000_000 + 5_000_000_000, pvExplicit: 30_000_000_000, pvTerminal: 90_000_000_000, terminalShare: 0.75, yearly: [], notes: [] },
+  valuation: { methods: { dcf: perShareValue, ev_ebitda_forward: perShareValue * 1.2, pe_forward: perShareValue * 1.2 }, weights: { dcf: 0.5, ev_ebitda_forward: 0.3, pe_forward: 0.2 }, perShare: perShareValue * 1.1 },
+});
+const methodOf = (method: "dcf" | "ev_ebitda_forward" | "pe_forward", label: string, low: number, base: number, high: number, weight: number, basis: string) => ({ method, label, low, base, high, weight, basis, notes: [] });
+const managementSource = { id: "src-1", title: "Acme investor day 2026", url: "https://example.test/investor-day", date: "2026-05-01" };
+export const valuationReport: ValuationPublication = {
+  schemaVersion: "valuation.v1", ticker: TICKER, cik: "0000000001", companyName: "Acme Cloud", currency: "USD", researchAsOf: "2026-08-12T00:00:00Z", financialPeriodEnd: PERIOD, generatedAt: "2026-08-12T00:00:00Z",
+  methodVersion: "valuation.v1", calculatorVersion: "valuation.calc.v1", baseInputFingerprint: "fp", evidenceSetHash: "h", reportStatus: "ready", verdict: "pending", weightedScore: 6.4, confidence: "medium",
+  dimensions: [
+    dimension("businessQuality", 7, "Generated rationale on business quality [e0123456789].", "Generated next check on retention."),
+    dimension("growthExecution", 6.5, "Generated rationale on growth delivery.", "Generated next check on backlog."),
+    dimension("valuationSafety", 6, "Generated rationale on valuation safety.", "Generated next check on the discount rate."),
+    dimension("mispricingCatalysts", 5.5, "Generated rationale on mispricing.", "Generated next check on consensus."),
+    dimension("financialResilience", 8, "Generated rationale on resilience.", "Generated next check on maturities."),
+  ],
+  quote: { price: 98, currency: "USD", priceDate: "2026-08-11", source: "Yahoo Finance", sourceUrl: "https://example.test/quote", fetchedAt: "2026-08-12T00:00:00Z", usable: true, limitations: [] },
+  model: {
+    calculatorVersion: "valuation.calc.v1", modelType: "fcff", currency: "USD",
+    discountRate: { value: 0.089, basis: "wacc", components: { riskFree: 0.04, beta: 1.2, equityRiskPremium: 0.045, costOfEquity: 0.094, costOfDebt: 0.05, taxRate: 0.2, equityWeight: 0.85 }, rationale: "Generated discount rate rationale.", sourceRefs: [] },
+    shares: { base: 1_000_000_000, dilutionReserve: 10_000_000, economic: 1_010_000_000, basis: "shares_diluted_weighted" }, bridge: { nonOperatingAssets: 12_000_000_000, debtAndClaims: 7_000_000_000, nonOperatingEquityAdjustment: 0, notes: [] },
+    scenarios: { bear: scenarioOf("Generated bear narrative.", 0.03, 0.22, 70, 0.25), base: scenarioOf("Generated base narrative.", 0.08, 0.26, 120, 0.4), bull: scenarioOf("Generated bull narrative.", 0.13, 0.3, 170, 0.15) },
+    range: { low: 77, high: 187, base: 132, expected: 140.25, price: 98, marginOfSafety: 0.2576, downsideCoverage: -0.2143, expectedUpside: 0.4311, baseUpside: 0.3469 },
+    sensitivities: [{ factor: "terminalGrowth", step: "+0.5pp", perShare: 131, changePercent: 9.2 }, { factor: "discountRate", step: "+0.5pp", perShare: 110, changePercent: -8.3 }, { factor: "operatingMargin", step: "+1pp", perShare: 126, changePercent: 5 }],
+    implied: { factor: "revenueGrowth", implied: 0.055, baseAverage: 0.08, gap: -0.025, converged: true }, limitations: ["Cash flows are discounted at year end; no mid-year convention and no stub period."],
+    // valuation.calc.v4: the methods on the base path, the judged weights and probabilities, the management scenario, the comparison, the peers, the checks and the consensus note.
+    horizonYears: 5, midYear: false,
+    methods: [methodOf("dcf", "Discounted cash flow", 70, 120, 170, 0.5, "fcff, 5 years"), methodOf("ev_ebitda_forward", "EV/EBITDA on year 3", 130, 144, 160, 0.3, "year 3 EBITDA 1.2e+10 × peers p25/median/p75 14.0/16.0/18.0 (3 peers), discounted 3 years"), methodOf("pe_forward", "P/E on year 3", 128, 144, 158, 0.2, "year 3 core EPS 6.00 × peers p25/median/p75 22.0/24.0/26.0 (3 peers), discounted 3 years")],
+    triangulation: { low: 99, base: 132, high: 165, dispersion: 1.2, weights: { dcf: 0.5, ev_ebitda_forward: 0.3, pe_forward: 0.2 } },
+    methodWeights: { dcf: { weight: 0.5, ...why("Generated weight rationale for the cash-flow model.") }, ev_ebitda_forward: { weight: 0.3, ...why("Generated weight rationale for the EBITDA multiple.") }, pe_forward: { weight: 0.2, ...why("Generated weight rationale for the earnings multiple.") } },
+    scenarioProbabilities: { bear: { probability: 0.25, ...why("Generated bear probability rationale.") }, base: { probability: 0.4, ...why("Generated base probability rationale.") }, management: { probability: 0.2, ...why("Generated management probability rationale.") }, bull: { probability: 0.15, ...why("Generated bull probability rationale.") } },
+    managementScenario: { ...scenarioOf("Generated management scenario narrative.", 0.12, 0.28, 150, 0.2), label: "Management scenario (cited targets)", triangulation: null, methods: [], anchors: [{ metric: "revenue", fiscalYear: 2027, year: 1, target: 36_000_000_000, path: 35_840_000_000 }], sources: [managementSource], notes: [] },
+    managementComparison: { rows: [{ metric: "revenue", fiscalYear: 2027, year: 1, target: 36_000_000_000, base: 34_560_000_000, gap: -0.04 }], explanation: "Generated management comparison explanation.", evidenceIds: ["e0123456789"] },
+    gates: [{ key: "terminal_share", status: "pass", detail: "terminal value is 75% of the base operating value", value: 0.75, limit: 0.8 }, { key: "method_dispersion", status: "flag", detail: "method bases span 1.20x", value: 1.2, limit: 2 }, { key: "consensus_unavailable", status: "flag", detail: "consensus unavailable: no sell-side page was readable", value: null, limit: null }],
+    anchors: { revenue: null }, verification: null,
+    peers: { peers: ["MSFT", "AMZN", "GOOGL"], asOf: "2026-08-11", evToEbitda: { p25: 14, median: 16, p75: 18, count: 3 }, peRatio: { p25: 22, median: 24, p75: 26, count: 3 }, notes: [], basis: "curated", weights: { MSFT: 0.3333, AMZN: 0.3333, GOOGL: 0.3334 } },
+    consensus: null, consensusNote: { status: "unavailable", source: null, reason: "Generated consensus unavailability reason." },
+  },
+  facts: [{ id: "revenue_ttm", label: "Revenue, trailing twelve months", value: 32_000_000_000, unit: "USD", currency: "USD", periodType: "ttm", periodStart: null, periodEnd: PERIOD, basis: "reported", formula: null, sourceRefs: [], rationale: null }],
+  diagnostics: [{ key: "roic", label: "Return on invested capital", value: 0.21, unit: "percent", periodEnd: PERIOD, note: null }, { key: "netDebtToEbitda", label: "Net debt / EBITDA", value: -0.4, unit: "x", periodEnd: PERIOD, note: null }],
+  distributions: [{ factor: "revenueGrowth", periods: [{ periodEnd: "2024-06-30", value: 0.06 }, { periodEnd: "2025-06-30", value: 0.09 }, { periodEnd: "2026-06-30", value: 0.11 }], min: 0.06, p25: 0.075, median: 0.09, p75: 0.1, max: 0.11 }],
+  sections: { summary: "Generated summary of the valuation [e0123456789].", thesis: "Generated thesis.", expectationsGap: "Generated expectations gap.", catalysts: ["Generated catalyst."], counterEvidence: ["Generated counter-evidence."], nextChecks: ["Generated next check."], modelNotes: "Generated model notes." },
+  evidence: [{ evidenceId: "e0123456789", kind: "sec", title: "ACME 10-K 2026-06-30", url: SRC, documentId: "d1", passageId: "p1", form: "10-K", publishedAt: "2026-07-30", fetchedAt: "2026-08-12T00:00:00Z", excerpt: "We sell cloud infrastructure by subscription.", contentSha256: "abc", path: "Item 1 › Business" }],
+  gaps: [], versionId: "v1fixture",
+};
+export const valuation: ValuationResponse = { schemaVersion: "valuation-response.v1", ticker: TICKER, availability: "ready", report: valuationReport, latestAttempt: null, outdated: false, versions: [{ versionId: "v1fixture", generatedAt: "2026-08-12T00:00:00Z", researchAsOf: "2026-08-12T00:00:00Z", reportStatus: "ready", weightedScore: 6.4, verdict: "pending" }] };
+
 export const ZH_TABLES = {
   flow: {
     "Infrastructure and platform services sold by subscription and usage.": "按订阅和用量销售的基础设施与平台服务。",
@@ -245,6 +301,22 @@ export const ZH_TABLES = {
   tree: { "Generated branch summary.": "生成的分支概述。", "Compute and storage": "计算与存储", "Generated line summary.": "生成的产品线概述。", "Pay per use": "按用量付费", "Generated revenue text.": "生成的收入说明。", "Annual commit": "年度承诺", "Generated.": "生成内容。", "Hourly": "按小时" },
   guidance: { "Total revenue": "总营收", "Revenue is expected to grow 12% to 14%.": "营收预计增长 12% 至 14%。", "Gross margin": "毛利率", "Diluted EPS": "稀释每股收益", "Cloud Services revenue": "Cloud Services 营收", "Capital expenditures": "资本开支", "Operating margin": "营业利润率" },
   events: { "Generated event headline.": "生成的事件标题。", "Revenue": "营收", "Generated detail.": "生成的细节。", "Generated analyst view.": "生成的分析观点。" },
+  valuation: {
+    "Generated rationale on business quality [e0123456789].": "生成的生意质量判断 [e0123456789]。", "Generated next check on retention.": "生成的下一验证点：客户留存。",
+    "Generated rationale on growth delivery.": "生成的增长兑现判断。", "Generated next check on backlog.": "生成的下一验证点：订单储备。",
+    "Generated rationale on valuation safety.": "生成的估值安全判断。", "Generated next check on the discount rate.": "生成的下一验证点：折现率。",
+    "Generated rationale on mispricing.": "生成的错杀判断。", "Generated next check on consensus.": "生成的下一验证点：市场共识。",
+    "Generated rationale on resilience.": "生成的财务韧性判断。", "Generated next check on maturities.": "生成的下一验证点：债务到期。",
+    "Generated discount rate rationale.": "生成的折现率说明。", "Generated trigger.": "生成的触发信号。", "Generated invalidation.": "生成的失效条件。",
+    "Generated bear narrative.": "生成的悲观情景叙事。", "Generated base narrative.": "生成的基准情景叙事。", "Generated bull narrative.": "生成的乐观情景叙事。",
+    "Cash flows are discounted at year end; no mid-year convention and no stub period.": "现金流按年末折现；不使用年中折现，也没有短期间调整。",
+    "Generated summary of the valuation [e0123456789].": "生成的估值结论 [e0123456789]。", "Generated thesis.": "生成的论证。", "Generated expectations gap.": "生成的预期差。",
+    "Generated catalyst.": "生成的催化。", "Generated counter-evidence.": "生成的反证。", "Generated next check.": "生成的下一验证点。", "Generated model notes.": "生成的模型说明。",
+    "Generated revenue assumption.": "生成的收入假设。", "Generated margin assumption.": "生成的利润率假设。", "Generated capex assumption.": "生成的资本开支假设。",
+    "Generated weight rationale for the cash-flow model.": "生成的现金流模型权重理由。", "Generated weight rationale for the EBITDA multiple.": "生成的 EBITDA 倍数权重理由。", "Generated weight rationale for the earnings multiple.": "生成的盈利倍数权重理由。",
+    "Generated bear probability rationale.": "生成的悲观情景概率理由。", "Generated base probability rationale.": "生成的基准情景概率理由。", "Generated management probability rationale.": "生成的管理层情景概率理由。", "Generated bull probability rationale.": "生成的乐观情景概率理由。",
+    "Generated management scenario narrative.": "生成的管理层情景叙事。", "Generated management comparison explanation.": "生成的管理层目标差距说明。", "Generated consensus unavailability reason.": "生成的市场共识缺失原因。",
+  },
 } satisfies Record<string, Record<string, string>>;
 
 /** The filing list as the site worker builds it from translated filings: the digests' generated fields in Chinese. */
@@ -262,6 +334,6 @@ export function fixtureStrings(): Set<string> {
     else if (Array.isArray(v)) v.forEach(walk);
     else if (v && typeof v === "object") Object.values(v).forEach(walk);
   };
-  walk([company, capital, findings, events, filings]);
+  walk([company, capital, findings, events, filings, valuation]);
   return out;
 }

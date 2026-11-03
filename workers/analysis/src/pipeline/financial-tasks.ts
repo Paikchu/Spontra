@@ -1,4 +1,4 @@
-import { financialPolicy, allowData, aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { allowData, aiIsEnabled, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerHistory, newFilings, readNewFiling } from "../financial-data/new-filings.ts";
@@ -62,7 +62,7 @@ async function reserveReadNote(env: AnalysisEnv, now: Date): Promise<boolean> {
 
 async function dataPolicy(env: AnalysisEnv) {
   const policyEnv = await companyPolicyEnvironment(env);
-  return financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" });
+  return dataTickers(policyEnv);
 }
 
 /** The archiving reader for this company (sec-archive): the only way a task downloads a filing, and it stores what it reads. */
@@ -75,7 +75,8 @@ export const FINANCIAL_TASKS = {
    * A job that ended unavailable for a transient reason is tried again six hours later, at most three times running.
    */
   collect: {
-    version: `${SEC_FLOW_PARSER_VERSION}:${READ_NOTE_VERSION}`,
+    // `discovery-listing`: new filings come from discovery's listing; the move re-collects filings the reports index hid.
+    version: `${SEC_FLOW_PARSER_VERSION}:${READ_NOTE_VERSION}:discovery-listing`,
     async run(env, ticker, { causeId, now }): Promise<TaskOutcome> {
       const db = env.DB!;
       // Paused, not finished: the filing that asked for this run is collected when collection is switched back on.
@@ -103,10 +104,12 @@ export const FINANCIAL_TASKS = {
       if (current) {
         const newest = newestPair(current).quarters[0]!;
         const filings = await newFilings(db, ticker, job.cik, newest);
+        // Discovery records the listing on its next run (every ten minutes); the job stays claimed until then.
+        if (!filings) return { status: "later", afterMs: 10 * MINUTE, detail: { waiting: "discovery listing" } };
         const listed = JSON.parse(await db.prepare("SELECT json_extract(payload, '$.collectable') c FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ c: string | null }>().then(r => r?.c ?? "[]")) as string[];
         const history = await issuerHistory(db, job.cik, ticker);
         const model: NoteModel = async (stage, system, payload) => {
-          try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelFor(env, "read-note"), 3 * MINUTE, true, { reasoning: reasoningFor(env, "read-note"), ticker, kind: "read-note" }); }
+          try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelFor(env, "read-note"), 3 * MINUTE, { reasoning: reasoningFor(env, "read-note"), ticker, kind: "read-note" }); }
           catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
         };
         const collected = await collectNewFilings({ ...job, cursor: JSON.stringify({ readNotes: true, documents: listed.map(accession => ({ accession })) }) }, current,

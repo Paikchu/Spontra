@@ -18,7 +18,7 @@ const insider = (owner: string, sold: number | null, heldAfter: number, plan: bo
 });
 const event = (id: string, form: CompanyEvent["form"], filedAt: string, extra: Partial<CompanyEvent> = {}): CompanyEvent => ({
   id, ticker: "TEST", form, filedAt, eventDate: filedAt, items: form.startsWith("4") ? [] : ["5.02"], class: form.startsWith("4") ? "insider" : "executive", description: "", edgarUrl: "https://www.sec.gov/i", documentUrl: "https://www.sec.gov/d.htm",
-  exhibits: [], summary: null, insider: null, ...extra,
+  exhibits: [], summary: null, insider: null, title: null, importance: "normal", ...extra,
 });
 const digest = (id: string, periodEnd: string, date: string): PublicFilingDigest => ({
   accessionNumber: id, form: "10-Q", filingDate: date, reportDate: periodEnd, periodEnd, periodLabel: "Q2", date, sources: [], headline: "", bullets: [], analystView: "", report: null, warnings: [], generatedAt: null,

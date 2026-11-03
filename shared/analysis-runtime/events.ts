@@ -1,6 +1,35 @@
 import { z } from "zod";
-import type { CompanyEvent, EventClass, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
+import type { CompanyEvent, EventClass, EventForm, EventImportance, EventsPublication, InsiderTransaction, OfferingForm, ProxyForm } from "../analysis-contract/events.ts";
 import type { Locale } from "./locale.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
+
+/* ---------- Forms ---------- */
+
+export const OFFERING_FORMS: readonly OfferingForm[] = ["S-3", "S-3/A", "S-3ASR", "F-3", "F-3/A", "F-3ASR", "424B1", "424B2", "424B3", "424B4", "424B5", "424B7", "FWP"];
+export const PROXY_FORMS: readonly ProxyForm[] = ["DEF 14A", "DEFM14A"];
+/** Every form the rail lists. */
+export const EVENT_FORMS: readonly EventForm[] = ["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A", ...OFFERING_FORMS, ...PROXY_FORMS];
+
+/** Form 4 and its amendment. Not a prefix test: "424B5" starts with "4" too. */
+export const isInsiderForm = (form: string) => form === "4" || form === "4/A";
+export const isOfferingForm = (form: string): form is OfferingForm => (OFFERING_FORMS as readonly string[]).includes(form);
+export const isProxyForm = (form: string): form is ProxyForm => (PROXY_FORMS as readonly string[]).includes(form);
+/** A prospectus supplement: the filing that states one offering's size and securities, unlike the shelf it draws on. */
+export const isProspectusSupplement = (form: string) => /^424B\d$/.test(form);
+/**
+ * More offering filings than this within PROGRAM_ISSUER_WINDOW_DAYS of the newest one marks a program issuer (a bank's
+ * structured notes): its prospectus supplements are routine, not news. A company that raises often over the years (an
+ * at-the-market program, a bond deal every few months) stays below it.
+ */
+export const PROGRAM_ISSUER_OFFERINGS = 12;
+export const PROGRAM_ISSUER_WINDOW_DAYS = 30;
+
+/** Whether the rail's offering filings come at a program issuer's pace. */
+export function isProgramIssuer(events: readonly CompanyEvent[]): boolean {
+  const dates = events.filter(e => isOfferingForm(e.form)).map(e => Date.parse(e.filedAt)).sort((a, b) => b - a);
+  if (dates.length <= PROGRAM_ISSUER_OFFERINGS) return false;
+  return dates[0]! - dates[PROGRAM_ISSUER_OFFERINGS]! <= PROGRAM_ISSUER_WINDOW_DAYS * 86_400_000;
+}
 
 /* ---------- Classification ---------- */
 
@@ -41,7 +70,9 @@ export function parseItems(items: string): string[] {
  * legal only when the description says so and "other" otherwise.
  */
 export function classifyEvent(form: string, items: string[], description = ""): EventClass {
-  if (/^4(\/A)?$/.test(form)) return "insider";
+  if (isInsiderForm(form)) return "insider";
+  if (isOfferingForm(form)) return "financing";
+  if (isProxyForm(form)) return "vote";
   const text = description.toLowerCase();
   // English and Chinese terms: descriptions come from EDGAR or, when absent, from a stored summary headline in either language.
   const buyback = /buyback|repurchase|dividend|回购|分红|股息/.test(text);
@@ -58,6 +89,158 @@ export function classifyEvent(form: string, items: string[], description = ""): 
   return "other";
 }
 
+/* ---------- Noise rank and document titles ---------- */
+
+/** Descriptions that only name the form, so they are not a title a reader can use. */
+const FORM_ONLY = /^(?:form\s+)?(?:8-k|6-k|4|[sf]-3(?:asr)?|424b\d|fwp|def\s?14a|defm14a)(?:\/a)?$/i;
+/** EDGAR's generic primary-document labels. They describe the form, not the filing. */
+const GENERIC_DESCRIPTION = /^(?:primary document|ownership document|current report|statement of changes in beneficial ownership(?: of securities)?)$/i;
+
+/** A stored or indexed description that says more than the form name; null when it does not. */
+export function filingDocumentTitle(event: { description?: string | null; title?: string | null }): string | null {
+  const raw = (event.title ?? "").trim() || (event.description ?? "").trim();
+  if (!raw || FORM_ONLY.test(raw) || GENERIC_DESCRIPTION.test(raw) || /^(?:8-K|6-K|FORM)\b/i.test(raw)) return null;
+  return raw.slice(0, 300);
+}
+
+/**
+ * The primary document's Description cell on an EDGAR filing index page.
+ * The cell is the form name itself for a routine 6-K ("6-K"); that reads as no title.
+ */
+export function indexPrimaryDescription(html: string): string | null {
+  const row = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = row.exec(html))) {
+    const cells = [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell =>
+      cell[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim());
+    if (cells.length < 4 || cells[0] !== "1") continue;
+    const description = cells[1] ?? "";
+    const type = cells[3] ?? "";
+    if (!description || FORM_ONLY.test(description) || GENERIC_DESCRIPTION.test(description)) return null;
+    if (description.toUpperCase() === type.toUpperCase() || /^(?:8-K|6-K|FORM)\b/i.test(description)) return null;
+    return description.slice(0, 300);
+  }
+  return null;
+}
+
+export const INSIDER_MATERIAL_VALUE_USD = 1_000_000;
+export const INSIDER_VALUE_WINDOW_DAYS = 30;
+
+const HOLDINGS_NOTE = /^\s*(?:\(\d+\)|\d+[.)])?\s*includes\b/i;
+const insiderTexts = (event: CompanyEvent) => [
+  ...(event.insider?.footnotes ?? []), event.description, event.title,
+  event.summary?.headline,
+  ...(event.summary?.bullets?.flatMap(bullet => [bullet.label, bullet.detail]) ?? []),
+  ...((event.summary as (CompanyEvent["summary"] & { points?: string[] }))?.points ?? []),
+].filter((text): text is string => !!text && !HOLDINGS_NOTE.test(text));
+
+export function isEsppTransaction(event: CompanyEvent): boolean {
+  if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "buy" || (event.insider?.sold?.shares ?? 0) > 0) return false;
+  return [...insiderTexts(event), event.insider?.securityTitle]
+    .some(text => /employee\s+stock\s+purchase\s+plan|\bespp\b/i.test(text ?? ""));
+}
+
+/** A sale to fund vesting taxes, distinct from issuer-withheld shares on a separate F line. */
+export function isTaxWithholdingSale(event: CompanyEvent): boolean {
+  if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "sell") return false;
+  const texts = insiderTexts(event);
+  const taxSale = /(?:sale\s+of\s+shares|shares\s+sold|sold)\b[^.]*\b(?:solely\s+|purely\s+)?to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?(?:reporting\s+person['’]s\s+)?tax\s+(?:liability|withholding|obligations?)|\bsolely\s+to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?tax\s+(?:liability|withholding|obligations?)|\bto\s+(?:satisfy|cover)\s+(?:the\s+reporting\s+person['’]s\s+)?tax\s+withholding\s+obligations?\b/i;
+  // Separate cash-sale explanations take precedence over a tax explanation elsewhere in the filing.
+  const cashSale = /\bsell\s+shares\s+for\s+cash\b|\brepresents\s+the\s+sale\s+of\s+shares\s+in\s+(?:the\s+)?open\s+market\b/i;
+  if (texts.some(text => /\bsell\s+shares\s+for\s+cash\b/i.test(text) || (cashSale.test(text) && !taxSale.test(text)))) return false;
+  return texts.some(text => !/shares\s+withheld|withheld\s+by\s+the\s+issuer/i.test(text) && taxSale.test(text));
+}
+
+export function isPlannedInsiderTrade(event: CompanyEvent): boolean {
+  return event.class === "insider" && (event.insider?.rule10b51 === true
+    || [...(event.insider?.footnotes ?? []), event.description].some(text => /\b10b5-?1\b/i.test(text)));
+}
+
+export const isPlannedSale = (event: CompanyEvent) =>
+  event.class === "insider" && !!event.insider?.sold && event.insider.sold.shares > 0 && isPlannedInsiderTrade(event);
+
+export function isOpenMarketInsiderTrade(event: CompanyEvent): "buy" | "sell" | null {
+  if (event.class !== "insider" || !event.insider) return null;
+  const { sold, bought } = event.insider;
+  if (sold && sold.shares > 0 && bought && bought.shares > 0) {
+    const compareMoney = sold.proceeds != null && bought.cost != null && (sold.proceeds > 0 || bought.cost > 0);
+    return (compareMoney ? sold.proceeds! >= bought.cost! : sold.shares >= bought.shares) ? "sell" : "buy";
+  }
+  return sold && sold.shares > 0 ? "sell" : bought && bought.shares > 0 ? "buy" : null;
+}
+
+/** Gross trade value; null when any reported sale or purchase has unknown total money. */
+export function insiderTradeValueUsd(event: CompanyEvent): number | null {
+  if (!isOpenMarketInsiderTrade(event)) return 0;
+  const { sold, bought } = event.insider!;
+  if ((sold && sold.proceeds == null) || (bought && bought.cost == null)) return null;
+  return (sold ? sold.proceeds! : 0) + (bought ? bought.cost! : 0);
+}
+
+export function isKeyInsiderRole(title: string | null | undefined): boolean {
+  if (!title) return false;
+  if (/chief executive officer|\bceo\b|chief financial officer|\bcfo\b|\bchairman\b|\bchairwoman\b|\bchairperson\b|董事长|董事会主席|首席执行官|首席财务官/i.test(title)) return true;
+  return !/\bvice[\s-]+president\b|\b(?:vp|svp|evp)\b/i.test(title) && /^\s*(?:co-)?president(?:\s*(?:and|&|\/)\s*(?:chief\s+\w+\s+officer|c[eo]o|director|officer|chairman|chairwoman|chairperson))?\s*$/i.test(title.replace(/\./g, ""));
+}
+
+/** Maximum gross trade value in a window containing this event; null if a contributing trade is unpriced. */
+export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number | null {
+  if (isEsppTransaction(event) || isTaxWithholdingSale(event) || !isOpenMarketInsiderTrade(event)) return 0;
+  if (!events?.length) return insiderTradeValueUsd(event);
+  const seen = new Set<string>();
+  const center = Date.parse(event.eventDate || event.filedAt);
+  const windowMs = windowDays * DAY_MS;
+  const trades = [event, ...events].flatMap(other => {
+    if (seen.has(other.id)) return [];
+    seen.add(other.id);
+    const sameOwner = other.insider?.ownerCik ? other.insider.ownerCik === event.insider?.ownerCik : other.insider?.ownerName === event.insider?.ownerName;
+    const time = Date.parse(other.eventDate || other.filedAt);
+    return sameOwner && !isEsppTransaction(other) && !isTaxWithholdingSale(other) && isOpenMarketInsiderTrade(other)
+      && Math.abs(time - center) <= windowMs ? [{ time, value: insiderTradeValueUsd(other) }] : [];
+  }).sort((a, b) => a.time - b.time);
+  if (trades.some(trade => trade.value == null)) return null;
+  // Every maximal window can start at its earliest trade, or at the focal event.
+  let maximum = 0, total = 0, right = 0;
+  for (let left = 0; left < trades.length && trades[left].time <= center; left++) {
+    const start = trades[left].time;
+    while (right < trades.length && trades[right].time <= start + windowMs) total += trades[right++].value!;
+    if (start + windowMs >= center) maximum = Math.max(maximum, total);
+    total -= trades[left].value!;
+  }
+  return maximum;
+}
+
+/** A director's or officer's open-market purchase. Grants and exercises are not purchases. */
+export const isOpenMarketBuy = (event: CompanyEvent) => {
+  const insider = event.insider;
+  return event.class === "insider" && !!insider?.bought && insider.bought.shares > 0 && (insider.isDirector || insider.isOfficer);
+};
+
+/** Deterministic importance; insider materiality uses the owner's full 30-day window. */
+export function eventImportance(event: CompanyEvent, events?: readonly CompanyEvent[]): EventImportance {
+  if (event.class === "insider") {
+    const value = insiderWindowValueUsd(event, events);
+    return isOpenMarketInsiderTrade(event) && !isEsppTransaction(event) && !isTaxWithholdingSale(event)
+      && ((value != null && value >= INSIDER_MATERIAL_VALUE_USD) || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
+  }
+  if (isOfferingForm(event.form)) {
+    if (events && isProgramIssuer(events)) return "routine";
+    return isProspectusSupplement(event.form) ? "key" : "normal";
+  }
+  if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";
+  const current = event.form.startsWith("8-K") || event.form.startsWith("6-K");
+  if (current && event.summary?.headline) return "key";
+  if (current && !event.summary?.headline && !filingDocumentTitle(event)) return "routine";
+  return "normal";
+}
+
+/** Fills `title` and `importance` from the filing's own fields. Idempotent, and it calls no model. */
+export function annotateEvent(event: Omit<CompanyEvent, "title" | "importance"> & { title?: string | null }): CompanyEvent {
+  const title = filingDocumentTitle(event);
+  const next: CompanyEvent = { ...event, title, importance: "normal" };
+  return { ...next, importance: eventImportance(next) };
+}
+
 /* ---------- Validation ---------- */
 
 const text = (max: number) => z.string().max(max);
@@ -71,10 +254,11 @@ const insiderLine = z.object({
   ownership: z.enum(["D", "I"]), derivative: z.boolean(),
 });
 const insider = z.object({
+  issuerCik: z.string().regex(/^\d{1,10}$/).nullable().optional(), issuerTradingSymbol: text(20).nullable().optional(),
   ownerCik: text(20), ownerName: text(160), title: text(120).nullable(), isDirector: z.boolean(), isOfficer: z.boolean(), isTenPercentOwner: z.boolean(),
   rule10b51: z.boolean().nullable(), planAdoptedOn: date.nullable(), securityTitle: text(120), lines: z.array(insiderLine).max(200),
-  sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative(), averagePrice: finite.nonnegative() }).nullable(),
-  bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative(), averagePrice: finite.nonnegative() }).nullable(),
+  sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
+  bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
   exercised: finite.nonnegative(), heldAfter: finite.nullable(), footnotes: z.array(text(2000)).max(40),
 });
 const summary = z.object({
@@ -82,15 +266,16 @@ const summary = z.object({
   analystView: text(1200), eventCategory: z.enum(["earnings_update", "guidance", "m&a", "executive", "legal", "other"]).nullable(), generatedAt: z.string().max(40),
 });
 const event = z.object({
-  id: text(40), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), form: z.enum(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]), filedAt: date, eventDate: date,
+  id: text(40), ticker: z.string().regex(TICKER_PATTERN), form: z.enum(EVENT_FORMS as [EventForm, ...EventForm[]]), filedAt: date, eventDate: date,
   items: z.array(z.string().regex(/^\d\.\d\d$/)).max(20),
   class: z.enum(["earnings", "guidance", "executive", "insider", "deal", "financing", "capital_return", "vote", "legal", "other"]),
-  description: text(300), edgarUrl: https, documentUrl: https,
+  description: text(300), title: text(300).nullable().optional(), importance: z.enum(["key", "normal", "routine"]).optional(),
+  edgarUrl: https, documentUrl: https,
   exhibits: z.array(z.object({ type: text(20), title: text(200), url: https })).max(30),
   summary: summary.nullable(), insider: insider.nullable(),
 });
 export const eventsPublicationSchema = z.object({
-  schemaVersion: z.literal("events.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), checkedAt: z.string().max(40),
+  schemaVersion: z.literal("events.v1"), ticker: z.string().regex(TICKER_PATTERN), checkedAt: z.string().max(40),
   events: z.array(event).max(400), pendingInsider: z.number().int().nonnegative(),
 });
 
@@ -98,9 +283,10 @@ export const eventsPublicationSchema = z.object({
 export function readEventsPublication(value: unknown, ticker: string): EventsPublication | null {
   const parsed = eventsPublicationSchema.safeParse(value);
   if (!parsed.success || parsed.data.ticker !== ticker) return null;
-  const events = parsed.data.events.filter(e => e.ticker === ticker && (e.form.startsWith("4") ? e.class === "insider" : e.class !== "insider"))
-    .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));
-  return { ...parsed.data, events };
+  const events = parsed.data.events.filter(e => e.ticker === ticker && (isInsiderForm(e.form) ? e.class === "insider" : e.class !== "insider"))
+    .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate))
+    .map(event => annotateEvent(event));
+  return { ...parsed.data, events: events.map(event => ({ ...event, importance: eventImportance(event, events) })) };
 }
 
 /* ---------- Insider analytics ---------- */
@@ -116,13 +302,14 @@ export function soldShareOfHolding(t: InsiderTransaction): number | null {
 
 export type InsiderCadence = {
   /** Sales by this owner in the trailing window, oldest first. */
-  sales: Array<{ id: string; date: string; shares: number; proceeds: number; share: number | null; planned: boolean | null }>;
+  sales: Array<{ id: string; date: string; shares: number; proceeds: number | null; share: number | null; planned: boolean | null }>;
   /** Mean days between consecutive sales; null with fewer than two. */
   intervalDays: number | null;
   /** True when every interval sits within 40% of the mean and there are at least three sales: a scheduled pattern. */
   regular: boolean;
   totalShares: number;
-  totalProceeds: number;
+  /** Null when any sale in the cadence has unknown proceeds. */
+  totalProceeds: number | null;
 };
 
 /** One owner's sales over the trailing months before (and including) the event, so a single filing reads against its own history. */
@@ -134,11 +321,11 @@ export function insiderCadence(events: CompanyEvent[], ownerCik: string, until: 
   const gaps = sales.slice(1).map((s, i) => (Date.parse(s.date) - Date.parse(sales[i].date)) / DAY_MS);
   const intervalDays = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
   const regular = sales.length >= 3 && intervalDays != null && gaps.every(g => Math.abs(g - intervalDays) <= intervalDays * 0.4);
-  return { sales, intervalDays, regular, totalShares: sales.reduce((s, x) => s + x.shares, 0), totalProceeds: sales.reduce((s, x) => s + x.proceeds, 0) };
+  return { sales, intervalDays, regular, totalShares: sales.reduce((s, x) => s + x.shares, 0), totalProceeds: sales.reduce<number | null>((s, x) => s == null || x.proceeds == null ? null : s + x.proceeds, 0) };
 }
 
 /** Other insiders who sold within the window around the event date: a cluster is a stronger signal than one seller. */
-export function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number }> {
+export function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number | null }> {
   const self = events.find(e => e.id === eventId)?.insider;
   const at = Date.parse(events.find(e => e.id === eventId)?.eventDate ?? "");
   if (!self || !Number.isFinite(at)) return [];
@@ -219,15 +406,15 @@ export function insiderTone(events: CompanyEvent[], event: CompanyEvent): Inside
   return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
 }
 
-export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number; bought: number; cost: number; exercised: number; planned: boolean | null };
+export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number | null; bought: number; cost: number | null; exercised: number; planned: boolean | null };
 
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
 export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): HoldingPoint[] {
   const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;
   return events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.heldAfter != null && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
     .map(e => ({
-      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold?.proceeds ?? 0,
-      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought?.cost ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
+      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold ? e.insider!.sold.proceeds : 0,
+      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought ? e.insider!.bought.cost : 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }

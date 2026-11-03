@@ -2,7 +2,8 @@ import type { TranslationEntry, TranslationsAdmin } from "../../../../shared/ana
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { readSources, sha256, tableKey, TRANSLATION_VERSION, type TranslationSource } from "./translate.ts";
+import { readSources, tableKey, TRANSLATION_VERSION, type TranslationSource } from "./translate.ts";
+import { sha256 } from "../sha256.ts";
 
 const MAX_ENTRIES = 1500;
 const DEFAULT_DAILY_CALLS = 300;

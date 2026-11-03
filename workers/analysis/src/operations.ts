@@ -50,6 +50,7 @@ import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_O
 import type { PreparedFilingReference, AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
+import { sha256 } from "./sha256.ts";
 
 type R2ObjectLike = { etag?: string; text(): Promise<string> };
 type R2BucketLike = {
@@ -91,6 +92,10 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
   READ_NOTE_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** The valuation assessment Workflow (docs/valuation-assessment-design.md). */
+  VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
+  /** "false" pauses valuation runs; the admin's global switch overrides it. */
+  VALUATION_ENABLED?: string;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
@@ -123,8 +128,6 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   AI_REASONING?: string;
   /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
   AI_TOOL_SETTINGS?: string;
-  /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
-  BUSINESS_TREE_TICKERS?: string;
   /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
   BUSINESS_TREE_ENABLED?: string;
   /** The four feature lists and global switches after the admin's switches (JSON), set only by `companyPolicyEnvironment`. */
@@ -171,8 +174,7 @@ function secModelFor(env: AnalysisEnv, stage: string, execution?: SecModelExecut
   return execution?.model || aiToolSetting(env, "sec-analysis").model || modelForStage(env, stage) || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
 }
 
-const sha256Hex = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)))),
-  (b) => b.toString(16).padStart(2, "0")).join("");
+const sha256Hex = (value: unknown): Promise<string> => sha256(JSON.stringify(value));
 
 /**
  * A completed discovery chunk, stored under the filing by everything its model call depends on (prompt, chunk text,
@@ -222,7 +224,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
           catch { checkpointDisabled = true; console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
         },
       };
-      return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
+      return recoverModelJson({ stage, model: selectedModel, fallbackModel, checkpoint,
         heartbeat: async () => {
           if (workflowInstanceId !== "standalone" && env.DB) {
             try { await boundedModelIO(env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
@@ -232,7 +234,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
+          Math.max(1, deadline - Date.now()), { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
       });
     };
   };
@@ -718,10 +720,10 @@ function collectArtifactKeys(reference: PreparedFilingReference, synthesisKey: s
 
 export async function callWorkerSecModel(
   env: AnalysisEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown,
-  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, jsonMode = true,
+  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   tuning?: ModelCallTuning,
 ): Promise<Record<string, unknown>> {
-  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode, tuning));
+  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, tuning));
 }
 
 /**
@@ -744,7 +746,6 @@ async function requestWorkerSecModelContent(
   payload: unknown,
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
-  jsonMode = true,
   options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
@@ -773,7 +774,6 @@ async function requestWorkerSecModelContent(
   metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   // The Anthropic format has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
-  void jsonMode;
   let stream: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent> & { controller: AbortController };
   try {
     stream = await client.beta.messages.create({

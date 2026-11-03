@@ -4,7 +4,7 @@
  * resource at its revision so no cache in between answers with an older copy. An absent resource has never been
  * published through an event.
  */
-export const MAP_RESOURCES = ["company", "capital", "findings", "fundamentals", "events", "filings"] as const;
+export const MAP_RESOURCES = ["company", "capital", "findings", "fundamentals", "events", "filings", "valuation"] as const;
 export type MapResource = (typeof MAP_RESOURCES)[number];
 export type MapRevisions = Partial<Record<MapResource, string>>;
 

@@ -7,9 +7,7 @@
   "limits": { "cpu_ms": 300000 },
   "secrets": { "required": ["DEEPSEEK_API_KEY"] },
   "vars": {
-    "SEC_DATA_TICKERS": "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET,AMZN,GOOGL,META",
-    // The default AI list; the admin's AI switch (financial_ai_settings) overrides it per company.
-    "SEC_AI_TICKERS": "ORCL",
+    // No company is listed here: the admin whitelist and feature switches (D1) are the company lists.
     "SEC_AI_ENABLED": "true",
     "SEC_DATA_COLLECTION_ENABLED": "true",
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
@@ -23,7 +21,6 @@
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
     "TRANSCRIPTS_ENABLED": "true",
-    "BUSINESS_TREE_TICKERS": "MSFT,ORCL,NVDA,ADSK,NET",
     "TRANSLATION_ENABLED": "true"
   },
   "workflows": [
@@ -43,6 +40,12 @@
       "name": "spontra-business-tree",
       "binding": "BUSINESS_TREE_WORKFLOW",
       "class_name": "BusinessTreeWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
+      "name": "spontra-valuation",
+      "binding": "VALUATION_WORKFLOW",
+      "class_name": "ValuationWorkflow",
       "concurrency": { "limit": 1 }
     },
     {

@@ -65,14 +65,14 @@ test("a bank's managed-basis segments reach reported revenue with its corporate 
   assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, a.name, Number(a.amount.value) / 1e6]), [["reconciling-items", "Reconciling items", -675]]);
 });
 
-test("one axis shown in two tables is two splits; of two balanced splits the more detailed is taken, with no list of members", () => {
+test("product/service axes never authorize reportable segments even when they reconcile", () => {
   const product = (member: string, value: number, table: string) => segment("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", member, value, [table], "srt:ProductOrServiceAxis");
   // Autodesk, quarter ended July 31, 2026: subscription and other on the statement, product families in the revenue note.
   const q = split([fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", 2046),
     product("us-gaap:SubscriptionAndCirculationMember", 1952, "Statement"), product("us-gaap:ProductAndServiceOtherMember", 94, "Statement"),
     product("adsk:ArchitectureEngineeringConstructionAndOperationsMember", 1029, "ContractRevenue"), product("adsk:AutoCADandAutoCADLTFamilyMember", 500, "ContractRevenue"),
     product("adsk:ManufacturingMember", 385, "ContractRevenue"), product("adsk:MediaAndEntertainmentMember", 92, "ContractRevenue"), product("srt:OtherMember", 40, "ContractRevenue")], null);
-  assert.deepEqual(q.segments.map(s => s.id), ["adsk:ArchitectureEngineeringConstructionAndOperationsMember", "adsk:AutoCADandAutoCADLTFamilyMember", "adsk:ManufacturingMember", "adsk:MediaAndEntertainmentMember", "srt:OtherMember"]);
+  assert.deepEqual(q.segments.map(s => s.id), ["reported-company-total"]);
   assert.equal(q.revenueAdjustments, undefined);
 });
 
@@ -125,4 +125,16 @@ test("the same segments balancing twice take the split that needs the fewest rec
   const q = split([...external, gross("ttmi:AerospaceAndDefenseMember", 382.75), gross("ttmi:CommercialMember", 621.605)], null);
   assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value), s.revenue.lineage?.[0].concept]), [
     ["ttmi:AerospaceAndDefenseMember", 382631000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], ["ttmi:CommercialMember", 621423000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"]]);
+});
+
+test("a member the filing tags as the sum of other members on the same axis is a subtotal, not a segment", () => {
+  // Intel's 10-Q for the quarter ended September 26, 2026 (millions): "Intel Products" is CCPG plus DCAI on the segment axis.
+  const rev = "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", tables = ["OperatingSegmentsFinancialInformationbySegmentDetails"];
+  const op = (member: string, value: number) => fact(rev, value, { "us-gaap:StatementBusinessSegmentsAxis": member, "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember" }, tables);
+  const facts = [fact(rev, 16513), op("intc:ClientComputingAndPhysicalAIGroupMember", 8097), op("intc:DatacenterAndAIMember", 7318),
+    op("intc:ClientComputingGroupDatacenterAndAIAndNetworkAndEdgeMember", 15415), op("intc:IntelFoundryMember", 6697), op("us-gaap:AllOtherSegmentsMember", 692),
+    fact(rev, -6291, { "srt:ConsolidationItemsAxis": "us-gaap:IntersegmentEliminationMember" }, tables)];
+  const q = split(facts, { arcs: [], labels: {}, members: {} });
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value) / 1e6]), [["intc:ClientComputingAndPhysicalAIGroupMember", 8097], ["intc:DatacenterAndAIMember", 7318], ["intc:IntelFoundryMember", 6697], ["us-gaap:AllOtherSegmentsMember", 692]]);
+  assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, Number(a.amount.value) / 1e6]), [["intersegment-eliminations", -6291]]);
 });

@@ -8,30 +8,30 @@ import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/a
 import type { LensBlock, LensDocument as LensDocumentShape } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
-import { multiple, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { multiple, normalizeDisplayText, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
 import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
+import { SeverityIcon } from "./SeverityIcon";
 import { LensFrame } from "./LensFrame";
 import { HtmlFrame } from "./HtmlFrame";
 
 const m = messages({
-  finding: (title: string) => `Finding: ${title}`, severity: (n: number) => `Severity ${n}`, report: (period: string) => `${period} report`,
+  finding: (title: string) => `Finding: ${title}`, report: (period: string) => `${period} report`,
   focusThis: "Focus this", exitComparison: "Exit comparison", compare: (kind: string) => `Compare · ${kind}`,
-  previous: "Previous finding", next: "Next finding", close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
+  close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
   metric: "Metric", current: "Current", compared: "Compared with", change: "Change",
 }, {
-  finding: (title: string) => `要点：${title}`, severity: (n: number) => `重要度 ${n}`, report: (period: string) => `${period} 财报`,
+  finding: (title: string) => `要点：${title}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
-  previous: "上一条要点", next: "下一条要点", close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
+  close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
   metric: "指标", current: "本期", compared: "对比", change: "变化",
 });
 const VERDICT = labels({ above: "Above guidance", within: "Within guidance", below: "Below guidance" }, { above: "高于指引", within: "处于指引区间", below: "低于指引" });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
 
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
 /** The first sentence: English sentences end at . ! or ? followed by a capital (so "$55.7" never splits); CJK prose at 。 */
@@ -49,7 +49,7 @@ const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <
  * the figures, what to watch, the sources) as the agent laid it out, verified against the same data
  * the stage draws. Findings written before the agent are laid out the standard way from their chart.
  */
-export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
+export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, onPair, onClose, split = false, compact = false, onFocusThis }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
@@ -59,12 +59,8 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   ticker: string;
   nodeColor: (id: string) => string;
   pair: VerifiedFinding | null;
-  story: boolean;
-  index: number;
-  count: number;
   /** Opens or closes the side-by-side view with the paired finding. */
   onPair: () => void;
-  onStep: (delta: 1 | -1) => void;
   onClose: () => void;
   split?: boolean;
   /** The second panel of a pair: the judgment folded to its first sentence. */
@@ -74,14 +70,13 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={m.severity(finding.severity)}>{"●".repeat(finding.severity)}</i></b>
-        <h2 lang={langOf(finding.title)}>{finding.title}</h2>
+        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<SeverityIcon severity={finding.severity} /></b>
+        <h2 lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</h2>
         <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[finding.title, finding.judgment.text]} /></span>
       </div>
       <div className="lens-nav">
         {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>{m.focusThis}</Button> : <>
           {pair && <Button variant="unstyled" type="button" className="lens-pair" aria-pressed={split} onClick={onPair} title={pair.title}>{split ? m.exitComparison : m.compare(KIND_LABEL[pair.kind])}</Button>}
-          {story && <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.previous} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.next} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>}
           <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
         </>}
       </div>
@@ -115,8 +110,8 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   const watch = finding.watch, outcome = finding.watchOutcome;
   const block = (b: LensBlock, key: number): ReactNode => {
     switch (b.kind) {
-      case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}{cites(finding.judgment.sourceIds)}</p>;
-      case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{p.text}{cites(p.sourceIds)}</p>);
+      case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{normalizeDisplayText(compact ? firstSentence(finding.judgment.text) : finding.judgment.text)}{cites(finding.judgment.sourceIds)}</p>;
+      case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{normalizeDisplayText(p.text)}{cites(p.sourceIds)}</p>);
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
       case "html": return <HtmlFrame key={key} picture={b.html} />;
       case "figures": return <Table key={key} className="lens-table lens-evidence">
@@ -124,7 +119,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
         <TableBody>{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</TableBody>
       </Table>;
       case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
-        <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{watch.condition}</span></p>
+        <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{normalizeDisplayText(watch.condition)}</span></p>
         {outcome ? <p className="lens-outcome"><b>{m.reported(shortPeriod(outcome.periodEnd))}</b><Outcome r={outcome.resolved} /></p>
           : <p className="lens-outcome lens-outcome--pending">{m.pending(shortPeriod(watchPeriod(finding.periodEnd, watch)))}</p>}
       </div> : null;
@@ -142,13 +137,13 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
         const t = lens.tables[tableKey(b.table)];
         if (!t) return null;
         return <Table key={key} className="lens-table">
-          {t.title && <TableCaption lang={langOf(t.title)}>{t.title}</TableCaption>}
-          <TableHeader><TableRow><TableHead />{t.columns.map(c => <TableHead key={c.key}>{c.label}{c.sub && <small>{c.sub}</small>}</TableHead>)}</TableRow></TableHeader>
-          <TableBody>{t.rows.map((r, i) => <TableRow key={i}><TableHead scope="row">{r.label}</TableHead>{r.cells.map((c, j) => <TableCell key={j}>{c ? <>{c.text}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</TableCell>)}</TableRow>)}</TableBody>
+          {t.title && <TableCaption lang={langOf(t.title)}>{normalizeDisplayText(t.title)}</TableCaption>}
+          <TableHeader><TableRow><TableHead />{t.columns.map(c => <TableHead key={c.key}>{c.label}{c.sub && <small>{normalizeDisplayText(c.sub)}</small>}</TableHead>)}</TableRow></TableHeader>
+          <TableBody>{t.rows.map((r, i) => <TableRow key={i}><TableHead scope="row">{r.label}</TableHead>{r.cells.map((c, j) => <TableCell key={j}>{c ? <>{normalizeDisplayText(c.text)}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</TableCell>)}</TableRow>)}</TableBody>
         </Table>;
       }
       case "record": return scored.length ? <dl key={key} className="lens-record">{scored.map(({ entry, result }) => <div key={`${entry.periodEnd}:${entry.findingId}`} className="lens-record-row" data-verdict={result?.verdict}>
-        <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span><span lang={langOf(entry.title)}>{entry.title}</span></dt>
+        <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span><span lang={langOf(entry.title)}>{normalizeDisplayText(entry.title)}</span></dt>
         <dd>{result ? <><b>{RECORD_VERDICT[result.verdict]}</b><span>{result.outcome.resolved.label} {formatValue(result.outcome.resolved.current, result.outcome.resolved.evidence.ref)}</span></> : <b data-pending="">{shortPeriod(watchPeriod(entry.periodEnd, entry.watch))}</b>}</dd>
       </div>)}</dl> : null;
     }

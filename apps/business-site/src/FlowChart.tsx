@@ -1,3 +1,4 @@
+import { useMedia } from "./side-scroll";
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { peekChartBox } from "./chart-box";
@@ -12,11 +13,11 @@ import { qoqLabel } from "@/shared/analysis-runtime/locale";
 const m = messages({
   revenueModel: "Revenue model", partOf: "Part of", description: "Description", contains: "Contains",
   items: (n: number) => `${n} ${n === 1 ? "item" : "items"}`, details: (label: string) => `${label} business details`,
-  flow: "Flow", nextQ: "Next quarter guidance", lastQuarter: "last quarter",
+  components: "Other components", flow: "Flow", nextQ: "Next quarter guidance", lastQuarter: "last quarter",
 }, {
   revenueModel: "收入模式", partOf: "所属", description: "描述", contains: "包含",
   items: (n: number) => `${n} 项`, details: (label: string) => `${label} 业务详情`,
-  flow: "金额", nextQ: "下季度指引", lastQuarter: "上季度",
+  components: "其他构成", flow: "金额", nextQ: "下季度指引", lastQuarter: "上季度",
 });
 
 /** `change` is the comparable change against the comparison quarter; absent when the two quarters cannot be compared. */
@@ -30,7 +31,7 @@ export type GuidePillMark = { node: string; qualifier: string; text: string; imp
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
+const typeFor = (k: number) => ({ name: 15 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
 /** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
 const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 /** Next quarter's guidance as a card beside the bar: a heading naming what is guided, the range, and the amount a growth rate implies. */
@@ -43,7 +44,7 @@ function guideCard(pill: GuidePillMark, k: number) {
   const height = (pill.implied ? impliedTop + size.implied : valueTop + size.value) + padY;
   return { size, head, width, height, x: accent + padX, headY: padY + size.head * 0.8, valueY: valueTop + size.value * 0.8, impliedY: impliedTop + size.implied * 0.8, accent, padY };
 }
-const SCREEN_VALUE_PX = 16;
+const SCREEN_VALUE_PX = 17;
 const valueSize = (n: PlacedNode, k: number) => n.name === "net" ? typeFor(k).net : typeFor(k).value;
 const EMPTY: InfographicLayout = { width: 1, height: 1, nodeWidth: 22, nodes: [], links: [] };
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -70,6 +71,40 @@ export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCo
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
+/** Prefer beside, then below. A compact mark stays inside the bar if both are occupied. */
+export function placeGuidance(beside: Box, below: Box, occupied: readonly Box[], bounds: Box): Box | null {
+  const clear = (box: Box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1
+    && occupied.every(other => box.x1 + 4 <= other.x0 || box.x0 >= other.x1 + 4 || box.y1 + 4 <= other.y0 || box.y0 >= other.y1 + 4);
+  return [beside, below].find(clear) ?? null;
+}
+
+function nodeLabel(n: PlacedNode, text: NodeCopy, k: number, w: number) {
+  const type = typeFor(k), vs = valueSize(n, k), gap = geometryFor(k).labelOffset;
+  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
+    : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
+    : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + Math.max(n.h, geometryFor(k).sideLabelHeight) / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
+  const width = labelWidth(n, text, k), left = x - (anchor === "middle" ? width / 2 : anchor === "end" ? width : 0);
+  return { x, y, anchor, box: { x0: left, x1: left + width, y0: y - vs, y1: y + vs * 0.3 } };
+}
+
+export function guidancePlacements(layout: InfographicLayout, copy: (n: PlacedNode) => NodeCopy, pills: readonly GuidePillMark[], k: number) {
+  const occupied = layout.nodes.flatMap(n => [nodeLabel(n, copy(n), k, layout.nodeWidth).box,
+    { x0: n.x - 6 * k, y0: n.y - 6 * k, x1: n.x + layout.nodeWidth + 16 * k, y1: n.y + n.h + 6 * k }]);
+  const result = new Map<string, Box | null>();
+  for (const pill of pills) {
+    const n = layout.nodes.find(n => n.name === pill.node);
+    if (!n) continue;
+    const card = guideCard(pill, k), x = n.x + layout.nodeWidth + 24 * k;
+    const rect = (x0: number, y0: number): Box => ({ x0, y0, x1: x0 + card.width, y1: y0 + card.height });
+    const belowY = Math.max(n.y + n.h + 12 * k, nodeLabel(n, copy(n), k, layout.nodeWidth).box.y1 + 12 * k);
+    const placed = placeGuidance(rect(x, n.y + n.h / 2 - card.height / 2), rect(n.x, belowY), occupied,
+      { x0: 0, y0: 0, x1: layout.width, y1: layout.height });
+    result.set(n.name, placed);
+    if (placed) occupied.push(placed);
+  }
+  return result;
+}
+
 type Camera = { x: number; y: number; zoom: number };
 /** The drawable area: the statement, widened to the left when a business's breakdown hangs beside it. */
 type World = Box;
@@ -154,15 +189,17 @@ function worldOf(mind: MindMapLayout | null, layout: InfographicLayout): World {
 }
 
 /** A few fixed-point steps: larger type widens the layout, which shrinks the fit scale, so k converges quickly. */
-function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, size: { w: number; h: number } | null) {
-  let k = 1, layout = layoutFor(graph, copy, k);
+function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, size: { w: number; h: number } | null, narrow = false) {
+  // Avoid accumulating a tall staircase above revenue in a sideways phone viewport.
+  const geometry = narrow ? { lift: 10, drop: 16, margin: 20 } : {};
+  let k = 1, layout = layoutFor(graph, copy, k, geometry);
   if (!layout || !size) return layout && { layout, k };
   for (let i = 0; i < 5; i++) {
     const scale = Math.min(size.w / layout.width, size.h / layout.height);
     const next = Math.max(0.9, Math.min(1.3, SCREEN_VALUE_PX / (21 * scale)));
     if (Math.abs(next - k) < 0.02) break;
     k = next;
-    layout = layoutFor(graph, copy, k)!;
+    layout = layoutFor(graph, copy, k, geometry)!;
   }
   return { layout, k };
 }
@@ -231,7 +268,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const fitted = useMemo(() => fitLayout(graph, copy, size), [graph, copy, size]);
+  const narrowPane = useMedia("(max-width: 960px)");
+  const fitted = useMemo(() => fitLayout(graph, copy, size, narrowPane), [graph, copy, size, narrowPane]);
   const [tip, setTip] = useState<{ x: number; y: number; width: number; tip: Tip } | null>(null);
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
   const w = layout.nodeWidth;
@@ -239,8 +277,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
   const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
+  const guidePlaces = useMemo(() => guidancePlacements(layout, copy, pills ?? [], k), [layout, copy, pills, k]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
-  const narrowPane = typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches;
   const mind = useMemo(() => mindMap && fitted && productBusiness
     ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
   const expanded = Boolean(productTarget) && !mind;
@@ -253,13 +291,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   useEffect(() => () => clearTimeout(scrollIdle.current), []);
   const [camera, setCamera] = useState<Camera>(() => home(world));
   const cameraRef = useRef(camera);
-  cameraRef.current = camera;
+  useLayoutEffect(() => { cameraRef.current = camera; }, [camera]);
   const flight = useRef(0);
-  /** Glide the camera, interpolating the visible box so the zoom feels linear. */
+  /** Glide the camera, interpolating the visible box so the zoom feels linear. With reduced motion it has already landed. */
   const flyTo = (target: Camera) => {
     cancelAnimationFrame(flight.current);
+    if (reducedMotion()) return;
     const from = cameraRef.current;
-    if (reducedMotion()) { setCamera(target); return; }
     const start = performance.now();
     const step = (now: number) => {
       const p = Math.min(1, (now - start) / 520), e = 1 - Math.pow(1 - p, 3);
@@ -336,7 +374,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     // With a breakdown, the frame takes it and the business's path into revenue; type never grows past the plain focus.
     return cameraFor(union(own, mind.box), world, size, FOCUS_ZOOM * Math.max(worldW / fitted!.layout.width, worldH / fitted!.layout.height));
   }, [productBusiness, fitted, copy, size, mind, world, worldW, worldH]);
-  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // With reduced motion a new focus (or the same one revealed again) is landed on in the render that brings it.
+  const [aimed, setAimed] = useState<{ camera: Camera; key: string } | null>(null);
+  if (aimed?.camera !== focusCamera || aimed.key !== revealKey) {
+    setAimed({ camera: focusCamera, key: revealKey });
+    if (reducedMotion()) setCamera(focusCamera);
+  }
+  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]);
   const viewportWidth = worldW / camera.zoom, viewportHeight = worldH / camera.zoom;
 
 
@@ -391,7 +435,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const slotLabel = focus?.slot && active ? focusSlot(byName.get(active)!) : null;
   // One delegated handler: focus follows whatever band or node is under the pointer, and clears over empty canvas.
   const hoverOver = (event: React.MouseEvent<SVGSVGElement>) => {
-    const owner = (event.target as Element).closest<SVGElement>("[data-owner]")?.dataset.owner ?? null;
+    if ((event.target as Element).closest(".fc-guide-next")) return;
+    const owner = (event.target as Element).closest<SVGElement>(".fc-node[data-owner]")?.dataset.owner ?? null;
     onHover(owner);
     if (!owner) setTip(null);
   };
@@ -403,8 +448,24 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [[m.description, node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [[m.revenueModel, node!.revenue.map(r => r.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [[m.contains, m.items(node!.children.length)] as [string, string]] : [])] });
   };
 
+  const compactNode = (n: PlacedNode) => {
+    const text = copy(n), interactive = Boolean(n.segmentId) || n.name === "revenue";
+    const content = <><span className="fc-compact-name">{text.name}</span><span className="fc-compact-value">{text.value}</span>{text.change && <span className="fc-compact-change">{basis.change} {text.change.label}</span>}<span className="fc-compact-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.abs(n.value) / Math.max(1, revenue?.value ?? n.value) * 100)}%`, background: colorOf(n.name) }} /></span></>;
+    return <div className="fc-compact-node" key={n.name} data-owner={n.name} data-tone={n.tone}>
+      {interactive ? <button type="button" onClick={() => onPick(n)}>{content}</button> : <div>{content}</div>}
+    </div>;
+  };
+  const primaryNodes = ["revenue", "gross", "operating", "net"];
+  // Only narrow panes swap the Sankey for the compact list; desktop always draws the chart.
+  const compact = narrowPane;
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
-  return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+  return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+    <div className="fc-compact" role="group" aria-label={label}>
+      {primaryNodes.flatMap(name => { const node = byName.get(name); return node ? [compactNode(node)] : []; })}
+      <details className="fc-compact-details"><summary>{m.components}</summary>
+        {layout.nodes.filter(n => !primaryNodes.includes(n.name)).map(compactNode)}
+      </details>
+    </div>
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={m.details(productTarget.label)}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
@@ -446,7 +507,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : lit ? "spotlight" : undefined}>
+      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -495,10 +556,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const bracket = marksShown ? bracketOf.get(n.name) : undefined, pill = marksShown ? pillOf.get(n.name) : undefined;
           const unitScale = n.value > 0 ? n.h / n.value : 0;
           const span = bracket && unitScale ? (n.side === "bottom" ? [n.y + n.h - bracket.high * unitScale, n.y + n.h - bracket.low * unitScale] : [n.y + bracket.low * unitScale, n.y + bracket.high * unitScale]) : null;
-          const pillX = n.x + w + (span ? 18 : 12) * k, card = pill ? guideCard(pill, k) : null;
-          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
-            : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
-            : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
+          const card = pill ? guideCard(pill, k) : null, placement = guidePlaces.get(n.name);
+          const pillX = placement?.x0 ?? n.x + w / 2 - 8 * k;
+          const pillY = placement?.y0 ?? n.y + n.h / 2 - 8 * k;
+          const { x, y, anchor } = nodeLabel(n, text, k, w);
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
           // The node in focus names its comparison amount beside the tick, where neither its own label nor a guidance mark sits.
           const prior = mark && n.name === active && !bracket && !pill ? priorOf?.(n) ?? null : null;
@@ -526,14 +587,26 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <rect className="fc-guide-hit" x={-3 * k} y={Math.min(span[0], span[1]) - 6 * k} width={14 * k} height={Math.abs(span[1] - span[0]) + 12 * k} />
               <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
             </g>}
-            {pill && card && <g className="fc-guide-next" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2 - card.height / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={pill.tip.title}>
-              <path className="fc-guide-lead" d={`M${r(n.x + w - pillX)},${r(card.height / 2)}H0`} />
-              <rect className="fc-guide-box" x={0} y={0} width={r(card.width)} height={r(card.height)} rx={6 * k} />
-              <rect className="fc-guide-accent" x={card.accent} y={card.padY} width={card.accent} height={r(card.height - card.padY * 2)} rx={card.accent / 2} />
-              <text className="fc-guide-head" x={r(card.x)} y={r(card.headY)} style={{ fontSize: card.size.head }}>{card.head}</text>
-              <text className="fc-guide-value" x={r(card.x)} y={r(card.valueY)} style={{ fontSize: card.size.value }}>{pill.glyph && <tspan className="fc-guide-glyph">{pill.glyph} </tspan>}{pill.text}</text>
-              {pill.implied && <text className="fc-guide-implied" x={r(card.x)} y={r(card.impliedY)} style={{ fontSize: card.size.implied }}>{pill.implied}</text>}
-            </a></g>}
+            {pill && card && <g className="fc-guide-next" data-marker={!placement || undefined} data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(pillY)})`}
+              onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}>
+              <a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" tabIndex={0} onClick={e => e.stopPropagation()}
+                aria-label={`${card.head}: ${pill.text}${pill.implied ? ` · ${pill.implied}` : ""}`}
+                onFocus={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); point({ clientX: rect.left, clientY: rect.bottom }, pill.tip); }}
+                onBlur={e => { e.stopPropagation(); setTip(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setTip(null); }}>
+                <title>{`${card.head}: ${pill.text}`}</title>
+                {placement ? <>
+                  <rect className="fc-guide-box" x={0} y={0} width={r(card.width)} height={r(card.height)} rx={6 * k} />
+                  <rect className="fc-guide-accent" x={card.accent} y={card.padY} width={card.accent} height={r(card.height - card.padY * 2)} rx={card.accent / 2} />
+                  <text className="fc-guide-head" x={r(card.x)} y={r(card.headY)} style={{ fontSize: card.size.head }}>{card.head}</text>
+                  <text className="fc-guide-value" x={r(card.x)} y={r(card.valueY)} style={{ fontSize: card.size.value }}>{pill.glyph && <tspan className="fc-guide-glyph">{pill.glyph} </tspan>}{pill.text}</text>
+                  {pill.implied && <text className="fc-guide-implied" x={r(card.x)} y={r(card.impliedY)} style={{ fontSize: card.size.implied }}>{pill.implied}</text>}
+                </> : <>
+                  <circle className="fc-guide-box" cx={8 * k} cy={8 * k} r={8 * k} />
+                  <text className="fc-guide-head" x={8 * k} y={12 * k} textAnchor="middle" style={{ fontSize: 12 * k }}>i</text>
+                </>}
+              </a>
+            </g>}
+
           </g>;
         })}
       </g>

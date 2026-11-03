@@ -6,12 +6,12 @@ import { labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
-import { reportTitle, reportTitleLang } from "./reports-model";
+import { filingQuarterLabel, reportTitle, reportTitleLang } from "./reports-model";
 
 const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly verified", failed: "Verification failed" }, { verified: "数据已核验", partial: "部分核验", failed: "核验未通过" });
 const m = messages({
   report: (title: string) => `Report: ${title}`, release: (date: string, end: string | null) => `Earnings release ${date} · Period ended ${end}`,
-  filed: (form: string, date: string) => `${form} · Filed ${date}`, readFull: "Read full report", newer: "Newer", older: "Older", close: "Close report",
+  filed: (form: string, date: string) => `${form} · Filed ${date}`, readFull: "Read full report", close: "Close report",
   keyFinancials: "Key financials", metric: "Metric", value: "Value", yoy: "YoY", qoq: "QoQ", changes: "Narrative changes", processing: "Analysis in progress", noFigures: "No verified key figures",
   showLess: "Show less", more: (n: number) => `${n} more`, noAnalysis: "No analysis", analystView: "Analyst view", further: "Further analysis",
   guidance: "Guidance", risk: "Risk", generated: (date: string) => `AI analysis · ${date}`, filing: (form: string) => `${form} filing`,
@@ -19,7 +19,7 @@ const m = messages({
   derived: "Derived", notComparable: "Not comparable",
 }, {
   report: (title: string) => `财报：${title}`, release: (date: string, end: string | null) => `业绩公告 ${date} · 截至 ${end}`,
-  filed: (form: string, date: string) => `${form} · 提交于 ${date}`, readFull: "阅读完整财报", newer: "较新", older: "较早", close: "关闭财报",
+  filed: (form: string, date: string) => `${form} · 提交于 ${date}`, readFull: "阅读完整财报", close: "关闭财报",
   keyFinancials: "关键财务数据", metric: "指标", value: "数值", yoy: "同比", qoq: "环比", changes: "表述变化", processing: "分析中", noFigures: "无已核验的关键数据",
   showLess: "收起", more: (n: number) => `另有 ${n} 条`, noAnalysis: "暂无分析", analystView: "分析观点", further: "延伸分析",
   guidance: "业绩指引", risk: "风险", generated: (date: string) => `AI 分析 · ${date}`, filing: (form: string) => `${form} 文件`,
@@ -38,31 +38,28 @@ const trend = (v: string | null) => !v ? undefined
  * is written by and verified here as a finding is, with the full report one click away. Until the report has one, the
  * filing digest stands in — the verified key figures beside the conclusions, investment view and sources.
  */
-export function ReportLens({ report, ticker, data, updates, nodeColor, index, count, onStep, onClose, onOpenReport }: {
+export function ReportLens({ report, ticker, data, updates, nodeColor, onClose, onOpenReport }: {
   report: PublicFilingDigest;
   ticker: string;
   data: FindingData;
   updates: number;
   nodeColor: (id: string) => string;
-  index: number;
-  count: number;
-  onStep: (delta: 1 | -1) => void;
   onClose: () => void;
   onOpenReport: () => void;
 }) {
   const [more, setMore] = useState(false);
   const analysis = useItemAnalysis(ticker, report.accessionNumber, updates);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
-  return <section className="lens report-lens" aria-label={m.report(reportTitle(report))} key={report.accessionNumber}>
+  const title = reportTitle(report, ticker);
+  return <section className="lens report-lens" aria-label={m.report(title)} key={report.accessionNumber}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind report-kind">{report.periodLabel ?? report.form}</b>
-        <h2 lang={verified ? langOf(verified.finding.title) : reportTitleLang(report)}>{verified?.finding.title ?? reportTitle(report)}</h2>
+        <b className="lens-kind report-kind">{filingQuarterLabel(ticker, report) ?? report.form}</b>
+        <h2 lang={verified ? langOf(verified.finding.title) : reportTitleLang(report)}>{verified?.finding.title ?? title}</h2>
         <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{!verified && report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={verified ? [verified.finding.title, verified.finding.judgment.text] : [report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
       </div>
       <div className="lens-nav">
         {report.hasReport && <Button variant="unstyled" type="button" className="lens-pair report-open" onClick={onOpenReport}>{m.readFull}</Button>}
-        <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.newer} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.older} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>

@@ -6,7 +6,7 @@ import { runAgentLoop, sequential, type LoopHost } from "../src/agent-loop.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";
 import { issueReader, readerOf } from "../src/stage/identity.ts";
-import { stageRecipeFor, type StageInput, type StageTurn } from "../src/stage/recipe.ts";
+import { stageRecipeFor, type StageInput } from "../src/stage/recipe.ts";
 import type { AgentMessage, AgentReply } from "../src/tool-loop.ts";
 import { data, PERIOD, publication } from "./fixtures/stage-data.ts";
 
@@ -28,7 +28,7 @@ const input: StageInput = {
   data: { ticker: "TEST", periodEnd: PERIOD, data, ledger, catalogue: lensCatalogue(ledger, data, PERIOD), publication, findings: verifyFindings(publication, data).verified, basis: {} },
   locale: "en", scene: DEFAULT_SCENE_ROWS, view: null,
 };
-const host = (records: string[]): LoopHost<StageTurn> => ({ reserve: async () => true, record: r => records.push(`${r.action}: ${r.observation.split("\n")[0]}`), execute: (_t, calls, run) => sequential(calls, run), signal: new AbortController().signal, now: () => 0 });
+const host = (records: string[]): LoopHost => ({ reserve: async () => true, record: r => records.push(`${r.action}: ${r.observation.split("\n")[0]}`), execute: (_t, calls, run) => sequential(calls, run), signal: new AbortController().signal, now: () => 0 });
 async function turn(replies: AgentReply[]) {
   const recipe = stageRecipeFor(input), state = recipe.open(input), records: string[] = [];
   const messages: AgentMessage[] = [{ role: "user", content: "request" }];
