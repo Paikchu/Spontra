@@ -36,7 +36,7 @@ function recentFilings(payload: unknown): Filing[] {
   const recent = (payload as { filings?: { recent?: Record<string, unknown[]> } } | null)?.filings?.recent;
   if (!recent || !Array.isArray(recent.accessionNumber)) return [];
   const column = (name: string, i: number) => String((recent[name] as unknown[] | undefined)?.[i] ?? "");
-  return recent.accessionNumber.slice(0, REMEMBERED).map((_, i) => ({
+  return recent.accessionNumber.map((_, i) => ({
     accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i),
     reportDate: column("reportDate", i), primaryDocument: column("primaryDocument", i),
   })).filter(f => /^\d{10}-\d{2}-\d{6}$/.test(f.accession));
@@ -85,14 +85,17 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const previous = (await repository.getCache<DiscoveryState>(discoveryStateKey(ticker)))?.payload;
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
-      const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
+      // The bounded memory (REMEMBERED) is for the diff; the lists below are read from the whole recent block, as
+      // the SEC report reads its own window of filings, so a run of other forms never pushes a filing out of them.
+      const remembered = filings.slice(0, REMEMBERED);
+      const fresh = previous ? remembered.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
         url: secArchiveDocumentUrl(secArchiveRoot(Number(cik), f.accession), f.primaryDocument) }));
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
+          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: remembered.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
             name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions),
             // The report's own window of filings (its discovery reads the newest 40 business filings) and, apart from

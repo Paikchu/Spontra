@@ -81,6 +81,13 @@ test("the archive list keeps the report's filings apart from a run of prospectus
   const state = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload) as { current: Array<{ form: string }> };
   assert.deepEqual(state.current.filter(f => f.form !== "424B2").map(f => f.form), ["8-K", "10-K"], "the reports stay listed behind 45 supplements");
   assert.equal(state.current.filter(f => f.form === "424B2").length, 40);
+
+  // Beyond the diff's bounded memory too: 200 Form 4s precede the reports, and the archive list still names them.
+  const insiders: Array<[string, string, string, string]> = Array.from({ length: 200 }, (_, i) => [`0001104659-26-01${String(1000 + i).padStart(4, "0")}`, "4", "", "2026-09-02"]);
+  await runSecDiscovery(env, new Date("2026-10-17T10:10:00.000Z"), fetcher({ "CIK0002056322.json": submissions([...insiders, ...FILINGS]) }));
+  const later = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload) as { accessions: string[]; current: Array<{ form: string }> };
+  assert.equal(later.accessions.length, 200, "the diff remembers the newest 200");
+  assert.deepEqual(later.current.map(f => f.form), ["8-K", "10-K"], "the archive list reads past them");
 });
 
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {

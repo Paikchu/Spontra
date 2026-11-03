@@ -1,13 +1,9 @@
 import { WebSearchError, type CachePolicy, type ContentData, type ContentRequest, type Retrieval,
   type RetrievalData, type SearchData, type SearchProvider, type SearchRequest } from "./types.ts";
 import type { SearchStore, StoredResult } from "./store.ts";
-import { digest, normalizeContent, normalizeSearch } from "./validation.ts";
-import { SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { digest, isEdgarUrl, normalizeContent, normalizeSearch } from "./validation.ts";
+export { isEdgarUrl } from "./validation.ts";
 const MINUTE = 60_000;
-/** True for any page on EDGAR's hosts. */
-export function isEdgarUrl(url: string): boolean {
-  try { const host = new URL(url).hostname.toLowerCase(); return host === SEC_DOMAIN || host.endsWith(`.${SEC_DOMAIN}`); } catch { return false; }
-}
 export class WebSearchService {
   private readonly provider: SearchProvider;
   private readonly store: SearchStore;

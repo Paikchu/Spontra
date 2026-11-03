@@ -1,5 +1,11 @@
+import { SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { WebSearchError, type ContentRequest, type SearchRequest } from "./types.ts";
 const invalid = () => { throw new WebSearchError("invalid_request"); };
+/** True for any page on EDGAR's hosts: a filing's text reaches an agent only from the SEC archive, never from the web. */
+export function isEdgarUrl(url: string): boolean {
+  try { const host = new URL(url).hostname.toLowerCase(); return host === SEC_DOMAIN || host.endsWith(`.${SEC_DOMAIN}`); } catch { return false; }
+}
+
 export function publicUrl(value: string): string {
   let url: URL;
   try { url = new URL(value); } catch { return invalid(); }
