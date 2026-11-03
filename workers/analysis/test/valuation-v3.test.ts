@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelDrivers, ScenarioAssumptions, ValuationPublication } from "../../../shared/analysis-contract/valuation.ts";
+import type { BalanceSheet } from "../../../shared/analysis-contract/capital-structure.ts";
 import type { PeersPublication } from "../../../shared/analysis-contract/peers.ts";
 import { calculateValuation, peerMultiplesOf, scenarioValue, ValuationCalcError, distributionOf, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
 import { forecastYearOf, managementBuildCapex, managementCapexShape, managementDrivers, managementFactsOf, managementGate, managementRevenueGrowth } from "../../../shared/analysis-runtime/valuation/management.ts";
@@ -76,7 +77,8 @@ test("weighted quantiles: equal weights reproduce the linear quartiles; a heavie
 
 test("peer fundamentals: loss-making peers, peers without positive EBITDA and peers with incomplete figures are dropped with a note; weights renormalize", async () => {
   const shares = async (peer: string) => peer === "NODA" ? null : 10;
-  const built = await buildPeerFundamentals({} as D1Database, "SUBJ", { ...projection, pairs: [], units: [] }, ["PA", "PB", "LOSS", "NODA"], shares);
+  const sheet: BalanceSheet = { asOf: "2026-06-30", currency: "USD", assets: [], liabilities: [{ id: "op", label: "Operating leases", concept: "OperatingLeaseLiability", group: "leases", value: "30" }, { id: "fin", label: "Finance leases", concept: "FinanceLeaseLiability", group: "leases", value: "0" }], equity: [], totals: { assets: "100", liabilities: "30", equity: "70", currentAssets: null, currentLiabilities: null }, source: { accession: "test", url: "https://example.test", filedAt: "2026-08-01", form: "10-Q" } };
+  const built = await buildPeerFundamentals({} as D1Database, "SUBJ", { ...projection, pairs: [], units: [] }, ["PA", "PB", "LOSS", "NODA"], shares, async () => sheet);
   assert.equal(built.basis, "curated");
   assert.deepEqual(built.peers.map(p => p.ticker), ["PA", "PB"]);
   close(built.peers[0]!.weight, 0.5);
@@ -239,7 +241,7 @@ test("build capex may peak in any year but must end inside the horizon", () => {
 });
 
 test("prior: a cited capex timing replaces the four-year taper, scaled to its total, padded with zeros and forced to end", () => {
-  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 9.428e9, "USD"], ["cash", 37e9, "USD"], ["debt", 125e9, "USD"], ["equity", 67e9, "USD"], ["shares_diluted_weighted", 3e9, "shares"], ["fcf_ttm", -28.7e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
+  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 9.428e9, "USD"], ["cash", 37e9, "USD"], ["debt", 125e9, "USD"], ["finance_leases", 0, "USD"], ["equity", 67e9, "USD"], ["shares_diluted_weighted", 3e9, "shares"], ["fcf_ttm", -28.7e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
   const distribution = (factor: string, values: number[]) => ({ factor, periods: values.map((value, i) => ({ periodEnd: `20${20 + i}-05-31`, value })), min: values[0]!, p25: values[1]!, median: values[2]!, p75: values[3]!, max: values[4]! });
   const input = { currency: "USD", facts, distributions: [distribution("revenueGrowth", [0.06, 0.097, 0.149, 0.175, 0.216]), distribution("operatingMargin", [0.257, 0.283, 0.304, 0.306, 0.321]), distribution("capexToRevenue", [0.106, 0.13, 0.174, 0.37, 0.826])], diagnostics: [{ key: "capexToDa", value: 8 }, { key: "roic", value: 0.108 }], rpo: null, riskFree: 0.05, beta: 1.8, price: 130 };
   const excess = 75.66e9 - 1.5 * 9.428e9;

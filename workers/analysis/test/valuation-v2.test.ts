@@ -10,7 +10,7 @@ const close = (actual: number, expected: number, digits = 2) => assert.equal(Num
 const bridge = { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: [] };
 const fill = (n: number, v: number) => new Array<number>(n).fill(v);
 const scenario = (drivers: ModelDrivers, probability: number | null = null): ScenarioAssumptions => ({ narrative: "", probability, triggers: [], invalidation: [], evidenceIds: [], drivers });
-const rate = (value: number) => ({ value, basis: "wacc" as const, components: { riskFree: null, beta: null, equityRiskPremium: null, costOfEquity: null, costOfDebt: null, taxRate: null, equityWeight: null }, rationale: "", sourceRefs: [] });
+const rate = (value: number) => ({ value, basis: "wacc" as const, components: { riskFree: null, beta: null, equityRiskPremium: null, costOfEquity: value + 0.02, costOfDebt: null, taxRate: null, equityWeight: null }, rationale: "Synthetic equity cost is two percentage points above WACC.", sourceRefs: [] });
 const fcff = (years: number, growth: number, margin = 0.2, extra: Partial<Extract<ModelDrivers, { modelType: "fcff" }>> = {}, path: Partial<Extract<ModelDrivers, { modelType: "fcff" }>["path"]> = {}): ModelDrivers =>
   ({ modelType: "fcff", revenue0: 1000, path: { revenueGrowth: fill(years, growth), operatingMargin: fill(years, margin), taxRate: fill(years, 0.2), salesToCapital: fill(years, 2), ...path }, terminalGrowth: 0.03, terminalRoic: 0.15, ...extra });
 const request = (years: number, extra: Partial<CalcRequest> = {}): CalcRequest => ({
@@ -72,17 +72,17 @@ test("RPO floor: a 12-month bucket lands in year one, a 24-month bucket spreads 
   assert.deepEqual(floorBreaches({ ...drivers, revenue0: 100 }, anchor).map(b => b.year), [1, 2, 3, 4, 5]);
 });
 
-test("forward multiples: year-3 EBITDA at the peer median, net claims rolled forward by the base cash flows, discounted three years", () => {
+test("forward multiples: discount interim FCFF and exit EV before today's claims; equity exit price uses its own rate", () => {
   const drivers = fcff(5, 0.10) as Extract<ModelDrivers, { modelType: "fcff" }>;
   const f = forwardFundamentals(drivers, 3, { da0: 50, interestExpense0: 10, shares: 100 });
   close(f.revenue, 1331); close(f.ebit, 266.2); close(f.ebitda!, 266.2 + 66.55); close(f.eps!, (266.2 - 10) * 0.8 / 100, 6);
   const multiples = { p25: 10, median: 12, p75: 14, count: 5 };
-  const ev = forwardMultipleValue({ metric: 300, multiples, horizonYears: 3, r: 0.09, kind: "ev", bridge: { ...bridge, nonOperatingAssets: 100, debtAndClaims: 400 }, shares: 100, cumulativeCashFlow: -150 });
-  // Net claims 300 today plus 150 of negative cash flow = 450 at the horizon.
-  close(ev.base, (300 * 12 - 450) / 1.09 ** 3 / 100, 6); close(ev.low, (300 * 10 - 450) / 1.09 ** 3 / 100, 6);
-  const pe = forwardMultipleValue({ metric: 2, multiples, horizonYears: 3, r: 0.09, kind: "equity", bridge, shares: 100, cumulativeCashFlow: 0 });
-  close(pe.base, 24 / 1.09 ** 3, 6);
-  assert.throws(() => forwardMultipleValue({ metric: 2, multiples: { ...multiples, p25: -1 }, horizonYears: 3, r: 0.09, kind: "equity", bridge, shares: 100, cumulativeCashFlow: 0 }), ValuationCalcError);
+  const pvExplicit = -50 / 1.09 - 50 / 1.09 ** 2 - 50 / 1.09 ** 3;
+  const ev = forwardMultipleValue({ metric: 300, multiples, horizonYears: 3, r: 0.09, kind: "ev", bridge: { ...bridge, nonOperatingAssets: 100, debtAndClaims: 400 }, shares: 100, pvExplicit });
+  close(ev.base, (pvExplicit + 300 * 12 / 1.09 ** 3 - 300) / 100, 6); close(ev.low, (pvExplicit + 300 * 10 / 1.09 ** 3 - 300) / 100, 6);
+  const pe = forwardMultipleValue({ metric: 2, multiples, horizonYears: 3, r: 0.12, kind: "equity" });
+  close(pe.base, 24 / 1.12 ** 3, 6);
+  assert.throws(() => forwardMultipleValue({ metric: 2, multiples: { ...multiples, p25: -1 }, horizonYears: 3, r: 0.12, kind: "equity" }), ValuationCalcError);
 });
 
 test("peer multiples: quartiles over the peers that answer; a peer without a quote or with negative EBITDA is left out", () => {
@@ -128,7 +128,7 @@ test("verification: revenue within 0.5%, shares exact, claims at least debt plus
   assert.deepEqual(wrong.checks.filter(c => c.status === "fail").map(c => c.field.split(" ")[0]), ["revenue0", "bridge.debtAndClaims", "bridge.nonOperatingAssets"]);
 });
 
-test("gates: negative scenarios and terminal share above 100% fail, terminal growth above 3% flags, above the risk-free rate fails; consensus divergence only flags", () => {
+test("gates: negative scenarios and terminal share above 100% flag, terminal growth above 3% flags, above the risk-free rate fails; consensus divergence only flags", () => {
   const result = calculateValuation(request(5));
   const base = (overrides: Partial<Parameters<typeof sanityGates>[0]> = {}) => sanityGates({ result, riskFree: 0.045, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null, ...overrides });
   const plain = base();
@@ -140,11 +140,11 @@ test("gates: negative scenarios and terminal share above 100% fail, terminal gro
   assert.equal(consensus.status, "flag"); assert.ok(consensus.detail.includes("quantify"));
   const history = base({ impliedMultiple: 30, multipleHistory: { factor: "evToEbitda", periods: [], min: 10, p25: 12, median: 14, p75: 16, max: 20 } }).find(g => g.key === "implied_multiple_vs_history")!;
   assert.equal(history.status, "flag"); assert.equal(history.limit, 20);
-  // A build-phase path with negative explicit cash flows: terminal share above one and a negative bear case fail.
+  // A build-phase path with negative explicit cash flows: terminal share above one and a negative bear case remain visible as flags.
   const heavy = calculateValuation({ ...request(5), scenarios: { bear: scenario(fcff(5, 0.19, 0.25, { terminalGrowth: 0.04, terminalRoic: 0.10 }, { salesToCapital: fill(5, 0.3) })), base: scenario(fcff(5, 0.25, 0.3, { terminalGrowth: 0.045, terminalRoic: 0.125 }, { salesToCapital: fill(5, 0.3) })), bull: scenario(fcff(5, 0.3, 0.31, { terminalGrowth: 0.045, terminalRoic: 0.15 }, { salesToCapital: fill(5, 0.3) })) }, bridge: { ...bridge, nonOperatingAssets: 50, debtAndClaims: 600 }, discountRate: rate(0.11) });
   const gates = sanityGates({ result: heavy, riskFree: 0.045, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null });
-  assert.equal(gates.find(g => g.key === "terminal_share")!.status, "fail");
-  assert.equal(gates.find(g => g.key === "non_negative_scenarios")!.status, "fail");
+  assert.equal(gates.find(g => g.key === "terminal_share")!.status, "flag");
+  assert.equal(gates.find(g => g.key === "non_negative_scenarios")!.status, "flag");
   assert.equal(gates.find(g => g.key === "terminal_growth")!.status, "flag");
   assert.equal(sanityGates({ result: heavy, riskFree: 0.04, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null }).find(g => g.key === "terminal_growth")!.status, "fail");
   // Gaps carry the flags and fails, never the passes; a missing consensus is said, never skipped.
@@ -231,7 +231,7 @@ test("multiple history: EV/EBITDA week by week from closes and the trailing quar
 });
 
 test("life cycle and prior: a build-phase company gets seven years, build capex that ends, a 3% terminal growth cap and RPO-anchored growth", () => {
-  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["cfo_ttm", 46.94e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 10.043e9, "USD"], ["interest_expense_ttm", 5.103e9, "USD"], ["cash", 37.077e9, "USD"], ["debt", 125.337e9, "USD"], ["leases", 30.594e9, "USD"], ["preferred_stock", 4.954e9, "USD"], ["minority_interest", 0.424e9, "USD"], ["equity", 67.196e9, "USD"], ["shares_diluted_weighted", 3.0e9, "shares"], ["effective_tax_rate_ttm", 0.1295, "ratio"], ["fcf_ttm", -28.72e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
+  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["cfo_ttm", 46.94e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 10.043e9, "USD"], ["interest_expense_ttm", 5.103e9, "USD"], ["cash", 37.077e9, "USD"], ["debt", 125.337e9, "USD"], ["leases", 30.594e9, "USD"], ["finance_leases", 5e9, "USD"], ["preferred_stock", 4.954e9, "USD"], ["minority_interest", 0.424e9, "USD"], ["equity", 67.196e9, "USD"], ["shares_diluted_weighted", 3.0e9, "shares"], ["effective_tax_rate_ttm", 0.1295, "ratio"], ["fcf_ttm", -28.72e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
   const distribution = (factor: string, values: number[]) => ({ factor, periods: values.map((value, i) => ({ periodEnd: `20${20 + i}-05-31`, value })), min: Math.min(...values), p25: values[1]!, median: values[2]!, p75: values[3]!, max: Math.max(...values) });
   const distributions = [distribution("revenueGrowth", [0.06, 0.097, 0.149, 0.175, 0.216]), distribution("operatingMargin", [0.257, 0.283, 0.304, 0.306, 0.321]), distribution("capexToRevenue", [0.106, 0.13, 0.174, 0.37, 0.826])];
   const diagnostics = [{ key: "capexToDa", value: 7.53 }, { key: "roic", value: 0.108 }, { key: "revenueGrowthTtm", value: 0.216 }];
@@ -248,7 +248,7 @@ test("life cycle and prior: a build-phase company gets seven years, build capex 
   assert.equal(base.path.buildCapex!.filter(v => v > 0).length, 4);
   close(base.path.buildCapex![0]!, 75.66e9 - 1.5 * 10.043e9, 0);
   assert.equal(base.terminalGrowth, 0.03);
-  close(prior.bridge.debtAndClaims, 125.337e9 + 30.594e9 + 4.954e9 + 0.424e9, 0);
+  close(prior.bridge.debtAndClaims, 125.337e9 + 5e9 + 4.954e9 + 0.424e9, 0);
   assert.equal(prior.context!.lifecycle, "build");
   assert.ok(prior.context!.anchor);
   const result = calculateValuation(prior);

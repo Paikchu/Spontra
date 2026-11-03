@@ -1,6 +1,6 @@
 import type { AnalysisFact, ManagerReview, PublishedSecReport, SecNodeSpecV2 } from "./analysis.ts";
 import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { secArchiveDocumentUrl, secArchiveRoot } from "./archive-url.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** 8: English summaries with English-sized limits (7 was the last Chinese one). */
 export const SEC_SUMMARY_VERSION = 8;

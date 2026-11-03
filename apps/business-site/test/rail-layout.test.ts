@@ -75,8 +75,8 @@ test("each person lists as a row of their own at the date of their latest trade,
   const id = (owner: [string, string]) => personRowId(owner[0]);
   for (const filter of ["key", "all"] as const) {
     const rows = streamRows(railLayout(all, filter), [], null, filter, persons);
-    // The pinned filing leads; the people follow by date, the deal between Magnetar (10.18) and Agarwal (10.15).
-    const order = ["earn", id(INTRATOR), id(MAGNETAR), "deal", id(AGARWAL), id(MCBEE), "vote", id(BUYER)];
+    // One date order: the deal between Magnetar (10.18) and Agarwal (10.15), the earnings release of 08.11 last.
+    const order = [id(INTRATOR), id(MAGNETAR), "deal", id(AGARWAL), id(MCBEE), "vote", id(BUYER), "earn"];
     assert.deepEqual(rows.map(r => r.id), filter === "all" ? order : order.filter(id => rows.some(r => r.id === id)), filter);
     assert.equal(rows.filter(r => r.kind === "person").length, 5, filter);
     // A person's row holds their filings of any age, so a trade in focus finds the row to open.
@@ -89,36 +89,33 @@ test("each person lists as a row of their own at the date of their latest trade,
   assert.deepEqual(streamRows(railLayout(all, "insiders"), [], null, "insiders", persons).map(r => r.id), persons.map(p => personRowId(p.key)));
 });
 
-test("the latest earnings filing leads the rail, the people hold the trades, and nothing shows twice", () => {
+test("the earnings filing lists at its date, the people hold the trades, and nothing shows twice", () => {
   const earnings = event({ id: "earn", form: "8-K", class: "earnings", filedAt: "2026-08-11", items: ["2.02"] });
   const deal = event({ id: "deal", form: "8-K", class: "deal", filedAt: "2026-10-25", items: ["1.01"] });
   const all = items([...trades, earnings, deal]);
   for (const filter of ["key", "all"] as const) {
     const layout = railLayout(all, filter);
-    assert.ok(layout.pinned && layout.pinned.kind === "item" && layout.pinned.item.id === "earn", filter);
+    const ids = layout.rows.flatMap(rowLeaves).map(item => item.id);
+    assert.deepEqual(ids, filter === "all" ? ["deal", "earn"] : ["deal", "earn"].filter(id => ids.includes(id)), filter);
+    assert.ok(ids.includes("earn"), filter);
     assert.equal(layout.insiders.length, 7, filter);
-    const restIds = layout.rest.flatMap(rowLeaves).map(item => item.id);
-    assert.ok(!restIds.includes("earn"));
-    assert.ok(!restIds.some(id => layout.insiders.some(item => item.id === id)), filter);
+    assert.ok(!layout.rows.flatMap(rowLeaves).some(item => layout.insiders.some(trade => trade.id === item.id)), filter);
   }
   // A trade older than the window lists through its person too, never as its own row.
-  assert.ok(!railLayout(all, "all").rest.flatMap(rowLeaves).some(item => item.id === "old"));
+  assert.ok(!railLayout(all, "all").rows.flatMap(rowLeaves).some(item => item.id === "old"));
   assert.ok(railLayout(all, "all").insiders.some(item => item.id === "old"));
-  // The Insiders reading is the people alone; the other event readings get no people and no pin.
+  // The Insiders reading is the people alone; the other event readings get no people.
   const insiders = railLayout(all, "insiders");
-  assert.equal(insiders.pinned, null);
   assert.equal(insiders.insiders.length, 7);
-  assert.deepEqual(insiders.rest, []);
-  for (const filter of ["earnings", "material"] as const) {
-    const layout = railLayout(all, filter);
-    assert.equal(layout.pinned, null);
-    assert.deepEqual(layout.insiders, []);
-  }
+  assert.deepEqual(insiders.rows, []);
+  for (const filter of ["earnings", "material"] as const) assert.deepEqual(railLayout(all, filter).insiders, []);
 });
 
-test("a 10-Q report outranks an older 8-K earnings release as the pinned filing", () => {
-  const report = { accessionNumber: "q3", form: "10-Q", date: "2026-10-30", periodEnd: "2026-09-30", headline: "Quarter headline", sources: [] } as unknown as PublicFilingDigest;
+test("a 10-Q report lists at its own date, after the newer rows", () => {
+  const report = { accessionNumber: "q3", form: "10-Q", date: "2026-10-12", periodEnd: "2026-09-30", headline: "Quarter headline", sources: [] } as unknown as PublicFilingDigest;
   const release = event({ id: "earn", form: "8-K", class: "earnings", filedAt: "2026-08-11", items: ["2.02"] });
-  const layout = railLayout(items([...trades, release], [report]), "key");
-  assert.ok(layout.pinned && layout.pinned.kind === "item" && layout.pinned.item.id === "q3");
+  const all = items([...trades, release], [report]);
+  const persons = personsFromEvents(insiderFilings(all).map(item => item.event), NOW);
+  const ids = streamRows(railLayout(all, "all"), [], null, "all", persons).map(r => r.id);
+  assert.deepEqual(ids, [personRowId("1"), personRowId("2"), personRowId("3"), "q3", personRowId("4"), personRowId("5"), "earn"]);
 });

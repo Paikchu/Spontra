@@ -337,7 +337,8 @@ function allowedSource(request: Request): boolean {
   try {
     const url = new URL(source);
     if (origin !== null && source !== url.origin) return false;
-    if (url.origin === "https://businessview.info" || url.origin === "https://www.businessview.info") return true;
+    // A beacon counts only from a page this Worker served, on whichever of its hosts the page came from.
+    if (url.origin === new URL(request.url).origin) return true;
     // Local origins are accepted only by a local dev server, never a public host.
     const local = (host: string) => ["localhost", "127.0.0.1", "[::1]"].includes(host);
     return local(new URL(request.url).hostname) && local(url.hostname) && ["http:", "https:"].includes(url.protocol);

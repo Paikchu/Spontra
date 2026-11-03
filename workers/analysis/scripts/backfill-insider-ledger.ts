@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { summarizePerson } from "../../../shared/analysis-runtime/insiders.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "../src/events/form4.ts";
 import { PERSON_COLUMNS, PERSON_UPSERT, personRow, toLedgerRow, TRANSACTION_COLUMNS, TRANSACTION_UPSERT, transactionRows, type TransactionRow } from "../src/events/insider-ledger.ts";
-import { secArchiveDocumentUrl, secArchiveRoot } from "../src/sec/archive-url.ts";
+import { SEC_TICKERS_URL, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsPageUrl, secSubmissionsUrl } from "../../../shared/analysis-runtime/sec-sources.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
@@ -52,7 +52,7 @@ async function sec(url: string): Promise<Response> {
 let edgarTickers: Record<string, { cik_str: number; ticker: string }> | null = null;
 async function companyCik(ticker: string): Promise<string | null> {
   if (cikOption) return normalizeCik(cikOption);
-  edgarTickers ??= await (await sec("https://www.sec.gov/files/company_tickers.json")).json() as Record<string, { cik_str: number; ticker: string }>;
+  edgarTickers ??= await (await sec(SEC_TICKERS_URL)).json() as Record<string, { cik_str: number; ticker: string }>;
   const dashed = ticker.replace(".", "-");
   const hit = Object.values(edgarTickers).find(c => c.ticker.toUpperCase() === ticker || c.ticker.toUpperCase() === dashed);
   return hit ? String(hit.cik_str) : null;
@@ -69,9 +69,9 @@ const listed = (page: SubmissionPage): Listed[] => (page.accessionNumber ?? []).
 /** Every Form 4 in the company's submission list: the recent page and each older one EDGAR splits off. */
 async function form4Filings(cik: string): Promise<Listed[]> {
   const padded = cik.padStart(10, "0");
-  const submissions = await (await sec(`https://data.sec.gov/submissions/CIK${padded}.json`)).json() as { filings?: { recent?: SubmissionPage; files?: Array<{ name: string }> } };
+  const submissions = await (await sec(secSubmissionsUrl(padded))).json() as { filings?: { recent?: SubmissionPage; files?: Array<{ name: string }> } };
   const out = listed(submissions.filings?.recent ?? {});
-  for (const file of submissions.filings?.files ?? []) out.push(...listed(await (await sec(`https://data.sec.gov/submissions/${file.name}`)).json() as SubmissionPage));
+  for (const file of submissions.filings?.files ?? []) out.push(...listed(await (await sec(secSubmissionsPageUrl(file.name))).json() as SubmissionPage));
   return out.sort((a, b) => b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber)).slice(0, max);
 }
 

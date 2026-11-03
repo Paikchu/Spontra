@@ -1,3 +1,5 @@
+import { priceGuideOf } from "../../../../shared/analysis-runtime/valuation/price-guide.ts";
+import { latestValuationQuote } from "./quotes.ts";
 import type { ReportStatus, ValuationAttempt, ValuationEvidence, ValuationPublication, ValuationResponse } from "../../../../shared/analysis-contract/valuation.ts";
 import { readValuationPublication } from "../../../../shared/analysis-runtime/valuation/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -32,8 +34,12 @@ export class ValuationStore {
 
   /** Records where the newest run stands; read beside the report so the page can say "updating" or "last attempt failed". */
   async noteAttempt(ticker: string, attempt: ValuationAttempt, now: string): Promise<void> {
-    await this.db.prepare(`INSERT INTO valuation_current (ticker, version_id, latest_attempt_json, request_generation, last_fingerprint, updated_at) VALUES (?, NULL, ?, 0, NULL, ?)
-      ON CONFLICT (ticker) DO UPDATE SET latest_attempt_json = excluded.latest_attempt_json, updated_at = excluded.updated_at`).bind(ticker, JSON.stringify(attempt), now).run();
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO valuation_current (ticker, version_id, latest_attempt_json, request_generation, last_fingerprint, updated_at) VALUES (?, NULL, ?, 0, NULL, ?)
+        ON CONFLICT (ticker) DO UPDATE SET latest_attempt_json = excluded.latest_attempt_json, updated_at = excluded.updated_at`).bind(ticker, JSON.stringify(attempt), now),
+      this.db.prepare(`INSERT INTO publication_revisions (ticker, resource, revision) VALUES (?, 'valuation', ?)
+        ON CONFLICT(ticker, resource) DO UPDATE SET revision = max(revision, excluded.revision)`).bind(ticker, now),
+    ]);
   }
 
   /**
@@ -96,5 +102,7 @@ export async function readValuationResponse(db: D1Database, rawTicker: string, o
   const versions = await store.versions(ticker);
   const availability: ValuationResponse["availability"] = report ? report.reportStatus === "ready" ? "ready" : "insufficient" : attempt?.status === "failed" ? "failed" : attempt?.reportStatus === "insufficient" ? "insufficient" : "preparing";
   const outdated = !!report && !!attempt && attempt.status !== "succeeded" && attempt.updatedAt > report.generatedAt;
-  return { ...empty, availability, report, latestAttempt: attempt, outdated, versions };
+  const quote = report ? await latestValuationQuote(db, ticker, report.quote) : null;
+  const priceGuide = priceGuideOf({ report, quote, asOf: new Date().toISOString(), outdated });
+  return { ...empty, availability, report, priceGuide, latestAttempt: attempt, outdated, versions };
 }

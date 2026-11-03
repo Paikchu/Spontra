@@ -97,10 +97,38 @@ export function managementDrivers(base: Fcff, set: ManagementTargetSet, periodEn
       from = at; level = target;
     }
   }
+  const investmentPath = base.path;
+  if (investmentPath.capitalPlan) {
+    const capitalPlan = { capex: [...investmentPath.capitalPlan.capex], depreciation: [...investmentPath.capitalPlan.depreciation], workingCapitalChange: [...investmentPath.capitalPlan.workingCapitalChange] };
+    const capexTargets = [...byYear(set, periodEnd, years, "capex").entries()].sort((a, b) => a[0] - b[0]);
+    let fromYear = 0, fromCapex = facts.capex0 ?? capitalPlan.capex[0]!;
+    for (const [at, target] of capexTargets) {
+      const planned = capitalPlan.capex[at - 1]!;
+      const amount = target.kind === "floor" ? Math.max(planned, target.value) : target.kind === "ceiling" ? Math.min(planned, target.value) : target.value;
+      for (let i = fromYear; i < at; i++) capitalPlan.capex[i] = fromCapex + (amount - fromCapex) * (i - fromYear + 1) / (at - fromYear);
+      anchors.push({ metric: "capex", fiscalYear: target.fiscalYear, year: at, target: target.value, path: amount });
+      fromYear = at; fromCapex = amount;
+    }
+    notes.push(capexTargets.length ? "Capex follows the cited targets with linear interpolation between anchors; years after the last target retain the base capital plan." : "No cited capex target: the base capital plan is retained as a research assumption.");
+    notes.push("Depreciation and working-capital changes retain the base assumptions; no sales-to-capital estimate or build-capex overlay is applied.");
+    const fcfTargets = byYear(set, periodEnd, years, "fcf");
+    let rev = base.revenue0;
+    for (let i = 0; i < years; i++) {
+      rev *= 1 + revenue.growth[i]!;
+      for (const anchor of anchors) if (anchor.metric === "revenue" && anchor.year === i + 1) anchor.path = rev;
+      const target = fcfTargets.get(i + 1);
+      if (target) {
+        const cashFlow = rev * operatingMargin[i]! * (1 - investmentPath.taxRate[i]!) + capitalPlan.depreciation[i]! - capitalPlan.capex[i]! - capitalPlan.workingCapitalChange[i]! + (investmentPath.normalization?.[i] ?? 0);
+        anchors.push({ metric: "fcf", fiscalYear: target.fiscalYear, year: i + 1, target: target.value, path: cashFlow });
+        notes.push(`year ${i + 1}: explicit-plan cash flow ${cashFlow} versus the FY${target.fiscalYear} stated cash-flow ${target.kind} ${target.value}; capital inputs are not changed to force that cash-flow target`);
+      }
+    }
+    return { drivers: { ...base, path: { ...investmentPath, revenueGrowth: revenue.growth, operatingMargin, capitalPlan } }, anchors, notes };
+  }
   // The path without build capex, to size the build from the capex and cash-flow targets. In a year with a cash-flow
   // floor the growth reinvestment alone may already breach it: then that year's sales-to-capital rises so the stated cash
   // flow is reached (management's capex "steps down"), as long as NOPAT covers the floor.
-  const salesToCapital = [...base.path.salesToCapital];
+  const salesToCapital = [...investmentPath.salesToCapital];
   const fcfYears = byYear(set, periodEnd, years, "fcf");
   const path = { revenue: [] as number[], nopat: [] as number[], reinvestment: [] as number[] };
   let rev = base.revenue0;
@@ -120,7 +148,7 @@ export function managementDrivers(base: Fcff, set: ManagementTargetSet, periodEn
   const build = managementBuildCapex(set, periodEnd, path, facts);
   if (build) { anchors.push(...build.anchors.map(a => ({ ...a, path: null }))); notes.push(...build.notes, `build capex from the capex and cash-flow targets: ${build.buildCapex.map(v => (v / 1e9).toFixed(1)).join(", ")}B`); }
   for (const a of anchors) if (a.metric === "revenue") a.path = path.revenue[a.year - 1] ?? null;
-  const rest = omit(base.path, "buildCapex");
+  const rest = omit(investmentPath, "buildCapex");
   const drivers: Fcff = { ...base, path: { ...rest, revenueGrowth: revenue.growth, operatingMargin, salesToCapital, ...(build ? { buildCapex: build.buildCapex } : {}) } };
   return { drivers, anchors, notes };
 }

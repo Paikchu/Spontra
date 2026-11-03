@@ -1,5 +1,6 @@
 import {AnalysisRequestError} from '../read-api/contract-support/errors.ts';
 import {publicFlowSchema} from '../../../../shared/analysis-runtime/financial-data/schema.ts';
+import {edgarArchiveCik} from '../../../../shared/analysis-runtime/sec-sources.ts';
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import type {PublicBusinessFlow,FlowAmount,BusinessSegment} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -82,10 +83,7 @@ async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:str
  * after checking every source and all amount provenance; the general flow validator stays strict. */
 export function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicBusinessFlow|null{
  if(!/^\d{10}$/.test(cik)||Number(cik)<=0)return null;
- const sameIssuer=(value:string)=>{try{
-  const url=new URL(value),sourceCik=url.pathname.match(/^\/Archives\/edgar\/data\/(\d{1,10})\//)?.[1];
-  return url.protocol==='https:'&&['sec.gov','www.sec.gov'].includes(url.hostname)&&!url.username&&!url.password&&!url.port&&!!sourceCik&&Number(sourceCik)===Number(cik);
- }catch{return false;}};
+ const sameIssuer=(value:string)=>edgarArchiveCik(value)===Number(cik);
  for(const quarter of flow.quarters){
   if(!quarter.sources.length||!quarter.sources.every(source=>sameIssuer(source.url)))return null;
   const sourceIds=new Set(quarter.sources.map(source=>source.id));

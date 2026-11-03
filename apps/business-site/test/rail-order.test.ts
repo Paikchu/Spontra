@@ -81,7 +81,7 @@ const render = (filter: EventFilter, focus: string | null = null, findings: Veri
 test("no Form 4 of any age lists as its own row; each person lists once, latest trade first", () => {
   for (const filter of ["key", "all"] as const) {
     const ids = listed(filter);
-    assert.deepEqual(ids, ["earnings-8k", ...PEOPLE], filter);
+    assert.deepEqual(ids, [...PEOPLE, "earnings-8k"], filter);
     const rows = streamRows(railLayout(ALL, filter), [], null, filter, PERSONS);
     // The people hold every one of them, the exercise and the older sales included.
     assert.deepEqual(rows.flatMap(r => r.kind === "person" ? r.items.map(item => item.id) : []).sort(), [...IN_WINDOW, ...OLDER_IDS].sort(), filter);
@@ -100,11 +100,11 @@ test("a person's history renders only once their row is open, and a trade in foc
   for (const locale of ["en", "zh-CN"] as const) {
     setLocale(locale);
     const html = render("key");
-    // No group row: each person is a row of the rail, after the pinned filing, latest trade first.
+    // No group row: each person is a row of the rail at the date of their latest trade, before the older earnings filing.
     assert.ok(!html.includes(locale === "en" ? "Insider trades" : "内部人交易"), locale);
     assert.ok(!html.includes("insider-card"));
     const at = (text: string) => html.indexOf(text);
-    assert.ok(at("Q2 results") < at("Intrator Michael") && at("Intrator Michael") < at("Magnetar Financial LLC") && at("Agarwal Nitin") < at("McVeety Chen"), locale);
+    assert.ok(at("Intrator Michael") < at("Magnetar Financial LLC") && at("McVeety Chen") < at("Q2 results") && at("Intrator Michael") < at("Magnetar Financial LLC") && at("Agarwal Nitin") < at("McVeety Chen"), locale);
     // Every row is closed and no line of history is on the page.
     assert.ok(!html.includes('aria-expanded="true"'));
     assert.ok(!html.includes("insider-history"));
@@ -126,31 +126,31 @@ test("one old filing still lists its person, below the newer rows, and never as 
   const items = rail([OLD, EARNINGS, event({ id: "deal", form: "8-K", class: "deal", filedAt: ago(5), items: ["1.01"] })]);
   const layout = railLayout(items, "all");
   assert.deepEqual(layout.insiders.map(item => item.id), ["intrator-old"]);
-  assert.ok(!layout.rest.some(row => row.kind === "item" && row.item.id === "intrator-old"));
-  assert.deepEqual(streamRows(layout, [], null, "all", personsOf(items)).map(r => r.id), ["earnings-8k", "deal", personRowId("1")]);
+  assert.ok(!layout.rows.some(row => row.kind === "item" && row.item.id === "intrator-old"));
+  assert.deepEqual(streamRows(layout, [], null, "all", personsOf(items)).map(r => r.id), ["deal", "earnings-8k", personRowId("1")]);
 });
 
-test("the pinned earnings 8-K carries its findings beneath it with severity icons", () => {
+test("the earnings 8-K lists at its date and carries its findings beneath it with severity icons", () => {
   for (const filter of ["key", "all"] as const) {
-    assert.deepEqual(listed(filter, FINDINGS, PERIOD_END), ["earnings-8k", "f-backlog", "f-capex", ...PEOPLE], filter);
+    assert.deepEqual(listed(filter, FINDINGS, PERIOD_END), [...PEOPLE, "earnings-8k", "f-backlog", "f-capex"], filter);
   }
   setLocale("en");
   const html = render("key", null, FINDINGS, PERIOD_END);
   const at = (text: string) => html.indexOf(text);
-  assert.ok(at("Q2 results") >= 0 && at("Q2 results") < at("Backlog concentration") && at("Capex outruns cash") < at("Intrator Michael"));
+  assert.ok(at("McVeety Chen") < at("Q2 results") && at("Q2 results") < at("Backlog concentration") && at("Backlog concentration") < at("Capex outruns cash"));
   assert.ok(html.includes('class="severity-icon" data-severity="3" viewBox="0 0 16 16" role="img" aria-label="Severity: Major (highest of 3)"'));
   assert.ok(html.includes('data-severity="2"'));
 });
 
-test("findings of another quarter are never placed under the pinned filing, with or without insider rows", () => {
+test("findings of another quarter are never placed under the earnings filing, with or without insider rows", () => {
   const earlier = ago(80 + 42 + 182);
   assert.ok(!listed("key", FINDINGS, earlier).some(id => id.startsWith("f-")));
-  assert.deepEqual(listed("key").slice(0, 2), ["earnings-8k", personRowId("1")]);
+  assert.deepEqual(listed("key", FINDINGS, earlier), [...PEOPLE, "earnings-8k"]);
   assert.ok(!render("key", null, FINDINGS, earlier).includes("severity-icon"));
-  // No insider filings at all: the next row after the pinned filing is still not a finding.
+  // No insider filings at all: the next row after the earnings filing is still not a finding.
   const bare = rail([EARNINGS, event({ id: "deal", form: "8-K", class: "deal", filedAt: ago(5), items: ["1.01"] })]);
   const ids = streamRows(railLayout(bare, "all"), FINDINGS, earlier, "all").map(r => r.id);
-  assert.deepEqual(ids, ["earnings-8k", "deal"]);
+  assert.deepEqual(ids, ["deal", "earnings-8k"]);
   // A rail with no filings at all still lists the findings.
   assert.deepEqual(streamRows(railLayout([], "key"), FINDINGS, earlier, "key").map(r => r.id), ["f-backlog", "f-capex"]);
 });
@@ -168,13 +168,13 @@ test("an earnings 8-K carries the findings of the quarter it reports, matched by
   // The anchor may be any quarter of the grid: a year back or ahead still dates the 08.11 release to 06.30.
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2025-06-30"), "2026-06-30");
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2026-12-31"), "2026-06-30");
-  assert.deepEqual(quarterRows([q2, ...trades], "2026-06-30").slice(0, 4), ["crwv-0811", "f-backlog", "f-capex", personRowId("1")]);
+  assert.deepEqual(quarterRows([q2, ...trades], "2026-06-30"), [personRowId("1"), "crwv-0811", "f-backlog", "f-capex"]);
   assert.deepEqual(quarterRows([q2], "2026-06-30"), ["crwv-0811", "f-backlog", "f-capex"]);
   // A 52/53-week quarter ending a couple of days off the month's end is the same quarter.
   assert.deepEqual(quarterRows([q2], "2026-06-28"), ["crwv-0811", "f-backlog", "f-capex"]);
   // Findings of the quarter before or after: nothing extra under the release, insider rows or none.
   for (const periodEnd of ["2026-03-31", "2026-09-30"]) {
-    assert.deepEqual(quarterRows([q2, ...trades], periodEnd), ["crwv-0811", personRowId("1")], periodEnd);
+    assert.deepEqual(quarterRows([q2, ...trades], periodEnd), [personRowId("1"), "crwv-0811"], periodEnd);
     assert.deepEqual(quarterRows([q2], periodEnd), ["crwv-0811"], periodEnd);
   }
 });
@@ -186,7 +186,7 @@ test("a release filed within 100 days of a quarter's end but after the next one 
   assert.deepEqual(quarterRows([q3], "2026-09-30"), ["q3-release", "f-backlog", "f-capex"]);
 });
 
-test("findings follow their own quarter's release, not the later one pinned above it", () => {
+test("findings follow their own quarter's release, not the later one above it", () => {
   const q1 = release("q1-release", "2026-05-14"), q2 = release("q2-release", "2026-08-11");
   // With Q1's release listed, the 08.11 one reports Q2; Q1's findings sit under the 05.14 release in All.
   assert.deepEqual(quarterRows([q1, q2], "2026-03-31", "all"), ["q2-release", "q1-release", "f-backlog", "f-capex"]);

@@ -1,3 +1,4 @@
+import { executeValuationEvaluation, type ValuationEvaluationParams } from "./valuation/evaluation.ts";
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
@@ -122,11 +123,13 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<AnalysisEnv, Busine
 /** Index cards for one company's recent library sections; each batch of sections is a durable step. */
 /** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
 /** The valuation assessment of one company (docs/valuation-assessment-design.md); its run and versions are recorded for the admin. */
-export class ValuationWorkflow extends WorkflowEntrypoint<AnalysisEnv, ValuationWorkflowParams> {
-  async run(event: WorkflowEvent<ValuationWorkflowParams>, step: WorkflowStep) {
+export class ValuationWorkflow extends WorkflowEntrypoint<AnalysisEnv, ValuationWorkflowParams | ValuationEvaluationParams> {
+  async run(event: WorkflowEvent<ValuationWorkflowParams | ValuationEvaluationParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
-    const run = { env, kind: "valuation" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeValuationWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
+    const params = event.payload;
+    if ("evaluationId" in params) return executeValuationEvaluation(params, durableSteps(step, env, event.instanceId), env, event.instanceId);
+    const run = { env, kind: "valuation" as const, ticker: params.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeValuationWorkflow(params, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
   }
 }
 

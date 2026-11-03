@@ -49,6 +49,31 @@ export function checkIssuerLiterals(file: string, source: string): string[] {
   return errors;
 }
 
+/**
+ * Each outside address has one owning module: SEC EDGAR hosts in shared/analysis-runtime/sec-sources.ts, Yahoo Finance
+ * in workers/analysis/src/market/yahoo.ts and the public site in shared/analysis-runtime/site.ts. A string, template or
+ * regular expression naming one elsewhere fails, so a second copy of an endpoint, host check or origin cannot drift
+ * from the first. XBRL taxonomy namespaces (xbrl.sec.gov) are identifiers, not addresses, and are not matched.
+ */
+const ADDRESS_OWNERS: Array<{ pattern: RegExp; owner: string; name: string }> = [
+  { pattern: /(?<![\w.\\])(?:(?:www|data|efts)\\?\.)?sec\\?\.gov/i, owner: "shared/analysis-runtime/sec-sources.ts", name: "SEC address" },
+  { pattern: /finance\\?\.yahoo\\?\.com/i, owner: "workers/analysis/src/market/yahoo.ts", name: "Yahoo Finance address" },
+  { pattern: /businessview\\?\.info|\.workers\\?\.dev/i, owner: "shared/analysis-runtime/site.ts", name: "site origin" },
+];
+
+export function checkSourceAddresses(file: string, source: string): string[] {
+  const owned = ADDRESS_OWNERS.filter(a => a.owner !== file);
+  const errors: string[] = [];
+  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  function visit(node: ts.Node) {
+    const text = ts.isStringLiteralLike(node) || ts.isTemplateLiteralToken(node) || ts.isRegularExpressionLiteral(node) ? node.text : null;
+    for (const a of text === null ? [] : owned) if (a.pattern.test(text!)) errors.push(`${file}:${ast.getLineAndCharacterOfPosition(node.getStart()).line + 1}: ${a.name} outside ${a.owner}`);
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  return errors;
+}
+
 /** The same shapes in a JSON document: a CIK, a `ticker` or `symbol` field naming one, and a list or record of three or more tickers. */
 export function checkJsonIssuers(file: string, source: string): string[] {
   let value: unknown;
@@ -99,7 +124,10 @@ async function files(directory: string): Promise<string[]> {
 
 export async function checkProductCode(): Promise<string[]> {
   const paths = (await Promise.all(ROOTS.map(files))).flat();
-  const code = (await Promise.all(paths.map(async file => (file.endsWith(".json") ? checkJsonIssuers : checkIssuerLiterals)(file, await readFile(file, "utf8"))))).flat();
+  const code = (await Promise.all(paths.map(async file => {
+    const source = await readFile(file, "utf8");
+    return file.endsWith(".json") ? checkJsonIssuers(file, source) : [...checkIssuerLiterals(file, source), ...checkSourceAddresses(file, source)];
+  }))).flat();
   const config = (await Promise.all(WRANGLER.map(async file => checkWranglerVars(file, await readFile(file, "utf8"))))).flat();
   return [...code, ...config];
 }
@@ -115,14 +143,19 @@ export function selfTest(): string[] {
   const varsMust = [`{"vars":{"SEC_DATA_TICKERS":"AAA"}}`, `{"vars":{"FEATURED":"AAA,BBB"}}`, `{"env":{"staging":{"vars":{"LIST":"AAA, BBB, CCC"}}}}`];
   const varsMustNot = [`{"vars":{"SEC_AI_ENABLED":"true","SEC_ANALYSIS_MODEL":"deepseek-flash","SEC_DATA_TICKERS":""}}`, `// note\n{"vars":{"CURRENCIES":"USD,EUR"}}`];
   const jsonMust = [`{"companies":[{"ticker":"AAA","peers":["BBB"]}]}`, `{"peers":["AAA","BBB","CCC"]}`, `{"AAA":1,"BBB":2,"CCC":3}`, `{"cik":"0000000123"}`];
+  const addressFlagged = (source: string) => checkSourceAddresses("shared/example.ts", source).length;
+  const addressMust = [`fetch("https://data.sec.gov/submissions/x.json")`, "const u = `https://www.sec.gov/Archives/${p}`;", `const ok = /^https:\\/\\/www\\.sec\\.gov\\//.test(u);`, `const d = ["sec.gov"];`,
+    `const Y = "https://query1.finance.yahoo.com/v8/finance/chart/";`, `if (o === "https://businessview.info") ok();`, `const O = "https://example.workers.dev";`];
+  const addressMustNot = [`const ns = /^https?:\\/\\/xbrl\\.sec\\.gov\\/dei\\//;`, `// read from https://www.sec.gov\nconst x = 1;`, `const s = "insec.government";`];
   const jsonMustNot = [`{"metric":"revenue","unit":"USD","periods":["FY","Q1","Q2","Q3"]}`, `{"codes":["S","P","M","F"]}`];
   return [...must.filter(s => flagged(s) !== 1).map(s => `issuer check missed: ${s}`), ...mustNot.filter(s => flagged(s) !== 0).map(s => `issuer check flagged: ${s}`),
     ...jsonMust.filter(s => jsonFlagged(s) < 1).map(s => `issuer check missed: ${s}`), ...jsonMustNot.filter(s => jsonFlagged(s) !== 0).map(s => `issuer check flagged: ${s}`),
-    ...varsMust.filter(s => varsFlagged(s) < 1).map(s => `issuer check missed: ${s}`), ...varsMustNot.filter(s => varsFlagged(s) !== 0).map(s => `issuer check flagged: ${s}`)];
+    ...varsMust.filter(s => varsFlagged(s) < 1).map(s => `issuer check missed: ${s}`), ...varsMustNot.filter(s => varsFlagged(s) !== 0).map(s => `issuer check flagged: ${s}`),
+    ...addressMust.filter(s => addressFlagged(s) !== 1).map(s => `address check missed: ${s}`), ...addressMustNot.filter(s => addressFlagged(s) !== 0).map(s => `address check flagged: ${s}`)];
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const errors = [...selfTest(), ...await checkProductCode()];
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
-  else console.log("Issuer literals passed: product code, its JSON and the Wrangler vars name no company, CIK or ticker list.");
+  else console.log("Issuer literals passed: product code, its JSON and the Wrangler vars name no company, CIK or ticker list, and each outside address lives only in its owning module.");
 }

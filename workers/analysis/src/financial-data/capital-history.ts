@@ -1,6 +1,7 @@
 import type { PublicBusinessFlow } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { CapitalFiling, PublicCapitalStructure } from '../../../../shared/analysis-contract/capital-structure.ts';
 import { buildCapitalQuarters } from '../../../../shared/analysis-runtime/financial-data/capital-structure.ts';
+import { edgarArchiveCik } from '../../../../shared/analysis-runtime/sec-sources.ts';
 import type { StoredAudit } from './disclosure-audit.ts';
 
 const QUARTERS = 8;
@@ -20,14 +21,13 @@ export function assembleCapital(audits: StoredAudit[], flow: PublicBusinessFlow)
   const records: StoredAudit[] = [];
   for (const r of audits) {
     try {
-      const url = new URL(r.source.documentUrl);
-      const cik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d+)\//)?.[1];
+      const cik = edgarArchiveCik(r.source.documentUrl);
       // Domestic statements come from the periodic report itself, never an earnings exhibit; a foreign issuer
       // furnishes its interim statements as a 6-K exhibit. A 6-K's report date is its filing date, so the
       // window is set by filing date and each statement's own period end is checked after it is read.
       const domestic = /^10-[QK](?:\/A)?$/.test(r.source.form), foreign = /^(?:20-F|40-F|6-K)(?:\/A)?$/.test(r.source.form);
       if (r.ticker === flow.ticker && r.source.ticker === flow.ticker && (foreign || (domestic && !/ex[-_]?99/i.test(r.source.documentUrl)))
-        && url.protocol === 'https:' && url.hostname === 'www.sec.gov' && cik && Number(cik) === Number(issuer)
+        && cik !== null && cik === Number(issuer)
         && Date.parse(r.source.filedAt) > cutoff.getTime()) records.push(r);
     } catch { /* A malformed optional archive cannot hide the others. */ }
   }

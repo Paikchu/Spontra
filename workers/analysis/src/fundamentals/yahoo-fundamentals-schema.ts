@@ -5,6 +5,7 @@ import {
   type FundamentalMetricKey,
   type YahooQuarterlyFundamentalField,
 } from "./fundamental-metrics.ts";
+import { yahooSymbol } from "../market/yahoo.ts";
 
 export const YAHOO_FUNDAMENTALS_SCHEMA_VERSION = "yahoo-fundamentals-timeseries.v1";
 
@@ -69,7 +70,7 @@ export function parseYahooFundamentalsPayload(payload: unknown, expectedTicker?:
     const result = asRecord(resultValue);
     const meta = asRecord(result?.meta);
     const sourceField = firstString(meta?.type);
-    const yahooSymbol = normalizeFundamentalTicker(firstString(meta?.symbol));
+    const responseSymbol = normalizeFundamentalTicker(firstString(meta?.symbol));
 
     if (!sourceField || !isYahooQuarterlyFundamentalField(sourceField)) {
       issues.push({
@@ -81,7 +82,7 @@ export function parseYahooFundamentalsPayload(payload: unknown, expectedTicker?:
     }
     receivedFields.add(sourceField);
 
-    if (!yahooSymbol || (requestedTicker && toYahooFundamentalSymbol(requestedTicker) !== yahooSymbol)) {
+    if (!responseSymbol || (requestedTicker && yahooSymbol(requestedTicker) !== responseSymbol)) {
       issues.push({
         code: "invalid_symbol",
         sourceField,
@@ -89,7 +90,7 @@ export function parseYahooFundamentalsPayload(payload: unknown, expectedTicker?:
       });
       continue;
     }
-    resolvedTicker ||= yahooSymbol;
+    resolvedTicker ||= responseSymbol;
 
     const series = result?.[sourceField];
     if (!Array.isArray(series)) {
@@ -126,7 +127,7 @@ export function parseYahooFundamentalsPayload(payload: unknown, expectedTicker?:
       }
       observationKeys.add(observationKey);
       observations.push({
-        ticker: requestedTicker || yahooSymbol,
+        ticker: requestedTicker || responseSymbol,
         metricKey,
         sourceField,
         periodType: parsed.periodType,
@@ -184,10 +185,6 @@ function parseObservation(value: unknown): {
 export function normalizeFundamentalTicker(value: string): string {
   const ticker = value.trim().toUpperCase();
   return /^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(ticker) ? ticker : "";
-}
-
-export function toYahooFundamentalSymbol(value: string): string {
-  return value.replaceAll(".", "-");
 }
 
 function firstString(value: unknown): string {

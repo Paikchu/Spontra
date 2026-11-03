@@ -6,7 +6,7 @@
  * Dry run by default: lists what would change and writes nothing. `--apply` writes, and only with `--source d1`.
  *
  *   node --experimental-strip-types workers/analysis/scripts/clean-foreign-insider.ts --tickers BRK.B
- *   node --experimental-strip-types workers/analysis/scripts/clean-foreign-insider.ts --source api --origin https://businessview.info --tickers BRK.B,NVDA,TSM
+ *   node --experimental-strip-types workers/analysis/scripts/clean-foreign-insider.ts --source api --tickers BRK.B,NVDA,TSM
  *   node --experimental-strip-types workers/analysis/scripts/clean-foreign-insider.ts --tickers BRK.B --apply
  *
  * `--source d1` (default) reads `events:v1:<ticker>` and the company CIK from the analysis D1 through wrangler (`--local`
@@ -20,14 +20,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventsPublication } from "../../../shared/analysis-contract/events.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
+import { SEC_TICKERS_URL } from "../../../shared/analysis-runtime/sec-sources.ts";
 import { checkInsiderIssuers, withoutForeign } from "../src/events/foreign-insider.ts";
 import { eventsCacheKey, insiderCacheKey } from "../src/events/read.ts";
+import { PUBLIC_SITE_ORIGIN } from "../../../shared/analysis-runtime/site.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
 const apply = args.includes("--apply");
 const source = option("source") ?? "d1";
-const origin = option("origin") ?? "https://businessview.info";
+const origin = option("origin") ?? PUBLIC_SITE_ORIGIN;
 // EDGAR refuses reads without a contact; use the one the worker is configured with (SEC_USER_AGENT in wrangler.jsonc).
 const userAgent = option("user-agent") ?? process.env.SEC_USER_AGENT ?? null;
 if (!userAgent) throw new Error("Pass --user-agent or set SEC_USER_AGENT: EDGAR needs a contact user-agent");
@@ -65,7 +67,7 @@ async function companyCik(ticker: string): Promise<string | null> {
     const row = d1<{ cik: string | null }>(`SELECT json_extract(payload, '$.company.cik') AS cik FROM sec_cache WHERE cache_key = ${quote(`sec:filings:${ticker}`)}`)[0];
     if (row?.cik) return String(row.cik);
   }
-  edgarTickers ??= await (await sec("https://www.sec.gov/files/company_tickers.json")).json() as Record<string, { cik_str: number; ticker: string }>;
+  edgarTickers ??= await (await sec(SEC_TICKERS_URL)).json() as Record<string, { cik_str: number; ticker: string }>;
   const dashed = ticker.replace(".", "-");
   const hit = Object.values(edgarTickers).find(c => c.ticker.toUpperCase() === ticker || c.ticker.toUpperCase() === dashed);
   return hit ? String(hit.cik_str) : null;

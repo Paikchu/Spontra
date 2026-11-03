@@ -4,6 +4,8 @@ import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
 import { DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
+import type { ValuationPriceGuide } from "@/shared/analysis-contract/price-guide";
+import { priceGuideOf } from "@/shared/analysis-runtime/valuation/price-guide";
 import { fetchValuationVersion } from "./company-data";
 import { type VersionRead, versionLoading, versionSettled, versionView } from "./valuation-version";
 import { track } from "./track";
@@ -11,11 +13,8 @@ import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "
 import "./valuation.css";
 
 /**
- * The valuation assessment on the company stage (docs/valuation-assessment-implementation.md §9): the verdict and score, the
- * three-scenario range against the reference close, the five dimensions each with its score and the sentence behind it, the
- * written case (its thesis folded under the summary), the model's inputs and sensitivities, and the sources as numbered
- * footnotes, each opening the snapshot the report was written from. Every number shown was calculated or read by Spontra
- * Analysis; the page only lays them out.
+ * Price guidance leads with the supported normal range and its reference quote. Stress scenarios stay under their own
+ * disclosure; research scores, assumptions and source snapshots explain the assessment. Spontra Analysis owns every value.
  */
 const m = messages({
   title: "Valuation assessment", 
@@ -24,7 +23,7 @@ const m = messages({
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
   insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
-  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; this report stands",
+  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; the previous report is retained",
   dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
   readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
   
@@ -39,14 +38,20 @@ const m = messages({
   evidence: "Supporting evidence", counter: "Against", gaps: "Gaps", nextCheck: "Next check", diagnostics: "Diagnostics", sources: "Sources", source: "Source", openSource: "Open the filing", snapshot: "As read when the report was written", close: "Close",
   history: "History of each factor", years: (n: number) => `${n} years`, median: "Median", rangeLabel: "Range",
   // valuation.calc.v4: the methods and their judged weights, the four scenarios and their probabilities, the comparable set, the checks, management's targets and the consensus.
-  expectedValue: "Expected value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
+  expectedValue: "Scenario-weighted value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
   methods: "Valuation methods", methodLow: "Low (peer p25)", methodBase: "Base (peer median)", methodHigh: "High (peer p75)", weightCol: "Weight", notApplied: "Not applied", why: "Why",
   dcfValue: "Cash-flow value", weightedValue: "Weighted value", management: "Management", probabilities: "Scenario probabilities", managementScenarioNote: "Computed by code from management's cited targets on the base case's rate, shares, bridge and horizon; weighed by its judged probability, never the base.",
+  yearlyForecast: "Base case yearly forecast", forecastYear: (year: number) => `Year ${year}`, revenueCol: "Revenue", nopatCol: "NOPAT", capexCol: "CapEx", depreciationCol: "D&A", workingCapitalCol: "ΔNWC", fcffCol: "FCFF", reinvestmentCol: "Reinvestment", adjustmentCol: "Adjustment",
+  explicitCapitalPlan: "Uses the annual capital plan: FCFF = NOPAT + D&A − CapEx − ΔNWC, plus any adjustment shown. No additional sales-to-capital reinvestment or build capex is deducted.",
+  salesCapitalPlan: "Reinvestment is estimated from revenue changes and includes any additional construction spending. FCFF = NOPAT − reinvestment, plus any adjustment shown.",
   revenuePath: "Revenue path", marginPath: "Margin path", capexPath: "Capex path", rateSources: "Discount rate sources",
   peers: "Comparable set", peerBasisLabel: "Basis", peerQuartiles: (p25: string, median: string, p75: string) => `p25 ${p25} · median ${median} · p75 ${p75}`, peerNone: "No peer multiples were available; the cash-flow model stands alone.",
   checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
   managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
+  pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment", historicalAssessment: "Assessment at the time",
+  below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
+  noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
   versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
 }, {
   title: "估值评估",
@@ -55,7 +60,7 @@ const m = messages({
   preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
   failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
   insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
-  updating: "新的评估正在进行", updateFailed: "最近一次尝试未完成，当前报告继续有效",
+  updating: "新的评估正在进行", updateFailed: "最近一次评估未完成，暂保留上一版报告",
   dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
   readThesis: "展开完整论证", hideThesis: "收起完整论证",
  
@@ -69,14 +74,21 @@ const m = messages({
   summary: "结论", thesis: "论证", expectationsGap: "预期差", catalysts: "催化", counterEvidence: "反证", nextChecks: "下一验证点", modelNotes: "模型说明",
   evidence: "支持证据", counter: "反证", gaps: "缺口", nextCheck: "下一验证点", diagnostics: "诊断指标", sources: "来源", source: "来源", openSource: "打开申报原文", snapshot: "报告写成时读取的快照", close: "关闭",
   history: "各因子历史", years: (n: number) => `${n} 年`, median: "中位数", rangeLabel: "区间",
-  expectedValue: "期望价值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
+  expectedValue: "情景加权值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
   methods: "估值方法", methodLow: "低（同业 25 分位）", methodBase: "基准（同业中位）", methodHigh: "高（同业 75 分位）", weightCol: "权重", notApplied: "未采用", why: "理由",
   dcfValue: "现金流折现值", weightedValue: "加权价值", management: "管理层", probabilities: "情景概率", managementScenarioNote: "由代码按管理层引用的目标、在基准情景的折现率、股数、桥接与期限上算出；按其判断的概率加权，从不作为基准。",
+  yearlyForecast: "基准情景逐年预测", forecastYear: (year: number) => `第 ${year} 年`, revenueCol: "收入", nopatCol: "税后经营利润", capexCol: "资本开支", depreciationCol: "折旧摊销", workingCapitalCol: "营运资本变动", fcffCol: "企业自由现金流", reinvestmentCol: "再投资", adjustmentCol: "调整",
+  explicitCapitalPlan: "按逐年资本计划计算：企业自由现金流 = 税后经营利润 + 折旧摊销 − 资本开支 − 营运资本变动，另加表中列示的调整；不再重复扣减按销售资本比估算的再投资或额外建设资本开支。",
+  salesCapitalPlan: "再投资按收入变化估算，并包含额外建设支出。企业自由现金流 = 税后经营利润 − 再投资，另加表中列示的调整。",
   revenuePath: "收入路径", marginPath: "利润率路径", capexPath: "资本开支路径", rateSources: "折现率来源",
   peers: "可比公司", peerBasisLabel: "依据", peerQuartiles: (p25: string, median: string, p75: string) => `25 分位 ${p25} · 中位 ${median} · 75 分位 ${p75}`, peerNone: "没有可用的同业倍数；仅有现金流模型。",
   checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
   managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
+  pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价", historicalAssessment: "当时评价",
+  below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
+  noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
+  noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "当前估值需要重新评估。",
   versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
 });
 const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
@@ -86,10 +98,24 @@ const GATE = labels({ terminal_share: "Terminal value share", non_negative_scena
   { terminal_share: "终值占比", non_negative_scenarios: "情景非负", terminal_growth: "终值增长", cited_inputs: "引用输入核对", rpo_floor: "合同收入下限", implied_multiple_vs_history: "隐含倍数与历史", method_dispersion: "方法离散度", management_targets: "管理层目标", consensus_divergence: "与市场共识偏离", consensus_unavailable: "市场共识", method_unavailable: "未能采用的方法", method_zero_weight: "未加权的方法" });
 const RATE_COMPONENT = labels({ riskFree: "Risk-free rate", beta: "Beta", equityRiskPremium: "Equity risk premium", costOfDebt: "Cost of debt", taxRate: "Tax rate", equityWeight: "Equity weight" }, { riskFree: "无风险利率", beta: "贝塔", equityRiskPremium: "股权风险溢价", costOfDebt: "债务成本", taxRate: "税率", equityWeight: "权益权重" });
 const VERDICT = labels({ supported: "Evidence supports mispricing", not_supported: "Mispricing not supported", pending: "Pending verification" }, { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" });
+const PRICE_TONE: Record<"below" | "within" | "above", string> = { below: "up", within: "neutral", above: "loss" };
+function guideReason(reason: Extract<ValuationPriceGuide, { status: "unavailable" }>["reason"]): string {
+  switch (reason) {
+    case "no_range": return m.noRange;
+    case "non_positive_range": return m.noPositiveRange;
+    case "no_quote": return m.noQuoteGuide;
+    case "unusable_quote": return m.unusableQuote;
+    case "stale_quote": return m.staleQuote;
+    case "currency_mismatch": return m.currencyMismatch;
+    case "incomplete_research": return m.incompleteResearch;
+    case "unresolved_evidence": return m.unresolvedEvidence;
+    case "report_updating": return m.reportUpdating;
+  }
+}
 const CONF = labels({ high: "High", medium: "Medium", low: "Low" }, { high: "高", medium: "中", low: "低" });
 const DIM = labels({ businessQuality: "Business quality", growthExecution: "Growth delivery", valuationSafety: "Valuation safety", mispricingCatalysts: "Mispricing and catalysts", financialResilience: "Financial resilience" }, { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" });
 const MODEL_TYPE = labels({ fcff: "Free cash flow to the firm (driver-based)", fcfe: "Free cash flow to equity", revenue_fcfe: "Revenue-driven equity cash flow", residual_income: "Residual income", earnings_multiple: "Guided earnings multiple", reported_earnings_multiple: "Reported earnings multiple", proforma_earnings_multiple: "Pro forma earnings multiple", asset_nav: "Net asset value", affo_multiple: "AFFO multiple", affo_dcf: "AFFO discounted cash flow" }, { fcff: "企业自由现金流（驱动因子）", fcfe: "股权自由现金流", revenue_fcfe: "收入驱动股权现金流", residual_income: "剩余收益", earnings_multiple: "指引盈利倍数", reported_earnings_multiple: "已报盈利倍数", proforma_earnings_multiple: "备考盈利倍数", asset_nav: "资产净值", affo_multiple: "AFFO 倍数", affo_dcf: "AFFO 现金流折现" });
-const FACTOR = labels({ revenueGrowth: "Revenue growth", operatingMargin: "Operating margin", netMargin: "Net margin", fcfMargin: "Free cash flow margin", capexToRevenue: "Capex to revenue", sbcToRevenue: "Stock compensation to revenue", returnOnEquity: "Return on equity", discountRate: "Discount rate", salesToCapital: "Sales to capital", terminalGrowth: "Terminal growth", terminalRoic: "Terminal ROIC", roe: "Return on equity", terminalRoe: "Terminal ROE", multiple: "Multiple", assetPrices: "Asset prices", afterSbcEquityCashMargin: "Equity cash margin" }, { revenueGrowth: "收入增长", operatingMargin: "营业利润率", netMargin: "净利率", fcfMargin: "自由现金流率", capexToRevenue: "资本开支占收入", sbcToRevenue: "股权激励占收入", returnOnEquity: "净资产收益率", discountRate: "折现率", salesToCapital: "销售资本比", terminalGrowth: "终值增长", terminalRoic: "终期 ROIC", roe: "净资产收益率", terminalRoe: "终期 ROE", multiple: "倍数", assetPrices: "资产价格", afterSbcEquityCashMargin: "权益现金利润率" });
+const FACTOR = labels({ revenueGrowth: "Revenue growth", operatingMargin: "Operating margin", netMargin: "Net margin", fcfMargin: "Free cash flow margin", capexToRevenue: "Capex to revenue", sbcToRevenue: "Stock compensation to revenue", returnOnEquity: "Return on equity", discountRate: "Discount rate", salesToCapital: "Sales to capital", terminalGrowth: "Terminal growth", capex: "Capital expenditure", terminalRoic: "Terminal ROIC", roe: "Return on equity", terminalRoe: "Terminal ROE", multiple: "Multiple", assetPrices: "Asset prices", afterSbcEquityCashMargin: "Equity cash margin" }, { revenueGrowth: "收入增长", operatingMargin: "营业利润率", netMargin: "净利率", fcfMargin: "自由现金流率", capexToRevenue: "资本开支占收入", sbcToRevenue: "股权激励占收入", returnOnEquity: "净资产收益率", discountRate: "折现率", salesToCapital: "销售资本比", terminalGrowth: "终值增长", capex: "资本开支", terminalRoic: "终期 ROIC", roe: "净资产收益率", terminalRoe: "终期 ROE", multiple: "倍数", assetPrices: "资产价格", afterSbcEquityCashMargin: "权益现金利润率" });
 const DIAG = labels({ revenueGrowthTtm: "Revenue growth (TTM)", roic: "ROIC", accrualRatio: "Accrual ratio", fcfConversion: "FCF conversion", sbcToRevenue: "SBC / revenue", capexToDa: "Capex / D&A", netDebtToEbitda: "Net debt / EBITDA", interestCoverage: "Interest coverage", dilutionCagr: "Share count change", cashRunwayYears: "Cash runway", debtDueCoverage: "Cash / debt due" },
   { revenueGrowthTtm: "收入增长（近四季）", roic: "投入资本回报率", accrualRatio: "应计比率", fcfConversion: "自由现金流转化", sbcToRevenue: "股权激励占收入", capexToDa: "资本开支 / 折旧摊销", netDebtToEbitda: "净债务 / EBITDA", interestCoverage: "利息覆盖倍数", dilutionCagr: "股数年化变化", cashRunwayYears: "现金跑道", debtDueCoverage: "现金 / 一年内到期债务" });
 
@@ -98,7 +124,6 @@ const signedPct = (v: number | null | undefined) => v == null || !Number.isFinit
 const day = (iso: string) => iso.slice(0, 10);
 /** A figure the model produced; one it could not is left out rather than shown as a dash. */
 const has = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
-const verdictTone = { supported: "up", not_supported: "loss", pending: "neutral" } as const;
 const isEvidenceId = (id: string) => /^e[0-9a-f]{10}$/.test(id);
 
 /** Footnote numbers and source names for the evidence the report cites, in reading order. */
@@ -138,6 +163,29 @@ function ProseBlocks({ text, onCite }: { text: string; onCite: (id: string) => v
 function Cite({ id, counter, onCite }: { id: string; counter?: boolean; onCite: (id: string) => void }) {
   if (!isEvidenceId(id)) return <code className="val-fact-ref">{id}</code>;
   return <Cites ids={[id]} counter={counter} onCite={onCite} />;
+}
+
+function FairValue({ report, guide, onCite }: { report: ValuationPublication; guide: ValuationPriceGuide; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const fair = report.model?.fairValueRange;
+  const supported = fair?.status === "available" && (guide.status === "available" || guide.reason === "no_quote" || guide.reason === "unusable_quote" || guide.reason === "stale_quote" || guide.reason === "currency_mismatch");
+  const assumptions = supported ? report.model?.scenarios.base.assumptions : null;
+  return <section className="val-block val-fair" aria-label={m.pricePosition}>
+    <h3>{m.fairRange}</h3>
+    <p className="val-fair-value">{supported ? `${perShare(fair.low, report.currency, locale)} – ${perShare(fair.high, report.currency, locale)}` : "—"}</p>
+    <dl className="val-stats">
+      <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+      {supported && <div><dt>{m.centralValue}</dt><dd>{perShare(fair.base, report.currency, locale)}</dd></div>}
+    </dl>
+    {guide.status === "unavailable" && <p className="val-list-line">{guideReason(guide.reason)}</p>}
+    {fair?.status === "unavailable" && fair.reason && <Prose text={fair.reason} onCite={onCite} />}
+    {supported && <>
+      <p><Prose as="span" text={fair.rationale} onCite={onCite} /> {fair.evidenceIds.length > 0 && <Cites ids={fair.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>
+      {assumptions && <div className="val-why-list"><h4>{m.keyAssumptions}</h4>
+        {(["revenue", "margin", "capex"] as const).map(key => <p key={key} className="val-why"><b>{m[key === "revenue" ? "revenuePath" : key === "margin" ? "marginPath" : "capexPath"]}</b><Prose as="span" text={assumptions[key].rationale} onCite={onCite} /> <Cites ids={assumptions[key].evidenceIds.filter(isEvidenceId)} onCite={onCite} /></p>)}
+      </div>}
+    </>}
+  </section>;
 }
 
 function RangeBar({ report }: { report: ValuationPublication }) {
@@ -180,6 +228,31 @@ function Sensitivities({ report }: { report: ValuationPublication }) {
 
 const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / Math.max(list.length, 1);
 
+function YearlyForecast({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  const scenario = report.model?.scenarios.base;
+  if (!scenario || scenario.drivers.modelType !== "fcff" || !scenario.result.yearly.length) return null;
+  const { path } = scenario.drivers;
+  const explicit = !!path.capitalPlan;
+  const adjusted = path.normalization?.some(value => value !== 0);
+  const money = (value: number | null | undefined) => value == null ? "—" : compactMoney(value, report.currency, locale);
+  return <details className="val-fold val-yearly">
+    <summary>{m.yearlyForecast}</summary>
+    <div className="val-fold-body">
+      <p className="val-list-line">{explicit ? m.explicitCapitalPlan : m.salesCapitalPlan}</p>
+      <table className="val-table val-table--yearly" tabIndex={0} aria-label={m.yearlyForecast}><thead><tr><th>{m.yearCol}</th><th>{m.revenueCol}</th><th>{m.nopatCol}</th>
+        {explicit ? <><th>{m.capexCol}</th><th>{m.depreciationCol}</th><th>{m.workingCapitalCol}</th></> : <th>{m.reinvestmentCol}</th>}
+        {adjusted && <th>{m.adjustmentCol}</th>}<th>{m.fcffCol}</th>
+      </tr></thead><tbody>
+        {scenario.result.yearly.map(row => <tr key={row.year}><th>{m.forecastYear(row.year)}</th><td>{money(row.revenue)}</td><td>{money(row.nopat)}</td>
+          {explicit ? <><td>{money(row.capex)}</td><td>{money(row.depreciation)}</td><td>{money(row.workingCapitalChange)}</td></> : <td>{money(row.reinvestment)}</td>}
+          {adjusted && <td>{money(path.normalization?.[row.year - 1])}</td>}<td>{money(row.cashFlow)}</td>
+        </tr>)}
+      </tbody></table>
+    </div>
+  </details>;
+}
+
 function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   const locale = useLocale();
   const [open, setOpen] = useState(false);
@@ -195,6 +268,7 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
       {rows.map(([key, s]) => { const d = s.drivers as { path?: { revenueGrowth?: number[]; operatingMargin?: number[] } };
         return <tr key={key}><th>{m[key]}</th><td>{perShare(s.result.perShare, model.currency, locale)}</td>{weighted && <td>{s.valuation ? perShare(s.valuation.perShare, model.currency, locale) : "—"}</td>}<td>{s.probability != null ? pct(s.probability, 0) : "—"}</td><td>{d.path?.revenueGrowth ? pct(avg(d.path.revenueGrowth)) : "—"}</td><td>{d.path?.operatingMargin ? pct(avg(d.path.operatingMargin)) : "—"}</td><td>{s.result.terminalShare != null ? pct(s.result.terminalShare, 0) : "—"}</td></tr>; })}
     </tbody></table>
+    <YearlyForecast report={report} />
     {model.scenarioProbabilities && <div className="val-why-list"><h5>{m.probabilities}</h5>
       {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
     </div>}
@@ -283,8 +357,9 @@ function Checks({ report }: { report: ValuationPublication }) {
 /** The five dimensions, each a row that says its score and why in one line, opening to the full rationale. */
 function Dimensions({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   return <section className="val-block">
-    <h3>{m.dimensions}</h3>
-    <ol className="val-dims">
+    <h3>{m.researchAssessment}</h3>
+    <p className="val-score-line">{VERDICT[report.verdict]} · {report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored} · {m.confidence} {CONF[report.confidence]}</p>
+    <ol className="val-dims" aria-label={m.dimensions}>
       {report.dimensions.map(d => <li key={d.key} className="val-dim">
         <details>
           <summary>
@@ -333,7 +408,7 @@ function Sources({ report, open, onOpen, onClose }: { report: ValuationPublicati
 
 function Status({ valuation }: { valuation: ValuationResponse }) {
   const attempt = valuation.latestAttempt;
-  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt?.status === "failed" ? m.updateFailed : m.updating}</p>;
+  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt && ["failed", "empty", "superseded", "cancelled"].includes(attempt.status) ? m.updateFailed : m.updating}</p>;
   if (valuation.report?.reportStatus === "insufficient") return <p className="val-banner" data-tone="warn"><b>{m.insufficient}</b> {m.insufficientNote}</p>;
   return null;
 }
@@ -356,7 +431,11 @@ function judgementTexts(model: ValuationPublication["model"]): string[] {
 /** Footnotes numbered as the report reads: the written case first, then the dimensions and scenarios, then the rest. */
 function footnotesOf(report: ValuationPublication): Footnotes {
   const s = report.sections;
-  const texts = [s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
+  const fair = report.model?.fairValueRange;
+  const assumptions = report.model?.scenarios.base.assumptions;
+  const fairTexts = fair ? [fair.status === "available" ? fair.rationale : fair.reason, ...fair.evidenceIds,
+    ...(fair.status === "available" && assumptions ? [assumptions.revenue, assumptions.margin, assumptions.capex].flatMap(a => [a.rationale, ...a.evidenceIds]) : [])] : [];
+  const texts = [...fairTexts, s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
     ...report.dimensions.flatMap(d => [d.rationale, ...d.supportingEvidenceIds, ...d.counterEvidenceIds]),
     ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : []),
     ...judgementTexts(report.model)];
@@ -403,14 +482,17 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
     </section>;
   }
   const range = report.model?.range ?? null;
+  const guide: ValuationPriceGuide = current
+    ? valuation.priceGuide?.reportVersionId === report.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: report.versionId, quote: null, reason: report.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" }
+    : priceGuideOf({ report, quote: report.quote, asOf: report.researchAsOf, outdated: false });
   const sections = report.sections;
   const folded = Boolean(sections.thesis || sections.expectationsGap || sections.modelNotes);
   return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
     <div className="lens-doc val-doc">
       <header className="val-head">
-        <div className="val-verdict" data-tone={verdictTone[report.verdict]}>
-          <strong className="val-verdict-label">{VERDICT[report.verdict]}</strong>
-          <span className="val-score-line">{report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored}{report.confidence !== "medium" && <> · {m.confidence} {CONF[report.confidence]}</>}</span>
+        <div className="val-verdict" data-tone={guide.status === "available" ? PRICE_TONE[guide.position] : "neutral"}>
+          <strong className="val-verdict-label">{guide.status === "available" ? m[guide.position] : m.unable}</strong>
+          <span className="val-score-line">{current ? m.pricePosition : m.historicalAssessment}</span>
         </div>
         <dl className="val-dates">
           <div><dt>{m.researchDate}</dt><dd>{day(report.researchAsOf)}</dd></div>
@@ -418,10 +500,14 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
           {picker}
         </dl>
       </header>
-      <Status valuation={valuation} />
-      {report.model && <section className="val-block">
+      {current && <Status valuation={valuation} />}
+      <FairValue report={report} guide={guide} onCite={setOpen} />
+      {report.model && <section className="val-block"><details className="val-fold val-stress">
+        <summary>{m.stressScenarios}</summary>
+        <div className="val-fold-body">
         <h3>{m.range}</h3>
         <RangeBar report={report} />
+        {range && range.low < 0 && <p className="val-list-line">{m.equityShortfall}</p>}
         <dl className="val-stats">
           <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
           {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}
@@ -431,7 +517,9 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
           {has(range?.downsideCoverage) && <div><dt>{m.downside}</dt><dd>{signedPct(range!.downsideCoverage)}</dd></div>}
         </dl>
         {has(range?.expected) && report.model!.scenarioProbabilities && <p className="val-list-line">{m.expectedNote}</p>}
-      </section>}
+        <Model report={report} onCite={setOpen} />
+        </div>
+      </details></section>}
       <Dimensions report={report} onCite={setOpen} />
       <section className="val-block val-sections">
         <h3>{m.summary}<SourceLanguage of={[sections.summary, sections.thesis]} /></h3>
@@ -449,7 +537,6 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         {sections.nextChecks.length > 0 && <><h4>{m.nextChecks}</h4><ul>{sections.nextChecks.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
       </section>
       {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")} title={g.code}><span lang={langOf(g.message)}>{g.message}</span>{g.evidenceIds.length > 0 && <Cites ids={g.evidenceIds} onCite={setOpen} />}</li>)}</ul></section>}
-      <Model report={report} onCite={setOpen} />
       <Methods report={report} onCite={setOpen} />
       <Anchors report={report} onCite={setOpen} />
       <Checks report={report} />

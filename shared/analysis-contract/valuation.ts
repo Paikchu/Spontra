@@ -1,3 +1,5 @@
+import type { ValuationPriceGuide } from "./price-guide.ts";
+
 /**
  * The valuation assessment (docs/valuation-assessment-design.md, docs/valuation-assessment-implementation.md,
  * docs/valuation-methodology-optimization.md): five researched dimensions, one calculated model over three scenarios
@@ -33,7 +35,7 @@ export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote"
   "management_target_gap",
   // valuation.calc.v4 (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario"): a method the model weighted
   // could not be applied, a usable method was given no weight, or no consensus target could be cited.
-  "method_unavailable", "method_zero_weight"] as const;
+  "method_unavailable", "method_zero_weight", "review_incomplete", "unresolved_counter_evidence"] as const;
 export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
@@ -64,7 +66,12 @@ export type ValuationFact = {
  * every array the same length. `buildCapex` is capital spent ahead of revenue (capacity under construction), in currency
  * units per year: reinvestment the sales-to-capital term does not see, so a build phase is not read as a steady state.
  */
-export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; salesToCapital: number[]; normalization?: number[]; buildCapex?: number[] };
+export type CapitalPlan = { capex: number[]; depreciation: number[]; workingCapitalChange: number[] };
+/** Explicit gross capital spending and cash tied up in working capital replace the revenue-growth reinvestment estimate. */
+export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; normalization?: number[] } & (
+  | { salesToCapital: number[]; buildCapex?: number[]; capitalPlan?: null }
+  | { capitalPlan: CapitalPlan; salesToCapital?: never; buildCapex?: never }
+);
 /** A judgement the model made and the registered evidence it rests on. */
 export type Judgement = { rationale: string; evidenceIds: string[] };
 /** Why a scenario's revenue, margin and capex paths run as they do; the figures are in `drivers`, the reasons here. */
@@ -94,6 +101,8 @@ export type ModelDrivers =
   | { modelType: "affo_dcf"; annualAffo: number; recurringCost: number; growth: number[]; terminalGrowth: number };
 
 export type EquityBridge = {
+  /** New runs keep operating rent in earnings and deduct finance leases only; absent on legacy reports. */
+  leaseTreatment?: "operating_expense";
   /** Cash, investments and other non-operating assets attributable to common equity, after any tax or claims. */
   nonOperatingAssets: number;
   /** Debt, leases, preferred, minority interests and other claims ahead of common equity. */
@@ -116,7 +125,7 @@ export type DiscountRate = {
   sources?: DiscountRateSources;
 };
 
-export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null };
+export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null; capex?: number; depreciation?: number; workingCapitalChange?: number };
 export type ScenarioResult = {
   perShare: number;
   equityValue: number;
@@ -152,6 +161,16 @@ export type Triangulation = { low: number; base: number; high: number; dispersio
  * the judged weights renormalized over the methods that applied; `perShare` is what the range and the expected value use.
  */
 export type ScenarioValuation = { methods: Record<ValuationMethodKey, number | null>; weights: Record<ValuationMethodKey, number>; perShare: number };
+/** Normal operating uncertainty, separate from stress scenarios and their probabilities. */
+export type NormalCaseInput = Pick<ScenarioAssumptions, "narrative" | "drivers" | "triggers" | "invalidation" | "evidenceIds"> & { assumptions: PathAssumptions };
+export type FairValueBasis =
+  | { status: "available"; kind: "normal_cases"; lower: NormalCaseInput; upper: NormalCaseInput; rationale: string; evidenceIds: string[] }
+  | { status: "unavailable"; reason: string; evidenceIds: string[] };
+export type NormalCaseResult = NormalCaseInput & { result: ScenarioResult; valuation: ScenarioValuation; gates: SanityGate[]; verification: InputVerification | null };
+/** The base is the existing researched base; both bounds are independently evidenced normal operating paths, not stress endpoints or a percentage around it. */
+export type FairValueRange =
+  | { status: "available"; kind: "normal_cases"; low: number; base: number; high: number; lower: NormalCaseResult; upper: NormalCaseResult; rationale: string; evidenceIds: string[] }
+  | { status: "unavailable"; reason: string; evidenceIds: string[] };
 /** The model's judged weight of one method, with the reasons (business, life cycle, build phase, backlog, margin path, industry outlook) and evidence. */
 export type MethodWeightJudgement = Judgement & { weight: number };
 export type MethodWeights = Record<ValuationMethodKey, MethodWeightJudgement>;
@@ -292,6 +311,8 @@ export type ValuationModelResult = {
   managementScenario?: ManagementScenario | null;
   managementComparison?: ManagementComparison | null;
   consensusNote?: ConsensusNote | null;
+  /** valuation.calc.v5: absent on historical reports; never inferred from bear/bull or the football field. */
+  fairValueRange?: FairValueRange;
 };
 
 export type ValuationDimension = {
@@ -385,6 +406,7 @@ export type ValuationResponse = {
   ticker: string;
   availability: ValuationAvailability;
   report: ValuationPublication | null;
+  priceGuide?: ValuationPriceGuide;
   latestAttempt: ValuationAttempt | null;
   outdated: boolean;
   versions: Array<{ versionId: string; generatedAt: string; researchAsOf: string; reportStatus: ReportStatus; weightedScore: number | null; verdict: ValuationVerdict }>;

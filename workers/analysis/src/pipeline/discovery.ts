@@ -1,6 +1,6 @@
 import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
-import { secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
+import { secArchiveDocumentUrl, secArchiveRoot, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -76,7 +76,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
     }
     if (!cik) { result.unknown.push(ticker); continue; }
     try {
-      const submissions = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json() as { fiscalYearEnd?: unknown; name?: unknown } | null;
+      const submissions = await (await reader.read(secSubmissionsUrl(cik))).json() as { fiscalYearEnd?: unknown; name?: unknown } | null;
       const filings = recentFilings(submissions);
       if (!filings.length) throw new Error("EMPTY_SUBMISSIONS");
       const previous = (await repository.getCache<DiscoveryState>(stateKey(ticker)))?.payload;

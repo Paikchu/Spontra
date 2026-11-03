@@ -102,11 +102,11 @@ function namespace(repo = memoryRepository(), seen: Request[] = []): TelemetryNa
   };
 }
 
-function post(body: unknown, ip = "203.0.113.8"): Request {
-  return new Request("https://businessview.info/api/business/v1/telemetry", {
+function post(body: unknown, ip = "203.0.113.8", site = "https://businessview.info"): Request {
+  return new Request(`${site}/api/business/v1/telemetry`, {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json", "cf-connecting-ip": ip, origin: "https://businessview.info" },
+    headers: { "content-type": "application/json", "cf-connecting-ip": ip, origin: site },
   });
 }
 
@@ -192,18 +192,20 @@ test("telemetry checks exact origins and Referer fallback before reading or forw
     assert.equal((await handleTelemetry(request, env)).status, 403, String(origin));
     assert.equal(request.bodyUsed, false);
   }
-  for (const source of ["https://businessview.info", "https://www.businessview.info"]) {
-    const request = post(payload);
-    request.headers.set("origin", source);
+  for (const source of ["https://businessview.info", "https://www.businessview.info", "https://spontra-business-map.example.workers.dev"]) {
+    const request = post(payload, undefined, source);
     assert.equal((await handleTelemetry(request, env)).status, 204);
-    const referer = post(payload);
+    const referer = post(payload, undefined, source);
     referer.headers.delete("origin");
     referer.headers.set("referer", `${source}/companies/META`);
     assert.equal((await handleTelemetry(referer, env)).status, 204);
   }
+  const crossHost = post(payload);
+  crossHost.headers.set("origin", "https://www.businessview.info");
+  assert.equal((await handleTelemetry(crossHost, env)).status, 403);
   const local = new Request("http://localhost:4188/api/business/v1/telemetry", { method: "POST", headers: { origin: "http://localhost:4188" }, body: JSON.stringify(payload) });
   assert.equal((await handleTelemetry(local, env)).status, 204);
-  assert.equal(seen.length, 5);
+  assert.equal(seen.length, 7);
 });
 
 test("telemetry rejects declared and streamed oversized bodies, including dishonest lengths", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSecUrl } from "../sec-sources.ts";
 import type { BusinessFlowQuarter } from "../../analysis-contract/business-flow.ts";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
 import { TICKER_PATTERN } from "./policy.ts";
@@ -8,7 +9,7 @@ import { daysBetween as days } from "../dates.ts";
 const HISTORY_QUARTERS = 12;
 const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(v)));
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });
+const secUrl = z.string().refine(isSecUrl);
 const lineage = z.array(z.object({accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, concept: z.string().max(300), contextId: z.string().max(500), periodStart: date, periodEnd: date, parserVersion: z.string().max(100), dimensions: z.record(z.string(),z.string())})).max(80);
 const leaf = z.object({ id: z.string().min(1).max(200), name: z.string().max(200), value: amount, basis: z.enum(["reported", "derived"]).optional(), formula: z.string().max(500).optional(), lineage: lineage.optional() });
 const quarterSchema = z.object({

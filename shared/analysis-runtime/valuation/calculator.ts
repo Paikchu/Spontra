@@ -1,13 +1,14 @@
-import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
+import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
 
 /**
  * The deterministic valuation calculator (docs/valuation-assessment-implementation.md §4, docs/valuation-methodology-optimization.md
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v4";
+export const CALCULATOR_VERSION = "valuation.calc.v9";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -60,6 +61,15 @@ export function horizonOf(path: { revenueGrowth: unknown }): number {
   return n;
 }
 
+/** Validate one explicit plan at the calculator boundary; it replaces both implicit reinvestment inputs. */
+function capitalPlanOf(path: DriverPath, years: number): CapitalPlan | null {
+  if (path.capitalPlan == null) return null;
+  if (path.salesToCapital !== undefined || path.buildCapex !== undefined) throw new ValuationCalcError("invalid_input", "capitalPlan is mutually exclusive with salesToCapital and buildCapex");
+  const plan = { capex: requireYears(path.capitalPlan.capex, "capitalPlan.capex", years), depreciation: requireYears(path.capitalPlan.depreciation, "capitalPlan.depreciation", years), workingCapitalChange: requireYears(path.capitalPlan.workingCapitalChange, "capitalPlan.workingCapitalChange", years) };
+  if (plan.capex.some(v => v < 0) || plan.depreciation.some(v => v < 0)) throw new ValuationCalcError("invalid_input", "capitalPlan capex and depreciation must be non-negative");
+  return plan;
+}
+
 /** What the calculator may compare the model against; every piece optional, none of it changes a scenario's value. */
 export type CalcContext = {
   /** Registered facts by id, for the cited-input verification. */
@@ -101,6 +111,8 @@ export type CalcRequest = {
   bridge: EquityBridge;
   scenarios: Record<ScenarioKey, ScenarioAssumptions>;
   price: number | null;
+  /** Independently evidenced normal bounds; absent for older callers. */
+  fairValueBasis?: FairValueBasis;
   /** Mid-year convention: cash flows at t − 0.5, the terminal at n − 0.5. Default off (year end). */
   midYear?: boolean;
   context?: CalcContext;
@@ -115,6 +127,7 @@ export function discountPath(cashFlows: number[], terminalValue: number, r: numb
     const discountFactor = 1 / requireFinite((1 + r) ** (i + 1 - shift), "discount divisor");
     const row: YearRow = { year: i + 1, revenue: rows[i]?.revenue ?? null, nopat: rows[i]?.nopat ?? null, reinvestment: rows[i]?.reinvestment ?? null, cashFlow, discountFactor, presentValue: cashFlow * discountFactor };
     if (rows[i]?.buildCapex != null) row.buildCapex = rows[i]!.buildCapex;
+    for (const key of ["capex", "depreciation", "workingCapitalChange"] as const) if (rows[i]?.[key] != null) row[key] = rows[i]![key];
     return row;
   });
   const pvExplicit = yearly.reduce((sum, row) => sum + row.presentValue, 0);
@@ -159,7 +172,9 @@ function evaluateScenario(drivers: ModelDrivers, r: number, shares: number, brid
       const path = drivers.path;
       const years = horizonOf(path);
       const growth = requireYears(path.revenueGrowth, "revenueGrowth", years), margin = requireYears(path.operatingMargin, "operatingMargin", years);
-      const tax = requireYears(path.taxRate, "taxRate", years), s2c = requireYears(path.salesToCapital, "salesToCapital", years);
+      const tax = requireYears(path.taxRate, "taxRate", years);
+      const capitalPlan = capitalPlanOf(path, years);
+      const s2c = capitalPlan ? null : requireYears(path.salesToCapital, "salesToCapital", years);
       const normalization = path.normalization ? requireYears(path.normalization, "normalization", years) : new Array<number>(years).fill(0);
       const buildCapex = path.buildCapex ? requireYears(path.buildCapex, "buildCapex", years) : null;
       if (buildCapex?.some(v => v < 0)) throw new ValuationCalcError("invalid_input", "buildCapex cannot be negative");
@@ -172,18 +187,22 @@ function evaluateScenario(drivers: ModelDrivers, r: number, shares: number, brid
       for (let i = 0; i < years; i++) {
         const previous = revenue;
         revenue = previous * (1 + growth[i]!);
-        if (s2c[i]! <= 0) throw new ValuationCalcError("invalid_input", "salesToCapital must be positive");
         const nopat = revenue * margin[i]! * (1 - tax[i]!);
-        let reinvestment = (revenue - previous) / s2c[i]!;
-        // Shrinking revenue releases capital, but never more than a year's worth of depreciation can plausibly return.
-        depreciationCap = Math.abs(nopat) * 0.25;
-        if (reinvestment < 0 && -reinvestment > depreciationCap) { reinvestment = -depreciationCap; notes.push(`year ${i + 1}: negative reinvestment capped`); }
-        // Capacity built ahead of revenue is reinvestment too; it ends when the build does, so it never reaches the terminal.
-        const build = buildCapex?.[i] ?? 0;
-        reinvestment += build;
+        let reinvestment: number;
+        if (capitalPlan) {
+          reinvestment = capitalPlan.capex[i]! - capitalPlan.depreciation[i]! + capitalPlan.workingCapitalChange[i]!;
+        } else {
+          if (s2c![i]! <= 0) throw new ValuationCalcError("invalid_input", "salesToCapital must be positive");
+          reinvestment = (revenue - previous) / s2c![i]!;
+          // The legacy estimate caps capital released by shrinking revenue; explicit working-capital releases use their stated amounts.
+          depreciationCap = Math.abs(nopat) * 0.25;
+          if (reinvestment < 0 && -reinvestment > depreciationCap) { reinvestment = -depreciationCap; notes.push(`year ${i + 1}: negative reinvestment capped`); }
+          reinvestment += buildCapex?.[i] ?? 0;
+        }
         cashFlows.push(nopat - reinvestment + normalization[i]!);
-        rows.push({ revenue, nopat, reinvestment, ...(buildCapex ? { buildCapex: build } : {}) });
+        rows.push({ revenue, nopat, reinvestment, ...(capitalPlan ? { capex: capitalPlan.capex[i]!, depreciation: capitalPlan.depreciation[i]!, workingCapitalChange: capitalPlan.workingCapitalChange[i]! } : buildCapex ? { buildCapex: buildCapex[i]! } : {}) });
       }
+      if (capitalPlan) notes.push("Explicit net reinvestment = capex − depreciation + change in working capital; sales-to-capital and build capex are not applied.");
       if (buildCapex) notes.push(`build capex ${buildCapex.reduce((a, b) => a + b, 0)} over ${years} years, outside the sales-to-capital reinvestment`);
       const last = rows[years - 1]!;
       let terminalNopat = last.nopat!;
@@ -325,10 +344,11 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const baseDrivers = request.scenarios.base.drivers;
   const horizonYears = baseDrivers.modelType === "fcff" ? horizonOf(baseDrivers.path) : FORECAST_YEARS;
   const limitations: string[] = [midYear ? "Cash flows are discounted mid-year; no stub period." : "Cash flows are discounted at year end; no mid-year convention and no stub period."];
+  if (SCENARIO_KEYS.some(k => results[k].result.perShare < 0)) limitations.push("Negative scenario results are raw residual equity shortfalls, not tradable share prices; probability-weighted results retain those raw residuals and are not limited-liability payoffs.");
   const terminalShare = results.base.result.terminalShare;
   if (terminalShare != null && terminalShare > TERMINAL_SHARE_LIMIT) limitations.push(`Terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value.`);
   const result: ValuationModelResult = { calculatorVersion: CALCULATOR_VERSION, modelType: request.modelType, currency: request.currency, discountRate: request.discountRate, shares, bridge: request.bridge, scenarios: results, range, sensitivities, implied, limitations, horizonYears, midYear };
-  if (!request.context) return finiteResult(result, "valuation result");
+  if (!request.context) return withFairValueRange(request, finiteResult(result, "valuation result"));
   // The cross-checks: the DCF beside the forward multiples, each scenario valued on its own path at the judged weights, the
   // management scenario from cited targets, the probability-weighted expectation, the anchors, the verification and the gates.
   const c = request.context;
@@ -364,8 +384,44 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const gates = sanityGates({ result: withRange, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, consensusNote, triangulation, methods, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management: managementGateRow });
   if (appliedMethodCount(triangulation) < 2) limitations.push("No forward-multiple cross-check: fewer than two valuation methods have usable values and positive weights.");
   if (forward.some(m => m.base != null)) limitations.push("The range weighs each scenario's DCF with the forward multiples on its own path at the judged weights; the sensitivities, the terminal share and the market-implied growth are on the base DCF alone.");
-  return finiteResult({ ...withRange, limitations, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
-    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementScenario: management, managementComparison, consensusNote }, "valuation result");
+  return withFairValueRange(request, finiteResult({ ...withRange, limitations, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
+    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementScenario: management, managementComparison, consensusNote }, "valuation result"));
+}
+
+/** Evaluate the normal bounds with the same economics as the base, without adding them to the probability distribution. */
+function withFairValueRange(request: CalcRequest, model: ValuationModelResult): ValuationModelResult {
+  const basis = request.fairValueBasis;
+  if (!basis) return model;
+  if (basis.status === "unavailable") return { ...model, fairValueRange: { ...basis } };
+  const missingFinance = request.bridge.leaseTreatment === "operating_expense" ? missingFinancingFactIds(request.context?.facts ?? []) : [];
+  if (missingFinance.length) throw new ValuationCalcError("invalid_input", `normal fair-value range has unresolved inputs: ${missingFinance.join(", ")}; read the missing facts or declare fairValueBasis unavailable; never substitute zero or total leases`);
+  const weights = request.context ? methodWeightsOf(request.context.methodWeights ?? null, request.context.lifecycle ?? null) : { dcf: 1, ev_ebitda_forward: 0, pe_forward: 0 };
+  const baseValuation = model.scenarios.base.valuation ?? { methods: { dcf: model.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: model.range.base };
+  const check = (name: string, value: ValuationModelResult, valuation: ScenarioValuation) => {
+    const failed = value.gates?.filter(g => g.status === "fail") ?? [];
+    if (failed.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: ${failed.map(g => `${g.key}: ${g.detail}`).join("; ")}`);
+    const missing = VALUATION_METHODS.filter(k => weights[k] > 0 && valuation.methods[k] == null);
+    if (missing.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: positive-weight methods ${missing.join(", ")} are unavailable; revise the shared method weights or declare fairValueBasis unavailable`);
+  };
+  check("base", model, baseValuation);
+  const evaluate = (name: "lower" | "upper", input: NormalCaseInput): NormalCaseResult => {
+    if (input.drivers.modelType !== request.modelType) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base model type`);
+    const base = request.scenarios.base.drivers;
+    if (input.drivers.modelType === "fcff" && base.modelType === "fcff" && !!input.drivers.path.capitalPlan !== !!base.path.capitalPlan) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base investment mode`);
+    const horizon = (drivers: ModelDrivers) => drivers.modelType === "fcff" ? horizonOf(drivers.path) : "horizonYears" in drivers ? drivers.horizonYears : FORECAST_YEARS;
+    if (horizon(input.drivers) !== horizon(base)) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base forecast horizon`);
+    const scenario: ScenarioAssumptions = { ...input, probability: null };
+    const context: CalcContext = { ...request.context, management: null, scenarioProbabilities: null, managementComparison: null };
+    const calculated = calculateValuation({ ...request, fairValueBasis: undefined, scenarios: { bear: scenario, base: scenario, bull: scenario }, context: request.context ? context : undefined });
+    const valuation = calculated.scenarios.base.valuation ?? { methods: { dcf: calculated.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: calculated.range.base };
+    check(name, calculated, valuation);
+    return { ...input, result: calculated.scenarios.base.result, valuation, gates: calculated.gates ?? [], verification: calculated.verification ?? null };
+  };
+  const lower = evaluate("lower", basis.lower), upper = evaluate("upper", basis.upper);
+  const low = lower.valuation.perShare, base = model.range.base, high = upper.valuation.perShare;
+  if (low > base || base > high) throw new ValuationCalcError("scenario_order", `normal fair values are out of order (lower ${low}, base ${base}, upper ${high}); revise the normal operating paths`);
+  const fairValueRange: FairValueRange = { status: "available", kind: "normal_cases", low, base, high, lower, upper, rationale: basis.rationale, evidenceIds: [...basis.evidenceIds] };
+  return finiteResult({ ...model, fairValueRange }, "fair value range");
 }
 
 /** The judged weights with their rationale, when every method was given one; plain numbers leave nothing to publish. */
@@ -409,7 +465,7 @@ function managementScenarioOf(request: CalcRequest, r: number, shares: number, c
   if (!built) return null;
   try {
     const result = scenarioValue(built.drivers, r, shares, request.bridge, { midYear: request.midYear === true });
-    const sub = calculateValuation(managementRequest(request, built.drivers));
+    const sub = calculateValuation({ ...managementRequest(request, built.drivers), fairValueBasis: undefined });
     const valuation = scenarioValuation(request, built.drivers, result, r, shares, c, weights);
     const judged = c.scenarioProbabilities?.management ?? null;
     const revenue = built.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${(a.target / 1e9).toFixed(1)}B in year ${a.year}`).join(", ");
@@ -428,21 +484,29 @@ function forwardMethods(request: CalcRequest, drivers: ModelDrivers, scenario: S
   if (drivers.modelType !== "fcff") return [];
   const h = Math.min(Math.max(Math.round(c.forwardYears ?? 3), 1), scenario.yearly.length);
   const metrics = forwardFundamentals(drivers, h, { da0: c.trailing?.da ?? null, interestExpense0: c.trailing?.interestExpense ?? null, shares });
-  const cumulativeCashFlow = scenario.yearly.slice(0, h).reduce((sum, y) => sum + y.cashFlow, 0);
+  const pvExplicit = scenario.yearly.slice(0, h).reduce((sum, y) => sum + y.presentValue, 0);
   const out: MethodValuation[] = [];
   const unavailable = (method: ValuationMethodKey, label: string, basis: string, why: string): MethodValuation => ({ method, label, low: null, base: null, high: null, weight: 0, basis, notes: [why] });
   if (peers?.evToEbitda && metrics.ebitda != null && metrics.ebitda > 0) {
-    const v = forwardMultipleValue({ metric: metrics.ebitda, multiples: peers.evToEbitda, horizonYears: h, r, kind: "ev", bridge: request.bridge, shares, cumulativeCashFlow });
-    out.push({ method: "ev_ebitda_forward", label: `EV/EBITDA on year ${h}`, ...v, weight: 0, basis: `year ${h} EBITDA ${metrics.ebitda.toExponential(3)} × peers p25/median/p75 ${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)} (${peers.evToEbitda.count} peers), discounted ${h} years; net claims rolled forward by the path's cash flows`, notes: metrics.notes });
+    const v = forwardMultipleValue({ metric: metrics.ebitda, multiples: peers.evToEbitda, horizonYears: h, r, kind: "ev", bridge: request.bridge, shares, pvExplicit });
+    out.push({ method: "ev_ebitda_forward", label: `EV/EBITDA on year ${h}`, ...v, weight: 0, basis: `year ${h} EBITDA ${metrics.ebitda.toExponential(3)} × peers p25/median/p75 ${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)} (${peers.evToEbitda.count} peers), terminal enterprise value discounted ${h} years at WACC ${(r * 100).toFixed(2)}%; plus each interim FCFF present value, then today's non-operating assets less claims`, notes: metrics.notes });
   } else out.push(unavailable("ev_ebitda_forward", `EV/EBITDA on year ${h}`, "not applied", peers?.evToEbitda ? "forward EBITDA is not positive" : "no peer EV/EBITDA"));
-  if (peers?.peRatio && metrics.eps != null && metrics.eps > 0) {
-    const v = forwardMultipleValue({ metric: metrics.eps, multiples: peers.peRatio, horizonYears: h, r, kind: "equity", bridge: request.bridge, shares, cumulativeCashFlow });
-    out.push({ method: "pe_forward", label: `P/E on year ${h}`, ...v, weight: 0, basis: `year ${h} core EPS ${metrics.eps.toFixed(2)} × peers p25/median/p75 ${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)} (${peers.peRatio.count} peers), discounted ${h} years`, notes: metrics.notes });
-  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", metrics.epsStatus === "insufficient_data" ? "Insufficient data: trailing interest expense is unknown; forward EPS and P/E are unavailable" : peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
+  const costOfEquity = request.discountRate.components.costOfEquity;
+  const hasEquityRate = finite(costOfEquity) && costOfEquity > 0;
+  if (peers?.peRatio && metrics.eps != null && metrics.eps > 0 && hasEquityRate) {
+    const v = forwardMultipleValue({ metric: metrics.eps, multiples: peers.peRatio, horizonYears: h, r: costOfEquity, kind: "equity" });
+    out.push({ method: "pe_forward", label: `P/E on year ${h}`, ...v, weight: 0, basis: `year ${h} core EPS ${metrics.eps.toFixed(2)} × peers p25/median/p75 ${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)} (${peers.peRatio.count} peers), future equity price discounted ${h} years at cost of equity ${(costOfEquity * 100).toFixed(2)}%`, notes: [...metrics.notes, "This is a present-value reference for a future EPS-times-multiple share price, using the existing trailing-interest assumption. Interim dividends and financing changes are not separately modeled; this is not a complete FCFE valuation."] });
+  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", metrics.epsStatus === "insufficient_data" ? "Insufficient data: trailing interest expense is unknown; forward EPS and P/E are unavailable" : !hasEquityRate ? "Insufficient data: a positive sourced cost of equity is unavailable; P/E is not discounted at WACC" : peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
   return out;
 }
 
-/** Year-`h` EBITDA and core EPS of an fcff path: EBIT from the path, D&A scaled with revenue, interest held at its trailing level. */
+/** The same after-interest operating earnings basis for peer P/E denominators and the subject's projected EPS. */
+export function coreEquityEarnings(ebit: number, interestExpense: number | null, taxRate: number): number | null {
+  if (interestExpense == null) return null;
+  return requireFinite((requireFinite(ebit, "EBIT") - requireFinite(interestExpense, "interest expense")) * (1 - requireFinite(taxRate, "tax rate")), "core equity earnings");
+}
+
+/** Year-`h` EBITDA and core EPS: D&A from the explicit plan or scaled with revenue; interest held at its trailing level. */
 export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; epsStatus: "ready" | "insufficient_data"; notes: string[] } {
   const years = horizonOf(drivers.path);
   const n = Math.min(Math.max(h, 1), years);
@@ -450,32 +514,35 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
   for (let i = 0; i < n; i++) revenue *= 1 + drivers.path.revenueGrowth[i]!;
   const ebit = revenue * drivers.path.operatingMargin[n - 1]!;
   const notes: string[] = [];
-  const da = input.da0 != null && drivers.revenue0 > 0 ? input.da0 * revenue / drivers.revenue0 : null;
+  const capitalPlan = capitalPlanOf(drivers.path, years);
+  const da = capitalPlan ? capitalPlan.depreciation[n - 1]! : input.da0 != null && drivers.revenue0 > 0 ? input.da0 * revenue / drivers.revenue0 : null;
+  if (capitalPlan) notes.push(`year ${n} depreciation ${da} from the explicit capital plan`);
   if (da == null) notes.push("no trailing D&A: EBITDA not projected");
   const interest = input.interestExpense0;
   if (interest != null) requireFinite(interest, "interest expense");
-  const eps = interest != null && input.shares > 0 ? (ebit - interest) * (1 - drivers.path.taxRate[n - 1]!) / input.shares : null;
+  const earnings = coreEquityEarnings(ebit, interest, drivers.path.taxRate[n - 1]!);
+  const eps = earnings != null && input.shares > 0 ? earnings / input.shares : null;
   if (interest == null) notes.push("Insufficient data: trailing interest expense is unknown; EPS not projected");
   else notes.push(`core EPS excludes securities gains: (EBIT − interest ${interest.toExponential(2)}) × (1 − tax)`);
   return finiteResult({ revenue, ebit, ebitda: da != null ? ebit + da : null, eps, epsStatus: eps == null ? "insufficient_data" as const : "ready" as const, notes }, "forward fundamentals");
 }
 
 /**
- * A forward multiple brought back to today: an enterprise multiple less the net claims as the base cash flows leave them
- * at the horizon (a build phase adds debt before it adds EBITDA), or an equity multiple on the per-share metric.
+ * Enterprise exit value and each interim FCFF are discounted at WACC before today's equity bridge.
+ * An equity exit price is discounted at the separately supplied cost of equity; it is already after financing claims.
  */
-export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number; kind: "ev" | "equity"; bridge: EquityBridge; shares: number; cumulativeCashFlow: number }): { low: number; base: number; high: number } {
-  const { metric, multiples, horizonYears: h, r, bridge, shares } = input;
+export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number } & ({ kind: "ev"; bridge: EquityBridge; shares: number; pvExplicit: number } | { kind: "equity" })): { low: number; base: number; high: number } {
+  const { metric, multiples, horizonYears: h, r } = input;
   requireFinite(metric, "forward metric"); requireFinite(r, "discount rate");
   requireDiscountRate(r);
-  if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
+  if (input.kind === "ev" && !(input.shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   if (h < 0) throw new ValuationCalcError("invalid_input", "horizonYears cannot be negative");
   const discount = requireFinite((1 + r) ** h, "forward discount divisor");
   const value = (multiple: number) => {
     if (multiple < 0) throw new ValuationCalcError("multiple", "multiple cannot be negative");
     if (input.kind === "equity") return requireFinite(metric * multiple, "forward terminal value") / discount;
-    const netClaimsAtHorizon = bridge.debtAndClaims - bridge.nonOperatingAssets - input.cumulativeCashFlow;
-    return requireFinite(requireFinite(metric * multiple, "forward terminal value") - netClaimsAtHorizon, "forward equity value") / discount / shares;
+    const enterpriseValue = requireFinite(input.pvExplicit, "interim FCFF present value") + requireFinite(metric * multiple, "forward terminal value") / discount;
+    return requireFinite(enterpriseValue + input.bridge.nonOperatingAssets - input.bridge.debtAndClaims, "present equity value") / input.shares;
   };
   return finiteResult({ low: value(multiples.p25), base: value(multiples.median), high: value(multiples.p75) }, "forward multiple result");
 }
@@ -593,9 +660,15 @@ export function verifyCitedInputs(request: CalcRequest, facts: Array<{ id: strin
     check("shares.base", request.shares.base, nearest.value, [nearest.id], 0.001, "both");
   }
   const debt = fact("debt"), leases = fact("leases"), preferred = fact("preferred_stock"), minority = fact("minority_interest");
-  if (debt != null) check("bridge.debtAndClaims (debt + leases)", request.bridge.debtAndClaims, debt + (leases ?? 0), ["debt", ...(leases != null ? ["leases"] : [])], 0.02, "at_least");
-  const seniorClaims = (preferred ?? 0) + (minority ?? 0);
-  if (debt != null && seniorClaims > 0) check("bridge.debtAndClaims (incl. preferred and minority)", request.bridge.debtAndClaims, debt + (leases ?? 0) + seniorClaims, ["debt", ...(leases != null ? ["leases"] : []), ...(preferred ? ["preferred_stock"] : []), ...(minority ? ["minority_interest"] : [])], 0.02, "at_least", "flag");
+  const seniorClaims = (preferred ?? 0) + (minority ?? 0) + (fact("other_senior_claims") ?? 0);
+  if (request.bridge.leaseTreatment === "operating_expense") {
+    const finance = financeLeaseAmount(facts);
+    if (finance == null || fact("finance_lease_debt_overlap") === 1) checks.push({ field: "lease_classification", cited: request.bridge.debtAndClaims, expected: null, factIds: ["finance_leases"], tolerance: 0, status: "flag", detail: "Finance lease liabilities or their overlap with debt could not be reconciled; operating leases cannot be substituted and a normal fair-value range is unavailable." });
+    else if (debt != null) check("bridge.debtAndClaims (operating-expense lease basis)", request.bridge.debtAndClaims, debt + finance + seniorClaims, ["debt", fact("finance_leases") != null ? "finance_leases" : "leases", ...(preferred != null ? ["preferred_stock"] : []), ...(minority != null ? ["minority_interest"] : []), ...(fact("other_senior_claims") != null ? ["other_senior_claims"] : [])], 0.02, "both");
+  } else {
+    if (debt != null) check("bridge.debtAndClaims (debt + leases)", request.bridge.debtAndClaims, debt + (leases ?? 0), ["debt", ...(leases != null ? ["leases"] : [])], 0.02, "at_least");
+    if (debt != null && seniorClaims > 0) check("bridge.debtAndClaims (incl. preferred and minority)", request.bridge.debtAndClaims, debt + (leases ?? 0) + seniorClaims, ["debt", ...(leases != null ? ["leases"] : []), ...(preferred ? ["preferred_stock"] : []), ...(minority ? ["minority_interest"] : [])], 0.02, "at_least", "flag");
+  }
   const cash = fact("cash"), investments = fact("investments");
   if (cash != null) check("bridge.nonOperatingAssets (cash + investments)", request.bridge.nonOperatingAssets, cash + (investments ?? 0), ["cash", ...(investments != null ? ["investments"] : [])], 0.02, "at_most");
   return { checks, ok: !checks.some(c => c.status === "fail") };
@@ -607,14 +680,15 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
   const gates: SanityGate[] = [];
   const gate = (key: string, status: SanityGate["status"], detail: string, value: number | null = null, limit: number | null = null) => gates.push({ key, status, detail, value, limit });
   const terminalShare = result.scenarios.base.result.terminalShare;
-  if (terminalShare != null) gate("terminal_share", terminalShare > 1 ? "fail" : terminalShare > TERMINAL_SHARE_LIMIT ? "flag" : "pass", `terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value${terminalShare > 1 ? ": the explicit period is worth less than nothing; extend the horizon or normalize the build phase" : ""}`, terminalShare, TERMINAL_SHARE_LIMIT);
+  if (terminalShare != null) gate("terminal_share", terminalShare > TERMINAL_SHARE_LIMIT ? "flag" : "pass", `terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value${terminalShare > 1 ? ": explicit-period present value is negative; the model depends on later cash-flow delivery" : ""}`, terminalShare, TERMINAL_SHARE_LIMIT);
   const negative = SCENARIO_KEYS.filter(k => result.scenarios[k].result.perShare < 0 || (result.scenarios[k].valuation?.perShare ?? 0) < 0);
-  gate("non_negative_scenarios", negative.length ? "fail" : "pass", negative.length ? `${negative.join(", ")} per-share value is negative: equity cannot be worth less than zero; revise the path` : "every scenario is non-negative", negative.length ? Math.min(result.scenarios[negative[0]!].result.perShare, result.scenarios[negative[0]!].valuation?.perShare ?? 0) : null, 0);
+  gate("non_negative_scenarios", negative.length ? "flag" : "pass", negative.length ? `${negative.join(", ")} raw residual equity value is negative: preserve the modeled shortfall and review funding and claim coverage; this is not a negative tradable share price` : "every scenario is non-negative", negative.length ? Math.min(result.scenarios[negative[0]!].result.perShare, result.scenarios[negative[0]!].valuation?.perShare ?? 0) : null, 0);
   const g = "terminalGrowth" in result.scenarios.base.drivers ? result.scenarios.base.drivers.terminalGrowth : null;
   if (g != null) {
     const aboveRf = input.riskFree != null && g > input.riskFree + 1e-9;
     gate("terminal_growth", aboveRf ? "fail" : g > TERMINAL_GROWTH_FLAG + 1e-9 ? "flag" : "pass", aboveRf ? `terminal growth ${(g * 100).toFixed(1)}% exceeds the risk-free rate ${(input.riskFree! * 100).toFixed(1)}%` : g > TERMINAL_GROWTH_FLAG ? `terminal growth ${(g * 100).toFixed(1)}% is above the usual 2–3%; the narrative must say why` : `terminal growth ${(g * 100).toFixed(1)}%`, g, aboveRf ? input.riskFree : TERMINAL_GROWTH_FLAG);
   }
+  if (input.verification?.checks.some(c => c.field === "lease_classification")) gate("lease_classification", "flag", input.verification.checks.find(c => c.field === "lease_classification")!.detail);
   if (input.verification) gate("cited_inputs", input.verification.ok ? (input.verification.checks.some(c => c.status === "flag") ? "flag" : "pass") : "fail", input.verification.checks.filter(c => c.status !== "pass").map(c => c.detail).join("; ") || "cited inputs match the registered facts");
   if (input.anchor) {
     const base = result.scenarios.base.drivers;
@@ -661,6 +735,7 @@ function checkScenarioConsistency(scenarios: Record<ScenarioKey, ScenarioAssumpt
   const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / list.length;
   const base = scenarios.base.drivers, bull = scenarios.bull.drivers;
   if (base.modelType !== "fcff" || bull.modelType !== "fcff") return;
+  if (base.path.capitalPlan || bull.path.capitalPlan) return;
   const baseReinvest = avg(base.path.revenueGrowth) / avg(base.path.salesToCapital), bullReinvest = avg(bull.path.revenueGrowth) / avg(bull.path.salesToCapital);
   if (avg(bull.path.revenueGrowth) > avg(base.path.revenueGrowth) + 1e-9 && bullReinvest + 1e-9 < baseReinvest) {
     throw new ValuationCalcError("scenario_order", "reinvestment_inconsistent: the bull case grows faster than the base but reinvests less of its revenue growth");
@@ -691,10 +766,11 @@ export function sensitivitiesOf(request: CalcRequest, r: number, shares: number)
       moves.push(
         { factor: "revenueGrowth", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, revenueGrowth: addAll(d.path.revenueGrowth, 0.01) } } : d },
         { factor: "operatingMargin", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, operatingMargin: addAll(d.path.operatingMargin, 0.01) } } : d },
-        { factor: "salesToCapital", step: "+10%", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, salesToCapital: scaleAll(d.path.salesToCapital, 1.1) } } : d },
         { factor: "terminalGrowth", step: "+0.5pp", apply: d => d.modelType === "fcff" ? { ...d, terminalGrowth: d.terminalGrowth + 0.005 } : d },
         { factor: "terminalRoic", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, terminalRoic: d.terminalRoic + 0.01 } : d },
       );
+      if (base.path.capitalPlan) moves.push({ factor: "capex", step: "+10%", apply: d => d.modelType === "fcff" && d.path.capitalPlan ? { ...d, path: { ...d.path, capitalPlan: { ...d.path.capitalPlan, capex: scaleAll(d.path.capitalPlan.capex, 1.1) } } } : d });
+      else moves.push({ factor: "salesToCapital", step: "+10%", apply: d => d.modelType === "fcff" && !d.path.capitalPlan ? { ...d, path: { ...d.path, salesToCapital: scaleAll(d.path.salesToCapital, 1.1) } } : d });
       break;
     case "fcfe": case "affo_dcf":
       moves.push(

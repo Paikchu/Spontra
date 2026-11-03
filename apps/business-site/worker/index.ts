@@ -1,3 +1,4 @@
+import { readPriceGuide } from "@/shared/analysis-runtime/valuation/price-guide";
 
 import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
@@ -333,7 +334,7 @@ export async function loadValuation(ticker:string,path:string,params:URLSearchPa
   if(path==="/valuation"){
    if(body.schemaVersion!=="valuation-response.v1"||typeof body.availability!=="string")return null;
    const report=readValuationPublication(body.report,ticker);
-   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
+   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
   }
   if(path==="/valuation/versions")return body.schemaVersion==="valuation-versions.v1"?{schemaVersion:"valuation-versions.v1",ticker,items:Array.isArray(body.items)?body.items.slice(0,50):[],nextCursor:typeof body.nextCursor==="string"?body.nextCursor:null}:null;
   if(path.includes("/evidence/"))return body.schemaVersion==="valuation-evidence.v1"&&body.evidence&&typeof body.evidence==="object"?{schemaVersion:"valuation-evidence.v1",ticker,evidence:body.evidence}:null;

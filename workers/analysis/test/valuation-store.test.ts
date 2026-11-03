@@ -1,3 +1,4 @@
+import { latestValuationQuote, refreshValuationQuotes } from "../src/valuation/quotes.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -92,4 +93,44 @@ test("the stored payload reads back through the contract; a payload for another 
   assert.ok(readValuationPublication(p, "ACME"));
   assert.equal(readValuationPublication(p, "OTHER"), null);
   assert.equal(readValuationPublication({ ...p, dimensions: p.dimensions.slice(1) }, "ACME"), null);
+});
+
+test("an unfinished refresh invalidates the public resource while retaining the prior report", async () => {
+  const db = database(), store = new ValuationStore(db);
+  const issuedAt = "2026-10-28T01:00:00.000Z";
+  const generation = await store.advance("ACME", issuedAt);
+  await store.publish("ACME", publication("ready-report", "ready", issuedAt), [evidence], generation, "fp1", issuedAt);
+  for (const [status, updatedAt] of [["running", "2026-10-28T02:00:00.000Z"], ["empty", "2026-10-28T02:10:00.000Z"]] as const) {
+    await store.noteAttempt("ACME", { runId: "refresh", status, stage: status === "running" ? "input" : "publish", updatedAt, reportStatus: status === "empty" ? "insufficient" : null, gaps: [], errorCode: null }, updatedAt);
+    const response = await readValuationResponse(db, "ACME");
+    assert.equal(response.report?.versionId, "ready-report");
+    assert.equal(response.latestAttempt?.status, status);
+    assert.equal(response.outdated, true);
+    assert.equal((await db.prepare("SELECT revision FROM publication_revisions WHERE ticker='ACME' AND resource='valuation'").bind().first<{ revision: string }>())?.revision, updatedAt);
+  }
+});
+
+
+test("reference closes refresh visible ranges and their read revision without rewriting research", async () => {
+  const db = database();
+  const report = publication("quote-version", "ready", "2026-10-28T00:00:00Z");
+  await db.prepare("INSERT INTO valuation_versions (version_id,ticker,generated_at,research_as_of,report_status,method_version,calculator_version,base_input_fingerprint,evidence_set_hash,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .bind(report.versionId, "ACME", report.generatedAt, report.researchAsOf, "ready", "v6", "v8", "input", "evidence", JSON.stringify({ ...report, model: { fairValueRange: { status: "available" } } })).run();
+  await db.prepare("INSERT INTO valuation_current (ticker,version_id,request_generation,updated_at) VALUES ('ACME',?,1,?)").bind(report.versionId, report.generatedAt).run();
+  await db.prepare("INSERT INTO business_feature_settings (ticker,feature,generate,display,updated_at) VALUES ('ACME','valuation',1,NULL,?)").bind(report.generatedAt).run();
+  const before = await db.prepare("SELECT payload_json FROM valuation_versions WHERE version_id=?").bind(report.versionId).first<{ payload_json: string }>();
+  let calls = 0;
+  const fetcher: typeof fetch = async () => { calls++; return Response.json({ chart: { result: [{ meta: { symbol: "ACME", currency: "USD", exchangeTimezoneName: "America/New_York" }, timestamp: [Date.parse("2026-11-02T14:30:00Z") / 1000], indicators: { quote: [{ close: [110] }] } }] } }); };
+  const at = new Date("2026-11-03T10:00:00Z");
+  assert.deepEqual(await refreshValuationQuotes({ DB: db }, at, fetcher), { refreshed: 1, failed: [] });
+  assert.equal((await latestValuationQuote(db, "ACME", report.quote))?.price, 110);
+  const revision = await db.prepare("SELECT revision FROM publication_revisions WHERE ticker='ACME' AND resource='valuation'").bind().first<{ revision: string }>();
+  assert.equal(revision?.revision, at.toISOString());
+  assert.deepEqual(await db.prepare("SELECT payload_json FROM valuation_versions WHERE version_id=?").bind(report.versionId).first(), before);
+  assert.equal((await refreshValuationQuotes({ DB: db }, new Date(at.getTime() + 60_000), fetcher)).refreshed, 0);
+  assert.equal(calls, 1);
+  const failedAt = new Date("2026-11-11T10:00:00Z");
+  assert.deepEqual(await refreshValuationQuotes({ DB: db }, failedAt, async () => new Response("unavailable", { status: 503 })), { refreshed: 0, failed: ["ACME"] });
+  assert.equal((await latestValuationQuote(db, "ACME", report.quote))?.price, 110);
+  assert.equal((await db.prepare("SELECT revision FROM publication_revisions WHERE ticker='ACME' AND resource='valuation'").bind().first<{ revision: string }>())?.revision, failedAt.toISOString());
 });

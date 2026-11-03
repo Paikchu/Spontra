@@ -1,0 +1,1680 @@
+{
+  "provenance": {
+    "artifact": "research/orcl-valuation-history/runs-v3-v7/fy2026-q2/assumptions.json",
+    "artifactSha256": "c137f5897d115d609a8c2d7408fea98f86ff94ff3f1c222286c8414592ae8807",
+    "cutoff": "2025-12-12T21:00:00Z",
+    "producedAt": "2026-11-02T18:24:02.447Z",
+    "note": "Successful real agent calculation arguments reconstructed from its canonical request without changing the assumptions. No outcomes are included.",
+    "canonicalRequestSha256": "8bcd2f27e6833dee1e0dd267edcc963dcc0db509785964c9106255030381734a"
+  },
+  "args": {
+    "modelType": "fcff",
+    "discountRate": {
+      "basis": "wacc",
+      "riskFree": {
+        "value": 0.042,
+        "source": "Frozen USD 10-year Treasury yield as of 2025-12-12 (4.2%).",
+        "evidenceIds": []
+      },
+      "beta": {
+        "value": 1.56,
+        "source": "Beta of 1.56 from 104 weekly returns 2023-12-15 to 2025-12-12 against the S&P 500.",
+        "evidenceIds": []
+      },
+      "equityRiskPremium": {
+        "value": 0.05,
+        "source": "Long-run U.S. equity risk premium of 5.0% (Damodaran-style implied ERP); no registered excerpt.",
+        "evidenceIds": []
+      },
+      "costOfDebt": {
+        "value": 0.055,
+        "source": "Blended pre-tax cost of debt: recent senior notes coupons of 5.25%-6.17% (e3152b99f67) and TTM interest expense of $3.85B on $108.1B debt; 5.5% used.",
+        "evidenceIds": [
+          "e3152b99f67",
+          "e9b4626fdec"
+        ]
+      },
+      "taxRate": {
+        "value": 0.15,
+        "source": "Normalized 15% cash tax rate; TTM effective rate is 11.2% (fact effective_tax_rate_ttm) and is expected to normalize with U.S. cloud build.",
+        "evidenceIds": [
+          "e9b4626fdec"
+        ]
+      },
+      "equityWeight": {
+        "value": 0.828,
+        "source": "Reference close $189.97 x 2.873B shares = $545.8B equity value; debt $108.075B + finance leases $4.976B = $113.051B; equity weight 82.8%.",
+        "evidenceIds": [
+          "e3152b99f67"
+        ]
+      },
+      "rationale": "WACC is built from a 4.2% risk-free rate, 1.56 beta and 5.0% ERP, giving about 12.0% cost of equity; after-tax cost of debt is about 4.7% on a 5.5% pre-tax cost and 15% tax rate, weighted 82.8% equity / 17.2% debt. One rate is used for all scenarios; operating risk is reflected in cash flows, not in separate discount rates."
+    },
+    "shares": {
+      "baseFactId": "shares_outstanding",
+      "dilutionPercent": 0,
+      "rationale": "No equity note or treasury-stock schedule was read in the frozen evidence, so no incremental dilution reserve is added. Reported diluted weighted shares of 2.922B are about 1.7% above basic and are treated as a sensitivity, not a separate reserve."
+    },
+    "bridge": {
+      "leaseTreatment": "operating_expense",
+      "nonOperatingAssets": 19766000000,
+      "debtAndClaims": 113557000000,
+      "nonOperatingEquityAdjustment": 0,
+      "notes": [
+        "Operating leases of $18.679B are treated as operating expense and excluded from debt claims; finance leases of $4.976B are included.",
+        "Debt claims = debt $108.075B + finance leases $4.976B + preferred $0 + minority interest $0.506B = $113.557B.",
+        "Non-operating assets = cash $19.241B + investments $0.525B = $19.766B.",
+        "Net bridge = $93.791B, matching the registered valuation_net_claims fact."
+      ]
+    },
+    "scenarios": {
+      "bear": {
+        "narrative": "RPO is not guaranteed cash. The bear case assumes power, data-center and financing constraints delay or cancel large AI contracts, so revenue growth falls from 8% to 2% and operating margin drops to 26% as depreciation and underutilization bite. Capex is cut to $42B near term and $24B later. Terminal growth of 2% and ROIC equal to WACC mean no excess return at maturity. This is a coherent delayed-conversion path, not a fixed haircut to the base.",
+        "triggers": [
+          "Large RPO contracts slip by more than 12 months or are cancelled",
+          "Cloud revenue growth falls below 20% in a quarter",
+          "Capex remains above $42B without matching revenue",
+          "Operating margin falls below 28%"
+        ],
+        "invalidation": [
+          "RPO conversion accelerates and cloud growth stays above 30%",
+          "Operating margin holds above 30% while capex falls",
+          "Free cash flow turns positive earlier than year 5"
+        ],
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec",
+          "ed9cb5f8ada"
+        ],
+        "drivers": {
+          "modelType": "fcff",
+          "revenue0": 61016000000,
+          "path": {
+            "revenueGrowth": [
+              0.08,
+              0.09,
+              0.08,
+              0.06,
+              0.05,
+              0.04,
+              0.03,
+              0.03,
+              0.02,
+              0.02
+            ],
+            "operatingMargin": [
+              0.28,
+              0.27,
+              0.26,
+              0.26,
+              0.26,
+              0.26,
+              0.26,
+              0.26,
+              0.26,
+              0.26
+            ],
+            "taxRate": [
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15
+            ],
+            "capitalPlan": {
+              "capex": [
+                42000000000,
+                42000000000,
+                40000000000,
+                36000000000,
+                32000000000,
+                29000000000,
+                27000000000,
+                26000000000,
+                25000000000,
+                24000000000
+              ],
+              "depreciation": [
+                8000000000,
+                11000000000,
+                14000000000,
+                17000000000,
+                19000000000,
+                21000000000,
+                22000000000,
+                23000000000,
+                23000000000,
+                23000000000
+              ],
+              "workingCapitalChange": [
+                1000000000,
+                1000000000,
+                1000000000,
+                800000000,
+                600000000,
+                500000000,
+                400000000,
+                300000000,
+                200000000,
+                100000000
+              ]
+            }
+          },
+          "terminalGrowth": 0.02,
+          "terminalRoic": 0.1075,
+          "terminalOperatingMargin": 0.26
+        },
+        "assumptions": {
+          "revenue": {
+            "rationale": "Long-dated RPO conversion slows and AI cloud demand is constrained by power and capital; revenue growth fades from 8% to 2%. RPO is treated as a schedule, not guaranteed cash.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "ed9cb5f8ada"
+            ]
+          },
+          "margin": {
+            "rationale": "Underutilized capacity, depreciation from the build and pricing pressure compress operating margin to 26%, below the 30.3% TTM level; SBC remains expensed in margin.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "eaf730fd76a"
+            ]
+          },
+          "capex": {
+            "rationale": "The build is cut to protect liquidity and funding: capex falls from $42B to $24B as delayed projects are deferred. TTM capex of $35.5B and 1H FY26 capex of $20.5B show the starting scale.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "ed9cb5f8ada"
+            ]
+          }
+        }
+      },
+      "base": {
+        "narrative": "Oracle enters the forecast with $523B of RPO, up 438%, Q2 FY26 cloud revenue +34% and IaaS +68%, but TTM FCF is -$13.2B because capex is $35.5B versus $7.1B of D&A. Base assumes the RPO converts broadly on schedule but not linearly: revenue grows 18-20% early, then fades to 6% as the largest AI contracts anniversary. Capex peaks at $52B and falls to $32B; depreciation lags and rises through the horizon. Operating margin holds near 30% and expands to 33% as cloud scale and software mix offset depreciation and SBC. The terminal 3% growth and 12.5% ROIC are below the build-phase returns but above WACC, reflecting a mature cloud infrastructure business.",
+        "triggers": [
+          "RPO conversion at or above schedule",
+          "Cloud revenue growth above 30% and IaaS above 50%",
+          "Capex peak no higher than $55B",
+          "Operating margin at or above 30% through the build"
+        ],
+        "invalidation": [
+          "RPO conversion slips by more than 12 months",
+          "Capex exceeds $60B without matching revenue",
+          "Cloud growth falls below 20%",
+          "Operating margin falls below 28%"
+        ],
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec",
+          "ed9cb5f8ada",
+          "eaf730fd76a"
+        ],
+        "drivers": {
+          "modelType": "fcff",
+          "revenue0": 61016000000,
+          "path": {
+            "revenueGrowth": [
+              0.18,
+              0.2,
+              0.2,
+              0.18,
+              0.16,
+              0.14,
+              0.12,
+              0.1,
+              0.08,
+              0.06
+            ],
+            "operatingMargin": [
+              0.3,
+              0.3,
+              0.305,
+              0.31,
+              0.315,
+              0.32,
+              0.325,
+              0.33,
+              0.33,
+              0.33
+            ],
+            "taxRate": [
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15
+            ],
+            "capitalPlan": {
+              "capex": [
+                46000000000,
+                50000000000,
+                52000000000,
+                52000000000,
+                50000000000,
+                46000000000,
+                42000000000,
+                38000000000,
+                34000000000,
+                32000000000
+              ],
+              "depreciation": [
+                8000000000,
+                11000000000,
+                14000000000,
+                17000000000,
+                20000000000,
+                23000000000,
+                26000000000,
+                28000000000,
+                30000000000,
+                31000000000
+              ],
+              "workingCapitalChange": [
+                1000000000,
+                1500000000,
+                2000000000,
+                2000000000,
+                1800000000,
+                1500000000,
+                1200000000,
+                1000000000,
+                800000000,
+                500000000
+              ]
+            }
+          },
+          "terminalGrowth": 0.03,
+          "terminalRoic": 0.125,
+          "terminalOperatingMargin": 0.33
+        },
+        "assumptions": {
+          "revenue": {
+            "rationale": "Base revenue grows 18% in year 1, 20% in years 2-3 and fades to 6% by year 10, reflecting $523B RPO, Q2 cloud +34% and IaaS +68%; total revenue was +14%. The path assumes broadly on-schedule conversion, not a linear RPO burn.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "eaf730fd76a"
+            ]
+          },
+          "margin": {
+            "rationale": "Base operating margin starts near 30%, around the 30.3% TTM level, dips as depreciation from the build ramps, then rises to 33% by scale and mix; SBC is expensed in operating margin.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "e9b4626fdec"
+            ]
+          },
+          "capex": {
+            "rationale": "Base capex stays high at $46-52B through year 4, then declines to $32B as data-center build matures. TTM capex of $35.5B and 1H FY26 capex of $20.5B support a high but fading build.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "ed9cb5f8ada"
+            ]
+          }
+        }
+      },
+      "bull": {
+        "narrative": "The bull case assumes the $523B RPO converts faster and Oracle wins incremental AI capacity contracts, so revenue grows 22-25% early and 7% at year 10. Scale, software mix and pricing lift operating margin to 35%, above TTM, as depreciation is absorbed and SBC growth slows. The bull case reinvests more than base, with capex of $52-62B early, so it is a faster-growth-and-more-capex path rather than a margin-only upside case. Terminal growth is 3% and ROIC is 15%.",
+        "triggers": [
+          "RPO conversion accelerates and new AI contracts are signed",
+          "IaaS growth stays above 70% for multiple quarters",
+          "Operating margin reaches 33% before year 5",
+          "Capex is funded without straining the balance sheet"
+        ],
+        "invalidation": [
+          "RPO conversion delays or cancellations",
+          "Cloud growth falls below 30%",
+          "Margin expansion stalls below 31%",
+          "Capex exceeds $65B without incremental revenue"
+        ],
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec",
+          "ed9cb5f8ada"
+        ],
+        "drivers": {
+          "modelType": "fcff",
+          "revenue0": 61016000000,
+          "path": {
+            "revenueGrowth": [
+              0.22,
+              0.25,
+              0.25,
+              0.23,
+              0.2,
+              0.17,
+              0.14,
+              0.11,
+              0.09,
+              0.07
+            ],
+            "operatingMargin": [
+              0.31,
+              0.32,
+              0.33,
+              0.34,
+              0.35,
+              0.35,
+              0.35,
+              0.35,
+              0.35,
+              0.35
+            ],
+            "taxRate": [
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15
+            ],
+            "capitalPlan": {
+              "capex": [
+                52000000000,
+                58000000000,
+                62000000000,
+                62000000000,
+                60000000000,
+                55000000000,
+                50000000000,
+                44000000000,
+                39000000000,
+                36000000000
+              ],
+              "depreciation": [
+                8000000000,
+                12000000000,
+                17000000000,
+                22000000000,
+                26000000000,
+                29000000000,
+                32000000000,
+                35000000000,
+                37000000000,
+                38000000000
+              ],
+              "workingCapitalChange": [
+                1000000000,
+                1800000000,
+                2500000000,
+                2500000000,
+                2200000000,
+                1800000000,
+                1500000000,
+                1200000000,
+                1000000000,
+                600000000
+              ]
+            }
+          },
+          "terminalGrowth": 0.03,
+          "terminalRoic": 0.15,
+          "terminalOperatingMargin": 0.35
+        },
+        "assumptions": {
+          "revenue": {
+            "rationale": "Bull revenue grows 22-25% early and 7% at year 10 as RPO conversion accelerates and Oracle wins incremental AI capacity business; Q2 IaaS +68% and RPO +438% show the demand is possible.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "eaf730fd76a"
+            ]
+          },
+          "margin": {
+            "rationale": "Scale, software mix and pricing lift operating margin to 35%, above the 30.3% TTM level, as depreciation is absorbed and SBC growth slows; this is the explicit normalization basis for the above-history margin.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "eaf730fd76a"
+            ]
+          },
+          "capex": {
+            "rationale": "Bull reinvests at least as much as base: capex is $52-62B early and still $36B at year 10, reflecting the extra data-center capacity required for faster RPO conversion.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "ed9cb5f8ada"
+            ]
+          }
+        }
+      }
+    },
+    "fairValueBasis": {
+      "status": "available",
+      "kind": "normal_cases",
+      "lower": {
+        "narrative": "Lower normal case: ordinary demand and execution uncertainty slows RPO conversion but does not cancel it. Revenue grows 14-15% early and 5% at year 10; operating margin is 29-31%; capex is $44-47B early and $29B at year 10. Terminal growth is 2.75% and ROIC 11.5%, above WACC but below base.",
+        "triggers": [
+          "RPO conversion slower by one or two quarters",
+          "Cloud growth in the high-20s rather than above 30%",
+          "Capex peak near $47B",
+          "Operating margin around 29-31%"
+        ],
+        "invalidation": [
+          "RPO conversion accelerates to base or bull pace",
+          "Margin expands above 32% before year 5"
+        ],
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec",
+          "ed9cb5f8ada"
+        ],
+        "drivers": {
+          "modelType": "fcff",
+          "revenue0": 61016000000,
+          "path": {
+            "revenueGrowth": [
+              0.14,
+              0.15,
+              0.15,
+              0.14,
+              0.12,
+              0.1,
+              0.08,
+              0.07,
+              0.06,
+              0.05
+            ],
+            "operatingMargin": [
+              0.29,
+              0.29,
+              0.295,
+              0.3,
+              0.305,
+              0.31,
+              0.31,
+              0.31,
+              0.31,
+              0.31
+            ],
+            "taxRate": [
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15
+            ],
+            "capitalPlan": {
+              "capex": [
+                44000000000,
+                46000000000,
+                47000000000,
+                46000000000,
+                44000000000,
+                40000000000,
+                36000000000,
+                33000000000,
+                30000000000,
+                29000000000
+              ],
+              "depreciation": [
+                8000000000,
+                11000000000,
+                14000000000,
+                17000000000,
+                20000000000,
+                22000000000,
+                24000000000,
+                26000000000,
+                27000000000,
+                28000000000
+              ],
+              "workingCapitalChange": [
+                1000000000,
+                1200000000,
+                1500000000,
+                1500000000,
+                1300000000,
+                1100000000,
+                900000000,
+                700000000,
+                500000000,
+                400000000
+              ]
+            }
+          },
+          "terminalGrowth": 0.0275,
+          "terminalRoic": 0.115,
+          "terminalOperatingMargin": 0.31
+        },
+        "assumptions": {
+          "revenue": {
+            "rationale": "Lower normal revenue assumes slower but not cancelled RPO conversion, with 14-15% early growth fading to 5%; this is ordinary timing uncertainty around the $523B schedule.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "ed9cb5f8ada"
+            ]
+          },
+          "margin": {
+            "rationale": "Lower normal margin assumes less cloud utilization and pricing, holding operating margin at 29-31% rather than the base expansion to 33%.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "e9b4626fdec"
+            ]
+          },
+          "capex": {
+            "rationale": "Lower normal capex peaks near $47B and falls to $29B, reflecting ordinary build slippage rather than cancellation.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "ed9cb5f8ada"
+            ]
+          }
+        }
+      },
+      "upper": {
+        "narrative": "Upper normal case: ordinary upside in RPO conversion and cloud share gains. Revenue grows 20-23% early and 7% at year 10; operating margin rises from 30.5% to 33.5%; capex is $50-58B early and $34B at year 10. Terminal growth is 3% and ROIC 14%. This is not the bull tail: it assumes solid execution and better scale, not a step-change in contract wins.",
+        "triggers": [
+          "RPO conversion at or above schedule",
+          "IaaS growth above 60% for several quarters",
+          "Operating margin reaches 32% by year 5",
+          "Capex peak near $58B with matching revenue"
+        ],
+        "invalidation": [
+          "RPO conversion slips or cloud growth falls below 25%",
+          "Margin stalls below 31%",
+          "Capex exceeds $62B without revenue"
+        ],
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec",
+          "ed9cb5f8ada"
+        ],
+        "drivers": {
+          "modelType": "fcff",
+          "revenue0": 61016000000,
+          "path": {
+            "revenueGrowth": [
+              0.2,
+              0.23,
+              0.23,
+              0.21,
+              0.19,
+              0.16,
+              0.13,
+              0.11,
+              0.09,
+              0.07
+            ],
+            "operatingMargin": [
+              0.305,
+              0.31,
+              0.315,
+              0.32,
+              0.325,
+              0.33,
+              0.335,
+              0.335,
+              0.335,
+              0.335
+            ],
+            "taxRate": [
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15,
+              0.15
+            ],
+            "capitalPlan": {
+              "capex": [
+                50000000000,
+                55000000000,
+                58000000000,
+                58000000000,
+                56000000000,
+                51000000000,
+                46000000000,
+                41000000000,
+                37000000000,
+                34000000000
+              ],
+              "depreciation": [
+                8000000000,
+                12000000000,
+                16000000000,
+                20000000000,
+                24000000000,
+                27000000000,
+                30000000000,
+                32000000000,
+                34000000000,
+                35000000000
+              ],
+              "workingCapitalChange": [
+                1000000000,
+                1800000000,
+                2500000000,
+                2500000000,
+                2200000000,
+                1800000000,
+                1500000000,
+                1200000000,
+                1000000000,
+                600000000
+              ]
+            }
+          },
+          "terminalGrowth": 0.03,
+          "terminalRoic": 0.14,
+          "terminalOperatingMargin": 0.335
+        },
+        "assumptions": {
+          "revenue": {
+            "rationale": "Upper normal revenue assumes on-schedule RPO conversion and cloud share gains, with 20-23% early growth fading to 7%; Q2 cloud +34% and IaaS +68% support the demand side.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "eaf730fd76a"
+            ]
+          },
+          "margin": {
+            "rationale": "Upper normal margin rises from 30.5% to 33.5% on cloud scale and software mix, above TTM but below the bull 35%; this is ordinary operating leverage, not a new pricing regime.",
+            "evidenceIds": [
+              "e43b23fe068",
+              "eaf730fd76a"
+            ]
+          },
+          "capex": {
+            "rationale": "Upper normal capex is $50-58B early and $34B at year 10, higher than base to support faster conversion but below bull's $62B peak.",
+            "evidenceIds": [
+              "e9b4626fdec",
+              "ed9cb5f8ada"
+            ]
+          }
+        }
+      },
+      "rationale": "The normal range is set by ordinary uncertainty in RPO conversion timing, cloud utilization, depreciation and capital spending, not by the bear/bull tails. Lower assumes slower conversion, 29-31% margins and $47B peak capex; upper assumes on-schedule conversion, 30.5-33.5% margins and $58B peak capex. Both use the same FCFF model, 10-year horizon, WACC, bridge, shares and method weights, with the base as the central case.",
+      "evidenceIds": [
+        "e43b23fe068",
+        "e9b4626fdec",
+        "ed9cb5f8ada",
+        "eaf730fd76a"
+      ]
+    },
+    "midYear": true,
+    "forwardYears": 3,
+    "methodWeights": {
+      "dcf": {
+        "weight": 0.6,
+        "rationale": "DCF is primary because ORCL is in a build phase: TTM capex is $35.5B versus $7.1B D&A and FCF is -$13.2B, so only a multi-year FCFF path captures the capex hump and the conversion of $523B RPO. Terminal value is sensitive to capex and margin, so DCF is weighted 60%, not more.",
+        "evidenceIds": [
+          "e9b4626fdec",
+          "e43b23fe068"
+        ]
+      },
+      "ev_ebitda_forward": {
+        "weight": 0.25,
+        "rationale": "Forward EV/EBITDA applies the peers' trailing median 19.3x to year-3 EBITDA and checks how the market prices scaled cloud growth after the build. It carries terminal economics but peers have different capex intensity, so weight is 25%.",
+        "evidenceIds": [
+          "e43b23fe068"
+        ]
+      },
+      "pe_forward": {
+        "weight": 0.15,
+        "rationale": "Forward P/E applies the peers' trailing median 31.6x to year-3 core EPS and checks equity earnings after interest and tax. It is weighted 15% because EPS can be distorted by SBC and depreciation during the build.",
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec"
+        ]
+      }
+    },
+    "scenarioProbabilities": {
+      "bear": {
+        "probability": 0.25,
+        "rationale": "RPO concentration and capex/financing risk make a delayed-conversion path plausible; TTM FCF is negative and net debt is $112.5B.",
+        "evidenceIds": [
+          "e9b4626fdec",
+          "ed9cb5f8ada"
+        ]
+      },
+      "base": {
+        "probability": 0.5,
+        "rationale": "Base is the central path: RPO supports strong growth but heavy capex delays free cash flow; Q2 cloud and IaaS momentum is real.",
+        "evidenceIds": [
+          "e43b23fe068",
+          "e9b4626fdec"
+        ]
+      },
+      "management": {
+        "probability": 0,
+        "rationale": "no target set",
+        "evidenceIds": []
+      },
+      "bull": {
+        "probability": 0.25,
+        "rationale": "Upside requires faster RPO conversion and margin scale; Q2 IaaS +68% and RPO +438% show it is possible but not assured.",
+        "evidenceIds": [
+          "e43b23fe068"
+        ]
+      }
+    },
+    "managementComparison": null,
+    "consensus": {
+      "status": "unavailable",
+      "reason": "No registered sell-side consensus target or analyst page was present in the frozen evidence set."
+    }
+  },
+  "input": {
+    "ticker": "ORCL",
+    "cik": null,
+    "companyName": "ORCL",
+    "currency": "USD",
+    "financialPeriodEnd": "2025-11-30",
+    "incomeModel": "operating",
+    "facts": [
+      {
+        "id": "revenue_ttm",
+        "label": "revenue ttm",
+        "value": 61016000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "operating_income_ttm",
+        "label": "operating income ttm",
+        "value": 18475000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "net_income_ttm",
+        "label": "net income ttm",
+        "value": 15425000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "common_earnings_ttm",
+        "label": "common earnings ttm",
+        "value": 15425000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "cfo_ttm",
+        "label": "cfo ttm",
+        "value": 22296000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "capex_ttm",
+        "label": "capex ttm",
+        "value": 35477000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "depreciation_ttm",
+        "label": "depreciation ttm",
+        "value": 5210000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "amortization_ttm",
+        "label": "amortization ttm",
+        "value": 1918000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "sbc_ttm",
+        "label": "sbc ttm",
+        "value": 4778000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "interest_expense_ttm",
+        "label": "interest expense ttm",
+        "value": 3850000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "income_tax_ttm",
+        "label": "income tax ttm",
+        "value": 1944000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "dividends_ttm",
+        "label": "dividends ttm",
+        "value": 5370000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "buybacks_ttm",
+        "label": "buybacks ttm",
+        "value": 395000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "prior fiscal year + current YTD - prior comparable YTD",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "cash",
+        "label": "cash",
+        "value": 19241000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "investments",
+        "label": "investments",
+        "value": 525000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "debt_current",
+        "label": "debt current",
+        "value": 8091000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "debt_noncurrent",
+        "label": "debt noncurrent",
+        "value": 99984000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "operating_leases",
+        "label": "operating leases",
+        "value": 18679000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "finance_leases",
+        "label": "finance leases",
+        "value": 4976000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "equity",
+        "label": "equity",
+        "value": 29951000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "total_assets",
+        "label": "total assets",
+        "value": 204984000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "rpo_total",
+        "label": "rpo total",
+        "value": 523300000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "preferred_stock",
+        "label": "preferred stock",
+        "value": 0,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "minority_interest",
+        "label": "minority interest",
+        "value": 506000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "shares_outstanding",
+        "label": "shares outstanding",
+        "value": 2873000000,
+        "unit": "shares",
+        "currency": null,
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "shares_diluted_weighted",
+        "label": "shares diluted weighted",
+        "value": 2922000000,
+        "unit": "shares",
+        "currency": null,
+        "periodType": "quarter",
+        "periodStart": "2025-09-01",
+        "periodEnd": "2025-11-30",
+        "basis": "reported",
+        "formula": null,
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "da_ttm",
+        "label": "da ttm",
+        "value": 7128000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "depreciation_ttm + amortization_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "debt",
+        "label": "debt",
+        "value": 108075000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "debt_current + debt_noncurrent",
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "leases",
+        "label": "leases",
+        "value": 23655000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "operating_leases + finance_leases",
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "pretax_income_ttm",
+        "label": "pretax income ttm",
+        "value": 17369000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "net_income_ttm + income_tax_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "effective_tax_rate_ttm",
+        "label": "effective tax rate ttm",
+        "value": 0.11192354194254131,
+        "unit": "ratio",
+        "currency": null,
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "income_tax_ttm / pretax_income_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "nopat_ttm",
+        "label": "nopat ttm",
+        "value": 16407212562.61155,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "operating_income_ttm * (1 - effective_tax_rate_ttm)",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "invested_capital",
+        "label": "invested capital",
+        "value": 141915000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "debt + leases + equity - cash - investments",
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "operating_margin_ttm",
+        "label": "operating margin ttm",
+        "value": 0.30278943228005767,
+        "unit": "ratio",
+        "currency": null,
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "operating_income_ttm / revenue_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "fcf_ttm",
+        "label": "fcf ttm",
+        "value": -13181000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "cfo_ttm - capex_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "ebitda_ttm",
+        "label": "ebitda ttm",
+        "value": 25603000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "ttm",
+        "periodStart": "2024-12-01",
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "operating_income_ttm + da_ttm",
+        "sourceRefs": [
+          "ORCL-0000950170-25-087926",
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "net_debt",
+        "label": "net debt",
+        "value": 112489000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "debt + leases - cash",
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": null
+      },
+      {
+        "id": "valuation_net_claims",
+        "label": "valuation net claims",
+        "value": 93791000000,
+        "unit": "USD",
+        "currency": "USD",
+        "periodType": "instant",
+        "periodStart": null,
+        "periodEnd": "2025-11-30",
+        "basis": "derived",
+        "formula": "debt + finance_leases + preferred_stock + minority_interest - cash - investments",
+        "sourceRefs": [
+          "ORCL-0001193125-25-315925"
+        ],
+        "rationale": "Operating leases remain expenses in forecast EBIT/FCF; their liabilities are excluded from the valuation bridge. Reported financing leases and known senior claims are retained."
+      }
+    ],
+    "distributions": [],
+    "diagnostics": [
+      {
+        "key": "capexToDa",
+        "label": "Capex / depreciation and amortization",
+        "value": 4.9771324354657684,
+        "unit": "x",
+        "periodEnd": "2025-11-30",
+        "note": null
+      }
+    ],
+    "documents": [],
+    "guidance": null,
+    "transcripts": [],
+    "missing": [],
+    "fingerprint": "46867b80a0faa687e00fb32739e3d79cff5deb7d3aed493cd144cab780f4c820",
+    "rpo": null,
+    "lifecycle": "build",
+    "peers": [
+      {
+        "ticker": "MSFT",
+        "periodEnd": "2025-09-30",
+        "ebitda": 166437000000,
+        "coreEarnings": 104912000000,
+        "netDebt": -4370000000,
+        "shares": 7434000000,
+        "weight": 1
+      },
+      {
+        "ticker": "AMZN",
+        "periodEnd": "2025-09-30",
+        "ebitda": 138117000000,
+        "coreEarnings": 76482000000,
+        "netDebt": -27473000000,
+        "shares": 10687000000,
+        "weight": 1
+      },
+      {
+        "ticker": "GOOGL",
+        "periodEnd": "2025-09-30",
+        "ebitda": null,
+        "coreEarnings": 124251000000,
+        "netDebt": -69506000000,
+        "shares": 12077000000,
+        "weight": 1
+      },
+      {
+        "ticker": "META",
+        "periodEnd": "2025-09-30",
+        "ebitda": 99560000000,
+        "coreEarnings": 58528000000,
+        "netDebt": null,
+        "shares": null,
+        "weight": 1
+      }
+    ],
+    "peerBasis": "curated",
+    "peerNotes": [
+      "No vintage sell-side consensus is available. Peer multiples use point-in-time trailing GAAP financials, not forward consensus.",
+      "Earnings-call transcript not available in the archive; only verified official releases and filings are supplied.",
+      "The model uses today's code and model on reconstructed historical public information, not a forecast actually issued at the cutoff.",
+      "No numerical annual guidance in this quarter's official release; the latest full management plan has not been independently reconstructed. Do not fill it from later quarters.",
+      "Lease basis: operating lease expenses stay in EBIT/FCF, while net valuation claims include financing leases only. Original net_debt retains its historical all-lease definition; use valuation_net_claims for this valuation basis."
+    ],
+    "management": null,
+    "managementNotes": [
+      "No eligible management target set in this frozen snapshot."
+    ],
+    "trailingQuarters": []
+  },
+  "market": {
+    "quote": {
+      "price": 189.97000122070312,
+      "priceDate": "2025-12-12",
+      "sourceId": "market-ORCL",
+      "currency": "USD",
+      "source": "market-ORCL",
+      "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/ORCL",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "usable": true,
+      "limitations": []
+    },
+    "riskFree": {
+      "value": 0.04193999767303467,
+      "date": "2025-12-12",
+      "sourceId": "market-^TNX",
+      "label": "Frozen USD 10-year Treasury yield",
+      "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/^TNX"
+    },
+    "beta": {
+      "beta": 1.5613343930691512,
+      "observations": 104,
+      "from": "2023-12-15",
+      "to": "2025-12-12",
+      "index": "S&P 500",
+      "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/ORCL"
+    },
+    "peerMultiples": {
+      "peers": [
+        "MSFT",
+        "AMZN",
+        "GOOGL"
+      ],
+      "asOf": "2025-12-12",
+      "evToEbitda": {
+        "p25": 18.31403464428245,
+        "median": 19.325206092207402,
+        "p75": 20.33637754013235,
+        "count": 2
+      },
+      "peRatio": {
+        "p25": 30.834265085618505,
+        "median": 31.606032217924593,
+        "p75": 32.757187275870244,
+        "count": 3
+      },
+      "notes": [
+        "META: no quote or share count"
+      ],
+      "weights": {
+        "MSFT": 0.3333333333333333,
+        "AMZN": 0.3333333333333333,
+        "GOOGL": 0.3333333333333333
+      },
+      "basis": "curated"
+    },
+    "multipleHistory": null
+  },
+  "evidence": [
+    {
+      "evidenceId": "e43b23fe068",
+      "kind": "web",
+      "title": "0001193125-25-314207-release",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525314207/orcl-ex99_1.htm",
+      "documentId": null,
+      "passageId": null,
+      "form": "original source",
+      "publishedAt": "2025-12-10T23:59:59Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "rah Hellinger Oracle Investor Relations Oracle Corporate Communications 1.650.607.0349 1.212.508.7935 ken.bond@oracle.com deborah.hellinger@oracle.com Oracle Announces Fiscal Year 2026 Second Quarter Financial Results • Q2 Remaining Performance Obligations $523 billion, up 438% in USD • Q2 GAAP Earnings per Share up 91% to $2.10, Non-GAAP Earnings per Share up 54% to $2.26 • Q2 Total Revenue $16.1 billion, up 14% in USD and up 13% in constant currency • Q2 Cloud Revenue (IaaS plus SaaS) $8.0 billion, up 34% in USD and up 33% in constant currency • Q2 Cloud Infrastructure (IaaS) Revenue $4.1 billion, up 68% in USD and up 66% in constant currency • Q2 Cloud Application (SaaS) Revenue $3.9 billion, up 11% in both USD and constant currency • Q2 Fusion Cloud ERP (SaaS) Revenue $1.1 billion, up 18% in USD and up 17% in constant currency • Q2 NetSuite Cloud ERP (SaaS) Revenue $1.0 billion, up 13% in both USD and constant currency AUSTIN, Texas, December 10, 2025 -- Oracle Corporation (NYSE: ORCL) today announced fiscal 2026 Q2 results. Total Remaining Performance Obligations were up 438% year-over-year in USD to $523 billion. Total quarterly revenues were up 14% in USD, and up 13% in constant currency to $16.1 billion. Cloud revenues were up 34% in USD, and up 33% in constant currency to $8.0 billion. Software revenues were down 3% in USD, and down 5% in constant currency to $5.9 billion. Q2 GAAP operating income was $4.7 billion. Non-GAAP operating income was $6.7 billion, up 10% y",
+      "contentSha256": "7be6f08ac08b24bfc160a364f841c8625b0888580835f8b6fb11ab261e04615c",
+      "path": "Frozen original › offset 100"
+    },
+    {
+      "evidenceId": "e82d3dddf6a",
+      "kind": "web",
+      "title": "0001193125-25-314207-release",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525314207/orcl-ex99_1.htm",
+      "documentId": null,
+      "passageId": null,
+      "form": "original source",
+      "publishedAt": "2025-12-10T23:59:59Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "idend of $0.50 per share of outstanding common stock. This dividend will be paid to stockholders of record as of the close of business on January 9, 2026, with a payment date of January 23, 2026. • A sample list of customers which purchased Oracle Cloud services during the quarter will be available at www.oracle.com/customers/earnings/. • A list of recent technical innovations and announcements is available at www.oracle.com/news/. • To learn what industry analysts have been saying about Oracle’s products and services see www.oracle.com/corporate/analyst-reports/. Earnings Conference Call and Webcast Oracle will hold a conference call and webcast today to discuss these results at 4:00 p.m. Central. A live and replay webcast will be available on the Oracle Investor Relations website at www.oracle.com/investor/. About Oracle Oracle offers integrated suites of applications plus secure, autonomous infrastructure in the Oracle Cloud. For more information about Oracle (NYSE: ORCL), please visit us at www.oracle.com. # # # Trademarks Oracle, Java, MySQL, and NetSuite are registered trademarks of Oracle Corporation. NetSuite was the first cloud company—ushering in the new era of cloud computing. \"Safe Harbor\" Statement: Statements in this press release relating to future plans, expectations, beliefs, intentions and prospects, including our plans to maintain chip neutrality, our ability to build and run high-performance and cost-efficient cloud datacenters and increase buildout of add",
+      "contentSha256": "a388709507f465c8160e3114751ba7ea75fbd7424c4d7f62a5120e5c95e303fe",
+      "path": "Frozen original › offset 5100"
+    },
+    {
+      "evidenceId": "e9b4626fdec",
+      "kind": "sec",
+      "title": "Latest complete filing: selected debt, capex, RPO and financing passages",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525315925/orcl-20251130.htm",
+      "documentId": "0001193125-25-315925-filing",
+      "passageId": "0001193125-25-315925-filing:25500",
+      "form": "SEC filing",
+      "publishedAt": "2025-12-11T21:07:47.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "rities and other investments ( 634 ) ( 636 ) Proceeds from sales and maturities of marketable securities and other investments 4,737 356 Capital expenditures ( 20,535 ) ( 6,273 ) Net cash used for investing activities ( 16,432 ) ( 6,553 ) Cash flows from financing activities: Payments for repurchases of common stock ( 95 ) ( 300 ) Proceeds from issuances of common stock 1,308 307 Shares repurchased for tax withholdings upon vesting of restricted stock-based awards ( 109 ) ( 898 ) Payments of dividends to stockholders ( 2,848 ) ( 2,221 ) Proceeds from (repayments of) commercial paper and other short-term financing, net 886 ( 396 ) Proceeds from issuances of senior notes and term loan credit agreements, net of issuance costs 17,880 11,837 Repayments of senior notes, term loan credit agreements and other borrowings ( 2,122 ) ( 9,700 ) Other financing activities, net ( 203 ) ( 276 ) Net cash provided by (used for) financing activities 14,697 ( 1,647 ) Effect of exchange rate changes on cash and cash equivalents ( 16 ) ( 44 ) Net increase in cash and cash equivalents 8,455 487 Cash and cash equivalents at beginning of period 10,786 10,454 Cash and cash equivalents at end of period $ 19,241 $ 10,941 Non-cash investing activities: Unpaid capital expenditures $ 6,849 $ 2,086 See notes to condensed consolidated financial statements. 5 Table of Contents ORACLE CORPORATION NOTES TO CONDENSED CONSOLID ATED FINANCIAL STATEMENTS November 30, 2025 (Unaudited) 1. BASIS OF PRESENTATION, RECEN",
+      "contentSha256": "7dee2e5206de5f4ffaee7c820dbdc9e0096093e316c231a9535414e2b14243bb",
+      "path": "Frozen original › offset 25500"
+    },
+    {
+      "evidenceId": "e2c0ab9f268",
+      "kind": "sec",
+      "title": "Latest complete filing: selected debt, capex, RPO and financing passages",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525315925/orcl-20251130.htm",
+      "documentId": "0001193125-25-315925-filing",
+      "passageId": "0001193125-25-315925-filing:140500",
+      "form": "SEC filing",
+      "publishedAt": "2025-12-11T21:07:47.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "dit agreement that we entered into in fiscal 2023, which resulted in no net impact on financing cash flows for the period reported. Free cash flow : To supplement our statements of cash flows presented on a GAAP basis, we use non-GAAP measures of cash flows on a trailing four-quarter basis to analyze cash flows generated from our operations. We believe that free cash flow is also useful as one of the bases for comparing our performance with that of our competitors. The presentation of non-GAAP free cash flow is not meant to be considered in isolation or as an 35 Table of Contents alternative to net income as an indicator of our performance, or as an alternative to cash flows from operating activities as a measure of liquidity. We calculate free cash flow as follows: Trailing Four-Quarters Ended November 30, (Dollars in millions) 2025 Change 2024 Net cash provided by operating activities $ 22,296 10% $ 20,287 Capital expenditures (35,477 ) 230% (10,745 ) Free cash flow $ (13,181 ) * $ 9,542 Net income $ 15,425 $ 11,624 Net cash provided by operating activities as a percent of net income 145% 175% Free cash flow as percent of net income -85% 82% * Not meaningful Recent Financing Activities : Senior Notes : In September 2025, we issued $18.0 billion par value of fixed-rate senior notes comprising the following: • $3.0 billion of 4.45% senior notes due September 2030; • $3.0 billion of 4.80% senior notes due September 2032; • $4.0 billion of 5.20% senior notes due September 2035;",
+      "contentSha256": "7af01603594e9bb20860ec94d3ba13ff49a46b8e5fe985e21d5ad10a9019eeb5",
+      "path": "Frozen original › offset 140500"
+    },
+    {
+      "evidenceId": "ed9cb5f8ada",
+      "kind": "sec",
+      "title": "Latest complete filing: selected debt, capex, RPO and financing passages",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525315925/orcl-20251130.htm",
+      "documentId": "0001193125-25-315925-filing",
+      "passageId": "0001193125-25-315925-filing:49000",
+      "form": "SEC filing",
+      "publishedAt": "2025-12-11T21:07:47.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "onal lease commitments, substantially all related to data centers and cloud capacity arrangements, that are generally expected to commence between the third quarter of fiscal 2026 a nd fiscal 2028 and for terms of fifteen to nineteen years that were not reflected on our condensed consolidated balance sheets as of November 30, 2025. Unconditional Obligations In the ordinary course of business, we enter into certain unconditional purchase obligations with our suppliers. These are agreements that are enforceable and legally binding and specify terms, including: fixed or minimum quantities 12 Table of Contents ORACLE CORPORATION NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS—(Continued) November 30, 2025 (Unaudited) to be purchased; fixed, minimum or variable price provisions; and the approximate timing of the payment. As of November 30, 2025, our unconditional purchase and certain other obligations, which were primarily related to cloud capacity arrangements, were $ 10 billion. This amount excludes certain routine arrangements that are entered into in the ordinary course of business, as they are generally entered into in order to secure pricing or other negotiated terms and are difficult to quantify in a meaningful way or are for terms of less than one year. 7. STOCKHOLDERS’ EQUITY Common Stock Repurchases Our Board of Directors (the Board) has approved a program for us to repurchase shares of our common stock. As of November 30, 2025 , approximately $ 6.3 billion remained",
+      "contentSha256": "604b6ca737694aa3fe4174117e4b93ede0c61ef50cd311c121c61743170d9f8f",
+      "path": "Frozen original › offset 49000"
+    },
+    {
+      "evidenceId": "eaf730fd76a",
+      "kind": "sec",
+      "title": "Latest complete filing: selected debt, capex, RPO and financing passages",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525315925/orcl-20251130.htm",
+      "documentId": "0001193125-25-315925-filing",
+      "passageId": "0001193125-25-315925-filing:47200",
+      "form": "SEC filing",
+      "publishedAt": "2025-12-11T21:07:47.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "es generally being recognized ratably or based upon customer usage over the respective contractual periods. Deferred services revenues include prepayments for our services business and revenues for these services are generally recognized as the services are performed. 11 Table of Contents ORACLE CORPORATION NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS—(Continued) November 30, 2025 (Unaudited) 6. LEASES AND OTHER COMMITMENTS Leases We have operating and finance leases that primarily relate to certain of our data centers and facilities. The components of lease expense were as follows: Three Months Ended November 30, Six Months Ended November 30, (in millions) 2025 2024 2025 2024 Operating lease cost $ 632 $ 408 $ 1,207 $ 770 Finance lease cost: Amortization of ROU assets $ 75 $ — $ 134 $ — Interest on lease liabilities 59 — 107 — Total finance lease cost $ 134 $ — $ 241 $ — Supplemental balance sheet information related to leases was as follows: (in millions) November 30, 2025 May 31, 2025 Operating leases: Operating lease ROU assets $ 18,393 $ 13,145 Operating lease liabilities: Operating lease liabilities, current $ 2,368 $ 1,914 Operating lease liabilities, non-current 16,311 11,536 Total operating lease liabilities $ 18,679 $ 13,450 Finance leases: Finance lease ROU assets $ 4,875 $ 2,874 Finance lease liabilities: Finance lease liabilities, current $ 400 $ 257 Finance lease liabilities, non-current 4,576 2,677 Total finance lease liabilities $ 4,976 $ 2,934 Supplem",
+      "contentSha256": "db4dca4933c5faedd5f08b296b07e9e2dea87130b6bc51d15089dc15e8634e4c",
+      "path": "Frozen original › offset 47200"
+    },
+    {
+      "evidenceId": "e837781be0c",
+      "kind": "web",
+      "title": "0001193125-25-199175-release",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525199175/orcl-ex99_1.htm",
+      "documentId": null,
+      "passageId": null,
+      "form": "original source",
+      "publishedAt": "2025-09-09T23:59:59Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "and up 6% in constant currency. Q1 GAAP earnings per share was $1.01, down 2% in USD and down 5% in constant currency. Non-GAAP earnings per share was $1.47, up 6% in USD and up 4% in constant currency. Short-term deferred revenues were $12.1 billion. Over the last twelve months, operating cash flow was $21.5 billion, up 13% in USD. “We signed four multi-billion-dollar contracts with three different customers in Q1,” said Oracle CEO, Safra Catz. “This resulted in RPO contract backlog increasing 359% to $455 billion. It was an astonishing quarter—and demand for Oracle Cloud Infrastructure continues to build. Over the next few months, we expect to sign-up several additional multi-billion-dollar customers and RPO is likely to exceed half-a-trillion dollars. The scale of our recent RPO growth enables us to make a large upward revision to the Cloud Infrastructure portion of Oracle’s overall financial plan which we will be presenting in detail next month at the Financial Analyst Meeting. As a bit of a preview, we expect Oracle Cloud Infrastructure revenue to grow 77% to $18 billion this fiscal year—and then increase to $32 billion, $73 billion, $114 billion, and $144 billion over the subsequent four years. Most of the revenue in this 5-year forecast is already booked in our reported RPO. Oracle is off to a brilliant start to FY26.” “MultiCloud database revenue from Amazon, Google and Microsoft grew at the incredible rate of 1,529% in Q1,” said Oracle Chairman and CTO, Larry Ellison",
+      "contentSha256": "4b6f7429151250a8f83dd9b1db41f135946db9e3735e11281d352fac45cc790a",
+      "path": "Frozen original › offset 1800"
+    },
+    {
+      "evidenceId": "e8cc1d6ca0d",
+      "kind": "sec",
+      "title": "Latest available 10-K, period ended 2025-05-31 (full original filing text)",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000095017025087926/orcl-20250531.htm",
+      "documentId": "0000950170-25-087926-filing",
+      "passageId": "0000950170-25-087926-filing:176300",
+      "form": "SEC filing",
+      "publishedAt": "2025-06-18T20:31:22.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "ntrols could result in liability, limit our ability to sell products and services, directly or indirectly, to the DoD and other federal and state government entities that implement similar cybersecurity requirements and adversely affect our reputation and sales. We are also subject to early termination of our contracts. Many governmental entities have the right to terminate contracts at any time for a variety of reasons, including without cause. For example, the U.S. federal government may terminate any of our government contracts and subcontracts at its convenience, or for default based on our performance. U.S. federal, state and local government and foreign government contracts are generally subject to government funding authorizations/appropriations. Contracts may also be terminated due to a lack of government funds. There is increased pressure on governments and their agencies, both domestically and internationally, to reduce spending as governments continue to face significant deficit reduction pressures. This may adversely impact spending on government programs and result in termination of government contracts, delays in contract awards and pausing of payments during cost efficiency reviews. In addition, an extended federal government shutdown in the U.S. could cause delays in approvals and decision making, which could negatively impact our results of operations. Government contracts laws and regulations impose certain risks, and certain of our government contracts and ",
+      "contentSha256": "aa9ac17ea94b9c53dbec26972a17a281693e07aa8ec8b4423fa7738f5f2d90ed",
+      "path": "Frozen original › offset 176300"
+    },
+    {
+      "evidenceId": "e9f831f75b3",
+      "kind": "sec",
+      "title": "Latest available 10-K, period ended 2025-05-31 (full original filing text)",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000095017025087926/orcl-20250531.htm",
+      "documentId": "0000950170-25-087926-filing",
+      "passageId": "0000950170-25-087926-filing:264000",
+      "form": "SEC filing",
+      "publishedAt": "2025-06-18T20:31:22.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": " laws and regulations, by adverse rulings in tax-related litigation, or by shortfalls in stock-based compensation realized by employees relative to stock-based compensation that was recorded for book purposes, among others. Year Ended May 31, Percent Change (Dollars in millions) 2025 Actual Constant 2024 Provision for income taxes $ 1,717 35% 36% $ 1,274 Effective tax rate 12.1% 10.9% Provision for income taxes increased in fiscal 2025 relative to fiscal 2024 primarily due to an unfavorable jurisdictional mix of earnings of $380 million, the absence of the realization of a one-time tax attribute of $238 million, higher income before provision for income taxes of $195 million and the absence of the revaluation benefit of net deferred tax assets due to a change in tax rate of $105 million, partially offset by a combination of the absence of changes in unrecognized tax benefits of $233 million and an increase in tax benefits related to stock-based compensation of $223 million. Liquidity and Capital Resources As of May 31, (Dollars in millions) 2025 Change 2024 Working capital $ (8,064 ) -10% $ (8,990 ) Cash, cash equivalents and marketable securities $ 11,203 5% $ 10,661 Working capital : The increase in working capital as of May 31, 2025 in comparison to May 31, 2024 was primarily due to favorable impacts from net income and proceeds from the issuance of senior notes, net of issuance costs, of $13.9 billion (refer to Note 6 of Notes to Consolidated Financial Statements included",
+      "contentSha256": "70d4e602f9a6dff878876d6e31fc6e7f7130ef4d92c31a19cf8a0710dfb3f5d7",
+      "path": "Frozen original › offset 264000"
+    },
+    {
+      "evidenceId": "e3152b99f67",
+      "kind": "sec",
+      "title": "Latest complete filing: selected debt, capex, RPO and financing passages",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525315925/orcl-20251130.htm",
+      "documentId": "0001193125-25-315925-filing",
+      "passageId": "0001193125-25-315925-filing:42000",
+      "form": "SEC filing",
+      "publishedAt": "2025-12-11T21:07:47.000Z",
+      "fetchedAt": "2026-11-02T18:24:02.447Z",
+      "excerpt": "00 5.25 % $ 2,500 , 5.875 %, due September 2045 2,500 5.91 % $ 3,500, 5.95 %, due September 2055 3,500 6.05 % $ 2,000 , 6.10 %, due September 2065 2,000 6.17 % Total fixed-rate senior notes $ 18,000 Unamortized discount/issuance costs ( 118 ) Total fixed-rate senior notes, net $ 17,882 We issued the senior notes for general corporate purposes, which may include capital expenditures, repayment of indebtedness, future investments or acquisitions and payment of cash dividends on or repurchases of our common stock. The interest is payable semi-annually. We may redeem some or all of the senior notes of each series prior to their maturity, subject to certain restrictions and the payment of an applicable make-whole premium in certain instances. The senior notes rank pari passu with any other existing and future unsecured and unsubordinated indebtedness of Oracle. All existing and future indebtedness and liabilities of the subsidiaries of Oracle are or will be effectively senior to the senior notes. We were in compliance with all senior notes-related covenants as of November 30, 2025. The other terms and conditions of the senior notes are set forth in, and the foregoing description of the senior notes is qualified in its entirety by reference to, the Officers’ Certificate filed herewith as Exhibit 4.01 and incorporated by reference herein. There have been no other significant changes in our notes payable or other borrowing arrangements that were disclosed in our Annual Report on Form",
+      "contentSha256": "e72d05de09eee581b16b1c37a9a24e10d6606429f13f94e2e8d2cce8d237d598",
+      "path": "Frozen original › offset 42000"
+    }
+  ]
+}

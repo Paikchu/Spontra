@@ -1,4 +1,5 @@
 import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
+import { edgarArchiveCik } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import type { BusinessFlowQuarter, PublicBusinessFlow } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { PublicCapitalStructure } from '../../../../shared/analysis-contract/capital-structure.ts';
 import { checkCompleteQuarter } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -86,11 +87,10 @@ export function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 2);
   const candidates = audits.filter(r => {
     try {
-      const url = new URL(r.source.documentUrl), cik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d+)\//)?.[1];
+      const cik = edgarArchiveCik(r.source.documentUrl);
       return r.rawKey?.startsWith('financial-disclosures/') && r.sourceBytes > 0 && r.sourceBytes <= SEC_DOCUMENT_MAX_BYTES
         && /^10-[QK](?:\/A)?$|^[86]-K$/.test(r.source.form) && /^\d{10}-\d{2}-\d{6}$/.test(r.source.accessionNumber)
-        && Date.parse(r.source.filedAt) > cutoff.getTime() && url.protocol === 'https:' && url.hostname === 'www.sec.gov'
-        && !url.username && !url.password && !!cik && Number(cik) === Number(issuer);
+        && Date.parse(r.source.filedAt) > cutoff.getTime() && cik !== null && cik === Number(issuer);
     } catch { return false; }
   });
   // On the same day, earnings exhibits carry the cleanest quarter-only tables, then 10-Qs, then 10-Ks, then other current reports.

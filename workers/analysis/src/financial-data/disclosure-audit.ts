@@ -1,4 +1,5 @@
 import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
+import { edgarArchiveCik } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import {extractFinancialStatements, STATEMENTS_VERSION, type FinancialStatements} from "../../../../shared/analysis-runtime/financial-data/financial-statements.ts";
 import { DISCLOSURE_EXTRACTION_VERSION, extractFilingDisclosures, type FilingDisclosures } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import type { DisclosureAuditSummary, DisclosureAuditPage } from "../../../../shared/analysis-contract/disclosure-audit.ts";
@@ -33,8 +34,7 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   if (!TICKER_PATTERN.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
   // Hash and store what was filed, not what sec.gov wrapped around it, so the same document keeps one address.
   const html = canonicalSecHtml(served);
-  const url = new URL(source.url);
-  if (url.protocol !== "https:" || url.hostname !== "www.sec.gov" || !url.pathname.startsWith("/Archives/edgar/data/")) throw new Error("INVALID_DISCLOSURE_SOURCE");
+  if (edgarArchiveCik(source.url) === null) throw new Error("INVALID_DISCLOSURE_SOURCE");
   const sourceBytes = new TextEncoder().encode(html).byteLength;
   if (!sourceBytes || sourceBytes > SEC_DOCUMENT_MAX_BYTES) throw new Error("DISCLOSURE_DOCUMENT_TOO_LARGE");
   const [contentSha256, documentId] = await Promise.all([digest(html), digest(source.url)]);

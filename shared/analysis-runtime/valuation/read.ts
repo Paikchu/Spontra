@@ -11,7 +11,12 @@ const dimension = z.object({ key: z.enum(VALUATION_DIMENSIONS), score: nullableF
 const fact = z.object({ id: z.string(), label: z.string(), value: finite, unit: z.string(), currency: z.string().nullable(), periodType: z.enum(PERIOD_TYPES), periodStart: z.string().nullable(), periodEnd: z.string().nullable(), basis: z.enum(FACT_BASES), formula: z.string().nullable(), sourceRefs: strings, rationale: z.string().nullable() });
 const evidence = z.object({ evidenceId: z.string(), kind: z.enum(EVIDENCE_KINDS), title: z.string(), url: z.string().nullable(), documentId: z.string().nullable(), passageId: z.string().nullable(), form: z.string().nullable(), publishedAt: z.string().nullable(), fetchedAt: z.string().nullable(), excerpt: z.string(), contentSha256: z.string(), path: z.string().nullable() });
 const numbers = z.array(finite);
-const driverPath = z.object({ revenueGrowth: numbers, operatingMargin: numbers, taxRate: numbers, salesToCapital: numbers, normalization: numbers.optional(), buildCapex: numbers.optional() });
+const commonPath = { revenueGrowth: numbers, operatingMargin: numbers, taxRate: numbers, normalization: numbers.optional() };
+const capitalPlan = z.object({ capex: z.array(finite.nonnegative()), depreciation: z.array(finite.nonnegative()), workingCapitalChange: numbers });
+const driverPath = z.union([
+  z.object({ ...commonPath, salesToCapital: numbers, buildCapex: numbers.optional(), capitalPlan: z.null().optional() }),
+  z.object({ ...commonPath, capitalPlan, salesToCapital: z.never().optional(), buildCapex: z.never().optional() }),
+]);
 const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("fcff"), revenue0: finite, path: driverPath, terminalGrowth: finite, terminalRoic: finite, terminalOperatingMargin: finite.optional() }),
   z.object({ modelType: z.literal("fcfe"), cfo: finite, capex: finite, sbc: finite, normalization: finite, netBorrowing: finite, growth: numbers, terminalGrowth: finite }),
@@ -24,7 +29,7 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_multiple"), affoLow: finite, affoHigh: finite, weight: finite, recurringCostPerShare: finite, multiple: finite, horizonYears: finite }),
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: finite, recurringCost: finite, growth: numbers, terminalGrowth: finite }),
 ]) satisfies z.ZodType<ModelDrivers>;
-const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional() });
+const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional(), capex: finite.nonnegative().optional(), depreciation: finite.nonnegative().optional(), workingCapitalChange: finite.optional() });
 // valuation.calc.v2 additions, all optional so a v1 payload still reads (docs/valuation-v2-SPEC.md).
 const gateStatus = z.enum(GATE_STATUSES);
 const quartiles = z.object({ p25: finite, median: finite, p75: finite, count: z.number() });
@@ -56,11 +61,17 @@ const managementScenario = scenario.extend({
   label: z.string(), triangulation: z.lazy(() => triangulation).nullable(), methods: z.array(z.lazy(() => method)),
   anchors: z.array(z.object({ metric: z.enum(MANAGEMENT_TARGET_METRICS), fiscalYear: z.number(), year: z.number(), target: finite, path: nullableFinite })), sources: z.array(managementSource), notes: strings,
 });
+const normalCase = scenario.omit({ probability: true }).extend({ assumptions: pathAssumptions, valuation: scenarioValuation, gates: z.array(gateRow), verification: verification.nullable() });
+const fairValueRange = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), kind: z.literal("normal_cases"), low: finite, base: finite, high: finite, lower: normalCase, upper: normalCase, rationale: z.string(), evidenceIds: strings })
+    .refine(v => v.low <= v.base && v.base <= v.high && v.low === v.lower.valuation.perShare && v.high === v.upper.valuation.perShare, "normal range must match its ordered calculated bounds"),
+  z.object({ status: z.literal("unavailable"), reason: z.string(), evidenceIds: strings }),
+]);
 const model = z.object({
   calculatorVersion: z.string(), modelType: z.enum(VALUATION_MODEL_TYPES), currency: z.string(),
   discountRate: z.object({ value: finite, basis: z.enum(DISCOUNT_RATE_BASES), components: z.object({ riskFree: nullableFinite, beta: nullableFinite, equityRiskPremium: nullableFinite, costOfEquity: nullableFinite, costOfDebt: nullableFinite, taxRate: nullableFinite, equityWeight: nullableFinite }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
   shares: z.object({ base: finite, dilutionReserve: finite, economic: finite, basis: z.string() }),
-  bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
+  bridge: z.object({ leaseTreatment: z.literal("operating_expense").optional(), nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
   scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }),
   range: z.object({ low: finite, high: finite, base: finite, expected: nullableFinite, price: nullableFinite, marginOfSafety: nullableFinite, downsideCoverage: nullableFinite, expectedUpside: nullableFinite, baseUpside: nullableFinite }),
   sensitivities: z.array(z.object({ factor: z.string(), step: z.string(), perShare: finite, changePercent: finite })),
@@ -72,7 +83,8 @@ const model = z.object({
   references: z.array(reference).optional(),
   methodWeights: methodWeights.optional(), scenarioProbabilities: scenarioProbabilities.optional(), managementScenario: managementScenario.nullable().optional(),
   managementComparison: managementComparison.nullable().optional(), consensusNote: consensusNote.nullable().optional(),
-});
+  fairValueRange: fairValueRange.optional(),
+}).refine(v => v.fairValueRange?.status !== "available" || v.fairValueRange.base === v.range.base, "normal central value must be the researched base");
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({
   schemaVersion: z.literal("valuation.v1"), ticker: z.string(), cik: z.string().nullable(), companyName: z.string(), currency: z.string(),

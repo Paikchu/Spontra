@@ -6,7 +6,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository, filingIndexInsert } from "../sec/d1.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import { parseSecSubmissions, type SecFilingFeed, type SecFilingSummary } from "../sec/sec.ts";
-import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
+import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { recordRailInsiders } from "./insider-ledger.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
@@ -135,7 +135,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
-    const submissions = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json();
+    const submissions = await (await reader.read(secSubmissionsUrl(cik))).json();
     raw = parseEventSubmissions(submissions, cikNumber, now);
     // The filings list is indexed from the same read, so a company without the report summaries still lists its filings.
     await indexFilings(db, ticker, cik, submissions, now.toISOString(), options.causeId ?? null);

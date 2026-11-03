@@ -139,3 +139,8 @@
 /* The stage holds the valuation as one scrolling column under its tab row. */
 .stage[data-view="valuation"] { grid-template-rows: auto minmax(0, 1fr); padding-bottom: 12px; }
 @media (max-width: 960px) { .val-dim summary { grid-template-columns: minmax(0, 1fr) 34px 72px; } .val-dim-lead { grid-column: 1 / -1; } .val-sens li { grid-template-columns: minmax(100px, 150px) minmax(0, 1fr); } .val-sens b { grid-column: 1 / -1; text-align: left; } }
+
+.val-fair .val-fair-value { font-family: var(--display); font-size: 28px; font-weight: 500; line-height: 1.3; letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
+.val-stress > .val-fold-body { padding-top: 16px; }
+
+.val-table--yearly { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }

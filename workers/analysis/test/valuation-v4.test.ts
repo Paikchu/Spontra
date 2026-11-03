@@ -21,7 +21,7 @@ const fcff = (g: number, m: number, build: number[] = [40e9, 30e9, 20e9, 10e9, 0
   ({ modelType: "fcff", revenue0: 71.777e9, path: { revenueGrowth: fill(7, g), operatingMargin: fill(7, m), taxRate: fill(7, 0.13), salesToCapital: fill(7, 1.44), buildCapex: build }, terminalGrowth: 0.03, terminalRoic: 0.111 });
 const scenario = (drivers: ModelDrivers, probability: number | null = null): ScenarioAssumptions => ({ narrative: "", probability, triggers: [], invalidation: [], evidenceIds: [], drivers });
 const orcl = managementTargetSet("ORCL", parseTargets(inputs.ORCL.targets), 5, "2026-11-01").set!;
-const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_margin_ttm", 0.3212, "ratio"], ["sbc_ttm", 4.814e9, "USD"], ["da_ttm", 9.428e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["shares_outstanding", 3e9, "shares"], ["debt", 125e9, "USD"], ["leases", 30e9, "USD"], ["cash", 37e9, "USD"], ["ebitda_ttm", 32.5e9, "USD"], ["interest_expense_ttm", 5.1e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
+const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_margin_ttm", 0.3212, "ratio"], ["sbc_ttm", 4.814e9, "USD"], ["da_ttm", 9.428e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["shares_outstanding", 3e9, "shares"], ["debt", 125e9, "USD"], ["leases", 30e9, "USD"], ["finance_leases", 30e9, "USD"], ["other_senior_claims", 6e9, "USD"], ["cash", 37e9, "USD"], ["ebitda_ttm", 32.5e9, "USD"], ["interest_expense_ttm", 5.1e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
 const peers = { peers: ["A", "B"], asOf: "2026-11-01", evToEbitda: { p25: 15.3, median: 16.7, p75: 18.3, count: 2 }, peRatio: { p25: 27.1, median: 28.9, p75: 30.4, count: 2 }, notes: [], basis: "curated" as const, weights: { A: 0.5, B: 0.5 } };
 const judged = (dcf: number, ev: number, pe: number) => ({ dcf: { weight: dcf, rationale: "dcf", evidenceIds: ["e1"] }, ev_ebitda_forward: { weight: ev, rationale: "ev", evidenceIds: ["e1"] }, pe_forward: { weight: pe, rationale: "pe", evidenceIds: ["e1"] } });
 const probabilities = (bear: number, base: number, management: number, bull: number): ScenarioProbabilities => ({ bear: { probability: bear, rationale: "bear", evidenceIds: ["e1"] }, base: { probability: base, rationale: "base", evidenceIds: ["e1"] }, management: { probability: management, rationale: "management", evidenceIds: ["m1"] }, bull: { probability: bull, rationale: "bull", evidenceIds: ["e1"] } });
@@ -34,7 +34,7 @@ const request = (context: Partial<NonNullable<CalcRequest["context"]>> = {}): Ca
 
 test("calc.v4: each scenario is valued by method on its own path, the range is method-weighted, and the expected value weighs bear, base, management and bull", () => {
   const result = calculateValuation(request());
-  assert.equal(result.calculatorVersion, "valuation.calc.v4"); assert.equal(CALCULATOR_VERSION, "valuation.calc.v4");
+  assert.equal(result.calculatorVersion, CALCULATOR_VERSION);
   for (const key of ["bear", "base", "bull"] as const) {
     const s = result.scenarios[key];
     assert.ok(s.valuation, `${key} carries its method valuation`);
@@ -116,7 +116,7 @@ test("calc.v4 gates: weight on a method the path cannot apply is spread and flag
   assert.ok(!equity.gates!.some(g => g.status === "fail"));
 });
 
-test("calc.v4: a method-weighted order that contradicts the DCF order is rejected, and a weighted value below zero fails the non-negative gate", () => {
+test("calc.v4: a method-weighted order that contradicts the DCF order is rejected, and a weighted value below zero flags the modeled shortfall", () => {
   // A bull path whose multiples value sits under the base's: the forward EBITDA follows the margin, so a bull with a far lower margin is out of order on the weighted values.
   const inverted = request();
   inverted.scenarios.bull = scenario(fcff(0.31, 0.2));
@@ -126,7 +126,7 @@ test("calc.v4: a method-weighted order that contradicts the DCF order is rejecte
   heavy.scenarios = { bear: scenario(fcff(0.15, 0.28, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])), base: scenario(fcff(0.2, 0.3212, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])), bull: scenario(fcff(0.3, 0.34, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])) };
   try {
     const result = calculateValuation(heavy);
-    assert.equal(result.gates!.find(g => g.key === "non_negative_scenarios")!.status, "fail");
+    assert.equal(result.gates!.find(g => g.key === "non_negative_scenarios")!.status, "flag");
   } catch (error) {
     assert.ok(error instanceof ValuationCalcError, String(error));
   }
@@ -187,7 +187,8 @@ function fullArgs(managementIds: string[]) {
     modelType: "fcff",
     discountRate: { basis: "wacc", riskFree: component(0.049, "CBOE 10Y 2026-10-30"), beta: component(1.82, "105 weekly returns vs ^GSPC"), equityRiskPremium: component(0.0433, "Damodaran implied ERP"), costOfDebt: component(0.055, "10Y + 60bp for a Baa issuer"), taxRate: component(0.13, "effective_tax_rate_ttm"), equityWeight: component(0.72, "market cap over market cap plus debt and leases"), rationale: "WACC from the sourced components, identical in every scenario." },
     shares: { baseFactId: "shares_outstanding", dilutionPercent: 0, rationale: "No equity note read; no reserve." },
-    bridge: { nonOperatingAssets: 37e9, debtAndClaims: 161e9, nonOperatingEquityAdjustment: 0, notes: ["debt 125B + leases 30B + other 6B; cash 37B"] },
+    bridge: { leaseTreatment: "operating_expense", nonOperatingAssets: 37e9, debtAndClaims: 161e9, nonOperatingEquityAdjustment: 0, notes: ["debt 125B + leases 30B + other 6B; cash 37B"] },
+    fairValueBasis: { status: "unavailable", reason: "The normal operating bounds have not been researched in this fixture.", evidenceIds: [] },
     scenarios: { bear: sc(0.15, 0.28, "Capacity slips a year."), base: sc(0.2, 0.3212, "Backlog converts on schedule."), bull: sc(0.3, 0.34, "Demand exceeds capacity.") }, midYear: false, forwardYears: 3,
     methodWeights: { dcf: weight(0.5, "Own cash flows."), ev_ebitda_forward: weight(0.3, "Peers' pricing of EBITDA."), pe_forward: weight(0.2, "Peers' pricing of earnings.") },
     scenarioProbabilities: { bear: { probability: 0.2, rationale: "Capacity and financing risk in the build.", evidenceIds: [evidenceId] }, base: { probability: 0.4, rationale: "Backlog cover for the next two years.", evidenceIds: [evidenceId] }, management: { probability: 0.25, rationale: "Management has delivered its FY26 OCI target; the FY30 plan needs capacity not yet financed.", evidenceIds: managementIds }, bull: { probability: 0.15, rationale: "Demand above capacity would lift pricing.", evidenceIds: [evidenceId] } },
@@ -220,10 +221,11 @@ test("calculate_valuation: every judgement is required; the reply names each sce
   assert.match(opening, /Methods available: dcf; ev_ebitda_forward yes; pe_forward yes/); assert.match(opening, /Management scenario: computed by code/);
   // The publication: the judgements are appended to the model notes and their evidence is in the cited set.
   const lines = judgementLines(calc);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 6);
+  assert.match(lines.shift()!, /Normal fair-value range unavailable/);
   assert.match(lines[0]!, /^Method weights: dcf 50% — Own cash flows\./); assert.match(lines[1]!, /management 25% — Management has delivered/); assert.match(lines[3]!, /^Consensus unavailable: No sell-side/);
   const { publication } = await assemblePublication(state, now, VALUATION_VERSION);
-  assert.match(publication.sections.modelNotes, /JUDGEMENTS\. Method weights: dcf 50%/);
+  assert.match(publication.sections.modelNotes, /Method weights: dcf 50%/);
   assert.ok(publication.evidence.some(e => e.evidenceId === managementIds[0]), "the management evidence the probability cites is published");
   assert.equal(publication.model!.range.base, calc.scenarios.base.valuation!.perShare);
   assert.ok(readValuationPublication(JSON.parse(JSON.stringify(publication)), "ORCL"), "the publication passes the contract");
@@ -236,6 +238,7 @@ test("calculate_valuation: a missing or malformed judgement is a schema error th
   const missing = (patch: (a: Record<string, unknown>) => void) => { const copy = JSON.parse(JSON.stringify(args)) as Record<string, unknown>; patch(copy); return copy; };
   const schema = async (patch: (a: Record<string, unknown>) => void, expect: RegExp) => { const r = await call(state, "calculate_valuation", missing(patch)); assert.ok(r.error, "rejected"); assert.match(r.observation, /^The arguments do not match calculate_valuation's schema/); assert.match(r.observation, expect, r.observation); assert.equal(state.calc, null); };
   await schema(a => { delete a.methodWeights; }, /methodWeights/);
+  await schema(a => { delete a.fairValueBasis; }, /fairValueBasis/);
   await schema(a => { (a.methodWeights as Record<string, { weight: number }>).dcf.weight = 0.4; }, /method weights must sum to 1/);
   await schema(a => { delete (a.methodWeights as Record<string, Record<string, unknown>>).pe_forward.rationale; }, /methodWeights\.pe_forward\.rationale/);
   await schema(a => { (a.methodWeights as Record<string, { evidenceIds: string[] }>).dcf.evidenceIds = []; }, /methodWeights\.dcf\.evidenceIds/);
@@ -304,14 +307,50 @@ test("management comparison rows: one per total-revenue target inside the horizo
 });
 
 test("the version bump reassesses only the marked company: an ORCL report under valuation.v4/calc.v2 runs, every other company on unchanged material is held", () => {
-  assert.equal(VALUATION_VERSION, "valuation.v5");
+  assert.equal(VALUATION_VERSION, "valuation.v9");
   const published = { methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2", financialPeriodEnd: "2026-08-31" };
   const current = { methodVersion: VALUATION_VERSION, calculatorVersion: CALCULATOR_VERSION, financialPeriodEnd: "2026-08-31" };
   assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);
   for (const other of ["GOOGL", "MSFT", "NVDA"]) {
     const held = methodChangeHeldBack(false, published, current, other);
-    assert.ok(held && held.reason.includes("valuation.v4/valuation.calc.v2 → valuation.v5/valuation.calc.v4") && held.reason.includes(other));
+    assert.ok(held && held.reason.includes(`valuation.v4/valuation.calc.v2 → ${VALUATION_VERSION}/${CALCULATOR_VERSION}`) && held.reason.includes(other));
   }
   assert.ok(methodChangeHeldBack(false, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v3" }, current, "GOOGL"), "a calc.v3 report is held too");
   assert.deepEqual(EXTENDED_SCENARIO_KEYS, ["bear", "base", "management", "bull"]);
+});
+
+
+test("normal bounds pass through the tool, retain their own evidence in the publication, and require a completed counter-evidence review", async () => {
+  const state = stateWith();
+  state.quote!.price = 1000;
+  const managementIds = await registerManagementEvidence(state);
+  const original = fullArgs([managementIds[0]!]);
+  const normalId = "eabcdef1234";
+  state.evidence.set(normalId, { ...state.evidence.get(evidenceId)!, evidenceId: normalId, excerpt: "Normal utilization varies inside the disclosed range.", contentSha256: "normal-hash" });
+  const normal = (g: number, m: number) => ({ ...original.scenarios.base, drivers: fcff(g, m), narrative: "Ordinary renewal timing and utilization variation within the disclosed operating plan.", evidenceIds: [normalId], assumptions: { revenue: why("Normal renewal timing", [normalId]), margin: why("Normal utilization variation", [normalId]), capex: why("Scheduled capacity spending", [normalId]) } });
+  const fairValueBasis = { status: "available", kind: "normal_cases", lower: normal(0.18, 0.31), upper: normal(0.22, 0.33), rationale: "Normal renewal timing and utilization set the bounds; disruptive demand or refinancing events belong to stress scenarios.", evidenceIds: [normalId] };
+  const invalid = await call(state, "calculate_valuation", { ...original, fairValueBasis: { ...fairValueBasis, lower: { ...fairValueBasis.lower, evidenceIds: ["e0000000000"] } } });
+  assert.match(invalid.observation, /normal lower cites e0000000000/);
+  assert.equal(state.calc, null);
+  const ok = await call(state, "calculate_valuation", { ...original, fairValueBasis });
+  assert.match(ok.observation, /Normal fair-value range: [\d.]+ – [\d.]+ – [\d.]+ per share/);
+  assert.ok(state.calc?.result.fairValueRange?.status === "available");
+  const withoutNormal = calculateValuation({ ...state.calc.request, fairValueBasis: undefined });
+  assert.deepEqual(state.calc.result.range, withoutNormal.range, "the four-scenario expectation is unchanged");
+  assert.deepEqual(state.calc.result.managementScenario, withoutNormal.managementScenario, "the management case retains its own targets and probability");
+  for (const key of ["businessQuality", "growthExecution", "valuationSafety", "mispricingCatalysts", "financialResilience"] as const) state.dimensions.set(key, { key, score: 5, confidence: "medium", rationale: "Supported facts but no evidence of a mispricing opportunity.", supportingEvidenceIds: [evidenceId], counterEvidenceIds: [], gaps: [], nextCheck: "Check the next release." });
+  state.composed = { sections: { summary: "The reference close is compared with the normal operating range.", thesis: "The business remains viable within the evidenced bounds.", expectationsGap: "No confirmed expectations gap.", catalysts: ["Next release."], counterEvidence: ["Margins can weaken."], nextChecks: ["Next release."], modelNotes: "Normal paths use the common economics." }, coreLogicFailed: false, decisiveCounterEvidence: false };
+  const incomplete = await assemblePublication(state, now, VALUATION_VERSION);
+  assert.equal(incomplete.publication.reportStatus, "insufficient");
+  assert.ok(incomplete.publication.gaps.some(g => g.code === "review_incomplete"));
+  assert.ok(incomplete.evidence.some(e => e.evidenceId === normalId), "evidence cited only by the normal bounds is stored");
+  state.redTeam = { weakestAssumptions: [], decisiveCounterEvidence: false, counterEvidenceIds: [] };
+  const completed = await assemblePublication(state, now, VALUATION_VERSION);
+  assert.equal(completed.publication.reportStatus, "ready");
+  assert.equal(completed.publication.verdict, "not_supported", "a negative investment verdict alone does not invalidate completed research");
+  assert.ok(readValuationPublication(JSON.parse(JSON.stringify(completed.publication)), "ORCL"));
+  state.redTeam = { weakestAssumptions: [], decisiveCounterEvidence: true, counterEvidenceIds: [normalId] };
+  const contradicted = await assemblePublication(state, now, VALUATION_VERSION);
+  assert.equal(contradicted.publication.reportStatus, "insufficient");
+  assert.deepEqual(contradicted.publication.gaps.find(g => g.code === "unresolved_counter_evidence")?.evidenceIds, [normalId]);
 });
