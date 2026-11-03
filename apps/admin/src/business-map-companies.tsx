@@ -51,7 +51,7 @@ const errors: Record<string,string> = {
   DOCUMENT_TOO_LARGE:'文件过大',
 };
 const active = new Set(['queued','running','cancel_requested']);
-/** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
+/** The reader-facing features, as the map labels them. */
 const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',tree:'业务拆解',valuation:'估值评估'};
 /** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
 function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {

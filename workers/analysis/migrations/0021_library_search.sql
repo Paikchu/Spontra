@@ -1,4 +1,4 @@
--- The filing library's recall layer (docs/sec-filing-library.md, P5): which sections are uploaded to Cloudflare
+-- The filing library's recall layer: which sections are uploaded to Cloudflare
 -- AI Search, under which item id and for which text, so a sync uploads only what changed and deletes what left the
 -- recall scope. AI Search is never the source of truth; D1 keeps the text. Additive only.
 CREATE TABLE sec_search_items (

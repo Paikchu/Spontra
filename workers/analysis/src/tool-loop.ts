@@ -1,5 +1,5 @@
 /**
- * What an agent loop acting through Claude client tools needs (docs/business-tree.md → 对话形式). The exchange only
+ * What an agent loop acting through Claude client tools needs. The exchange only
  * grows: each reply goes back exactly as it came, thinking included, and each call's result follows it as a
  * tool_result. A loop never asks for its reasoning written out beside a decision (Claude declines that as
  * reasoning_extraction) and never packs past turns into one user message (that reads as a fabricated transcript).

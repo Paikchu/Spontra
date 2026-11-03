@@ -159,7 +159,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       const profit = flow ? {...flow, quarters: [...new Map([...(derived?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))} : null;
       return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
     }
-    // The feature switches (docs/whitelist-feature-switches-design.md), applied by company-policy.ts. Per company, one
+    // The feature switches, applied by company-policy.ts. Per company, one
     // switch: on generates the feature and shows it, off stops generating and hides what was written (it stays stored).
     // Global: whether the feature is generated for anyone; what is shown follows the company switches. Each change emits
     // `feature.settings`, which checks for something to write and moves the map's revisions.

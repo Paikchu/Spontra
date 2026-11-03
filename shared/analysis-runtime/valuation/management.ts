@@ -3,7 +3,7 @@ import type { CalcRequest } from "./calculator.ts";
 import { omit } from "../omit.ts";
 
 /**
- * The management case (docs/valuation-v2-SPEC.md §3b): a reference path computed by code from management's cited
+ * The management case: a reference path computed by code from management's cited
  * targets, with the researched model's own rate, shares, bridge, horizon, tax and sales-to-capital. It is compared
  * with the base case and shown beside it; it is never the base. Pure: the same targets give the same path.
  */

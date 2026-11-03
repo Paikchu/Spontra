@@ -114,7 +114,7 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       return changed ? json({ status: "saved" }) : json({ error: "未找到该业务。" }, 404);
     }
   }
-  // Business tags (docs/peer-similarity-design.md): a company's units, tags and pairs; one sector's units; optional overrides.
+  // Business tags: a company's units, tags and pairs; one sector's units; optional overrides.
   if (parts[0] === "tags") {
     if (request.method === "GET" && parts.length === 1) return json(await readTagCompanies(env.DB));
     if (request.method === "GET" && parts.length === 3 && parts[1] === "sectors") {

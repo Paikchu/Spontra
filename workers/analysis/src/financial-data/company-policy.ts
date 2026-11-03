@@ -35,7 +35,7 @@ function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution
 /**
  * The admin's choices are the company lists: the whitelist (`financial_company_settings`) is the collection list, and
  * the feature switches (`business_feature_settings`) are each feature's list, over its global switch
- * (docs/whitelist-feature-switches-design.md). A list in the deployment's variables is ignored. The result is carried as
+ *. A list in the deployment's variables is ignored. The result is carried as
  * `SEC_DATA_TICKERS` and `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the reports list so code reading it as "the AI
  * list" keeps working.
  * Applying it twice gives the same lists, so every entry point applies it once and code below reads the environment as

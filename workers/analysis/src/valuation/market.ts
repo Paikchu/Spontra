@@ -2,7 +2,7 @@ import type { ReferenceQuote } from "../../../../shared/analysis-contract/valuat
 import { readYahooChart, yahooChartUrl, yahooSymbol, type ChartClose } from "../market/yahoo.ts";
 
 /**
- * The market inputs a run freezes once (docs/valuation-assessment-implementation.md §2, docs/valuation-methodology-optimization.md §3):
+ * The market inputs a run freezes once:
  * the last completed daily close as the reference price, the ten-year government yield as the risk-free rate, and the
  * company's beta regressed from its own weekly returns against the market index. Read through the shared Yahoo chart client
  * (market/yahoo.ts), as the filing reports are; never in a read route, and never treated as a live price.
@@ -42,7 +42,7 @@ export async function fetchRiskFreeRate(currency: string, fetcher: typeof fetch 
   return { value: latest.close / 100, date: latest.date, label: market.yieldLabel, sourceUrl: read.url };
 }
 
-/** Two years of weekly closes for the company's own trailing-multiple history (docs/valuation-v2-SPEC.md §5); null when the chart does not answer. */
+/** Two years of weekly closes for the company's own trailing-multiple history; null when the chart does not answer. */
 export async function fetchWeeklyCloses(ticker: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<ChartClose[] | null> {
   const read = await chart(yahooSymbol(ticker), "2y", "1wk", fetcher, now);
   return read?.points.length ? read.points : null;

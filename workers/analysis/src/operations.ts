@@ -83,7 +83,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
   ANALYST_DAILY_TURNS?: string;
-  /** The checkup notes Workflow (docs/three-statement-analysis-design.md); runs with the analyst switch. */
+  /** The checkup notes Workflow; runs with the analyst switch. */
   CHECKUP_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** Model turns per UTC day for checkup notes across all companies (default 240). */
   CHECKUP_DAILY_TURNS?: string;
@@ -92,7 +92,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
   READ_NOTE_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  /** The valuation assessment Workflow (docs/valuation-assessment-design.md). */
+  /** The valuation assessment Workflow. */
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
@@ -118,7 +118,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses writing business tags; unset or anything else runs it. */
   BUSINESS_TAGS_ENABLED?: string;
-  /** Workers AI, for embedding business tags (docs/peer-similarity-design.md) and turning fetched pages into Markdown. */
+  /** Workers AI, for embedding business tags and turning fetched pages into Markdown. */
   AI?: TagEmbedder & Partial<MarkdownConverter>;
   /** The Vectorize index of business tags, one namespace per sector and facet. */
   TAGS_INDEX?: TagIndex;
@@ -153,7 +153,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
-  /** Event routing and task runs (docs/analysis-events.md). Optional so a partial environment simply emits nothing. */
+  /** Event routing and task runs. Optional so a partial environment simply emits nothing. */
   PIPELINE_EVENTS?: Queue<EventMessage>;
   PIPELINE_TASKS?: Queue<TaskMessage>;
   /** Which deployment is running; task versions only ever move forward to a newer one. */

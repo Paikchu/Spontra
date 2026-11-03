@@ -2,7 +2,7 @@ import type { Feature } from "../../../../shared/analysis-contract/business-feat
 import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 import { archivedForm } from "./filing-forms.ts";
 /**
- * The pipeline's event graph (docs/analysis-events.md): the events that exist, which tasks subscribe to each, and
+ * The pipeline's event graph: the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
  * (`scripts/check-analysis-boundary.ts`). Adding a downstream task is a row here plus its implementation in
  * `tasks.ts`; no queue, marker or Cron.
@@ -39,7 +39,7 @@ export type PipelineEvent = { type: EventType; ticker: string; cik?: string | nu
 
 /**
  * Which companies a task runs for when its version changes: every data company, the companies one reader-facing feature
- * is switched on for (docs/whitelist-feature-switches-design.md), or once globally.
+ * is switched on for, or once globally.
  */
 export type TaskScope = "data" | Feature | "global";
 export type TaskMeta = {
@@ -117,7 +117,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
   // arithmetic decides), then collects the issuer again through a maintenance task.
   "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
-  // The valuation assessment (docs/valuation-assessment-design.md): five researched dimensions and a calculated model,
+  // The valuation assessment: five researched dimensions and a calculated model,
   // rewritten when the figures, filings, guidance or calls it reads from change (Workflow; model at the reasoning tier).
   "valuation": { emits: ["valuation.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
 };
@@ -176,7 +176,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "fundamentals.updated": [{ task: "findings" }, { task: "peers" }, { task: "valuation" }],
   "analysis.published": [{ task: "findings" }],
   "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
-  // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
+  // Every publication with reader-facing prose is translated once it lands.
   "dossier.published": [{ task: "translate" }],
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],

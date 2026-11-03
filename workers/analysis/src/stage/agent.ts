@@ -15,7 +15,7 @@ import { sha256 } from "../sha256.ts";
 import { STAGE_BUDGET, stageRecipeFor, stageTools, type StageView } from "./recipe.ts";
 
 /**
- * One reader's conversation with the stage (docs/stage-agent-design.md §5.3), an Agents SDK Agent and so a Durable
+ * One reader's conversation with the stage, an Agents SDK Agent and so a Durable
  * Object of its own. Its synced state is only the scene on the stage; the turn in progress, its draft and the
  * transcript go out as messages, so a status change never rebuilds the page. The full exchange the model sees is kept
  * in the object's own SQLite and only grows, so each turn reuses the prompt cache.

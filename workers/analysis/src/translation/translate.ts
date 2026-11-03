@@ -20,7 +20,7 @@ import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { sha256 } from "../sha256.ts";
 
 /**
- * The translator (docs/i18n-design.md, phase 2). Reads a company's English publications exactly as the read API
+ * The translator. Reads a company's English publications exactly as the read API
  * serves them, translates every prose string it has not translated before, checks each translation against its
  * source, and writes one table per resource for the read API to apply. Strings are remembered across publications,
  * so a regenerated finding that kept a sentence costs nothing to translate again.

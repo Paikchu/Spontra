@@ -3,7 +3,7 @@ import type { PeerSelectionBasis } from "../../analysis-contract/valuation.ts";
 import { comparablePeers } from "../peers.ts";
 
 /**
- * Which companies the forward-multiple cross-check compares against (docs/valuation-v2-SPEC.md §3a), in priority order:
+ * Which companies the forward-multiple cross-check compares against, in priority order:
  * the curated peer map, then whole-company business-tag pairs, then segment-level pairs weighted by how much of each
  * company the compared units are, then companies sharing a category. A source counts only when at least two of its
  * companies are in the projection; the next one follows otherwise. Weights sum to one over the chosen set.

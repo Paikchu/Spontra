@@ -6,7 +6,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { cardDocuments, cardsPublished } from "./cards.ts";
 
 /**
- * The recall layer (docs/sec-filing-library.md): the sections that have index cards are uploaded, verbatim, to one
+ * The recall layer: the sections that have index cards are uploaded, verbatim, to one
  * Cloudflare AI Search instance with built-in storage, keyed by section id. It finds sections by meaning across
  * companies; whatever it returns is only a list of section ids, read back from D1. It never holds model writing.
  */

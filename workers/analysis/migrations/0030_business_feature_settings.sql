@@ -1,4 +1,4 @@
--- The admin's per-feature switches, one row per company and reader-facing feature (docs/whitelist-feature-switches-design.md):
+-- The admin's per-feature switches, one row per company and reader-facing feature:
 -- `reports` (SEC report summaries and guidance), `findings` (findings and the analyst), `explainer` (business
 -- explanations) and `tree` (the business mind map). Ticker '*' holds a feature's global generation switch, over
 -- SEC_AI_ENABLED / BUSINESS_TREE_ENABLED. `generate` NULL keeps the deployment default list; `display` NULL shows.

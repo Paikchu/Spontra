@@ -148,7 +148,7 @@ export const findings: FindingsPublication = {
       lens: { type: "trend", refs: [{ ratio: { numerator: { metric: "gross" }, denominator: { metric: "revenue" } } }], span: "quarter", rate: "qoq" } }),
   ],
   sources: [{ id: "s1", title: "10-Q", url: SRC, kind: "sec", publishedAt: null }],
-  // A checkup note (docs/three-statement-analysis-design.md): generated text, with quotes from this and an earlier report.
+  // A checkup note: generated text, with quotes from this and an earlier report.
   materials: [
     { id: "c:cash-conversion:m1", kind: "sec", title: `${TICKER} 10-Q ${PERIOD}`, url: SRC, publishedAt: "2026-08-05", passageId: "pfixturenote01", documentId: "d1", form: "10-Q", path: ["MD&A", "Cash flows"] },
     { id: "c:cash-conversion:m2", kind: "sec", title: `${TICKER} 10-K 2025-12-31`, url: SRC, publishedAt: "2026-02-20", passageId: "pfixturenote02", documentId: "d0", form: "10-K", path: ["MD&A", "Liquidity"] },

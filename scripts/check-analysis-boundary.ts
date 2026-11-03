@@ -73,7 +73,7 @@ export async function checkArchitecture(): Promise<string[]> {
   return (await Promise.all(paths.map(async (file) => checkSourceBoundary(file, await readFile(file, "utf8"))))).flat();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // The event graph (docs/analysis-events.md) is checked here too, because this script runs in Spontra Analysis build:
+  // The event graph is checked here too, because this script runs in Spontra Analysis build:
   // every subscribed event has an emitter, every name is known, and no task can trigger itself through others.
   // Product code names no issuer (check-issuer-literals.ts); the business build runs the same check on its own.
   const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `analysis events: ${error}`), ...selfTest(), ...await checkProductCode()];

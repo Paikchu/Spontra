@@ -13,7 +13,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { asObject, CALLS_PER_TURN, closedObject, FAILED_REPLIES, replyFailure, replyText, toolCalls, toolResult, type AgentAct, type AgentBlock, type AgentMessage, type AgentTool } from "../tool-loop.ts";
 
 /**
- * The checkup note writer (docs/three-statement-analysis-design.md): for one metric the checkup flags, a short analysis
+ * The checkup note writer: for one metric the checkup flags, a short analysis
  * read against the filings, the current report's and the earlier ones'. The harness gives the metric's figures and the
  * library's periodic filings; the model reads passages through the tools and finishes with paragraphs and quotes. The
  * harness holds every finish to `noteIssues`: numbers from the figures only, quotes verbatim, and at least one quote

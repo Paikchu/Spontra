@@ -65,7 +65,7 @@ const capital = (name: string) => (r: FindingRef) => "capital" in r && r.capital
 const yoy = (data: FindingData, ref: FindingRef, end: string, span: FindingSpan) => resolveEvidence(data, { ref, periodEnd: end, span, compare: "yoy" })?.delta ?? null;
 
 /**
- * The checkup's rules that open each line (docs/three-statement-analysis-design.md): the same thresholds the page flags
+ * The checkup's rules that open each line: the same thresholds the page flags
  * on, so the analyst asks about what the reader is shown. Anchors and citations still open a line on their own.
  */
 const LINE_RULES: Partial<Record<LineKey, string[]>> = {

@@ -1,7 +1,7 @@
 import type { FacetMatch, PeerBasis, TagFacet } from "./business-tags.ts";
 
 /**
- * One global projection of comparable figures for every tracked company (docs/analyst-agent-design.md, 前置数据工作 3):
+ * One global projection of comparable figures for every tracked company:
  * deterministic, no model, rebuilt whenever a company's map snapshot or SEC fundamentals change. A peers table on a
  * finding page names a ticker and a figure; the cell resolves from this publication at read time, aligned to the
  * finding's period (the company's latest quarter ending on or before it, within 120 days). A figure the company's
@@ -39,7 +39,7 @@ export type PeerCompany = {
   quarters: PeerQuarter[];
 };
 
-/** A comparable unit (docs/peer-similarity-design.md): one disclosed revenue node and its share of the company's revenue. */
+/** A comparable unit: one disclosed revenue node and its share of the company's revenue. */
 export type PeerUnit = {
   ticker: string;
   unitKey: string;

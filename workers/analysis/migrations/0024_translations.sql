@@ -1,4 +1,4 @@
--- Translation memory (docs/i18n-design.md, phase 2): one row per English string and locale, keyed by the string's
+-- Translation memory: one row per English string and locale, keyed by the string's
 -- SHA-256. A string is translated once and reused by every publication that carries it; `rejected` records a
 -- translation that failed its checks so the same text is not paid for again until the translator version changes.
 -- The per-resource tables the read API applies are built from these rows into sec_cache. Additive only.

@@ -1,5 +1,5 @@
 /**
- * The reader-facing features the admin switches per company (docs/whitelist-feature-switches-design.md). Each maps to
+ * The reader-facing features the admin switches per company. Each maps to
  * Spontra Analysis tasks that produce it; the financial map itself is the whitelist and has no switch. `tree` is the
  * business breakdown the map shows as one panel: the mind map and the written explanation of each business.
  */

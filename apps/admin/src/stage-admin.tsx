@@ -6,7 +6,7 @@ import { financialDate } from "./financial-update-history";
 
 const FEATURE_LABEL: Record<string, string> = { "stage-identities": "读者身份", "stage-conversations": "对话", "stage-says": "提问", "stage-calls": "模型调用", "stage-reports": "报告", "stage-report-calls": "报告模型调用" };
 
-/** The stage's spend today against its caps and the newest conversations (docs/stage-agent-design.md §3.6). */
+/** The stage's spend today against its caps and the newest conversations. */
 export function StageAdminPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [detail, setDetail] = useState<{ id: string; body: string } | null>(null);
   const [data, setData] = useState<StageAdmin | null>(null), [error, setError] = useState(""), [refresh, setRefresh] = useState(0);

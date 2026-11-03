@@ -73,7 +73,7 @@ export type ComparablePeer = { ticker: string; unit: PeerUnit; own: PeerUnit; pa
 const TIER_RANK: Record<PeerPair["tier"], number> = { direct: 0, partial: 1, adjacent: 2 };
 
 /**
- * The company's comparable peers from the business-tag pairs (docs/peer-similarity-design.md): one entry per peer
+ * The company's comparable peers from the business-tag pairs: one entry per peer
  * company, its closest pair, ordered by tier and then by how much of each company the compared units are. Null when
  * the projection carries no pairs for the company, so callers fall back to shared categories.
  */

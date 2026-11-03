@@ -35,12 +35,12 @@ export {TelemetryStore} from "./telemetry-store.ts";
 import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
-/** A read in the reader's language: Spontra Analysis applies its translations of the generated prose (docs/i18n-design.md). English needs no parameter. */
+/** A read in the reader's language: Spontra Analysis applies its translations of the generated prose. English needs no parameter. */
 const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
  /** Service Binding to Spontra Analysis's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
  SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>};
- /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door (docs/stage-agent-design.md §3.1). */
+ /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door. */
  SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
  /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
  AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>};
@@ -371,7 +371,7 @@ function revalidated(request:Request,response:Response):Response{
  return out;
 }
 /**
- * The stage's public door (docs/stage-agent-design.md §3.1): same-origin requests only, limited per address, passed
+ * The stage's public door: same-origin requests only, limited per address, passed
  * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
  * itself never leaves this Worker. Socket upgrades pass through untouched so the 101 reaches the browser.
  */

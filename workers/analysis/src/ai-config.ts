@@ -44,7 +44,7 @@ export const AI_TOOLS = {
   translate: { label: "中文翻译", reasoning: "low", model: "analysis" },
   /** Runs one web search or reads one page for the research agents; the agents do the reading. */
   web: { label: "网页检索", reasoning: "low", model: "analysis" },
-  /** The stage: one reader's turn, reading stored data and laying out a scene (docs/stage-agent-design.md). */
+  /** The stage: one reader's turn, reading stored data and laying out a scene. */
   stage: { label: "舞台对话", reasoning: "low", model: "analysis" },
 } as const satisfies Record<string, { label: string; reasoning: ReasoningEffort; model: "analysis" | "reasoning" }>;
 export type AiTool = keyof typeof AI_TOOLS;

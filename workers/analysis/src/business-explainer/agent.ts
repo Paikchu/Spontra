@@ -56,7 +56,7 @@ const REVIEW = `You independently check one explanation of a business. The sourc
  * is written from the angles its business model calls for, and is independently reviewed on its
  * own, so a gap in one business never blocks the others; unsupported fields are removed, not kept.
  */
-/** The filing library's documents and verbatim reads of them (docs/sec-filing-library.md). */
+/** The filing library's documents and verbatim reads of them. */
 export type ExplainerLibrary = { documents(): Promise<Array<{ url: string; title: string; publishedAt: string | null }>>; read(url: string, terms: string[], maxChars: number): Promise<string | null> };
 
 export async function runBusinessExplainer(input: {

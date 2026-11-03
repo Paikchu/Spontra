@@ -2,7 +2,7 @@ import type { PeersResponse } from "../../../../shared/analysis-contract/peers.t
 import { readPeersPublication } from "../../../../shared/analysis-runtime/peers.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
-/** One global record: a per-company key would go stale, because events route by their own ticker (docs/analyst-agent-design.md). */
+/** One global record: a per-company key would go stale, because events route by their own ticker. */
 export const PEERS_CACHE_KEY = "peers:v1";
 
 /** The stored projection, re-validated and never repaired; "preparing" until the peers task has published once. */

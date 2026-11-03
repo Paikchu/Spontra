@@ -1,4 +1,4 @@
--- The stage (docs/stage-agent-design.md §3.2): reader conversations registered before any StageAgent exists for them,
+-- The stage: reader conversations registered before any StageAgent exists for them,
 -- per-reader daily allowances keyed by an anonymous id or a hashed address, the runs a reader started, and which
 -- reader and conversation a model call served. A reader id is stored only as given by the gateway (`anon:<id>` or
 -- `ip:<sha256>`); ai_usage stores its sha256 alone. Additive only; the two ai_usage columns cannot be dropped again.

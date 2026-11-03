@@ -9,7 +9,7 @@ import type { ToolPolicy } from "../tools/registry.ts";
 import type { StageData } from "./data.ts";
 
 /**
- * A report a reader asked for (docs/stage-agent-design.md §6): written in a Workflow by the same loop the stage uses,
+ * A report a reader asked for: written in a Workflow by the same loop the stage uses,
  * with the tools every analysis is composed with (compose/tools.ts), reading the filing library and the web, so that
  * the finding page's own verifiers hold it to the same rules as a finding or the analysis of a filing on the rail.
  */

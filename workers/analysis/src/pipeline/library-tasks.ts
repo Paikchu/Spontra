@@ -82,7 +82,7 @@ export const LIBRARY_TASKS = {
 
   /**
    * Comparable units, their sector tags and business tags, and the pairs they make with other companies'
-   * (docs/peer-similarity-design.md): one Workflow per change of the company's links or map businesses.
+   *: one Workflow per change of the company's links or map businesses.
    */
   "business-tags": {
     version: `${BUSINESS_TAGS_VERSION}+${PEER_MATCH_VERSION}`,

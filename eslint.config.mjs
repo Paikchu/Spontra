@@ -49,10 +49,6 @@ const eslintConfig = defineConfig([
     },
   },
   globalIgnores([
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
     "apps/business-site/dist/**",
     "apps/admin/dist/**",
     "apps/admin/.wrangler/**",

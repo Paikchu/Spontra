@@ -11,7 +11,7 @@ export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{
 export type TreeFiling = { url: string; title: string; publishedAt: string | null };
 export type TreeSearch = Pick<WebSearchService, "search" | "fetchContent">;
 /**
- * The filing library (docs/sec-filing-library.md): the company's SEC documents already split into verbatim passages.
+ * The filing library: the company's SEC documents already split into verbatim passages.
  * Reading an SEC source through it is a D1 lookup; null means the library does not hold the document.
  */
 export type TreeLibrary = {

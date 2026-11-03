@@ -21,12 +21,12 @@
 | --- | --- | --- |
 | `spontra-business-map` | 公开业务地图页面与只读 API（`/api/business/v1/*`） | [`apps/business-site/wrangler.jsonc`](apps/business-site/wrangler.jsonc) |
 | `spontra-admin` | 财报与业务地图运维后台 | [`apps/admin/wrangler.jsonc`](apps/admin/wrangler.jsonc) |
-| `spontra-analysis` | SEC 发现与分析、业务解读、指引、发现、事件、基本面及分析读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
+| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、指引、估值、舞台等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
 
 数据边界：
 
 - 地图通过 Service Binding `SPONTRA_ANALYSIS → spontra-analysis` 的 `MapReads` 命名入口读取数据。命名入口无法从公网访问，绑定本身即凭据，地图不保存读取密钥。
-- admin 通过同名绑定访问 Spontra Analysis 的默认入口，控制类路由由 `SEC_REFRESH_KEY` 保护。
+- admin 通过同名绑定访问 Spontra Analysis 的 `AdminGateway` 命名入口，每次请求带新的后台会话；舞台经地图的 `SPONTRA_STAGE → StageGateway` 绑定进入。
 - 分析 D1 `earning-report-analysis-sec-web` 与 R2 `earning-report-analysis-sec-filings` 归 Spontra Analysis 所有，迁移文件在 `workers/analysis/migrations/`。
 
 ## 目录结构
@@ -89,5 +89,5 @@ Spontra Analysis 部署先应用并核对分析 D1 迁移，再发布 Worker。�
 - [Spontra Analysis](workers/analysis/README.md)
 - [业务地图](apps/business-site/README.md)
 - [BusinessView 后台](docs/businessview-admin.md)
-- [发现与事件](docs/findings-events-design.md)
+- [SEC 归档](docs/sec-archive.md)
 - [业绩指引](docs/guidance.md)

@@ -3,7 +3,7 @@ import type { ExplainerClaim } from "./business-explainer.ts";
 
 /**
  * How a finding is shown once it has the whole stage: a document of rows, each holding one or two
- * blocks, written by the lens agent under the harness (docs/finding-lens-agent.md). A chart is a
+ * blocks, written by the lens agent under the harness. A chart is a
  * declaration bound to references, never to values: the page resolves every figure from the data it
  * already draws, so the document carries no number and cannot execute anything.
  */

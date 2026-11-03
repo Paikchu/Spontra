@@ -36,7 +36,7 @@ export type FindingBaseRef =
   | { guidanceId: string }
   /** One rung of the RPO conversion schedule the filing tags, by position from the nearest (0); the amount expected in that stretch. */
   | { rpoBucket: number }
-  /** The same figure at a tracked peer, from the peers projection (docs/analyst-agent-design.md), aligned to the period asked for. */
+  /** The same figure at a tracked peer, from the peers projection, aligned to the period asked for. */
   | { peer: { ticker: string; ref: PeerBaseRef } }
   /** A cell of a filing-library table, by passage and position; resolvable only when the table's unit parses to a scale. */
   | { passageCell: { passageId: string; row: number; col: number } }
@@ -44,7 +44,7 @@ export type FindingBaseRef =
   | { event: { id: string; field: EventField } }
   /** One rung of a tagged schedule (debt maturities, lease payments due, purchase obligations): year `bucket` 0–5 (5 = thereafter), or the total when `bucket` is "total". */
   | { schedule: { kind: ScheduleKind; bucket: number | "total" } }
-  /** A figure the runtime computes from the statements by a fixed formula (docs/three-statement-analysis-design.md); the formula travels with the value. */
+  /** A figure the runtime computes from the statements by a fixed formula; the formula travels with the value. */
   | { derived: DerivedMetric };
 /**
  * Figures no statement states but every analyst computes, each by one formula in the shared runtime: EBITDA, net
@@ -93,7 +93,7 @@ export type FindingLens =
   | { type: "share_area"; nodeIds: string[] }
   /** Remaining performance obligations over the quarters and, for the finding's report, how they convert over time. */
   | { type: "ladder" }
-  /** The lens agent's composition: charts and paragraphs laid out as rows (docs/finding-lens-agent.md). */
+  /** The lens agent's composition: charts and paragraphs laid out as rows. */
   | { type: "document"; document: LensDocument };
 
 /**
@@ -162,7 +162,7 @@ export type StatementHighlight = {
 export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
 
 /**
- * A written analysis of one metric the three-statement checkup flags (docs/three-statement-analysis-design.md), read
+ * A written analysis of one metric the three-statement checkup flags, read
  * against the filings: what drives it, how it has moved across earlier reports and what management said then and now,
  * whether it is structural or one-off, and what would settle it. Every number in a paragraph is one of the metric's own
  * figures; the quotes are the filings' words, at least one from an earlier report than the current one.

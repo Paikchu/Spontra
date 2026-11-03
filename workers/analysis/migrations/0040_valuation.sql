@@ -1,4 +1,4 @@
--- The valuation assessment (docs/valuation-assessment-design.md, docs/valuation-assessment-implementation.md §7): a fifth
+-- The valuation assessment: a fifth
 -- reader-facing feature switch, its admin inbox rows, and its own immutable report versions, current pointer and evidence
 -- snapshots. SQLite cannot widen a CHECK in place, so the two feature tables are rebuilt with their rows kept.
 CREATE TABLE business_feature_settings_v2 (

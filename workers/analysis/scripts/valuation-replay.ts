@@ -1,6 +1,5 @@
 /**
- * Replays a published valuation's drivers through the current calculator (docs/valuation-v2-SPEC.md, "v3: judged weights and
- * the management scenario"), with the method weights and scenario probabilities given on the command line standing in for the
+ * Replays a published valuation's drivers through the current calculator, with the method weights and scenario probabilities given on the command line standing in for the
  * model's judgements. Offline: reads one payload file; no network, database or model call. Required environment variables: none.
  *
  *   node --experimental-strip-types --no-warnings workers/analysis/scripts/valuation-replay.ts \

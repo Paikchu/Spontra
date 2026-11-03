@@ -18,7 +18,7 @@ import type { SearchHit } from "../web-search/types.ts";
 import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
 
 /**
- * The tools every agent that writes an analysis composes it with (docs/stage-agent-design.md §6): the stage's reads of
+ * The tools every agent that writes an analysis composes it with: the stage's reads of
  * the company's figures and findings, the filing library, the web when a recipe allows it, and `compose`, which holds the
  * analysis to the finding page's own verifiers — every number in the judgment produced by its evidence, every quote
  * found in the passage it names, at least one quote from a filing, and one from an earlier filing when there is one. A

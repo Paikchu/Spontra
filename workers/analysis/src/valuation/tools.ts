@@ -18,7 +18,7 @@ import type { ValuationInput } from "./input.ts";
 import type { ReferenceQuote } from "../../../../shared/analysis-contract/valuation.ts";
 
 /**
- * The tools of the valuation agent (docs/valuation-assessment-implementation.md §5, docs/valuation-methodology-optimization.md §8).
+ * The tools of the valuation agent.
  * Reads register evidence; scores and assumptions may only cite what was registered; every figure comes from the
  * calculator. Three recipes share one state and allow different subsets: research, assumptions and composition.
  */
@@ -164,8 +164,7 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: z.number(), recurringCost: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
 ]);
 /**
- * Every judgement the calculation rests on is a required argument (docs/valuation-v2-SPEC.md, "v3: judged weights and the
- * management scenario"): a missing or malformed one is a schema error the model reads and corrects; nothing is defaulted by code.
+ * Every judgement the calculation rests on is a required argument: a missing or malformed one is a schema error the model reads and corrects; nothing is defaulted by code.
  */
 const ids = (max: number, min = 0) => z.array(z.string().max(40)).min(min).max(max);
 const judgement = z.object({ rationale: z.string().min(20).max(1200), evidenceIds: ids(10, 1) });

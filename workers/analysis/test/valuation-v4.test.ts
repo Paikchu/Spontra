@@ -11,7 +11,7 @@ import { gateGaps, registerManagementEvidence, valuationTools, type ValuationSta
 import { assemblePublication, judgementLines, openingAssume, RED_TEAM_SCHEMA, VALUATION_VERSION } from "../src/valuation/workflow.ts";
 import { runTool } from "../src/tools/registry.ts";
 
-/* docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario" (valuation.v5 / valuation.calc.v4). */
+/* Judged weights and the management scenario (valuation.v5 / valuation.calc.v4). */
 
 const close = (actual: number, expected: number, digits = 2) => assert.equal(Number(actual.toFixed(digits)) + 0, Number(expected.toFixed(digits)) + 0);
 const fill = (n: number, v: number) => new Array<number>(n).fill(v);

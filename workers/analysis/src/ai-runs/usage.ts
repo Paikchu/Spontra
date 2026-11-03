@@ -1,7 +1,7 @@
 import { boundedModelIO } from "../model-io.ts";
 
 /**
- * The cost ledger for model calls (docs/analyst-agent-design.md, 前置数据工作 4; migration 0023): one row per
+ * The cost ledger for model calls (migration 0023): one row per
  * provider request, successful or not, carrying the usage the provider reported. The row is written beside the
  * call, best-effort: a missing database, a missing table or a slow write never fails the call.
  */

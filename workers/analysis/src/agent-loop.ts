@@ -2,7 +2,7 @@ import { CALLS_PER_TURN, FAILED_REPLIES, replyFailure, replyText, toolCalls, typ
 import { resultBlock, runTool, schemasFor, type AnyTool, type ToolOutcome, type ToolPolicy } from "./tools/registry.ts";
 
 /**
- * One agent's loop, shared by every recipe (docs/stage-agent-design.md §2.1): the model replies, the harness runs the
+ * One agent's loop, shared by every recipe: the model replies, the harness runs the
  * calls it makes through the tool pipeline, and the results go back until a terminal tool settles the run or the
  * budget runs out. The exchange only grows: each reply goes back exactly as it came, thinking included.
  */

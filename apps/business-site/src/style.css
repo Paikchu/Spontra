@@ -1420,7 +1420,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 @keyframes row-arrive { from { opacity: 0; transform: translateY(-10px) scale(.98); } }
 @keyframes row-glow { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
 
-/* ---------- Three-statement analysis, inside the statements (docs/three-statement-analysis-design.md) ---------- */
+/* ---------- Three-statement analysis, inside the statements ---------- */
 /* One colour and one shape per level: an alert reads as a loss, a watch as a cost, a note as growth. */
 .map, .home { --level-alert: var(--loss); --level-watch: var(--flow-expense); --level-note: var(--up); }
 [data-level="alert"] { --level: var(--level-alert); } [data-level="watch"] { --level: var(--level-watch); } [data-level="note"] { --level: var(--level-note); }

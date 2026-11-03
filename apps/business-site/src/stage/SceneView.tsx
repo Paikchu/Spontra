@@ -29,7 +29,7 @@ export const NOTICE: Record<NoticeCode, string> = labels({
 const m = messages({ queued: "Report queued", running: "Writing report", report: "Report", unavailable: "Report unavailable" }, { queued: "报告排队中", running: "报告撰写中", report: "报告", unavailable: "报告不可用" });
 
 /**
- * The agent's scene on the stage (docs/stage-agent-design.md §5.1): verified again against the data this page holds,
+ * The agent's scene on the stage: verified again against the data this page holds,
  * so a block whose references the page cannot resolve is left out rather than drawn wrong. Charts go through the same
  * frame the finding page uses; a finding's lens through the same blocks.
  */

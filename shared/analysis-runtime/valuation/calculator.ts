@@ -4,12 +4,11 @@ import { weightedQuantile } from "./peers.ts";
 import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
 
 /**
- * The deterministic valuation calculator (docs/valuation-assessment-implementation.md §4, docs/valuation-methodology-optimization.md
- * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
+ * The deterministic valuation calculator. Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
 export const CALCULATOR_VERSION = "valuation.calc.v9";
-/** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
+/** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years. */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
 /** Terminal growth above this is flagged; above the risk-free rate it is rejected. */
@@ -674,7 +673,7 @@ export function verifyCitedInputs(request: CalcRequest, facts: Array<{ id: strin
   return { checks, ok: !checks.some(c => c.status === "fail") };
 }
 
-/** The gates (docs/valuation-v2-SPEC.md §5): fails reject the calculation inside the tool, flags annotate the report. */
+/** The gates: fails reject the calculation inside the tool, flags annotate the report. */
 export function sanityGates(input: { result: ValuationModelResult; riskFree: number | null; anchor: RevenueAnchor | null; consensus: ConsensusTarget | null; consensusNote?: ConsensusNote | null; triangulation: Triangulation | null; methods?: MethodValuation[] | null; verification: InputVerification | null; impliedMultiple: number | null; multipleHistory: FactorDistribution | null; peers: PeerMultiples | null; management?: SanityGate | null }): SanityGate[] {
   const { result } = input;
   const gates: SanityGate[] = [];
@@ -870,7 +869,7 @@ export function discountRateBaseline(c: { riskFree: number; beta: number; equity
   return { value: c.equityWeight * costOfEquity + (1 - c.equityWeight) * kd * (1 - c.taxRate), costOfEquity };
 }
 
-// ---- Scores, confidence and verdict (docs/valuation-assessment-implementation.md §3) ----
+// ---- Scores, confidence and verdict ----
 
 const VALID_SCORE = (score: number) => score >= 0 && score <= 10 && Math.abs(score * 2 - Math.round(score * 2)) < 1e-9;
 

@@ -150,7 +150,7 @@ async function home(request: Request, database: D1Database): Promise<Response> {
 }
 
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" }>): Promise<Response> {
-  // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
+  // The admin's switch for one feature of this company: off hides what the feature wrote.
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, ticker.trim().toUpperCase(), feature);
   const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
   const url = new URL(request.url);
@@ -253,7 +253,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
-    // The valuation (docs/valuation-assessment-implementation.md §6): hidden answers 200 with nothing; history and evidence
+    // The valuation: hidden answers 200 with nothing; history and evidence
     // behind the switch answer 404 so an old link cannot read around it. The report's prose is applied in the reader's
     // language per version; its figures, ids and quoted excerpts stay as written.
     case "valuation": {

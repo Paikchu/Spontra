@@ -4,7 +4,7 @@ import type { LensChart, LensDocument } from "./lens.ts";
 import type { MapRevisions } from "./revisions.ts";
 
 /**
- * What the stage shows while a reader talks with it (docs/stage-agent-design.md §5.1). Like a lens document it is a
+ * What the stage shows while a reader talks with it. Like a lens document it is a
  * declaration bound to references, never to values: the page resolves every figure from the data it already holds,
  * so a scene carries no number of its own and cannot execute anything. A finding's own lens document travels inside
  * a `lens` block, unchanged, so everything said about a finding stays anchored to it.

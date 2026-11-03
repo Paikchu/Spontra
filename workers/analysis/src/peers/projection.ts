@@ -53,7 +53,7 @@ export async function buildPeerCompany(env: AnalysisEnv, ticker: string): Promis
 
 /**
  * The comparable units of the data companies with their revenue share, and the pairs their business tags made
- * (docs/peer-similarity-design.md), each with the basis it can be compared on. A pair only of shared sector stays in
+ *, each with the basis it can be compared on. A pair only of shared sector stays in
  * the admin. Empty lists when no company has tags yet.
  */
 export async function buildPeerPairs(db: D1Database, tickers: string[]): Promise<{ units: PeerUnit[]; pairs: PeerPair[] }> {
@@ -92,8 +92,7 @@ export async function buildPeersPublication(env: AnalysisEnv, now: Date): Promis
 
 /**
  * Builds and stores the projection under its single key; the publication and its events commit together. One
- * `peers.published` per company whose own pairs moved, whose comparable peers' rows changed (its checkup ranks them,
- * docs/three-statement-analysis-design.md), or whose findings cite a peer whose row changed; only those pages are told.
+ * `peers.published` per company whose own pairs moved, whose comparable peers' rows changed (its checkup ranks them), or whose findings cite a peer whose row changed; only those pages are told.
  */
 export async function publishPeers(env: AnalysisEnv, now: Date): Promise<{ companies: number; quarters: number; linked: number; changed: string[]; revised: string[] }> {
   const db = requireDb(env);

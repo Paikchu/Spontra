@@ -99,7 +99,7 @@ export const FINANCIAL_TASKS = {
       }
       const reader = archiveReader(env, ticker, causeId);
       // An issuer that already publishes takes only its new filings, each read once by a read note; nothing published
-      // is read again (docs/agent-interpretation-design.md). An issuer's first publication still comes from the full read below.
+      // is read again. An issuer's first publication still comes from the full read below.
       const current = aiIsEnabled(env) ? (await readCompletePublication(db, job.cik).catch(() => null))?.flow : null;
       if (current) {
         const newest = newestPair(current).quarters[0]!;

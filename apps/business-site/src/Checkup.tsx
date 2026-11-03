@@ -16,7 +16,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { flagCopy, metricRules } from "./flag-copy";
 
 /**
- * The three-statement analysis, shown inside the statements it reads (docs/three-statement-analysis-design.md): each
+ * The three-statement analysis, shown inside the statements it reads: each
  * view carries its own tripped rules under its tiles and its own metrics in the panel under its chart; a rule or a
  * metric opens in the stage like a finding. Nothing here is a sentence: names, figures, thresholds and dates.
  */

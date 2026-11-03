@@ -3,7 +3,7 @@ import type { ManagementTargetSet, StoredManagementTargets, ValuationCompanyInpu
 import { MANAGEMENT_TARGET_METRICS } from "../../../../shared/analysis-contract/valuation.ts";
 
 /**
- * Valuation inputs an admin maintains per company (docs/valuation-v2-SPEC.md §3a–§3b), kept in D1
+ * Valuation inputs an admin maintains per company, kept in D1
  * `valuation_company_inputs`: the comparable set the cross-check tries first, and management's public targets with
  * their sources. Code names no company; every company without a row is valued the same way, from its business-tag
  * peers and without a management case. Both inputs pass the same schema on write and on read, so a stored typo is

@@ -6,7 +6,7 @@ import { bridgePeriods, type BridgePeriod, type Fact } from './parser.ts';
 import type { SecReader } from './provider.ts';
 
 /**
- * The last step of reading an income statement automatically (docs/statement-bridge-design.md): when a filing's
+ * The last step of reading an income statement automatically: when a filing's
  * calculation linkbase and its statement rows both fail to balance the lines from operating income to net income, a
  * model proposes which line is income before taxes and which lines come after taxes, and the same arithmetic the parse
  * uses accepts or rejects the proposal. A model never supplies a number; a proposal stands only when the reported facts

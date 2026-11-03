@@ -1,4 +1,4 @@
--- Reports readers asked the stage for (docs/stage-agent-design.md §6). The body is the whole verified report as JSON
+-- Reports readers asked the stage for. The body is the whole verified report as JSON
 -- (user-report.v1), with the passages it quotes, so it reads the same however the library changes; a revision is a
 -- new row pointing at the one it revises. Readable only by the reader who asked, through the stage's gateway.
 -- Additive only.

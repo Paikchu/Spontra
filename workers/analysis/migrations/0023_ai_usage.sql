@@ -1,4 +1,4 @@
--- The cost ledger for model calls (docs/analyst-agent-design.md, 前置数据工作 4): one row per provider request,
+-- The cost ledger for model calls: one row per provider request,
 -- successful or not, with the token usage the provider reported. `kind` is the feature that made the call
 -- (findings, lens, tree, explainer, guidance, sec-analysis, ...), `run_id` the Workflow instance when known.
 -- `feature_budget` (0015) keeps its daily caps unchanged; this table is the record, not the gate. Additive only.

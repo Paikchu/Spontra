@@ -15,7 +15,7 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
   history: { completed: number; total: number } | null;
   publication: { status: string; outdated: boolean; reasons: string[]; periods: string[]; revenueCoverage?: Array<{period:string;status:"verified"|"single_segment"|"unverified";segments:number;adjustments:number}> };
   /**
-   * How the newest published quarter runs from operating income to net income (docs/statement-bridge-design.md): the
+   * How the newest published quarter runs from operating income to net income: the
    * source of that arithmetic, the lines after taxes, the lines a later filing restated, and the model judgement kept
    * for the issuer when neither the calculation nor the statement rows balanced.
    */
@@ -28,7 +28,7 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
     profile: { status: "verified" | "unresolved"; accession: string; attempts: number; issues: string[]; updatedAt: string } | null;
   };
   /**
-   * The feature switches as they apply now (docs/whitelist-feature-switches-design.md): whether the company's switch is on
+   * The feature switches as they apply now: whether the company's switch is on
    * (generated and shown; off stops generating and hides, except after a failed run, which stops generation only) and when the newest publication was written (null for none).
    */
   features: Record<Feature, { on: boolean; publishedAt: string | null;
@@ -57,7 +57,7 @@ export type BusinessMapCharts = {
 };
 
 /**
- * One company's analysis as the pipeline runs it (docs/analysis-events.md), for the admin's flow graph: the tasks of the
+ * One company's analysis as the pipeline runs it, for the admin's flow graph: the tasks of the
  * financial map and its features, the events that carry information between them, and where each task stands now.
  */
 export type FlowNodeState = "running" | "queued" | "done" | "failed" | "idle";

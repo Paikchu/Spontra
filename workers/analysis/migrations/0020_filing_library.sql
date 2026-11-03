@@ -1,4 +1,4 @@
--- The filing library (docs/sec-filing-library.md): every archived SEC document split once into sections and
+-- The filing library: every archived SEC document split once into sections and
 -- verbatim passages, the index cards written for its sections, and the business links that join a company's
 -- disclosures across sections. Section and passage ids derive from content. Additive only.
 CREATE TABLE sec_documents (
