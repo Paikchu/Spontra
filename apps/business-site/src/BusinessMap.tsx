@@ -680,7 +680,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       <button key={node.id} type="button" lang="en" onClick={() => setMindItem(mindNodeItem(branch, node.id))}>{node.name}</button>)}</span>;
   } : undefined;
   const mentions = useMemo(() => {
-    const node = mindItem ? mindItem.kind === "node" ? mindItem.node : mindItem.owner : null;
+    const node = mindItem?.node ?? null;
     const business = node && mindMap ? items.find(item => "segment:" + item.key === mindItem!.anchor) : null;
     const explained = business && explainer?.businesses.find(b => b.nodeId === business.id);
     const branch = mindMap?.branches.find(b => b.node === mindItem?.anchor);

@@ -21,13 +21,11 @@ const m = messages({
   close: "关闭详情", noDescription: "无描述", noRevenue: "收入模式未披露", placement: "归属依据",
   inheritedFrom: (name: string) => `${name} 的收入模式`,
 });
-const describe = (item: MindItem) => item.kind === "revenue"
-  ? `${m.revenueModel} ${item.revenue.label}`
-  : [item.node.name, item.node.gloss, item.node.revenue.length ? `${m.revenueModel} ${item.node.revenue.map(r => r.label).join(", ")}` : null].filter(Boolean).join(", ");
+const describe = (item: MindItem) => [item.node.name, item.node.gloss, item.node.revenue.length ? `${m.revenueModel} ${item.node.revenue.map(r => r.label).join(", ")}` : null].filter(Boolean).join(", ");
 
 /**
  * The breakdown drawn in the chart's coordinates, left of the Sankey: a trunk from the business's label,
- * branches to its product lines and products, and money pills where the material says how each earns.
+ * branches to its product lines and products.
  */
 export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLeave }: {
   mind: MindMapLayout; k: number; title: string; colorOf: (anchor: string) => string; picked: string | null;
@@ -40,15 +38,11 @@ export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLe
       <tspan className="fc-mind-title" style={{ fontSize: t.title }}>{title} · {m.breakdown}</tspan>
     </text>
     {mind.trunks.map(trunk => <path key={trunk.anchor} className="fc-mind-trunk" d={`M${r(trunk.x0)},${r(trunk.y)}H${r(trunk.x1)}`} style={{ "--c": colorOf(trunk.anchor) } as CSSProperties} />)}
-    {mind.edges.map(e => <path key={e.id} className="fc-mind-edge" data-revenue={e.revenue || undefined} d={mindEdgePath(e)} style={{ "--c": colorOf(e.anchor), "--depth": e.depth } as CSSProperties} />)}
+    {mind.edges.map(e => <path key={e.id} className="fc-mind-edge" d={mindEdgePath(e)} style={{ "--c": colorOf(e.anchor), "--depth": e.depth } as CSSProperties} />)}
     {mind.items.map(item => {
       const style = { "--c": colorOf(item.anchor), "--depth": item.depth } as CSSProperties;
       const common = { "data-mind": "", role: "button", tabIndex: 0, "aria-label": describe(item), "aria-pressed": picked === item.id, style,
         onClick: () => onPick(item.id), onKeyDown: (e: KeyboardEvent) => key(e, item.id), onMouseMove: (e: MouseEvent) => onTip(e, item), onMouseLeave: onLeave };
-      if (item.kind === "revenue") return <g key={item.id} className="fc-mind-item fc-mind-pill" data-picked={picked === item.id || undefined} {...common}>
-        <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={item.h / 2} />
-        <text x={item.x + t.padX} y={item.y + item.h / 2 + t.pill * 0.36} style={{ fontSize: t.pill }}><tspan className="fc-mind-coin" aria-hidden="true">●</tspan><tspan dx={t.pill * 0.35} lang={langOf(item.revenue.label)}>{item.revenue.label}</tspan></text>
-      </g>;
       return <g key={item.id} className="fc-mind-item fc-mind-node" data-kind={item.node.kind} data-picked={picked === item.id || undefined} {...common}>
         <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={7 * k} />
         {mind.stacked && item.gloss ? <text x={item.x + t.padX} y={item.y + t.name * 1.3} lang="en">
@@ -96,10 +90,9 @@ export function namedNodes(branch: MindBranch, text: string): TreeNode[] {
  * its business, each numbered against the tree's sources; `children` follow in the second column.
  */
 export function MindLens({ item, branch, sources, onClose, children }: { item: MindItem; branch: MindBranch | undefined; sources: TreeSource[]; onClose: () => void; children?: ReactNode }) {
-  const node = item.kind === "node" ? item.node : item.owner;
+  const node = item.node;
   const name = node?.name ?? branch?.label ?? "";
   const revenue = node ? node.revenue : branch?.revenue ?? [];
-  const highlight = item.kind === "revenue" ? item.revenue : null;
   const summary = node ? node.summary : branch?.summary ?? null;
   // A product the material prices only at its line earns as the nearest priced level above it.
   const inherited = node && !revenue.length && !node.children.length && branch
@@ -111,8 +104,7 @@ export function MindLens({ item, branch, sources, onClose, children }: { item: M
     const index = cited.findIndex(s => s.id === id);
     return index < 0 ? null : <a key={id} href={cited[index]!.url} target="_blank" rel="noopener noreferrer" title={cited[index]!.title}>{index + 1}</a>;
   })}</span>;
-  // A pill's own path ends with its owner; the lens is about the owner, so it names what the owner hangs from.
-  const path = (item.kind === "revenue" ? item.path.slice(0, -1) : item.path).join(" / ");
+  const path = item.path.join(" / ");
   return <section className="lens mind-lens" aria-label={m.details(name)} key={item.id}>
     <header className="lens-head">
       <div className="lens-title">
@@ -120,7 +112,6 @@ export function MindLens({ item, branch, sources, onClose, children }: { item: M
         <h2 lang={node ? "en" : undefined}>{name}</h2>
         {node?.gloss && <span className="lens-basis" lang={langOf(node.gloss)}>{node.gloss}</span>}
         {path && node && <span className="lens-basis">{path}</span>}
-        {highlight && <span className="lens-basis">{m.revenueModel} · <span lang={langOf(highlight.label)}>{highlight.label}</span></span>}
       </div>
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
@@ -128,7 +119,7 @@ export function MindLens({ item, branch, sources, onClose, children }: { item: M
       <div className="lens-doc-cell">
         {summary ? <p className="mind-lens-summary" lang={langOf(summary.text)}>{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
         {inherited && <small className="mind-lens-inherited">{m.inheritedFrom(inherited.name)}</small>}
-        {shown.length > 0 ? <ul className="mind-lens-revenue">{shown.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
+        {shown.length > 0 ? <ul className="mind-lens-revenue">{shown.map((r, i) => <li key={i}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
           : !node?.children.length && <p className="mind-lens-empty">{m.noRevenue}</p>}
       </div>
       <div className="lens-doc-cell">

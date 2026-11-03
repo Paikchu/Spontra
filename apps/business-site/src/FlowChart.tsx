@@ -167,11 +167,11 @@ function cameraFor(box: Box, world: World, size: { w: number; h: number } | null
 function mindFor(input: MindMapInput, layout: InfographicLayout, copy: (n: PlacedNode) => NodeCopy, k: number, focus: Box | null, size: { w: number; h: number } | null): MindMapLayout | null {
   const g = geometryFor(k), byName = new Map(layout.nodes.map(n => [n.name, n]));
   const labelLeft = (n: PlacedNode) => n.side === "left" ? n.x - g.labelOffset - labelWidth(n, copy(n), k) : n.x;
-  const placed = input.branches.flatMap(b => { const n = byName.get(b.node); return n && (b.nodes.length || b.revenue.length) ? [{ b, n }] : []; });
+  const placed = input.branches.flatMap(b => { const n = byName.get(b.node); return n && b.nodes.length ? [{ b, n }] : []; });
   if (!placed.length) return null;
   const column = Math.min(...placed.map(p => p.n.column));
   const right = Math.min(...layout.nodes.filter(n => n.column === column).map(labelLeft)) - 20 * k;
-  const anchors = placed.map(({ b, n }) => ({ key: b.node, label: b.label, x: labelLeft(n) - 6 * k, y: n.y + Math.max(n.h, g.sideLabelHeight) / 2, revenue: b.revenue, nodes: b.nodes }));
+  const anchors = placed.map(({ b, n }) => ({ key: b.node, label: b.label, x: labelLeft(n) - 6 * k, y: n.y + Math.max(n.h, g.sideLabelHeight) / 2, nodes: b.nodes }));
   const options = { k, right, top: 0, bottom: layout.height };
   const [flat, stacked] = [layoutMindMap(anchors, options), layoutMindMap(anchors, { ...options, stacked: true })];
   if (!flat || !stacked || !size) return flat;
@@ -442,10 +442,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   };
 
   const mindTip = (event: React.MouseEvent, item: MindItem) => {
-    const node = item.kind === "node" ? item.node : null;
-    point(event, item.kind === "revenue"
-      ? { title: `${m.revenueModel} · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [[m.partOf, item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]] }
-      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [[m.description, node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [[m.revenueModel, node!.revenue.map(r => r.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [[m.contains, m.items(node!.children.length)] as [string, string]] : [])] });
+    const node = item.node;
+    point(event, { title: node.name, color: colorOf(item.anchor), rows: [...(node.gloss ? [[m.description, node.gloss] as [string, string]] : []), ...(node.revenue.length ? [[m.revenueModel, node.revenue.map(r => r.label).join(", ")] as [string, string]] : []), ...(node.children.length ? [[m.contains, m.items(node.children.length)] as [string, string]] : [])] });
   };
 
   const compactNode = (n: PlacedNode) => {
