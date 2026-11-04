@@ -14,18 +14,18 @@ import { PageActive } from "./admin-page";
 import { AnalyticsPanel } from "./analytics";
 
 export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
-type Page = { path: string; title: string; nav?: Section };
+type Page = { path: string; title: string; description: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the companies page, so it has no entry of its own. */
 const PAGES: Record<Section, Page> = {
-  whitelist: { path: "/admin/companies", title: "公司" },
-  analytics: { path: "/admin/analytics", title: "使用情况" },
-  financials: { path: "/admin/financials", title: "财报与更新记录", nav: "whitelist" },
-  filings: { path: "/admin/filings", title: "SEC 文件拆分" },
-  business: { path: "/admin/business", title: "公司业务板块" },
-  findings: { path: "/admin/findings", title: "公司要点" },
-  models: { path: "/admin/models", title: "模型配置" },
-  messages: { path: "/admin/messages", title: "消息" },
+  whitelist: { path: "/admin/companies", title: "公司", description: "公司页的展示、财报与分析内容。" },
+  analytics: { path: "/admin/analytics", title: "使用情况", description: "BusinessView 的访问、搜索与内容使用情况。" },
+  financials: { path: "/admin/financials", title: "财务报表", description: "公司页的利润、现金流与资产负债表，以及数据更新记录。", nav: "whitelist" },
+  filings: { path: "/admin/filings", title: "财报", description: "公司侧栏的财报与原文，以及 SEC 文件的章节、表格和解析结果。" },
+  business: { path: "/admin/business", title: "公司业务", description: "公司页的营收构成、业务详情与业务解读。" },
+  findings: { path: "/admin/findings", title: "要点", description: "公司侧栏的要点、报表分析与估值评估，以及对应的中文译文。" },
+  models: { path: "/admin/models", title: "模型配置", description: "Spontra Analysis 各项分析任务使用的模型与推理强度。" },
+  messages: { path: "/admin/messages", title: "消息", description: "数据更新、分析任务与需要处理的问题。" },
 };
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
@@ -108,7 +108,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   return <SidebarProvider className="report-admin" mobileBreakpoint={769} persistState={false}>
     <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} mapOrigin={mapOrigin} />
     <SidebarInset className="min-w-0">
-      <header className="ra-shell-header flex min-h-16 shrink-0 items-center gap-2 border-b px-4">
+      {section !== "whitelist" && <header className="ra-shell-header">
         <SidebarTrigger aria-label="切换侧边栏" />
         <Separator orientation="vertical" className="mr-2 max-h-4 self-center" />
         <Breadcrumb aria-label="页面位置">
@@ -120,8 +120,9 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
             <BreadcrumbItem><BreadcrumbPage>{page.title}</BreadcrumbPage></BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-      </header>
-      <div className="ra-main">
+      </header>}
+      <div className="ra-main" data-section={section}>
+      {section !== "analytics" && section !== "whitelist" && <div className="ra-page-heading"><h1>{page.title}</h1><p>{page.description}</p></div>}
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
       {opened.map(key => {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} onOpenFinancials={ticker => navigate("financials", `?${new URLSearchParams({ ticker })}`)} />

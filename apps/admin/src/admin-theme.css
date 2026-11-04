@@ -1,0 +1,93 @@
+/* Admin-only tokens. Typography and accent follow BusinessView; control radii are 6px,
+   dialogs 12px, switches circular. Layers: table 1, shell 10, overlays use shadcn. */
+html:has(.report-admin) {
+  --canvas: #f3f5f2;
+  --surface: #fff;
+  --surface-raised: #fff;
+  --surface-sunken: #edf0ec;
+  --fill: #e9ede8;
+  --fill-strong: #dce2da;
+  --line: #dbe1d9;
+  --line-strong: #818b7e;
+  --sp-ink: #172019;
+  --ink-soft: #3f4c42;
+  --sp-ink-muted: #5c685e;
+  --brand: #5e6510;
+  --brand-strong: #4c530b;
+  --brand-soft: #eaedd8;
+  --on-brand: #fff;
+  --sp-accent: #5e6510;
+  --sp-accent-strong: #4c530b;
+  --sp-accent-soft: #eaedd8;
+  --sp-on-accent: #fff;
+  --link: var(--ink-soft);
+  --gain: #396246;
+  --gain-soft: #e6eee7;
+  --focus-ring: var(--brand);
+  --sidebar: var(--surface-sunken);
+  --sidebar-accent: var(--fill-strong);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--on-brand);
+  --sp-radius-xs: 4px;
+  --sp-radius-sm: 6px;
+  --sp-radius-md: 8px;
+  --sp-radius-lg: 12px;
+  --display: var(--sans);
+  --chart-1: #5e6510;
+  --chart-2: #396246;
+  --chart-3: #a26b23;
+  --chart-4: #647b91;
+  --shadow-press: none;
+  --glow-accent: none;
+  --sheen: transparent;
+}
+html.dark:has(.report-admin) {
+  --canvas: #101112;
+  --surface: #151617;
+  --surface-raised: #1b1d1e;
+  --surface-sunken: #131415;
+  --fill: #202224;
+  --fill-strong: #343739;
+  --line: #2b2d2e;
+  --line-strong: #656a6e;
+  --sp-ink: #ededed;
+  --ink-soft: #c2c5c4;
+  --sp-ink-muted: #a1a6a3;
+  --brand: #eff457;
+  --brand-strong: #f4f789;
+  --brand-soft: #292d1d;
+  --on-brand: #181b0d;
+  --sp-accent: #eff457;
+  --sp-accent-strong: #f4f789;
+  --sp-accent-soft: #292d1d;
+  --sp-on-accent: #181b0d;
+  --gain: #b4c7a9;
+  --gain-soft: #222b23;
+  --danger: #f0a198;
+  --danger-soft: #382320;
+  --caution: #e8bd83;
+  --caution-soft: #332b20;
+  --sidebar: #151617;
+  --chart-1: #c6cc72;
+  --chart-2: #92b5a1;
+  --chart-3: #d3aa76;
+  --chart-4: #96aeca;
+}
+
+.report-admin { --sidebar-width: 216px !important; font-weight: 400; -webkit-font-smoothing: antialiased; }
+html:has(.report-admin) [data-slot="sidebar-header"] { padding: 16px 12px 20px; }
+html:has(.report-admin) [data-slot="sidebar-group"] { padding: 8px 12px 16px; }
+html:has(.report-admin) [data-slot="sidebar-group-label"] { height: 28px; padding: 0 10px; color: var(--ink-muted); font-size: 11px; font-weight: 500; }
+html:has(.report-admin) [data-slot="sidebar-menu"] { gap: 4px; }
+html:has(.report-admin) [data-slot="sidebar-menu-button"] { min-height: 38px; padding: 8px 10px; border-radius: 6px; color: var(--ink-soft); font-size: 13px; font-weight: 400; }
+html:has(.report-admin) [data-slot="sidebar-menu-button"][data-active="true"] { background: var(--fill); color: var(--ink); box-shadow: inset 2px 0 var(--brand); font-weight: 600; }
+html:has(.report-admin) [data-slot="sidebar-menu-button"][data-active="true"] > svg { color: var(--brand); }
+html:has(.report-admin) [data-slot="sidebar-menu-button"] > svg { width: 16px; height: 16px; stroke-width: 1.7; }
+html:has(.report-admin) [data-slot="sidebar-footer"] { padding: 12px; }
+html:has(.report-admin) [data-slot="sidebar-menu-badge"] { top: 9px; color: var(--ink-muted); font-family: var(--mono); font-size: 11px; }
+html:has(.report-admin) [data-slot="sidebar-menu-button"].ra-brand { height: 44px; padding: 0 8px; gap: 12px; color: var(--ink); }
+.ra-brand-mark { display: grid; place-items: center; width: 24px; height: 32px; flex: none; }
+.ra-brand-mark svg { width: 24px; height: 24px; stroke-width: 1.5; }
+.ra-brand-name { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+.ra-brand-name strong { font-size: 16px; font-weight: 600; letter-spacing: -.025em; }
+.ra-brand-name small { color: var(--ink-muted); font-size: 11px; }

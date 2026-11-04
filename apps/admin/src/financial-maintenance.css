@@ -1,5 +1,5 @@
 /* Financial reading workspace: white paper, one quiet company rail, indigo controls. */
-.fm-workspace { --fm-ink: var(--ink); --fm-muted: var(--ink-muted); --fm-line: var(--line); --fm-accent: var(--brand); min-width: 0; color: var(--fm-ink); background: var(--surface); border-radius: var(--sp-radius-md); box-shadow: 0 0 0 1px var(--line), inset 0 1px 0 var(--sheen); overflow: clip; }
+.fm-workspace { --fm-ink: var(--ink); --fm-muted: var(--ink-muted); --fm-line: var(--line); --fm-accent: var(--brand); min-width: 0; color: var(--fm-ink); background: transparent; border-block: 1px solid var(--line); overflow: clip; }
 .fm-columns { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: var(--page-height); }
 .fm-company-list { min-width: 0; border-right: 1px solid var(--fm-line); padding: 22px 10px; position: sticky; top: var(--space-3); height: var(--page-height); display: flex; flex-direction: column; gap: 6px; }
 .fm-company-search { padding: 0 7px 9px; }
@@ -27,7 +27,7 @@
 .fm-company-header h2 > span { display: inline-block; margin-left: 12px; font-size: 15px; color: var(--fm-muted); letter-spacing: 0; font-weight: 500; }
 .fm-company-header p { margin: 0; color: var(--fm-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fm-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
-.fm-button, .fm-icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: var(--sp-radius-pill); background: var(--surface); color: var(--ink-soft); white-space: nowrap; font-size: 13px !important; min-height: 38px; }
+.fm-button, .fm-icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: var(--sp-radius-sm); background: var(--surface); color: var(--ink-soft); white-space: nowrap; font-size: 13px !important; min-height: 38px; }
 .fm-button:hover:not(:disabled), .fm-icon-button:hover:not(:disabled) { background: var(--fill); border-color: var(--line-strong); }
 .fm-icon-button { padding: 7px; min-height: 30px; border-color: transparent; }
 .fm-notice { padding: 11px 14px; border-radius: var(--sp-radius-sm); margin: 0 0 18px; }

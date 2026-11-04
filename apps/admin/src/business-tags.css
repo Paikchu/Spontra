@@ -1,16 +1,16 @@
 /* ---------- Business tags: units with two tag levels | peers by tier ---------- */
 .bt-columns { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
 .bt-units, .bt-peers { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-.bt-unit { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-radius: var(--sp-radius-md); background: var(--surface-raised); box-shadow: 0 0 0 1px var(--line); }
+.bt-unit { display: flex; flex-direction: column; gap: var(--space-3); padding: 20px 0; border-bottom: 1px solid var(--line); background: transparent; }
 .bt-unit > header { display: flex; flex-direction: column; gap: 2px; }
 .bt-unit > header strong { color: var(--ink); font-size: 15px; font-weight: 650; }
 .bt-unit > header small { color: var(--ink-muted); font-family: var(--mono); font-size: 11.5px; }
 .bt-sector-block { display: flex; flex-direction: column; gap: var(--space-2); }
-.bt-sector { align-self: flex-start; height: 22px; padding: 0 10px; border-radius: var(--sp-radius-pill); background: var(--brand); color: var(--on-brand); font-size: 12px; font-weight: 650; line-height: 22px; }
+.bt-sector { align-self: flex-start; height: 22px; padding: 0 10px; border-radius: 4px; background: var(--brand); color: var(--on-brand); font-size: 12px; font-weight: 650; line-height: 22px; }
 .bt-sector-block dl { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px var(--space-3); margin: 0; }
 .bt-sector-block dt { padding-top: 3px; color: var(--ink-muted); font-size: 12px; }
 .bt-sector-block dd { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
-.bt-tag { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--sp-radius-pill); background: var(--surface); color: var(--ink); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.bt-tag { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 span.bt-tag { cursor: default; margin: 0 6px 4px 0; }
 .bt-tag:hover { border-color: var(--line-strong); }
 .bt-tag[aria-pressed=true] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
@@ -26,11 +26,11 @@ span.bt-tag { cursor: default; margin: 0 6px 4px 0; }
 .bt-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 var(--space-2); color: var(--ink); font-size: 13px; font-weight: 650; }
 .bt-group h3 small { color: var(--ink-muted); font-weight: 500; }
 .bt-group ul { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.bt-group li { border-radius: var(--sp-radius-md); background: var(--surface-raised); box-shadow: 0 0 0 1px var(--line); }
+.bt-group li { border-bottom: 1px solid var(--line); background: transparent; }
 .bt-pair { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px var(--space-2); width: 100%; padding: var(--space-3) var(--space-4); border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .bt-pair strong { font-family: var(--mono); font-size: 14px; font-weight: 650; }
 .bt-pair span { overflow: hidden; color: var(--ink-soft); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.bt-pair em { height: 20px; padding: 0 8px; border-radius: var(--sp-radius-pill); background: var(--fill-strong); color: var(--ink-soft); font-size: 11.5px; font-style: normal; font-weight: 600; line-height: 20px; }
+.bt-pair em { height: 20px; padding: 0 8px; border-radius: 4px; background: var(--fill-strong); color: var(--ink-soft); font-size: 11.5px; font-style: normal; font-weight: 600; line-height: 20px; }
 .bt-pair em[data-basis=company] { background: var(--brand); color: var(--on-brand); }
 .bt-pair em[data-basis=unit] { background: var(--brand-soft); color: var(--brand); }
 .bt-pair small { grid-column: 1 / -1; color: var(--ink-muted); font-size: 12px; }
