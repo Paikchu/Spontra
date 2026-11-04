@@ -7,7 +7,7 @@ import { useOnReturn, usePageActive } from './admin-page';
 /** The pipeline's names as the admin calls them; the model-written ones are marked. */
 const NODE: Record<string, { label: string; model?: boolean }> = {
   'sec-discovery': { label: 'SEC 申报' }, admin: { label: '后台操作' }, maintenance: { label: '重新准备' },
-  collect: { label: '采集财报' }, history: { label: '季度历史' }, 'map-derive': { label: '财务地图' }, library: { label: '文件库拆分' },
+  collect: { label: '采集财报' }, history: { label: '季度历史' }, 'map-derive': { label: '财务报表' }, library: { label: '文件库拆分' },
   events: { label: '事件' }, 'sec-report': { label: '财报摘要', model: true }, guidance: { label: '业绩指引', model: true },
   'company-analysis': { label: '公司综述', model: true }, findings: { label: '要点', model: true }, analyst: { label: '要点分析师', model: true },
   checkup: { label: '三表分析', model: true }, items: { label: '申报解读', model: true }, explainer: { label: '业务解读', model: true },

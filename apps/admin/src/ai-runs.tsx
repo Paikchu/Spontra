@@ -15,7 +15,7 @@ import { PLANS } from "./run-progress";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
-const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
+const KINDS: Array<[ViewKind, string]> = [["findings", "要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
@@ -93,7 +93,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
       <div className="ra-list-caption"><span>{list ? `${listed.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
         </span></button>)}
         {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
       </div>

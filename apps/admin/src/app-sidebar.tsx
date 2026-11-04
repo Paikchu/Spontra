@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bell, ChartColumn, Cpu, FileStack, GalleryVerticalEnd, ListChecks, Moon, Network, Sparkles, Sun, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Bell, ChartColumn, Cpu, FileStack, GalleryVerticalEnd, ListChecks, ListFilter, Moon, Network, Sun, type LucideIcon } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader,
@@ -9,7 +9,7 @@ import type { Section } from "./business-view-admin";
 
 const NAV_GROUPS: Array<{ title: string; items: Array<[Section, LucideIcon]> }> = [
   { title: "数据", items: [["whitelist", ListChecks], ["analytics", ChartColumn]] },
-  { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", Sparkles]] },
+  { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter]] },
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
 
@@ -41,13 +41,13 @@ export function AppSidebar({ section, activeSection, pages, navigate, unread, li
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" asChild>
-            <a href={pages.whitelist.path}>
-              <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <a href={pages.whitelist.path} className="ra-brand">
+              <div className="ra-brand-mark">
                 <GalleryVerticalEnd aria-hidden="true" />
               </div>
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span>BusinessView</span>
-                <span>后台</span>
+              <div className="ra-brand-name">
+                <strong>BusinessView</strong>
+                <small>后台</small>
               </div>
             </a>
           </SidebarMenuButton>
@@ -82,7 +82,7 @@ export function AppSidebar({ section, activeSection, pages, navigate, unread, li
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton onClick={toggleTheme} aria-pressed={light}>
-            {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}<span>{light ? "深色" : "浅色"}</span>
+            {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}<span>{light ? "深色主题" : "浅色主题"}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>

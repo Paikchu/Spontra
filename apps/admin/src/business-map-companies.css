@@ -1,49 +1,63 @@
-/* Whitelist: one toolbar, then the companies as a table in a panel; a row opens to its quarters, task and problems. */
-.bm-admin { display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; }
+/* Company directory: a flat table with inline controls and expandable details. */
+.bm-admin { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
 .bm-admin-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bm-admin-toolbar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.bm-admin-query { flex: 0 1 320px; }
+.bm-admin-search { display: flex; flex: 0 1 300px; min-width: 0; color: var(--ink-soft); font-size: 12px; font-weight: 500; }
+.bm-admin-search .bm-admin-query { flex: none; min-height: 36px; width: 100%; }
+.bm-directory-toolbar { flex-wrap: nowrap; justify-content: flex-start; gap: 20px; min-height: 40px; }
+.bm-admin-heading { display: flex; align-items: center; flex: none; gap: 8px; }
+.bm-admin-heading h1 { margin: 0; font: 600 18px/1.4 var(--sans); letter-spacing: -.02em; }
+.bm-directory-toolbar .bm-admin-filter { align-self: center; margin-left: auto; }
 .bm-admin-query input { font-family: var(--mono); }
 .bm-admin-query input::placeholder { font-family: var(--sans); }
-.bm-admin-scope { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--sp-radius-sm); overflow: hidden; }
-.bm-admin-scope button { height: var(--control-sm, 28px); padding: 0 12px; border: 0; background: transparent; color: var(--ink-muted); font-size: 13px; }
-.bm-admin-scope button[aria-pressed="true"] { background: var(--surface-sunken); color: var(--ink); }
+.bm-admin-scope { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--sp-radius-sm); }
+.bm-admin-scope button { height: 28px; padding: 0 12px; border: 0; border-radius: 3px; background: transparent; color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+.bm-admin-scope button[aria-pressed="true"] { background: var(--fill-strong); color: var(--ink); }
 .bm-admin-scope button:disabled { cursor: default; }
 .bm-admin-pages { display: flex; justify-content: center; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; color: var(--ink-muted); font-size: 13px; }
 .bm-admin-toggle-gap { width: 24px; flex: none; }
 /* The ticker field's suggestions: a list under the field, one issuer a line, the active one filled. */
-.bm-admin-filter { display: flex; align-items: center; gap: var(--space-3); color: var(--ink-muted); font-size: 13px; }
+.bm-admin-filter { display: flex; align-items: center; align-self: flex-end; gap: 16px; color: var(--ink-muted); font-size: 12px; }
 .bm-admin-filter .ra-search { width: 240px; flex: none; }
 .bm-admin-warning { margin: 0; padding: 10px 14px; border-radius: var(--sp-radius-sm); background: var(--caution-soft); color: var(--caution); font-size: 13px; }
 
-.bm-admin-table-wrap { overflow-x: auto; }
+.bm-admin-loading { display: grid; gap: 1px; color: var(--ink-muted); font-size: 13px; }
+.bm-admin-loading > span { padding-block: 16px; }
+.bm-admin-loading > div { height: 58px; border-top: 1px solid var(--line); background: linear-gradient(90deg, var(--fill) 0 22%, transparent 22% 35%, var(--fill) 35% 100%) center / 100% 12px no-repeat; opacity: .6; }
+.bm-admin-table-wrap { max-width: 100%; overflow-x: auto; border-block: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .bm-admin-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
-.bm-admin-table th { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink-muted); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; }
+.bm-admin-table th { padding: 14px 12px; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 12px; font-weight: 500; text-align: left; white-space: nowrap; }
 .bm-admin-table th:first-child { padding-left: var(--space-5); }
-.bm-admin-table td { padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--ink-soft); text-align: left; vertical-align: middle; white-space: normal; }
+.bm-admin-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink-soft); text-align: left; vertical-align: middle; white-space: normal; }
+.bm-company-table { min-width: 1100px; }
+.bm-company-table th { height: 42px; padding: 10px; vertical-align: middle; }
+.bm-company-table th:first-child { padding-left: 40px; }
+.bm-company-table th:last-child { min-width: 204px; }
+.bm-company-table td { padding: 10px; }
+.bm-company-table .bm-admin-states .ra-badge { padding: 0; background: transparent; font-size: 12px; font-weight: 400; }
 .bm-admin-table tbody:last-child tr:last-child td { border-bottom: 0; }
 .bm-admin-row td { transition: background-color 160ms var(--sp-ease); }
 .bm-admin-row:hover td, tbody[data-open] .bm-admin-row td { background: var(--fill); }
-.bm-admin-row td:first-child { min-width: 180px; padding-left: var(--space-3); }
+.bm-admin-row td:first-child { min-width: 210px; padding-left: 8px; }
 .bm-admin-company-cell { display: flex; align-items: center; gap: var(--space-2); }
-/* A row stays one line at any width: cells never wrap, the table scrolls sideways inside its wrap instead. */
+/* Company names stack below tickers; the control columns scroll within the table. */
 .bm-admin-row td { white-space: nowrap; }
-.bm-admin-name { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.bm-admin-name small { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.bm-admin-name { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; line-height: 1.35; }
+.bm-admin-name small { max-width: 175px; overflow: hidden; text-overflow: ellipsis; }
 .bm-admin-name strong { color: var(--ink); font-size: 14px; font-weight: 600; }
 .bm-admin-name small { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
-.bm-admin-toggle { display: grid; place-items: center; width: 24px; height: 24px; margin-top: -1px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-muted); }
+.bm-admin-toggle { display: grid; place-items: center; flex: none; width: 24px; height: 32px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-muted); }
 .bm-admin-toggle:hover { background: var(--fill-strong); color: var(--ink); }
 .bm-admin-toggle svg { transition: transform 260ms var(--sp-ease); }
 .bm-admin-toggle[aria-expanded=true] svg { transform: rotate(90deg); }
 .bm-admin-muted { color: var(--ink-muted); }
-.bm-admin-actions { display: flex; align-items: center; gap: var(--space-2); }
-.bm-admin-actions a { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.bm-admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.bm-admin-actions a { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 400; white-space: nowrap; text-decoration: none; }
 .bm-admin-actions a:hover { text-decoration: underline; }
 
 /* Details: the periods and the map's own preparation across the top, then one row of eight columns split by rules. */
 /* The table's own selector: a global first-cell rule loaded later would otherwise take the indent away. */
-.bm-admin-table .bm-admin-detail > td { padding: 24px 32px 28px 52px; background: var(--surface-sunken); white-space: normal; }
+.bm-admin-table .bm-admin-detail > td { padding: 28px 28px 32px 40px; background: var(--surface); white-space: normal; box-shadow: inset 2px 0 var(--line-strong); }
 /* Four blocks, each set off by a rule: the flow, what runs now, the periods, the rows. */
 .bm-detail { display: grid; gap: 22px; }
 .bm-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-6); }
@@ -86,21 +100,35 @@
 /* Row: the two states side by side, the AI switch, the delete at the end. */
 .bm-admin-states { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .bm-admin-now { max-width: 240px; overflow: hidden; color: var(--ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.bm-switch { position: relative; width: 36px; height: 20px; padding: 0; border: 0; border-radius: var(--sp-radius-pill); background: var(--fill-strong); transition: background-color 160ms var(--sp-ease); cursor: pointer; }
-.bm-switch span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-soft); transition: transform 160ms var(--sp-ease), background-color 160ms var(--sp-ease); }
+.bm-switch { position: relative; flex: none; width: 32px; height: 18px; padding: 0; border: 0; border-radius: var(--sp-radius-pill); background: var(--line-strong); transition: background-color 160ms var(--sp-ease); cursor: pointer; }
+.bm-switch::before { content: ""; position: absolute; inset: -5px -2px; }
+.bm-switch span { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); transition: transform 160ms var(--sp-ease), background-color 160ms var(--sp-ease); }
 .bm-switch[aria-checked=true] { background: var(--brand); }
-.bm-switch[aria-checked=true] span { transform: translateX(16px); background: var(--canvas); }
+.bm-switch[aria-checked=true] span { transform: translateX(14px); background: var(--on-brand); }
 .bm-switch:disabled { opacity: .4; cursor: not-allowed; }
 .bm-switch[data-failed] { box-shadow: 0 0 0 1.5px var(--danger); }
-.bm-switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-soft); }
+.bm-switch:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
 
 @media (max-width: 900px) { .bm-admin-table .bm-admin-detail > td { padding: 20px var(--space-4) 24px; } }
-@media (max-width: 650px) { .bm-admin-query { flex: 1 1 100%; } .bm-admin-filter { width: 100%; } }
-.bm-admin-table .fm-button { height: 26px; padding: 0 10px; font-size: 12px; }
+@media (max-width: 650px) { .bm-admin-search { flex: 1 1 100%; } .bm-admin-filter { width: 100%; } .bm-admin-filter > .ra-icon-button { margin-left: auto; } }
+@media (max-width: 760px) {
+  .bm-directory-toolbar { flex-wrap: wrap; gap: 12px; }
+  .bm-directory-toolbar .bm-admin-search { flex: 1 1 140px; }
+  .bm-directory-toolbar .bm-admin-filter { width: 100%; }
+  .bm-company-table th:first-child, .bm-company-table .bm-admin-row > td:first-child { position: sticky; left: 0; z-index: 1; background: var(--canvas); box-shadow: 1px 0 var(--line); }
+  .bm-company-table tbody[data-open] .bm-admin-row > td:first-child, .bm-company-table .bm-admin-row:hover > td:first-child { background: var(--fill); }
+  .bm-company-table .bm-detail { width: calc(100vw - 66px); }
+  .bm-col { grid-template-columns: 1fr; gap: 8px; }
+  .bm-col > div { gap: 8px 16px; }
+  .bm-detail-head { align-items: flex-start; }
+  .bm-detail-head > div { flex-wrap: wrap; }
+}
+.bm-admin-table .fm-button { height: 28px; min-height: 28px; padding: 0 10px; font-size: 12px !important; }
 .bm-admin-table .ra-badge { height: 20px; }
 /* Feature columns: one switch per company, the global switch beside the heading; the state lives in the detail. */
 .bm-admin-feature-col { text-align: center !important; }
-.bm-admin-feature-head { display: inline-flex; align-items: center; gap: 8px; }
+.bm-admin-feature-head { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 500; }
+.bm-admin-feature-label { cursor: help; text-decoration: underline dotted var(--line-strong); text-underline-offset: 4px; }
 .bm-switch-sm { width: 28px; height: 16px; }
 .bm-switch-sm span { width: 12px; height: 12px; }
 .bm-switch-sm[aria-checked=true] span { transform: translateX(12px); }
