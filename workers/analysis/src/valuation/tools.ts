@@ -117,7 +117,7 @@ export function goingConcernOf(state: ValuationState, assessment = state.goingCo
 
 const dimensionSchema = z.object({
   key: z.enum(VALUATION_DIMENSIONS), score: z.number().nullable(), confidence: z.enum(["high", "medium", "low"]),
-  rationale: z.string().min(80).max(2000), supportingEvidenceIds: z.array(z.string()).max(12), counterEvidenceIds: z.array(z.string()).max(12),
+  rationale: z.string().min(80).max(1000), supportingEvidenceIds: z.array(z.string()).max(12), counterEvidenceIds: z.array(z.string()).max(12),
   gaps: z.array(z.string().max(300)).max(6), nextCheck: z.string().min(10).max(400),
   goingConcern: goingConcernSchema.optional(),
 });
@@ -607,8 +607,8 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         if (ctx.state.frozenSources && !ctx.state.nearTermForecast) throw new Error("submit_next_quarter_forecast first, or explicitly declare its unavailability");
         ctx.state.assumptionsDone = true; return "Assumptions recorded.";
       }, observe: (_a, v) => v }),
-    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. Every section is required: at least one catalyst, one counter-evidence item and one next check; model notes name each method's value and weight with the reason, each scenario's probability with the reason, the management scenario and the consensus (or why none). Keep each section within its limit: summary 1800, thesis 4000, expectations gap 3000 and model notes 3000 characters; list items 700 characters, at most 8 each.", parameters: z.object({
-        summary: z.string().min(60).max(1800), thesis: z.string().min(80).max(4000), expectationsGap: z.string().min(40).max(3000), catalysts: z.array(z.string().max(700)).min(1).max(8), counterEvidence: z.array(z.string().max(700)).min(1).max(8), nextChecks: z.array(z.string().max(700)).min(1).max(8), modelNotes: z.string().min(120).max(3000),
+    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. The page shows the model's figures and their recorded rationales; the report says what they cannot and states each fact once. Every section is required: at least one catalyst, one counter-evidence item and one next check. Limits: summary 700, thesis 2200, expectations gap 1200 and model notes 1000 characters; list items 400 characters, at most 4 each.", parameters: z.object({
+        summary: z.string().min(60).max(700), thesis: z.string().min(80).max(4000), expectationsGap: z.string().min(40).max(1600), catalysts: z.array(z.string().max(400)).min(1).max(4), counterEvidence: z.array(z.string().max(400)).min(1).max(4), nextChecks: z.array(z.string().max(400)).min(1).max(4), modelNotes: z.string().min(60).max(1000),
         coreLogicFailed: z.boolean(), decisiveCounterEvidence: z.boolean(),
       }),
       execute: (args, ctx) => {

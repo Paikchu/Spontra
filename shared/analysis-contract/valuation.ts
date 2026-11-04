@@ -12,6 +12,53 @@ export const DIMENSION_WEIGHTS: Record<ValuationDimensionKey, number> = { busine
 
 export const CONFIDENCES = ["high", "medium", "low"] as const;
 export type Confidence = typeof CONFIDENCES[number];
+
+/**
+ * The fixed assessment template: the anchors every dimension is scored against (2 / 4 / 6 / 8 / 10) and the phase that
+ * scores it. The research prompt and the page read the same table, so the rubric a score was given against is the one
+ * the reader sees; a change here changes every future assessment and needs a method version bump.
+ */
+export const SCORE_ANCHOR_LEVELS = [2, 4, 6, 8, 10] as const;
+export type DimensionPhase = "research" | "assumptions";
+export type DimensionTemplate = { phase: DimensionPhase; anchors: readonly [string, string, string, string, string] };
+export const DIMENSION_TEMPLATE: Record<ValuationDimensionKey, DimensionTemplate> = {
+  businessQuality: { phase: "research", anchors: [
+    "customer value or model visibly impaired",
+    "product replaceable, weak pricing power",
+    "model works, customer value stable, edge ordinary",
+    "retention, switching costs or other edge shown across periods",
+    "edge verified across sources and cycles, every material counter-argument answered (rare)"] },
+  growthExecution: { phase: "research", anchors: [
+    "core demand and per-share economics deteriorating, plans failing",
+    "growth weak or bought by M&A, price or accounting",
+    "core growth and plans broadly delivered, cash conversion explainable",
+    "organic growth, profit, cash and operating metrics agree",
+    "delivery across periods with improving unit economics, sources verifiable (never from one high comparison alone)"] },
+  valuationSafety: { phase: "assumptions", anchors: [
+    "no support under reasonable scenarios",
+    "base value lacks a cushion, depends on optimistic assumptions",
+    "price below a supported base value but stress scenarios still hurt",
+    "clear discount, key assumptions verifiable, support survives stress",
+    "several methods and stress tests agree (rare)"] },
+  mispricingCatalysts: { phase: "research", anchors: [
+    "permanent damage confirmed, thesis refuted",
+    "only a drawdown, a low multiple or a narrative",
+    "a plausible variant view with a trackable catalyst, little evidence of what the market prices",
+    "a verifiable gap between expectations (or the price-implied path) and the base case, measurable catalyst with a window",
+    "gap, degree unpriced and path all supported by independent evidence (an announced event is not \"unpriced\")"] },
+  financialResilience: { phase: "research", anchors: [
+    "going-concern, refinancing or capital-structure risk proven",
+    "debt, refinancing or investment pressure, thin buffer",
+    "cash, debt and investment broadly matched, risks bounded",
+    "buffer survives stress, dilution and commitments transparent",
+    "cross-cycle strength, allocation and claims fully verified (never from net cash alone)"] },
+};
+/** What each confidence level requires of a dimension's evidence. */
+export const CONFIDENCE_RULES: Record<Confidence, string> = {
+  high: "every key fact first-hand, comparable across periods, contradictions explained",
+  medium: "facts grounded but forward assumptions or market pricing uncertain",
+  low: "an important source, basis or coverage gap is open",
+};
 export const VERDICTS = ["supported", "not_supported", "pending"] as const;
 export type ValuationVerdict = typeof VERDICTS[number];
 export const REPORT_STATUSES = ["ready", "insufficient"] as const;

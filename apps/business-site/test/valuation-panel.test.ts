@@ -26,48 +26,6 @@ function olderReport(): ValuationPublication {
   return { ...valuationReport, calculatorVersion: "valuation.calc.v1", model: { ...rest, calculatorVersion: "valuation.calc.v1", scenarios: { bear: scenario(m.scenarios.bear), base: scenario(m.scenarios.base), bull: scenario(m.scenarios.bull) }, range: { ...m.range, expected: null, expectedUpside: null } } };
 }
 
-test("valuation.calc.v4: the panel shows each method with its weight and reason, the four scenarios with probabilities and the expected value, the peers, the checks, management's targets and the consensus note", () => {
-  const html = render("en", valuationReport), t = text(html);
-  // Methods with judged weights and rationales.
-  assert.match(t, /Valuation methods/); assert.match(t, /Discounted cash flow/); assert.match(t, /EV\/EBITDA, forward/); assert.match(t, /P\/E, forward/);
-  assert.match(t, /Discounted cash flow 50%/); assert.match(t, /Generated weight rationale for the EBITDA multiple\./);
-  // Four scenarios: the DCF value beside the weighted value, the management row, the probabilities and the expected value.
-  assert.match(t, /Cash-flow value/); assert.match(t, /Weighted value/);
-  assert.match(t, /Management \$150\.00 \$165\.00 20%/); assert.match(t, /Scenario probabilities/); assert.match(t, /Management 20% Generated management probability rationale\./);
-  assert.match(t, /Bear \$70\.00 \$77\.00 25%/); assert.match(t, /Base \$120\.00 \$132\.00 40%/);
-  assert.match(t, /Scenario-weighted value/); assert.match(t, /\$140\.25/); assert.match(t, /Probability-weighted over the bear, base, management and bull scenarios/);
-  assert.match(html, /aria-label="Valuation assessment"/);
-  // Peers, checks, management comparison and the consensus note.
-  assert.match(t, /Comparable set Curated set · MSFT, AMZN, GOOGL · EV\/EBITDA p25 14\.0× · median 16\.0× · p75 18\.0×/);
-  assert.match(t, /Model checks/); assert.match(t, /Terminal value share Pass/); assert.match(t, /Method dispersion Flag method bases span 1\.20x/); assert.match(t, /Consensus Flag consensus unavailable: no sell-side page was readable/);
-  assert.match(t, /Management targets vs base case/); assert.match(t, /FY2027 · 1/); assert.match(t, /−4\.0%/); assert.match(t, /Generated management comparison explanation\./);
-  assert.match(t, /Sell-side consensus/); assert.match(t, /Consensus unavailable Generated consensus unavailability reason\./);
-  // The management narrative, the path assumptions and the rate sources sit in the model detail, rendered closed on the server.
-  assert.match(t, /Show model inputs/);
-  // Generated prose keeps its language tag.
-  assert.match(html, /lang="en">Generated bear probability rationale\./);
-  assert.match(html, /<td lang="en">terminal value is 75% of the base operating value<\/td>/);
-});
-
-test("valuation.calc.v4: the Chinese page carries the same sections with translated labels and the generated text tagged English", () => {
-  const html = render("zh-CN", valuationReport), t = text(html);
-  assert.match(t, /估值方法/); assert.match(t, /现金流折现 50%/); assert.match(t, /远期 EV\/EBITDA/); assert.match(t, /加权价值/); assert.match(t, /情景加权值/); assert.match(t, /情景概率/); assert.match(t, /管理层 20%/);
-  assert.match(t, /可比公司 人工选定 · MSFT, AMZN, GOOGL/); assert.match(t, /模型校验/); assert.match(t, /终值占比 通过/); assert.match(t, /方法离散度 提示/); assert.match(t, /管理层目标与基准情景/); assert.match(t, /2027 财年 · 1/); assert.match(t, /卖方共识/); assert.match(t, /无可用市场共识/);
-  assert.match(html, /lang="en">Generated weight rationale for the cash-flow model\./);
-  assert.doesNotMatch(t, /Valuation methods|Model checks|Expected value/);
-});
-
-test("older payloads (valuation.calc.v1/v2 without judgements) still render: three scenarios, no methods, checks, targets or consensus sections", () => {
-  const report = olderReport();
-  const html = render("en", report), t = text(html);
-  assert.match(html, /aria-label="Valuation assessment"/); assert.match(t, /Bear \$70\.00 25%/); assert.match(t, /Base \$120\.00 40%/); assert.match(t, /Bull \$170\.00 15%/);
-  assert.doesNotMatch(t, /Valuation methods|Model checks|Management targets vs base case|Sell-side consensus|Scenario probabilities|Weighted value|Expected value|To expected value|Management \$/);
-  assert.match(t, /Per share/);
-  assert.doesNotMatch(html, /undefined|NaN/);
-  const zh = text(render("zh-CN", report));
-  assert.doesNotMatch(zh, /估值方法|模型校验|卖方共识/); assert.match(zh, /每股价值/);
-});
-
 function fairReport(): ValuationPublication {
   const model = valuationReport.model!;
   const normalCase = (perShare: number) => ({ ...model.scenarios.base, assumptions: model.scenarios.base.assumptions!, result: { ...model.scenarios.base.result, perShare }, valuation: { ...model.scenarios.base.valuation!, perShare }, gates: [], verification: null });
@@ -79,30 +37,68 @@ function availableGuide(position: "below" | "within" | "above", price: number): 
 }
 
 const mainGuide = (html: string) => html.match(/<section class="val-block val-fair"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+const stress = (html: string) => html.match(/<details class="val-fold val-stress">([\s\S]*?)<\/details>/)?.[1] ?? "";
+const headOf = (html: string) => html.match(/<header class="val-head">([\s\S]*?)<\/header>/)?.[1] ?? "";
 
-test("price guidance leads with the current quote and the supported normal range, keeping stress values folded", () => {
+test("the document reads head, scores, the live fair-value block with its stress fold, the report with its value sources, then sources", () => {
+  const html = render("en", valuationReport), t = text(html);
+  assert.match(html, /aria-label="Valuation assessment"/);
+  assert.match(text(headOf(html)), /Composite score 6\.4 \/ 10/);
+  assert.match(t, /Five-dimension research score · Researched 2026-08-12/);
+  // The fair-value block and the stress fold are the live page's.
+  assert.match(html, /<section class="val-block val-fair" aria-label="Price relative to fair value"><h3>Fair value range<\/h3><p class="val-fair-value">—<\/p>/);
+  assert.match(html, /<section class="val-block"><details class="val-fold val-stress"><summary>Scenarios and stress tests<\/summary>/);
+  const s = text(stress(html));
+  assert.match(s, /Value per share/); assert.match(s, /Bear \$70\.00 \$77\.00 25%/); assert.match(s, /Base \$120\.00 \$132\.00 40%/); assert.match(s, /Management \$150\.00 \$165\.00 20%/);
+  assert.match(s, /Scenario-weighted value \$140\.25/); assert.match(s, /Scenario probabilities Bear 25%/); assert.match(s, /Management 20% Generated management probability rationale\./);
+  assert.match(s, /Sensitivity of the base value/); assert.match(s, /Show model inputs/);
+  assert.match(stress(html), /class="val-range-mark val-range-price"/);
+  // The report: the system's sections, with the method weights, management comparison and consensus as its value sources.
+  assert.match(t, /Assessment report Summary/); assert.match(t, /Where the value comes from Discounted cash flow 50% Generated weight rationale for the cash-flow model\./);
+  assert.match(t, /Management targets vs base case Generated management comparison explanation\./); assert.match(t, /Sell-side consensus Generated consensus unavailability reason\./);
+  assert.match(t, /Catalysts Generated catalyst\. Next checks Generated next check\. Counter-evidence Generated counter-evidence\. Model notes Generated model notes\./);
+  assert.doesNotMatch(t, /Valuation methods|Model checks|Comparable set/);
+  assert.doesNotMatch(html, /val-select|<option|undefined|NaN/);
+  assert.doesNotMatch(t, /valuation\.calc|valuation\.v1/);
+  assert.match(html, /lang="en">Generated weight rationale for the cash-flow model\./);
+});
+
+test("the Chinese page carries the same sections with translated labels", () => {
+  const html = render("zh-CN", valuationReport), t = text(html);
+  assert.match(t, /综合评分 6\.4 \/ 10/); assert.match(t, /五维研究评分 · 2026-08-12 研究/);
+  assert.match(t, /合理价值区间 —/); assert.match(t, /情景与压力测试/); assert.match(text(stress(html)), /悲观 70\.00美元 77\.00美元 25%/); assert.match(text(stress(html)), /情景加权值 140\.25美元/);
+  assert.match(t, /评估报告 .*?结论 /); assert.match(t, /价值来源 现金流折现 50%/); assert.match(t, /催化 .*? 下一验证点 .*? 反证 .*? 模型说明/);
+  assert.doesNotMatch(t, /估值方法|模型校验/);
+});
+
+test("older payloads (valuation.calc.v1/v2) still render their three scenarios and probabilities", () => {
+  const html = render("en", olderReport()), s = text(stress(html));
+  assert.match(s, /Bear \$70\.00 25%/); assert.match(s, /Base \$120\.00 40%/); assert.match(s, /Bull \$170\.00 15%/);
+  assert.doesNotMatch(s, /Weighted value|Scenario-weighted value|Management \$/);
+  assert.doesNotMatch(html, /undefined|NaN/);
+});
+
+test("price guidance: the head says where the close sits; the fair-value block shows the supported range, its reasons and key assumptions; stress values stay in their fold", () => {
   const report = fairReport();
   for (const [position, price, en, zh] of [["below", 98, "Below fair value range", "偏低"], ["within", 132, "Within fair value range", "区间内"], ["above", 180, "Above fair value range", "偏高"]] as const) {
     const guide = availableGuide(position, price), html = render("en", report, guide), main = text(mainGuide(html));
-    assert.match(html, new RegExp(`<strong class="val-verdict-label">${en}</strong>`));
+    assert.match(headOf(html), new RegExp(`class="val-position" data-tone="[a-z]+">${en}<`));
+    assert.match(text(headOf(html)), new RegExp(`\\$${price}\\.00 2026-08-13`));
     assert.match(main, /Fair value range \$110\.00 – \$155\.00/);
-    assert.match(main, /Close of 2026-08-13/);
-    assert.match(main, /Key assumptions/);
-    assert.match(main, /Generated revenue assumption/);
+    assert.match(main, /Close of 2026-08-13/); assert.match(main, /Base value \$132\.00/);
+    assert.match(main, /Key assumptions/); assert.match(main, /Generated revenue assumption/);
     assert.doesNotMatch(main, /\$77\.00|\$187\.00|Expected value/);
-    assert.match(html, /<details class="val-fold val-stress"><summary>Scenarios and stress tests<\/summary>/);
-    assert.match(render("zh-CN", report, guide), new RegExp(`<strong class="val-verdict-label">${zh}</strong>`));
+    assert.match(text(stress(html)), /Bear \$70\.00 \$77\.00 25%/);
+    assert.match(render("zh-CN", report, guide), new RegExp(`class="val-position" data-tone="[a-z]+">${zh}<`));
   }
 });
 
-test("a quote problem prevents the price judgement but preserves the supported range with its price date", () => {
+test("a quote problem prevents the position but preserves the supported range with its price date", () => {
   const report = fairReport();
   const guide: ValuationPriceGuide = { status: "unavailable", reportVersionId: report.versionId, quote: report.quote, reason: "stale_quote" };
   const html = render("en", report, guide), main = text(mainGuide(html));
-  assert.match(html, /<strong class="val-verdict-label">Unable to assess<\/strong>/);
-  assert.match(main, /\$110\.00 – \$155\.00/);
-  assert.match(main, /Close of 2026-08-11/);
-  assert.match(main, /The reference quote is out of date/);
+  assert.match(headOf(html), /class="val-position" data-tone="neutral">Unable to assess</);
+  assert.match(main, /\$110\.00 – \$155\.00/); assert.match(main, /Close of 2026-08-11/); assert.match(main, /The reference quote is out of date/);
 });
 
 test("incomplete evidence never presents the calculation's stress values as a fair value range", () => {
@@ -110,61 +106,52 @@ test("incomplete evidence never presents the calculation's stress values as a fa
   for (const reason of ["incomplete_research", "unresolved_evidence", "report_updating"] as const) {
     const guide: ValuationPriceGuide = { status: "unavailable", reportVersionId: report.versionId, quote: report.quote, reason };
     const html = render("zh-CN", report, guide), main = text(mainGuide(html));
-    assert.match(html, /<strong class="val-verdict-label">暂无法判断<\/strong>/);
-    assert.doesNotMatch(main, /\$110\.00|\$155\.00|\$77\.00|\$187\.00|关键假设/);
+    assert.match(headOf(html), /暂无法判断/);
     assert.match(main, /合理价值区间 —/);
+    assert.doesNotMatch(main, /110\.00美元|155\.00美元|77\.00美元|187\.00美元|关键假设/);
   }
   const noRange = { ...report, model: { ...report.model!, fairValueRange: { status: "unavailable" as const, reason: "The financing assumptions need evidence.", evidenceIds: [] } } };
   assert.match(text(mainGuide(render("en", noRange, { status: "unavailable", reportVersionId: report.versionId, quote: report.quote, reason: "no_range" }))), /The financing assumptions need evidence/);
 });
 
-test("older reports and mismatched current guides cannot acquire a price judgement by fallback", () => {
+test("older reports and mismatched current guides cannot acquire a position by fallback", () => {
   const old = render("en", olderReport());
-  assert.match(old, /<strong class="val-verdict-label">Unable to assess<\/strong>/);
+  assert.match(headOf(old), /Unable to assess/);
   assert.match(text(mainGuide(old)), /A supported fair value range is not available/);
   assert.doesNotMatch(mainGuide(old), /\$77\.00|\$187\.00/);
   const guide = { ...availableGuide("below", 98), reportVersionId: "another-version" };
   const html = render("en", fairReport(), guide);
-  assert.match(html, /<strong class="val-verdict-label">Unable to assess<\/strong>/);
-  assert.doesNotMatch(mainGuide(html), /2026-08-13/);
+  assert.match(headOf(html), /Unable to assess/);
+  assert.doesNotMatch(headOf(html), /2026-08-13/);
 });
 
-function forecastReport(explicit: boolean): ValuationPublication {
-  const report = fairReport(), model = report.model!, base = model.scenarios.base;
-  assert.equal(base.drivers.modelType, "fcff");
-  if (base.drivers.modelType !== "fcff") throw new Error("fixture must use FCFF");
-  const common = { revenueGrowth: [0.1, 0.1], operatingMargin: [0.25, 0.25], taxRate: [0.2, 0.2], normalization: [0, 3_000_000] };
-  const path = explicit
-    ? { ...common, capitalPlan: { capex: [30_000_000, 20_000_000], depreciation: [10_000_000, 12_000_000], workingCapitalChange: [5_000_000, 2_000_000] } }
-    : { ...common, salesToCapital: [2, 2] };
-  const yearly = [
-    { year: 1, revenue: 100_000_000, nopat: 20_000_000, reinvestment: 25_000_000, cashFlow: -5_000_000, discountFactor: 0.9, presentValue: -4_500_000, ...(explicit ? { capex: 30_000_000, depreciation: 10_000_000, workingCapitalChange: 5_000_000 } : {}) },
-    { year: 2, revenue: 110_000_000, nopat: 25_000_000, reinvestment: 10_000_000, cashFlow: 18_000_000, discountFactor: 0.8, presentValue: 14_400_000, ...(explicit ? { capex: 20_000_000, depreciation: 12_000_000, workingCapitalChange: 2_000_000 } : {}) },
-  ];
-  return { ...report, model: { ...model, scenarios: { ...model.scenarios, base: { ...base, drivers: { ...base.drivers, path }, result: { ...base.result, yearly } } }, sensitivities: [...model.sensitivities, { factor: "capex", step: "+10%", perShare: 120, changePercent: -9.1 }] } };
-}
-
-const forecast = (html: string) => html.match(/<details class="val-fold val-yearly">([\s\S]*?)<\/details>/)?.[1] ?? "";
-
-test("the folded capital plan shows yearly cash-flow components and adjustments without labelling net reinvestment as capex", () => {
-  const report = forecastReport(true), html = render("en", report, availableGuide("below", 98));
-  const table = text(forecast(html));
-  assert.match(html, /<details class="val-fold val-yearly"><summary>Base case yearly forecast<\/summary>/);
-  assert.match(table, /Year Revenue NOPAT CapEx D&amp;A ΔNWC Adjustment FCFF/);
-  assert.match(table, /Year 1 \$100M \$20\.0M \$30\.0M \$10\.0M \$5\.0M \$0 −\$5\.0M/);
-  assert.match(table, /Year 2 \$110M \$25\.0M \$20\.0M \$12\.0M \$2\.0M \$3\.0M \$18\.0M/);
-  assert.match(table, /No additional sales-to-capital reinvestment or build capex is deducted/);
-  assert.match(text(html), /Capital expenditure \+10%/);
-  const zh = text(forecast(render("zh-CN", report, availableGuide("below", 98))));
-  assert.match(zh, /基准情景逐年预测/);
-  assert.match(zh, /年份 收入 税后经营利润 资本开支 折旧摊销 营运资本变动 调整 企业自由现金流/);
-  assert.match(zh, /不再重复扣减/);
+test("the five dimensions draw on one fixed radar beside their rows, with the scoring template folded under them", () => {
+  const html = render("en", valuationReport), t = text(html);
+  assert.match(html, /<figure class="val-radar" data-compact="" aria-label="Five-dimension chart · Business quality [0-9.]+ · Growth delivery [0-9.]+ · Valuation safety [0-9.]+ · Mispricing and catalysts [0-9.]+ · Financial resilience [0-9.]+"/);
+  assert.match(html, /class="val-radar-area" points="[0-9., ]+"/);
+  assert.equal((html.match(/class="val-radar-dot"/g) ?? []).length, 5);
+  assert.match(html, /class="val-radar-label" data-side="top"[^>]*><b>Business quality<\/b><\/span>/);
+  assert.match(html, /<li class="val-dim"><span class="val-dim-name">Business quality<small>20%<\/small><\/span><span class="val-dim-score">[0-9.]+<small>\/10<\/small><\/span><div class="val-dim-judgement"><p lang="en">Generated rationale on business quality/);
+  assert.match(html, /<details class="val-fold val-template"><summary>Scoring template<\/summary>/);
+  assert.match(t, /Business quality Weight 20% · research phase 2 customer value or model visibly impaired/);
+  assert.match(t, /Valuation safety Weight 30% · assumptions phase/);
+  assert.match(t, /Confidence High every key fact first-hand/);
+  const zh = text(render("zh-CN", valuationReport));
+  assert.match(zh, /评分模板/); assert.match(zh, /生意质量 权重 20% · 研究阶段 2 客户价值或商业模式明显受损/);
 });
 
-test("legacy forecast rows show their reported reinvestment and do not fabricate capital-plan components", () => {
-  const table = text(forecast(render("en", forecastReport(false), availableGuide("below", 98))));
-  assert.match(table, /Year Revenue NOPAT Reinvestment Adjustment FCFF/);
-  assert.match(table, /Year 1 \$100M \$20\.0M \$25\.0M \$0 −\$5\.0M/);
-  assert.doesNotMatch(table, /CapEx|D&amp;A|ΔNWC/);
-  assert.equal(forecast(render("en", valuationReport)), "");
+test("an unscored dimension sits at the centre of the radar and is labelled as such in its row", () => {
+  const report: ValuationPublication = { ...valuationReport, dimensions: valuationReport.dimensions.map(d => d.key === "financialResilience" ? { ...d, score: null } : d) };
+  const html = render("en", report);
+  assert.match(html, /class="val-radar-dot" data-unscored="" cx="200\.0" cy="190\.0"/);
+  assert.match(html, /Financial resilience not scored"/);
+  assert.match(html, /<span class="val-dim-name">Financial resilience<small>10%<\/small><\/span><span class="val-dim-score"><small>Not scored<\/small><\/span>/);
+});
+
+test("each dimension's row carries its full rationale with citations and gaps; the model notes stay in the report", () => {
+  const html = render("en", valuationReport), t = text(html);
+  assert.equal((html.match(/<div class="val-dim-judgement">/g) ?? []).length, 5);
+  assert.match(html, /<div class="val-dim-judgement"><p lang="en">Generated rationale on business quality ?<sup class="val-refs">/);
+  assert.doesNotMatch(html, /val-table--judgements/);
+  assert.match(t, /Model notes Generated model notes/);
 });

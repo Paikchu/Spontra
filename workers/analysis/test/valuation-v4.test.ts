@@ -219,13 +219,13 @@ test("calculate_valuation: every judgement is required; the reply names each sce
   // The opening tells the model which methods apply and what the management scenario needs.
   const opening = openingAssume(state, null);
   assert.match(opening, /Methods available: dcf; ev_ebitda_forward yes; pe_forward yes/); assert.match(opening, /Management scenario: computed by code/);
-  // The publication: the judgements are appended to the model notes and their evidence is in the cited set.
+  // The publication: the judgements stay in the model payload (the page shows them beside the figures), their evidence is in the cited set, and the notes are the composer's alone.
   const lines = judgementLines(calc);
   assert.equal(lines.length, 6);
   assert.match(lines.shift()!, /Normal fair-value range unavailable/);
   assert.match(lines[0]!, /^Method weights: dcf 50% — Own cash flows\./); assert.match(lines[1]!, /management 25% — Management has delivered/); assert.match(lines[3]!, /^Consensus unavailable: No sell-side/);
   const { publication } = await assemblePublication(state, now, VALUATION_VERSION);
-  assert.match(publication.sections.modelNotes, /Method weights: dcf 50%/);
+  assert.doesNotMatch(publication.sections.modelNotes, /JUDGEMENTS|Method weights: dcf 50%/);
   assert.ok(publication.evidence.some(e => e.evidenceId === managementIds[0]), "the management evidence the probability cites is published");
   assert.equal(publication.model!.range.base, calc.scenarios.base.valuation!.perShare);
   assert.ok(readValuationPublication(JSON.parse(JSON.stringify(publication)), "ORCL"), "the publication passes the contract");
@@ -307,7 +307,7 @@ test("management comparison rows: one per total-revenue target inside the horizo
 });
 
 test("the version bump reassesses only the marked company: an ORCL report under valuation.v4/calc.v2 runs, every other company on unchanged material is held", () => {
-  assert.equal(VALUATION_VERSION, "valuation.v10");
+  assert.equal(VALUATION_VERSION, "valuation.v11");
   const published = { methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2", financialPeriodEnd: "2026-08-31" };
   const current = { methodVersion: VALUATION_VERSION, calculatorVersion: CALCULATOR_VERSION, financialPeriodEnd: "2026-08-31" };
   assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);
@@ -353,4 +353,11 @@ test("normal bounds pass through the tool, retain their own evidence in the publ
   const contradicted = await assemblePublication(state, now, VALUATION_VERSION);
   assert.equal(contradicted.publication.reportStatus, "insufficient");
   assert.deepEqual(contradicted.publication.gaps.find(g => g.code === "unresolved_counter_evidence")?.evidenceIds, [normalId]);
+});
+
+test("the research prompt scores against the contract's fixed template, so the page shows the rubric the researcher used", async () => {
+  const { RESEARCH_SYSTEM } = await import("../src/valuation/workflow.ts");
+  const { DIMENSION_TEMPLATE, VALUATION_DIMENSIONS, CONFIDENCE_RULES } = await import("../../../shared/analysis-contract/valuation.ts");
+  for (const key of VALUATION_DIMENSIONS) assert.ok(RESEARCH_SYSTEM.includes(`- ${key}${key === "valuationSafety" ? " (assumptions phase)" : ""}: ${DIMENSION_TEMPLATE[key].anchors.join(" / ")}`), key);
+  assert.ok(RESEARCH_SYSTEM.includes(`high = ${CONFIDENCE_RULES.high}`));
 });

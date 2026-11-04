@@ -11,7 +11,7 @@ import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { InsiderTransactionsPage, InsidersPublication } from "@/shared/analysis-contract/insiders";
-import type { ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
+import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
 import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
 import { companyPath as pathForLocale } from "./company-opening";
@@ -105,12 +105,6 @@ export async function fetchValuation(ticker: string, signal: AbortSignal, rev?: 
   return body.schemaVersion === "valuation-response.v1" && typeof body.availability === "string" ? body as ValuationResponse : null;
 }
 /** One stored version of the valuation report, by its id. */
-export async function fetchValuationVersion(ticker: string, versionId: string, signal: AbortSignal): Promise<ValuationPublication | null> {
-  const response = await fetch(companyPath(ticker, `/valuation/versions/${encodeURIComponent(versionId)}`), { signal });
-  if (!response.ok) return null;
-  const body = await response.json() as { report?: ValuationPublication | null };
-  return body.report ?? null;
-}
 
 /** One filing rail row's analysis, or null when the row has none and the filing digest stands for it. */
 export async function fetchItemAnalysis(ticker: string, id: string, signal: AbortSignal): Promise<ItemAnalysis | null> {
