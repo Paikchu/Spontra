@@ -4,10 +4,10 @@ import { UsageBoard, type UsageLabels } from "@/apps/business-site/src/usage-boa
 
 const labels: UsageLabels = {
   title: "产品使用情况",
-  empty: "这个时间段还没有数据",
-  unavailable: "统计暂时没有取到",
+  empty: "暂无数据",
+  unavailable: "统计读取失败",
   retry: "重试",
-  utc: "时间按协调世界时",
+  utc: "UTC",
   sessions: "独立会话",
   pageViews: "浏览量",
   companies: "访问最多的公司",

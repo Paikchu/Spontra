@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, FileText, LoaderCircle, Maximize2, Search, X } from "lucide-react";
+import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp, CaretDownIcon as ChevronDown, FileTextIcon as FileText, SpinnerGapIcon as LoaderCircle, ArrowsOutIcon as Maximize2, MagnifyingGlassIcon as Search, XIcon as X } from "@phosphor-icons/react";
 import type { DisclosureAuditSummary } from "@/shared/analysis-contract/disclosure-audit";
 import type { FinancialStatements, StatementCell, StatementTable } from "@/shared/analysis-runtime/financial-data/financial-statements";
 import { adminApi, AdminApiError } from "./admin-api";

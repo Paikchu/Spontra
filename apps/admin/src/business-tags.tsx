@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { RotateCcw, Undo2 } from 'lucide-react';
+import { ArrowCounterClockwiseIcon as RotateCcw, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react";
 import { SECTOR_LABELS, TAG_FACET_LABELS, TAG_FACETS, type BusinessTag, type BusinessTagsView, type PeerBasis, type PeerTier, type SectorTagView } from '@/shared/analysis-contract/business-tags';
 import type { IndustryCategory } from '@/shared/analysis-contract/filing-library';
 import { adminApi } from './admin-api';
@@ -45,7 +45,7 @@ function CompanyTags({ ticker, onOpen, fail }: { ticker: string; onOpen: Open; f
   const tag = view.units.flatMap(u => u.tags).find(t => t.tagId === selected);
   const groups = TIERS.map(t => [t, view.pairs.filter(p => p.tier === t)] as const).filter(([, list]) => list.length);
   return <>
-    <header className="fl-panel-head"><p className="fl-caption">{view.version} · 相同 ≥ {view.thresholds.same} · 相近 ≥ {view.thresholds.near}{view.matching ? '' : ' · 向量匹配未开启'}</p>
+    <header className="fl-panel-head">{!view.matching && <p className="fl-caption">匹配未开启</p>}
       <button className="fl-rerun" onClick={() => post('run', {}, '已请求重新打标签')}><RotateCcw size={15} />重新打标签</button></header>
     {notice && <p className="fl-notice" role="status">{notice}</p>}
     {!view.units.length ? <p className="fl-empty">无业务单元</p> : <div className="bt-columns">

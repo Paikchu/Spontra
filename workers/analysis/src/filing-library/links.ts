@@ -80,7 +80,7 @@ export async function proposeLinks(env: AnalysisEnv, ticker: string, fetcher: ty
   const model = modelFor(env, "library-links");
   let raw: unknown = null;
   for (const attempt of [1, 2]) {
-    try { raw = await callWorkerSecModel(env, fetcher, `library-links-${attempt}`, SYSTEM, payload, model, 5 * 60_000, { reasoning: reasoningFor(env, "library-links") }); break; }
+    try { raw = await callWorkerSecModel(env, fetcher, `library-links-${attempt}`, SYSTEM, payload, model, 5 * 60_000, { reasoning: reasoningFor(env, "library-links"), ticker, kind: "library-links" }); break; }
     catch (error) { if (!(error instanceof SecModelOutputError) || attempt === 2) throw error; }
   }
   return { ...checkLinks(raw, ticker, input.flow, sections), documentId: input.documentId, fingerprint: input.fingerprint };
@@ -114,7 +114,7 @@ export async function reviewLinks(env: AnalysisEnv, ticker: string, drafts: Link
   const model = modelFor(env, "library-links-review");
   let raw: unknown = null;
   for (const attempt of [1, 2]) {
-    try { raw = await callWorkerSecModel(env, fetcher, `library-links-review-${attempt}`, REVIEW_SYSTEM, payload, model, 5 * 60_000, { reasoning: reasoningFor(env, "library-links-review") }); break; }
+    try { raw = await callWorkerSecModel(env, fetcher, `library-links-review-${attempt}`, REVIEW_SYSTEM, payload, model, 5 * 60_000, { reasoning: reasoningFor(env, "library-links-review"), ticker, kind: "library-links-review" }); break; }
     catch (error) { if (!(error instanceof SecModelOutputError) || attempt === 2) throw error; }
   }
   return Object.fromEntries(readReviews(raw, drafts));

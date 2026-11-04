@@ -9,7 +9,15 @@ import type { AiRunKind, AiRunStep } from './ai-runs-admin.ts';
  * oldest first, as the run names them.
  */
 export type FeatureRunProgress = { kind: AiRunKind | "report"; status: string; stage: string | null; steps: AiRunStep[]; startedAt: string; updatedAt: string };
+export const COMPANY_LAYER_STATUS_LABELS = {
+  disabled: '已关闭', paused: '已暂停', pending: '待生成', queued: '排队中', running: '运行中',
+  ready: '已完成', partial: '部分完成', outdated: '待更新', failed: '失败',
+} as const;
+export type CompanyLayerStatusCode = keyof typeof COMPANY_LAYER_STATUS_LABELS;
+/** The server selects one preset from observed switches, work and publication records. */
+export type CompanyLayerStatus = { code: CompanyLayerStatusCode; label: typeof COMPANY_LAYER_STATUS_LABELS[CompanyLayerStatusCode] };
 export type BusinessMapCompany = FinancialMaintenanceCompany & {
+  layerStatuses: Record<Layer, CompanyLayerStatus>;
   task: FinancialMaintenanceTask | null;
   collection: { status: string; reasons: string[]; updatedAt: string; completed: number; total: number } | null;
   history: { completed: number; total: number } | null;
@@ -45,6 +53,21 @@ export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticC
 export type DirectoryCompany = { ticker: string; name: string; exchange: string; cik: string; classes: string[]; layers: Record<Layer, boolean> };
 /** One page of the companies page's directory (50 issuers). */
 export type BusinessMapDirectory = { total: number; page: number; pages: number; rows: DirectoryCompany[] };
+/** Provider-reported ledger totals. Cached input is already part of inputTokens. */
+export type CompanyTokenUsage = {
+  calls: number;
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  callsWithoutTokens: number;
+};
+export type BusinessMapUsage = {
+  ticker: string;
+  firstAt: string | null;
+  lastAt: string | null;
+  layers: Record<Layer, CompanyTokenUsage>;
+  unassigned: CompanyTokenUsage;
+};
 /** One issuer of EDGAR's exchange directory, as the whitelist's ticker field suggests them. */
 export type IssuerSuggestion = { ticker: string; name: string; exchange: string };
 

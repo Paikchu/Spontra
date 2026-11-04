@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Search } from "lucide-react";
+import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "@/shared/analysis-contract/financial-maintenance";
 import { displayFinancialValue } from "./financial-maintenance-state";
 import "./financial-quarter-summary.css";

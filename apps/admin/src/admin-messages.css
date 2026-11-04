@@ -1,4 +1,4 @@
-.am-inbox { display: grid; gap: var(--space-3); }
+.am-inbox { display: grid; gap: 0; }
 .am-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--ink-soft); font-size: 13px; }
 .am-toolbar .fm-button { display: inline-flex; align-items: center; gap: 6px; }
 .am-list { margin: 0; padding: 4px; list-style: none; }

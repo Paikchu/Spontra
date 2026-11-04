@@ -125,7 +125,7 @@ export async function writeCardBatch(env: AnalysisEnv, ticker: string, sectionId
   let cards: Array<Record<string, unknown>> = [];
   for (const attempt of [1, 2]) {
     try {
-      const result = await callWorkerSecModel(env, fetcher, `library-cards-${attempt}`, SYSTEM, payload, model, 3 * 60_000, { reasoning });
+      const result = await callWorkerSecModel(env, fetcher, `library-cards-${attempt}`, SYSTEM, payload, model, 3 * 60_000, { reasoning, ticker, kind: "library-cards" });
       if (Array.isArray(result.cards)) { cards = result.cards as typeof cards; break; }
     } catch (error) { if (!(error instanceof SecModelOutputError) || attempt === 2) { if (attempt === 2 && error instanceof SecModelOutputError) break; throw error; } }
   }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-mira",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/admin-tailwind.css",
+    "baseColor": "mist",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "phosphor",
+  "rtl": false,
+  "aliases": {
+    "components": "@/apps/admin/src",
+    "utils": "@/packages/web/src/utils",
+    "ui": "@/apps/admin/src/ui",
+    "lib": "@/packages/web/src/model",
+    "hooks": "@/packages/web/src/hooks"
+  },
+  "menuColor": "default",
+  "menuAccent": "bold",
+  "registries": {}
+}

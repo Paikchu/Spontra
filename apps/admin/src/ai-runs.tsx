@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/shared/analysis-contract/ai-runs-admin";
 import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";

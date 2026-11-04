@@ -34,7 +34,7 @@ export async function executeSecMemoryWorkflow(
     if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, claim.ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "filings"))) {
       throw new Error("Memory lease ownership changed before model retry");
     }
-    const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model || modelFor(env, "memory"), undefined, { reasoning: reasoningFor(env, "memory") });
+    const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model || modelFor(env, "memory"), undefined, { reasoning: reasoningFor(env, "memory"), ticker: claim.ticker, runId: workflowInstanceId, kind: "memory" });
     return normalizeMemoryExtraction(value, validEvidenceIds, priorMemoryIds);
   });
   const committed = await step.do(`memory-commit:${params.jobId}`, async () => {

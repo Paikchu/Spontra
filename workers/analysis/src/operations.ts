@@ -196,7 +196,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
     const stored = await archivedFiling(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber, filing.documentUrl);
     return prepareSecFiling(filing, stored?.complete ? stored : null);
   };
-  const modelFor = (execution?: SecModelExecution): SecModelCall => {
+  const modelFor = (ticker: string, execution?: SecModelExecution): SecModelCall => {
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {
       if (Date.now() >= deadline) throw new Error("Editorial step execution budget exhausted; resume from saved draft");
@@ -239,7 +239,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-          Math.max(1, deadline - Date.now()), { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
+          Math.max(1, deadline - Date.now()), { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), ticker, runId: workflowInstanceId, kind: "sec-analysis" }),
       });
     };
   };
@@ -299,7 +299,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       if (isPeriodic(filing.form)) return filing.reportDate || null;
       const cached = await repository().getCache<{ periodEnd: string | null }>(classificationKey(filing));
       if (cached) return cached.payload.periodEnd;
-      const periodEnd = await identifyEarningsPeriod(await prepared_(filing), modelFor(execution));
+      const periodEnd = await identifyEarningsPeriod(await prepared_(filing), modelFor(filing.ticker, execution));
       await repository().setCache(classificationKey(filing), { periodEnd }, new Date().toISOString());
       return periodEnd;
     },
@@ -436,7 +436,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       let chunk: DiscoveryChunk;
       if (stored?.status === "complete" && stored.index === index) chunk = stored;
       else {
-        try { chunk = await scanDisclosureChunk(prepared, index, modelFor(execution)); }
+        try { chunk = await scanDisclosureChunk(prepared, index, modelFor(reference.filing.ticker, execution)); }
         catch (error) {
           if (!execution?.finalAttempt) throw error;
           chunk = {index,start:0,end:0,status:"failed",disclosures:[],rejected:0};
@@ -459,7 +459,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
     auditDisclosures: async (_filing, reference, plan, nodes, execution) => {
       const meta = await readMeta(env.SEC_FILINGS, reference);
       try {
-        const tasks = await auditDisclosureCoverage(meta, plan, nodes, modelFor(execution));
+        const tasks = await auditDisclosureCoverage(meta, plan, nodes, modelFor(reference.filing.ticker, execution));
         await putArtifact(env.SEC_FILINGS, reference, "discovery/audit", tasks);
         await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
         return tasks;
@@ -480,7 +480,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return brief;
     },
     plan: async (_filing, reference, brief, execution): Promise<SecNodePlan> => {
-      const plan = await planPreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), modelFor(execution), brief);
+      const plan = await planPreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), modelFor(reference.filing.ticker, execution), brief);
       await putArtifact(env.SEC_FILINGS, reference, "manager-plan", plan);
       return plan;
     },
@@ -488,7 +488,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       const prepared = await readPrepared(env.SEC_FILINGS, reference);
       let result: SecNodeResult;
       try {
-        result = await analyzePreparedSecNode(prepared, spec, modelFor(execution), brief);
+        result = await analyzePreparedSecNode(prepared, spec, modelFor(reference.filing.ticker, execution), brief);
       } catch (error) {
         // Rethrow so the Workflow step retries and escalates to the fallback model; only the
         // final attempt degrades to an error node so one flaky response cannot lose the filing.
@@ -499,19 +499,19 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return result;
     },
     review: async (_filing, reference, brief, plan, nodes, round, execution): Promise<ManagerReview> => {
-      const result = await reviewPreparedSecAnalysis(await readMeta(env.SEC_FILINGS, reference), brief, plan, nodes, round, modelFor(execution));
+      const result = await reviewPreparedSecAnalysis(await readMeta(env.SEC_FILINGS, reference), brief, plan, nodes, round, modelFor(reference.filing.ticker, execution));
       await putArtifact(env.SEC_FILINGS, reference, `manager-review/round-${round}`, result);
       return result;
     },
     summarizeEvent: async (filing, reference, execution) => ({
-      ...await summarizePreparedSecEvent(await readPrepared(env.SEC_FILINGS, reference), modelFor(execution), new Date(), await readHistory(env.SEC_FILINGS, reference)),
+      ...await summarizePreparedSecEvent(await readPrepared(env.SEC_FILINGS, reference), modelFor(reference.filing.ticker, execution), new Date(), await readHistory(env.SEC_FILINGS, reference)),
       ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     }),
     summarize: async (_filing, reference, context, plan, nodes, brief, review, execution) => {
       await putArtifact(env.SEC_FILINGS, reference, "nodes/final", nodes);
       if (review) await putArtifact(env.SEC_FILINGS, reference, "manager-review/final", review);
       const checkpoint = draftCheckpoint(reference, 0);
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, undefined,
+      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(reference.filing.ticker, execution), new Date(), plan, nodes, brief, review, undefined,
         { candidate: await checkpoint.load(), saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
       if (!result.artifact.report.reader) throw new Error("Synthesis did not produce the required reader report");
       if (result.summary && _filing.earningsGroup) result.summary.earningsGroup = _filing.earningsGroup;
@@ -521,7 +521,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
     auditReport: async (reference, nodes, brief, result, round, execution, context) => {
       if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
       const marketSnapshot = await identifyReaderMarketSnapshot(result.artifact.filing.ticker, result.artifact.report.marketSnapshot);
-      const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
+      const audit = await modelFor(reference.filing.ticker, execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
           headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
           reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], availableFigures: figureCatalog(result.artifact.report.figures ?? []), financialLens: result.artifact.report.financialLens, marketSnapshot,
           facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
@@ -547,7 +547,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       const checkpoint = draftCheckpoint(reference, revision.round);
       const saved = await checkpoint.load();
       const original = { ...revision.draft.summary, ...revision.draft.artifact.report, readerReport: revision.draft.artifact.report.reader, report: "" };
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, issues,
+      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(reference.filing.ticker, execution), new Date(), plan, nodes, brief, review, issues,
         { candidate: saved ?? original, patch: !saved, issues: revision.findings ?? issues, saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
       if (!result.artifact.report.reader) throw new Error("Editorial revision did not produce a reader report");
       delete result.artifact.report.editorialReview;
@@ -561,7 +561,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       const usableNodes = nodes.filter((node) => node.status === "complete" && (node.narrative || node.findings.length));
       if (!usableNodes.length) return report;
       try {
-        const candidate = await modelFor(execution)("presentation", "You are the editor of a company business research report. Design only the reading structure for the completed analysis; never generate facts, body text or data. Output exactly one JSON object following the schema, with density and sections at the top level. Cover every node in requiredNodeIds; a node without narrative uses findings and must not be left out. Do not repeat the same node's text as both narrative and callout. A chart directly follows the narrative/findings/callout of the same node. When an available trend relates directly to a business question, choose at least one chart that helps explain it; never let company-wide revenue stand in for segment or customer data. Use only the IDs and block types provided. Write section titles in plain, concise English.", {
+        const candidate = await modelFor(reference.filing.ticker, execution)("presentation", "You are the editor of a company business research report. Design only the reading structure for the completed analysis; never generate facts, body text or data. Output exactly one JSON object following the schema, with density and sections at the top level. Cover every node in requiredNodeIds; a node without narrative uses findings and must not be left out. Do not repeat the same node's text as both narrative and callout. A chart directly follows the narrative/findings/callout of the same node. When an available trend relates directly to a business question, choose at least one chart that helps explain it; never let company-wide revenue stand in for segment or customer data. Use only the IDs and block types provided. Write section titles in plain, concise English.", {
           schema: SEC_PRESENTATION_SCHEMA,
           requiredNodeIds: usableNodes.map((node) => node.id),
           nodes: usableNodes.map((node) => ({

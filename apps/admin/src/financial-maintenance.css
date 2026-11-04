@@ -73,7 +73,7 @@
 .fm-history-empty h3 { color: var(--ink-soft); font-size: 16px; margin: 17px 0 8px; }
 @media (min-width: 1500px) { .fm-columns { grid-template-columns: 236px minmax(0, 1fr); } .fm-detail { padding-inline: 32px; } }
 @media (max-width: 1180px) { .fm-columns { grid-template-columns: 186px minmax(0, 1fr); } .fm-detail { padding: 22px; } .fm-company-copy > span { max-width: 107px; } .fm-company { gap: 9px; padding-inline: 9px; } .fm-company-header { flex-wrap: wrap; } }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
  .fm-columns { grid-template-columns: minmax(0, 1fr); min-height: auto; }
  .fm-company-list { position: static; display: grid; grid-template-columns: minmax(0, 1fr) auto; height: auto; padding: 14px 16px 10px; border-right: 0; border-bottom: 1px solid var(--fm-line); gap: 9px; }
  .fm-company-search { padding: 0; }
@@ -99,4 +99,4 @@
 @media (prefers-reduced-motion: reduce) { .fm-summary > summary svg { transition: none; } }
 
 .fm-mobile-logout { display: none; }
-@media (max-width: 760px) { .fm-mobile-logout { display: inline-flex; } }
+@media (max-width: 768px) { .fm-mobile-logout { display: inline-flex; } }

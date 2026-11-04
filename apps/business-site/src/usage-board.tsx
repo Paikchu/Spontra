@@ -38,12 +38,9 @@ export function UsageBoard({ summary, range, onRange, labels, pending, failed, o
   const maxSeries = Math.max(1, ...(summary?.series.map(item => item.pageViews) ?? [1]));
   const maxEvent = Math.max(1, ...(summary?.events.map(item => item.count) ?? [1]));
   const figure = (value: string) => <b className="usage-num" key={`${range}:${value}`}>{value}</b>;
-  return <section className="usage-board" aria-busy={pending || undefined}>
+  return <section className="usage-board" aria-label={labels.title} aria-busy={pending || undefined}>
     <div className="usage-head">
-      <div>
-        <h1>{labels.title}</h1>
-        <p className="usage-utc">{labels.utc}</p>
-      </div>
+      <p className="usage-utc">{labels.utc}</p>
       <div className="usage-ranges" role="group" aria-label={labels.title}>
         {(["24h", "7d", "4w"] as const).map(key => <button key={key} type="button" aria-pressed={range === key} onClick={() => onRange(key)}>{labels.ranges[key]}</button>)}
       </div>
