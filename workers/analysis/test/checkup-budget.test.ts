@@ -124,3 +124,8 @@ test("a completed budget-denied stage remains denied on replay the next day", as
   assert.deepEqual(h.reservations, ["2026-11-02"]);
   assert.deepEqual(replay, first);
 });
+
+test("a checkup whose every model call throws errors for the task's retry instead of recording an empty checkup", async () => {
+  const h = harness(5);
+  await assert.rejects(h.run(async () => { throw new Error("Model deepseek-flash HTTP 402: Insufficient Balance"); }), /Insufficient Balance/);
+});

@@ -32,7 +32,7 @@ export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 /** The input of the last run that composed nothing; the same input is not researched again until it changes. */
 export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
-/** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed ends empty at once. */
+/** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed errors at once. */
 export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void> };
 /** A model provider outage: no researched finding got an answer. The run waits and tries again, longer each time. */
 const OUTAGE_WAITS_MS = [30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
@@ -159,8 +159,10 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     }));
     const researched = settled.filter((_, k) => planFinding(verified[k]!, data, peerTickers).tier !== "light");
     const outage = providerOutage(researched);
-    if (!outage || !deps.sleep || attempt >= OUTAGE_WAITS_MS.length) break;
-    await deps.sleep(`analyst-model-wait-${attempt + 1}`, OUTAGE_WAITS_MS[attempt]!);
+    // Still no answer after the waits: the run errors and the task retries it, rather than recording an empty dossier.
+    if (outage && (!deps.sleep || attempt >= OUTAGE_WAITS_MS.length)) throw new Error("analyst: no researched finding got a model answer (provider outage)");
+    if (!outage) break;
+    await deps.sleep!(`analyst-model-wait-${attempt + 1}`, OUTAGE_WAITS_MS[attempt]!);
   }
   settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], document: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`], review: [] }));
   const { documents, materials } = dossierContent(outcomes);
@@ -168,7 +170,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   if (!Object.keys(documents).length) {
     await step.do("analyst-trace", async () => {
       await new AiRunStore(db).saveVersion("analyst", params.ticker, { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, materials: [], analystTrace: trace }, now);
-      // Every finding light, or none answered after the outage waits: the same input would end the same way.
+      // Every finding light: the same input would end the same way.
       await new D1SecRepository(db).setCache(emptyDossierKey(params.ticker), { fingerprint: params.fingerprint }, now);
     });
     return { status: "empty" as const, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, turns: o.turns.length, warnings: o.warnings })) };
