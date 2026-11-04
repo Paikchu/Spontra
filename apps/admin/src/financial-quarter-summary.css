@@ -31,7 +31,7 @@
 .fqs-table-scroll td[data-missing="true"] { color: var(--ink-muted); font-weight: 400; }
 .fqs-table-scroll tbody tr:last-child > * { border-bottom: 0; }
 .fqs-empty { margin: 0; padding: 26px 16px; color: var(--ink-muted); font-size: 12px; text-align: center; line-height: 1.8; }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .fqs-summary { padding-top: 16px; }
   .fqs-controls { gap: 10px; }
   .fqs-controls > label { flex: 1 1 140px; max-width: none; }

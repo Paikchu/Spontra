@@ -1,20 +1,21 @@
-import { ArrowUpRight, Bell, ChartColumn, Cpu, FileStack, GalleryVerticalEnd, ListChecks, ListFilter, Moon, Network, Sun, type LucideIcon } from "lucide-react";
+import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
 import Link from "@/packages/web/src/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader,
   SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
-  SidebarMenuSubButton, SidebarMenuSubItem, SidebarRail, SidebarSeparator, useSidebar,
+  SidebarMenuSubButton, SidebarMenuSubItem, SidebarSeparator, useSidebar,
 } from "@/packages/web/src/ui/sidebar";
 import type { Section } from "./business-view-admin";
 
-const NAV_GROUPS: Array<{ title: string; items: Array<[Section, LucideIcon]> }> = [
+const NAV_GROUPS: Array<{ title: string; items: Array<[Section, Icon]> }> = [
   { title: "数据", items: [["whitelist", ListChecks], ["analytics", ChartColumn]] },
   { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter]] },
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
 
-export function adminNavGroup(section: Section) {
-  return NAV_GROUPS.find(group => group.items.some(([key]) => key === section))?.title;
+export function AdminMobileNavigation() {
+  const { setOpenMobile } = useSidebar();
+  return <div className="ra-mobile-navigation"><button type="button" className="fm-button" aria-label="打开导航" onClick={() => setOpenMobile(true)}>导航</button></div>;
 }
 
 type AppSidebarProps = {
@@ -92,6 +93,5 @@ export function AppSidebar({ section, activeSection, pages, navigate, unread, li
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
-    <SidebarRail aria-label="切换侧边栏" title="切换侧边栏" />
   </Sidebar>;
 }

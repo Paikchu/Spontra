@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
+import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react";
 import type { AiEffort, AiModel, AiModelSettings, AiToolModelRow, AiToolModelUpdate } from "@/shared/analysis-contract/ai-models-admin";
 import { adminApi, AdminApiError } from "./admin-api";
 import { financialDate } from "./financial-update-history";
@@ -32,10 +32,12 @@ export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
   }
 
   return <section className="am-admin" aria-label="模型配置">
-    <div className="bm-admin-toolbar">
-      <span className="am-count">{data ? `${data.tools.filter(t => t.model || t.effort).length} / ${data.tools.length} 项已调整` : ""}</span>
-      <button className="ra-icon-button" onClick={() => setRefresh(n => n + 1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16} /></button>
-    </div>
+    <header className="ra-page-header">
+      <div className="ra-page-actions">
+        <span className="am-count">{data ? `${data.tools.filter(t => t.model || t.effort).length} / ${data.tools.length} 项已调整` : ""}</span>
+        <button className="ra-icon-button" onClick={() => setRefresh(n => n + 1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16} /></button>
+      </div>
+    </header>
     {error && <p className="ra-error ra-error-banner" role="alert">{error}</p>}
     {!data && !error && <p role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>}
     {data && <div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table am-table">

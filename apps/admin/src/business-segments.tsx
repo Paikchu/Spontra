@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { AiCompanies } from '@/shared/analysis-contract/ai-runs-admin';
 import type { LibraryOverview } from '@/shared/analysis-contract/filing-library';
 import type { BusinessTagCompanies } from '@/shared/analysis-contract/business-tags';

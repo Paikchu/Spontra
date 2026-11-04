@@ -8,6 +8,8 @@ import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '.
 import { writeFeatureSetting } from './feature-settings.ts';
 import { AiRunStore } from '../ai-runs/store.ts';
 import { readFlow } from './flow.ts';
+import { readCompanyUsage } from './company-usage.ts';
+import { companyLayerStatuses } from './company-status.ts';
 import { FEATURE_TASKS, KIND_FEATURE, latestOutcomes, listMessages, markRead, TASK_FEATURE } from './messages.ts';
 import { failedInputKey } from '../pipeline/workflow-task.ts';
 import type { AnalysisEnv } from '../operations.ts';
@@ -149,6 +151,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       const published = Object.fromEntries(await Promise.all(FEATURES.map(async feature=>[feature,new Map((await db.prepare(PUBLISHED[feature]).bind().all<{ticker:string;at:string}>().catch(()=>({results:[]}))).results.map(r=>[r.ticker,r.at]))]))) as Record<Feature,Map<string,string>>;
       const lists = Object.fromEntries(FEATURES.map(feature=>[feature,featureCompaniesFor(env,feature)])) as Record<Feature,string[]>;
       const [runs, outcomes] = await Promise.all([featureRuns(db), latestOutcomes(db)]);
+      const generation=Object.fromEntries(FEATURES.map(feature=>[feature,featureEnabled(env,feature)])) as Record<Feature,boolean>;
       const companies: BusinessMapCompanies['companies'] = list.companies.map(company=>{
         const row=byTicker.get(company.ticker)!;
         const reasons:string[]=JSON.parse(row.collectionReasons??'[]');
@@ -167,15 +170,21 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
           // A failure switched the feature off; switched on again, it is being retried and no longer the state.
           return [feature,{on,publishedAt:published[feature].get(company.ticker)??null,run:runs.get(key)?.state??null,progress:runs.get(key)?.progress??[],failure:!on&&last?.outcome==='failed'?{at:last.updatedAt,detail:last.detail}:null}];
         })) as BusinessMapCompany['features'];
-        return {...company,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
+        const current: Omit<BusinessMapCompany, 'layerStatuses'> = {...company,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
           collection:row.collectionStatus?{status:row.collectionStatus,reasons,updatedAt:row.collectionUpdatedAt!,completed:row.collectionCompleted??0,total:row.collectionTotal??0}
             :row.discovery?{status:'unavailable',reasons:[JSON.parse(row.discovery).reason],updatedAt:row.discoveryAt!,completed:0,total:0}:null,
           publication:{status:flow?'ready':invalid||row.collectionStatus==='unavailable'?'unavailable':'preparing',
             outdated:!!flow&&!!row.collectionStatus&&row.collectionStatus!=='succeeded',
             reasons:invalid?['INVALID_PAYLOAD']:reasons.length?reasons:flow?[]:['MISSING_TWO_QUARTERS'],periods:flow?.quarters.map(q=>q.periodEnd)??[],revenueCoverage:flow?.quarters.map(q=>({period:q.periodEnd,status:q.segmentDisclosure==='single_reportable_segment'?'single_segment' as const:q.segments.some(s=>s.id==='reported-company-total')?'unverified' as const:'verified' as const,segments:q.segments.length,adjustments:q.revenueAdjustments?.length??0}))??[]}};
+        return {...current, layerStatuses:companyLayerStatuses(current, {automaticCollection:list.environment.dataCollectionEnabled,generation})};
       });
-      const generation=Object.fromEntries(FEATURES.map(feature=>[feature,featureEnabled(env,feature)])) as Record<Feature,boolean>;
       return json({companies,automaticCollection:list.environment.dataCollectionEnabled,generation} satisfies BusinessMapCompanies);
+    }
+    const usage = /^\/admin\/business-map\/companies\/([^/]+)\/usage$/.exec(path);
+    if (usage && request.method === 'GET') {
+      const ticker = normalizeTicker(decodeURIComponent(usage[1]!));
+      if (!ticker) return json({error:'公司代码无效。'},400);
+      return json(await readCompanyUsage(db, ticker));
     }
     // One company's analysis as a graph: the registry's tasks for the map and its features, and where each stands now.
     const flow = /^\/admin\/business-map\/companies\/([^/]+)\/flow$/.exec(path);

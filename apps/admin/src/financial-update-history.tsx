@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Check, Clock3, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { CheckIcon as Check, ClockIcon as Clock3, SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, XIcon as X } from "@phosphor-icons/react";
 import type { FinancialMaintenanceTask } from "@/shared/analysis-contract/financial-maintenance";
 
 export function financialDate(value: string): string {

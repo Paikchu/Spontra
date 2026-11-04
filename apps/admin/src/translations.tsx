@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { TranslationEntry, TranslationsAdmin } from "@/shared/analysis-contract/translations-admin";
 import type { TranslatedResource } from "@/shared/analysis-runtime/translation";
 import { adminApi, AdminApiError } from "./admin-api";
@@ -55,7 +55,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
       {resource && <button className="fm-button" onClick={() => setResource("")}>{label(...resource.split(":") as [TranslatedResource, string])} ✕</button>}
       <label className="ra-search"><Search size={17} /><input aria-label="搜索原文或译文" placeholder="搜索原文或译文" value={search} onChange={e => setSearch(e.target.value)} /></label>
     </div>
-    {data.truncated && <p className="ai-hint">只列出前 {data.entries.length} 条，未通过与待翻译排在前面。</p>}
+    {data.truncated && <p className="ai-hint">显示前 {data.entries.length} 条</p>}
     {!entries.length ? <p className="ai-empty">无匹配条目</p> : <ul className="tr-entries">{entries.map((e, i) => <li key={`${e.resource}:${e.scope}:${i}`} data-status={e.status}>
       <header><span className="ra-badge" data-status={STATUS[e.status][1]}>{STATUS[e.status][0]}</span><small>{label(e.resource, e.scope)}{e.at ? ` · ${date(e.at)}` : ""}</small></header>
       <div className="tr-pair"><p lang="en">{e.source}</p><p lang="zh-CN">{e.text ?? "—"}</p></div>

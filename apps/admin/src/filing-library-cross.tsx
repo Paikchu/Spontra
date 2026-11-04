@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { RotateCcw, Search, Undo2 } from 'lucide-react';
+import { ArrowCounterClockwiseIcon as RotateCcw, MagnifyingGlassIcon as Search, ArrowUUpLeftIcon as Undo2 } from "@phosphor-icons/react";
 import type { IndustryCategory, LibraryFactRow, LibraryFindResult, LibraryLinksView, LibraryWikiEntry, LibraryWikiPage } from '@/shared/analysis-contract/filing-library';
 import { adminApi } from './admin-api';
 
 type Open = (ticker: string, documentId: string, sectionId: string) => void;
 const via: Record<string, string> = { index: '索引', recall: '语义召回' };
-const recallState: Record<string, string> = { ok: '已用语义召回', off: '未用语义召回', empty: '语义召回无结果', error: '语义召回出错' };
 const linkState: Record<string, string> = { verified: '自动核验通过', disputed: '类别未定', confirmed: '人工指定', unlinked: '未关联' };
 const slugOf = (businessKey: string) => businessKey.slice(businessKey.indexOf(':') + 1);
 
@@ -60,7 +59,6 @@ export function FindPanel({ onOpen, fail }: { onOpen: Open; fail: (e: unknown) =
       form.category ? adminApi<{ facts: LibraryFactRow[] }>(`library/facts?${new URLSearchParams({ category: form.category, ...(form.tickers ? { tickers: form.tickers } : {}) })}`).then(r => setFacts(r.facts)) : Promise.resolve(setFacts([])),
     ]).catch(fail).finally(() => setBusy(false));
   };
-  const uploaded = status?.items?.filter(i => i.status === 'uploaded').reduce((n, i) => n + i.n, 0) ?? 0;
   return <div className="fl-panel">
     <form className="fl-find" onSubmit={e => { e.preventDefault(); run(); }}>
       <input aria-label="自然语言问题" placeholder="问题" value={form.q} onChange={e => setForm({ ...form, q: e.target.value })} />
@@ -70,7 +68,8 @@ export function FindPanel({ onOpen, fail }: { onOpen: Open; fail: (e: unknown) =
       <input aria-label="公司" placeholder="公司" value={form.tickers} onChange={e => setForm({ ...form, tickers: e.target.value.toUpperCase() })} />
       <button type="submit" disabled={busy}><Search size={15} />{busy ? '查找中' : '查找'}</button>
     </form>
-    <p className="fl-caption">语义召回：{status ? status.enabled ? `${uploaded.toLocaleString()} 个小节已上传${status.error ? ` · ${status.error}` : ''}` : '未开启' : '—'}{result ? ` · ${recallState[result.recall]}${result.recallError ? `：${result.recallError}` : ''}` : ''}</p>
+    {(status?.error || result?.recallError) && <p className="ra-error" role="alert">{result?.recallError || status?.error}</p>}
+    {status?.enabled === false && <p className="fl-caption">语义检索未开启</p>}
     <Facts facts={facts} />
     {result && (!result.found.length ? <p className="fl-empty">无结果</p> : <ul className="fl-found">{result.found.map(f => <li key={f.sectionId}>
       <button className="fl-linkish" onClick={() => onOpen(f.ticker, f.documentId, f.sectionId)}><strong>{f.ticker}</strong> · {f.form} {f.filedAt.slice(0, 10)} · {f.path.join(' › ')}</button>
@@ -79,7 +78,7 @@ export function FindPanel({ onOpen, fail }: { onOpen: Open; fail: (e: unknown) =
 }
 
 function Entry({ e, ticker, onOpen }: { e: LibraryWikiEntry; ticker: string; onOpen: Open }) {
-  return <article className="fl-wiki-entry"><button className="fl-linkish" onClick={() => onOpen(ticker, e.documentId, e.sectionId)}>{e.path.join(' › ')}</button><small>{e.form} · {e.filedAt.slice(0, 10)}{e.change !== 'unchanged' ? ` · ${e.change === 'new' ? '新增' : '有变化'}` : ''}</small>
+  return <article className="fl-wiki-entry"><button className="fl-linkish" onClick={() => onOpen(ticker, e.documentId, e.sectionId)}>{e.path.join(' › ')}</button><small>{e.form} · {e.filedAt.slice(0, 10)}</small>
     {e.gist && <p className="fl-gist">摘要：{e.gist}</p>}{e.excerpts.map(x => <blockquote key={x.passageId}><small>{x.passageId}</small>{x.text}</blockquote>)}</article>;
 }
 

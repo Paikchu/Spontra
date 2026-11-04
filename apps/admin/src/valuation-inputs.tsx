@@ -29,7 +29,7 @@ export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; on
     event.preventDefault();
     setError(''); setSaved(false);
     let parsed: unknown = null;
-    if (targets.trim()) { try { parsed = JSON.parse(targets); } catch { setError('管理层目标不是有效的 JSON'); return; } }
+    if (targets.trim()) { try { parsed = JSON.parse(targets); } catch { setError('JSON 格式错误'); return; } }
     setSaving(true);
     try {
       show(await adminApi<ValuationCompanyInputs>(`business-map/companies/${encodeURIComponent(ticker)}/valuation-inputs`, { method: 'POST', body: JSON.stringify({ peers: parsePeerField(peers), targets: parsed, reassess }) }));
@@ -41,11 +41,11 @@ export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; on
   return <form className="bm-valuation" aria-label={`${ticker} 估值输入`} onSubmit={save}>
     <h4>估值输入</h4>
     <label htmlFor={`bm-peers-${ticker}`}>可比公司</label>
-    <input id={`bm-peers-${ticker}`} value={peers} onChange={e => { setPeers(e.target.value); setSaved(false); }} placeholder="留空则按业务标签选择" autoComplete="off" spellCheck={false} />
-    <label htmlFor={`bm-targets-${ticker}`}>管理层目标</label>
-    <textarea id={`bm-targets-${ticker}`} value={targets} onChange={e => { setTargets(e.target.value); setSaved(false); }} placeholder="留空则无管理层情景" rows={targets ? 14 : 3} spellCheck={false} />
+    <input id={`bm-peers-${ticker}`} value={peers} onChange={e => { setPeers(e.target.value); setSaved(false); }} placeholder="自动选取" autoComplete="off" spellCheck={false} />
+    <label htmlFor={`bm-targets-${ticker}`}>管理层目标（JSON）</label>
+    <textarea id={`bm-targets-${ticker}`} value={targets} onChange={e => { setTargets(e.target.value); setSaved(false); }} placeholder="未设置" rows={targets ? 14 : 3} spellCheck={false} />
     <label className="bm-valuation-check"><input type="checkbox" checked={reassess} onChange={e => { setReassess(e.target.checked); setSaved(false); }} />方法更新时自动重估</label>
-    <p className="bm-valuation-meta">{inputs.fiscalYearEndMonth ? `财年结束：${inputs.fiscalYearEndMonth} 月` : '财报未给出财年结束月份，目标暂不使用'}{inputs.targets && ` · 截至 ${inputs.targets.asOf}`}{inputs.updatedAt && ` · 更新于 ${inputs.updatedAt.slice(0, 10)}`}</p>
+    <p className="bm-valuation-meta">{inputs.fiscalYearEndMonth ? `财年结束：${inputs.fiscalYearEndMonth} 月` : '财年结束：未知；目标未启用'}{inputs.targets && ` · 截至 ${inputs.targets.asOf}`}{inputs.updatedAt && ` · 更新于 ${inputs.updatedAt.slice(0, 10)}`}</p>
     {error && <p role="alert" className="ra-error">{error}</p>}
     <div className="bm-valuation-actions"><button className="fm-button" disabled={saving}>{saving ? '保存中' : '保存'}</button>{saved && <span role="status">已保存</span>}</div>
   </form>;

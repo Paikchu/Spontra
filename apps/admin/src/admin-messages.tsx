@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCheck } from "lucide-react";
+import { ChecksIcon as CheckCheck } from "@phosphor-icons/react";
 import type { AdminMessage, AdminMessages } from "@/shared/analysis-contract/admin-messages";
 import type { Feature } from "@/shared/analysis-contract/business-features";
 import { adminApi } from "./admin-api";
@@ -37,7 +37,7 @@ export function AdminInbox({ inbox, read, onOpen }: { inbox: AdminMessages | nul
     try { await read(ids); } catch (e) { setError((e as Error).message); } finally { busy.current = false; }
   };
   return <section className="am-inbox" aria-label="消息">
-    <div className="am-toolbar"><span>未读 · {inbox?.unread ?? 0}</span><button className="fm-button" disabled={!inbox?.unread} onClick={() => void act()}><CheckCheck size={15} />全部已读</button></div>
+    <header className="ra-page-header"><div className="ra-page-actions am-toolbar"><span>未读 · {inbox?.unread ?? 0}</span><button className="fm-button" disabled={!inbox?.unread} onClick={() => void act()}><CheckCheck size={15} />全部已读</button></div></header>
     {error && <p className="ra-error" role="alert">{error}</p>}
     {!inbox ? <p role="status">加载中</p> : !inbox.messages.length ? <p>无消息</p>
       : <ul className="am-list ra-panel">{inbox.messages.map(m => <li key={m.id} data-unread={!m.readAt || undefined}>

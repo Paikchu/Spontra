@@ -105,8 +105,8 @@ export async function executeCompanyAnalysisWorkflow(
     const output = await runBusinessModelAgent({
       ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
-      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis") }),
-      act: (stage, system, tools, messages) => callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker }),
+      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker, runId: workflowInstanceId, kind: "company-analysis" }),
+      act: (stage, system, tools, messages) => callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker, runId: workflowInstanceId, kind: "company-analysis" }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {

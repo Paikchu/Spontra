@@ -14,7 +14,7 @@
 span.bt-tag { cursor: default; margin: 0 6px 4px 0; }
 .bt-tag:hover { border-color: var(--line-strong); }
 .bt-tag[aria-pressed=true] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
-.bt-tag[data-status=rejected] { color: var(--ink-muted); text-decoration: line-through; opacity: .7; }
+.bt-tag[data-status=rejected] { color: var(--ink-muted); text-decoration: line-through; }
 .bt-detail { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--sp-radius-sm); background: var(--fill); }
 .bt-detail p { margin: 0; font-size: 13px; }
 .bt-detail .fl-rerun { align-self: flex-start; }

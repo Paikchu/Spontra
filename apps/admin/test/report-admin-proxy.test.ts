@@ -68,6 +68,15 @@ test("the admin proxy lets one company's flow graph through, and nothing beside 
   assert.deepEqual(seen, ["/admin/business-map/companies/TTMI/flow"]);
 });
 
+test("company token usage is a read-only company route", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { seen.push(new URL(url).pathname); return Response.json({ ok: true }); } } };
+  const path = ["business-map", "companies", "TEST", "usage"], url = "https://admin.example/api/admin/business-map/companies/TEST/usage";
+  assert.equal((await handleReportAdminProxy(new Request(url), path, env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request(url, { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), path, env)).status, 404);
+  assert.deepEqual(seen, ["/admin/business-map/companies/TEST/usage"]);
+});
+
 test("the admin proxy lets the valuation runs, versions and a manual run through, but not guidance", async () => {
   const seen: string[] = [];
   const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string, init?: RequestInit) => { seen.push(`${init?.method ?? "GET"} ${new URL(String(url)).pathname}`); return Response.json({ ok: true }); } } };
