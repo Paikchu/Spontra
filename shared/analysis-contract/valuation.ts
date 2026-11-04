@@ -190,6 +190,10 @@ export type ImpliedPath = { factor: "revenueGrowth"; implied: number; baseAverag
  * method-weighted per-share values (DCF and the forward multiples at the judged weights; `ScenarioValuation`), `expected` the
  * probability-weighted value over bear, base, management and bull; older payloads carry the DCF values and the three-scenario expectation.
  */
+/** The values the system publishes are the equity's value this many months after the research date, rolled from the present-value model at its discount rate. */
+export const VALUATION_HORIZON_MONTHS = 12;
+/** valuation.calc.v10: how the published per-share figures were rolled forward from present value; absent on older payloads, which are present values. */
+export type ForwardRoll = { months: number; factor: number; basis: "discount_rate" };
 export type ValuationRange = {
   low: number; high: number; base: number; expected: number | null;
   price: number | null; marginOfSafety: number | null; downsideCoverage: number | null; expectedUpside: number | null; baseUpside: number | null;
@@ -359,6 +363,8 @@ export type ValuationModelResult = {
   consensusNote?: ConsensusNote | null;
   /** valuation.calc.v5: absent on historical reports; never inferred from bear/bull or the football field. */
   fairValueRange?: FairValueRange;
+  /** valuation.calc.v10: every per-share value above is this many months forward; absent on older payloads. */
+  forward?: ForwardRoll;
 };
 
 export type ValuationDimension = {

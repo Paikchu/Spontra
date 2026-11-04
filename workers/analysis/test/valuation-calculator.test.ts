@@ -186,3 +186,24 @@ test("A18: unknown interest is insufficient data, while disclosed zero supports 
   assert.equal(pe.base, null);
   assert.ok(pe.notes.some(note => /insufficient data.*interest/i.test(note)));
 });
+
+test("valuation.calc.v10: horizonMonths rolls every per-share figure forward at the discount rate and recomputes the price ratios; absent, values stay present", async () => {
+  const { rollForward } = await import("../../../shared/analysis-runtime/valuation/calculator.ts");
+  const drivers = { modelType: "fcff" as const, revenue0: 1000, path: { revenueGrowth: [0.05, 0.05, 0.05, 0.05, 0.05], operatingMargin: [0.2, 0.2, 0.2, 0.2, 0.2], taxRate: [0.25, 0.25, 0.25, 0.25, 0.25], salesToCapital: [2, 2, 2, 2, 2] }, terminalGrowth: 0.02, terminalRoic: 0.12 };
+  const scenario = (growth: number) => ({ narrative: "n", probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers: { ...drivers, path: { ...drivers.path, revenueGrowth: drivers.path.revenueGrowth.map(() => growth) } } });
+  const request = { modelType: "fcff" as const, currency: "USD", discountRate: { value: 0.1, basis: "wacc" as const, components: { riskFree: 0.04, beta: 1, equityRiskPremium: 0.05, costOfEquity: 0.09, costOfDebt: 0.05, taxRate: 0.25, equityWeight: 0.8 }, rationale: "t", sources: null },
+    shares: { base: 100, dilutionReserve: 0, basis: "t" }, bridge: { leaseTreatment: "operating_expense" as const, nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: [] },
+    scenarios: { bear: scenario(0.02), base: scenario(0.05), bull: scenario(0.08) }, price: 20 };
+  const present = calculateValuation(request), rolled = calculateValuation({ ...request, horizonMonths: 12 });
+  assert.equal(present.forward, undefined);
+  assert.deepEqual(rolled.forward, { months: 12, factor: 1.1, basis: "discount_rate" });
+  for (const key of ["bear", "base", "bull"] as const) assert.ok(Math.abs(rolled.scenarios[key].result.perShare - present.scenarios[key].result.perShare * 1.1) < 1e-9, key);
+  assert.ok(Math.abs(rolled.range.base - present.range.base * 1.1) < 1e-9);
+  assert.ok(Math.abs(rolled.range.marginOfSafety! - (1 - 20 / rolled.range.base)) < 1e-12);
+  assert.ok(Math.abs(rolled.range.baseUpside! - (rolled.range.base / 20 - 1)) < 1e-12);
+  for (const [i, s] of rolled.sensitivities.entries()) { assert.ok(Math.abs(s.perShare - present.sensitivities[i]!.perShare * 1.1) < 1e-9); assert.equal(s.changePercent, present.sensitivities[i]!.changePercent); }
+  assert.deepEqual(rolled.implied, present.implied);
+  assert.ok(rolled.limitations.some(l => l.includes("12 months forward")));
+  // Rolling twice is never done: the helper is idempotent only through the request, and a zero horizon is the identity.
+  assert.deepEqual(rollForward(present, 0, 0.1), present);
+});

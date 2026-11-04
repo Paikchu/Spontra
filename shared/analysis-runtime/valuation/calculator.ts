@@ -1,4 +1,4 @@
-import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type ForwardRoll, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
 import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
@@ -7,7 +7,7 @@ import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
  * The deterministic valuation calculator. Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v9";
+export const CALCULATOR_VERSION = "valuation.calc.v10";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years. */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -114,8 +114,36 @@ export type CalcRequest = {
   fairValueBasis?: FairValueBasis;
   /** Mid-year convention: cash flows at t − 0.5, the terminal at n − 0.5. Default off (year end). */
   midYear?: boolean;
+  /**
+   * Publish every per-share value this many months forward: the present value rolled at the discount rate, (1 + r)^(months/12).
+   * Absent or 0: present values (older callers and the calculator's own tests). The workflow passes VALUATION_HORIZON_MONTHS.
+   */
+  horizonMonths?: number;
   context?: CalcContext;
 };
+
+/**
+ * The per-share figures rolled forward: scenario values, the methods, the triangulation, the sensitivities, the
+ * management scenario and the ranges, each multiplied by the same factor; the ranges' price ratios are recomputed on the
+ * rolled values. Operating values, cash flows, gates, the implied growth and the verification stay as computed today.
+ */
+export function rollForward(model: ValuationModelResult, months: number, r: number): ValuationModelResult {
+  if (!(months > 0)) return model;
+  const factor = requireFinite((1 + r) ** (months / 12), "forward factor");
+  const scale = (v: number) => v * factor;
+  const nullable = (v: number | null) => v == null ? null : scale(v);
+  const scenario = <T extends ScenarioEntry>(s: T): T => ({ ...s, result: { ...s.result, perShare: scale(s.result.perShare) }, ...(s.valuation ? { valuation: { ...s.valuation, perShare: scale(s.valuation.perShare) } } : {}) });
+  const scenarios = Object.fromEntries(SCENARIO_KEYS.map(k => [k, scenario(model.scenarios[k])])) as Record<ScenarioKey, ScenarioEntry>;
+  const range = valuationRange({ bear: scale(model.range.low), base: scale(model.range.base), bull: scale(model.range.high) }, nullable(model.range.expected), model.range.price);
+  const forward: ForwardRoll = { months, factor, basis: "discount_rate" };
+  return {
+    ...model, scenarios, range, forward,
+    sensitivities: model.sensitivities.map(x => ({ ...x, perShare: scale(x.perShare) })),
+    ...(model.methods ? { methods: model.methods.map(m => ({ ...m, low: nullable(m.low), base: nullable(m.base), high: nullable(m.high) })) } : {}),
+    ...(model.triangulation ? { triangulation: { ...model.triangulation, low: scale(model.triangulation.low), base: scale(model.triangulation.base), high: scale(model.triangulation.high) } } : {}),
+    ...(model.managementScenario ? { managementScenario: scenario(model.managementScenario) } : {}),
+  };
+}
 
 /** Discounts a cash-flow path and a terminal value at year `n`: the common kernel every cash-flow model shares. */
 export function discountPath(cashFlows: number[], terminalValue: number, r: number, rows: Array<Partial<YearRow>> = [], midYear = false): { pvExplicit: number; pvTerminal: number; yearly: YearRow[] } {
@@ -343,11 +371,12 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const baseDrivers = request.scenarios.base.drivers;
   const horizonYears = baseDrivers.modelType === "fcff" ? horizonOf(baseDrivers.path) : FORECAST_YEARS;
   const limitations: string[] = [midYear ? "Cash flows are discounted mid-year; no stub period." : "Cash flows are discounted at year end; no mid-year convention and no stub period."];
+  if (request.horizonMonths && !request.context) limitations.push(`Every per-share value is ${request.horizonMonths} months forward: the present value rolled at the discount rate; dividends and buybacks within the period are not deducted.`);
   if (SCENARIO_KEYS.some(k => results[k].result.perShare < 0)) limitations.push("Negative scenario results are raw residual equity shortfalls, not tradable share prices; probability-weighted results retain those raw residuals and are not limited-liability payoffs.");
   const terminalShare = results.base.result.terminalShare;
   if (terminalShare != null && terminalShare > TERMINAL_SHARE_LIMIT) limitations.push(`Terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value.`);
   const result: ValuationModelResult = { calculatorVersion: CALCULATOR_VERSION, modelType: request.modelType, currency: request.currency, discountRate: request.discountRate, shares, bridge: request.bridge, scenarios: results, range, sensitivities, implied, limitations, horizonYears, midYear };
-  if (!request.context) return withFairValueRange(request, finiteResult(result, "valuation result"));
+  if (!request.context) return withFairValueRange(request, rollForward(finiteResult(result, "valuation result"), request.horizonMonths ?? 0, r));
   // The cross-checks: the DCF beside the forward multiples, each scenario valued on its own path at the judged weights, the
   // management scenario from cited targets, the probability-weighted expectation, the anchors, the verification and the gates.
   const c = request.context;
@@ -379,12 +408,14 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const managementGateRow = c.management && c.periodEnd && baseDrivers.modelType === "fcff" ? managementGate(baseDrivers, c.management, c.periodEnd) : null;
   const consensusNote: ConsensusNote = c.consensusNote ?? (c.consensus ? { status: "cited", source: c.consensus.evidenceId, reason: null } : { status: "unavailable", source: null, reason: null });
   const judgedWeights = methodWeightJudgements(c.methodWeights ?? null);
-  const withRange: ValuationModelResult = { ...result, scenarios: results, range: weightedRange };
-  const gates = sanityGates({ result: withRange, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, consensusNote, triangulation, methods, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management: managementGateRow });
+  // The published figures are rolled to the horizon before the gates, so a consensus target (itself a 12-month figure) is compared with the published base.
+  const rolled = rollForward({ ...result, scenarios: results, range: weightedRange, methods, triangulation, managementScenario: management }, request.horizonMonths ?? 0, r);
+  const gates = sanityGates({ result: rolled, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, consensusNote, triangulation: rolled.triangulation ?? null, methods: rolled.methods ?? null, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management: managementGateRow });
   if (appliedMethodCount(triangulation) < 2) limitations.push("No forward-multiple cross-check: fewer than two valuation methods have usable values and positive weights.");
   if (forward.some(m => m.base != null)) limitations.push("The range weighs each scenario's DCF with the forward multiples on its own path at the judged weights; the sensitivities, the terminal share and the market-implied growth are on the base DCF alone.");
-  return withFairValueRange(request, finiteResult({ ...withRange, limitations, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
-    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementScenario: management, managementComparison, consensusNote }, "valuation result"));
+  if (request.horizonMonths) limitations.push(`Every per-share value is ${request.horizonMonths} months forward: the present value rolled at the discount rate; dividends and buybacks within the period are not deducted.`);
+  return withFairValueRange(request, finiteResult({ ...rolled, limitations, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
+    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementComparison, consensusNote }, "valuation result"));
 }
 
 /** Evaluate the normal bounds with the same economics as the base, without adding them to the probability distribution. */

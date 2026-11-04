@@ -32,7 +32,7 @@ test("calculated EV cross-check honors mid-year FCFF timing while PE uses audite
     close(result.methods!.find(m => m.method === "pe_forward")!.base!, eps3 * 20 / 1.14 ** 3);
     assert.match(result.methods!.find(m => m.method === "pe_forward")!.basis, /cost of equity 14\.00%/);
     assert.match(result.methods!.find(m => m.method === "pe_forward")!.notes.join(" "), /not a complete FCFE valuation/);
-    assert.equal(result.calculatorVersion, "valuation.calc.v9");
+    assert.equal(result.calculatorVersion, "valuation.calc.v10");
   }
 });
 

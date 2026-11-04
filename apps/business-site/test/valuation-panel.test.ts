@@ -46,7 +46,7 @@ test("the document reads head, scores, the live fair-value block with its stress
   assert.match(text(headOf(html)), /Composite score 6\.4 \/ 10/);
   assert.match(t, /Five-dimension research score · Researched 2026-08-12/);
   // The fair-value block and the stress fold are the live page's.
-  assert.match(html, /<section class="val-block val-fair" aria-label="Price relative to fair value"><h3>Fair value range<\/h3><p class="val-fair-value">—<\/p>/);
+  assert.match(html, /<section class="val-block val-fair" aria-label="Price relative to the 12-month fair value"><h3>Fair value range, 12 months out<\/h3><p class="val-fair-value">—<\/p>/);
   assert.match(html, /<section class="val-block"><details class="val-fold val-stress"><summary>Scenarios and stress tests<\/summary>/);
   const s = text(stress(html));
   assert.match(s, /Value per share/); assert.match(s, /Bear \$70\.00 \$77\.00 25%/); assert.match(s, /Base \$120\.00 \$132\.00 40%/); assert.match(s, /Management \$150\.00 \$165\.00 20%/);
@@ -66,7 +66,7 @@ test("the document reads head, scores, the live fair-value block with its stress
 test("the Chinese page carries the same sections with translated labels", () => {
   const html = render("zh-CN", valuationReport), t = text(html);
   assert.match(t, /综合评分 6\.4 \/ 10/); assert.match(t, /五维研究评分 · 2026-08-12 研究/);
-  assert.match(t, /合理价值区间 —/); assert.match(t, /情景与压力测试/); assert.match(text(stress(html)), /悲观 70\.00美元 77\.00美元 25%/); assert.match(text(stress(html)), /情景加权值 140\.25美元/);
+  assert.match(t, /12 个月合理价值区间 —/); assert.match(t, /情景与压力测试/); assert.match(text(stress(html)), /悲观 70\.00美元 77\.00美元 25%/); assert.match(text(stress(html)), /情景加权值 140\.25美元/);
   assert.match(t, /评估报告 .*?结论 /); assert.match(t, /价值来源 现金流折现 50%/); assert.match(t, /催化 .*? 下一验证点 .*? 反证 .*? 模型说明/);
   assert.doesNotMatch(t, /估值方法|模型校验/);
 });
@@ -84,7 +84,7 @@ test("price guidance: the head says where the close sits; the fair-value block s
     const guide = availableGuide(position, price), html = render("en", report, guide), main = text(mainGuide(html));
     assert.match(headOf(html), new RegExp(`class="val-position" data-tone="[a-z]+">${en}<`));
     assert.match(text(headOf(html)), new RegExp(`\\$${price}\\.00 2026-08-13`));
-    assert.match(main, /Fair value range \$110\.00 – \$155\.00/);
+    assert.match(main, /Fair value range, 12 months out \$110\.00 – \$155\.00/);
     assert.match(main, /Close of 2026-08-13/); assert.match(main, /Base value \$132\.00/);
     assert.match(main, /Key assumptions/); assert.match(main, /Generated revenue assumption/);
     assert.doesNotMatch(main, /\$77\.00|\$187\.00|Expected value/);
@@ -107,7 +107,7 @@ test("incomplete evidence never presents the calculation's stress values as a fa
     const guide: ValuationPriceGuide = { status: "unavailable", reportVersionId: report.versionId, quote: report.quote, reason };
     const html = render("zh-CN", report, guide), main = text(mainGuide(html));
     assert.match(headOf(html), /暂无法判断/);
-    assert.match(main, /合理价值区间 —/);
+    assert.match(main, /12 个月合理价值区间 —/);
     assert.doesNotMatch(main, /110\.00美元|155\.00美元|77\.00美元|187\.00美元|关键假设/);
   }
   const noRange = { ...report, model: { ...report.model!, fairValueRange: { status: "unavailable" as const, reason: "The financing assumptions need evidence.", evidenceIds: [] } } };

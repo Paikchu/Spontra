@@ -22,7 +22,7 @@ const m = messages({
   scores: "Five-dimension research score", researched: (date: string) => `Researched ${date}`,
   template: "Scoring template", templateNote: "The same five dimensions, weights and anchors for every company; a score names the anchor it was given against.", phaseResearch: "research phase", phaseAssumptions: "assumptions phase",
   compositeRule: "Composite is the weighted sum to one decimal, empty while any dimension is unscored; overall confidence is the lowest of the five.",
-  report: "Assessment report", valueSource: "Where the value comes from",
+  report: "Assessment report", valueSource: "Where the value comes from", horizonNote: (months: number, rate: string) => `Every value is the equity's value ${months} months after the research date: the present-value model rolled forward at its ${rate} discount rate; dividends and buybacks within the period are not deducted.`,
   score: "Composite score", unscored: "Not scored", confidence: "Confidence",
   researchDate: "Research date", financialBase: "Statements to", generated: (date: string) => `Generated ${date}`,
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
@@ -32,7 +32,7 @@ const m = messages({
   dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
   readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
 
-  range: "Value per share", bear: "Bear", base: "Base", bull: "Bull", expected: "Expected", price: "Reference close", priceDate: (date: string) => `Close of ${date}`,
+  range: "Value per share, 12 months out", bear: "Bear", base: "Base", bull: "Bull", expected: "Expected", price: "Reference close", priceDate: (date: string) => `Close of ${date}`,
   marginOfSafety: "Margin of safety", baseUpside: "To base value", expectedUpside: "To expected value", downside: "Bear case vs. price", noQuote: "No usable reference close",
   model: "Model",
   discountRate: "Discount rate", wacc: "WACC", costOfEquity: "Cost of equity", shares: "Economic shares", dilution: (value: string) => ` (incl. dilution reserve ${value})`, rateBasis: (basis: string) => ` (${basis})`, bridge: "Equity bridge", nonOperating: "Non-operating assets", claims: "Debt and other claims",
@@ -54,7 +54,7 @@ const m = messages({
   checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
   managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
-  pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment",
+  pricePosition: "Price relative to the 12-month fair value", fairRange: "Fair value range, 12 months out", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment",
   below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
   noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
 }, {
@@ -63,7 +63,7 @@ const m = messages({
   scores: "五维研究评分", researched: (date: string) => `${date} 研究`,
   template: "评分模板", templateNote: "每家公司都用同一组维度、权重与锚点；每个分值对应其所落的档位。", phaseResearch: "研究阶段", phaseAssumptions: "假设阶段",
   compositeRule: "综合为加权和，一位小数，任一维度未评分则为空；整体信心取五项中最低。",
-  report: "评估报告", valueSource: "价值来源",
+  report: "评估报告", valueSource: "价值来源", horizonNote: (months: number, rate: string) => `所有价值均为研究日期之后 ${months} 个月的股权价值：现值模型按 ${rate} 的折现率向前滚动；期内分红与回购未扣除。`,
   score: "综合分", unscored: "未评分", confidence: "置信度",
   researchDate: "研究日期", financialBase: "财务基期", generated: (date: string) => `生成于 ${date}`,
   preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
@@ -73,7 +73,7 @@ const m = messages({
   dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
   readThesis: "展开完整论证", hideThesis: "收起完整论证",
 
-  range: "每股价值", bear: "悲观", base: "基准", bull: "乐观", expected: "期望", price: "参考收盘价", priceDate: (date: string) => `${date} 收盘`,
+  range: "12 个月后每股价值", bear: "悲观", base: "基准", bull: "乐观", expected: "期望", price: "参考收盘价", priceDate: (date: string) => `${date} 收盘`,
   marginOfSafety: "安全边际", baseUpside: "至基准价值", expectedUpside: "至期望价值", downside: "悲观情景相对现价", noQuote: "无可用参考收盘价",
   model: "模型",
   discountRate: "折现率", wacc: "加权平均资本成本", costOfEquity: "权益成本", shares: "经济股数", dilution: (value: string) => `（含稀释储备 ${value}）`, rateBasis: (basis: string) => `（${basis}）`, bridge: "股权桥接", nonOperating: "非经营资产", claims: "债务及其他索偿",
@@ -94,7 +94,7 @@ const m = messages({
   checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
   managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
-  pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价",
+  pricePosition: "股价相对 12 个月合理价值", fairRange: "12 个月合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价",
   below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
   noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
   noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "当前估值需要重新评估。",
@@ -238,6 +238,7 @@ function FairValue({ report, guide, onCite }: { report: ValuationPublication; gu
       <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
       {supported && <div><dt>{m.centralValue}</dt><dd>{perShare(fair.base, report.currency, locale)}</dd></div>}
     </dl>
+    {report.model?.forward && <p className="val-list-line">{m.horizonNote(report.model.forward.months, pct(report.model.discountRate.value))}</p>}
     {guide.status === "unavailable" && <p className="val-list-line">{guideReason(guide.reason)}</p>}
     {fair?.status === "unavailable" && fair.reason && <Prose text={fair.reason} onCite={onCite} />}
     {supported && <>

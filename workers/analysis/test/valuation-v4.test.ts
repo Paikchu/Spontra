@@ -307,7 +307,7 @@ test("management comparison rows: one per total-revenue target inside the horizo
 });
 
 test("the version bump reassesses only the marked company: an ORCL report under valuation.v4/calc.v2 runs, every other company on unchanged material is held", () => {
-  assert.equal(VALUATION_VERSION, "valuation.v11");
+  assert.equal(VALUATION_VERSION, "valuation.v12");
   const published = { methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2", financialPeriodEnd: "2026-08-31" };
   const current = { methodVersion: VALUATION_VERSION, calculatorVersion: CALCULATOR_VERSION, financialPeriodEnd: "2026-08-31" };
   assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);

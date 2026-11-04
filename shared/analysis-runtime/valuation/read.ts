@@ -84,6 +84,7 @@ const model = z.object({
   methodWeights: methodWeights.optional(), scenarioProbabilities: scenarioProbabilities.optional(), managementScenario: managementScenario.nullable().optional(),
   managementComparison: managementComparison.nullable().optional(), consensusNote: consensusNote.nullable().optional(),
   fairValueRange: fairValueRange.optional(),
+  forward: z.object({ months: z.number().int().positive(), factor: finite.positive(), basis: z.literal("discount_rate") }).optional(),
 }).refine(v => v.fairValueRange?.status !== "available" || v.fairValueRange.base === v.range.base, "normal central value must be the researched base");
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({

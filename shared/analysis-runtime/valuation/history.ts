@@ -144,7 +144,7 @@ const requestSchema = z.strictObject({
   modelType: z.literal("fcff"), currency: z.string(),
   discountRate: z.object({ value: finite, basis: z.enum(["wacc", "cost_of_equity"]), components: z.object({ riskFree: nullable, beta: nullable, equityRiskPremium: nullable, costOfEquity: nullable, costOfDebt: nullable, taxRate: nullable, equityWeight: nullable }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
   shares: z.object({ base: finite, dilutionReserve: finite, basis: z.string() }), bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, leaseTreatment: z.literal("operating_expense").optional(), notes: strings }),
-  scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, fairValueBasis: fairValueBasis.optional(), midYear: z.boolean().optional(), context: context.optional(),
+  scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, fairValueBasis: fairValueBasis.optional(), midYear: z.boolean().optional(), horizonMonths: z.number().optional(), context: context.optional(),
 }) satisfies z.ZodType<CalcRequest>;
 const operatingMeasure = z.object({ metric: z.string(), periodStart: date, periodEnd: date, value: finite, unit: z.string(), basis: z.string() });
 const operatingForecast = operatingMeasure.extend({ rationale: z.string().min(1), evidenceIds: strings.min(1) });

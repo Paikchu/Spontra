@@ -1,3 +1,4 @@
+import { VALUATION_HORIZON_MONTHS } from "../../analysis-contract/valuation.ts";
 import type { FactorDistribution, RevenueAnchor } from "../../analysis-contract/valuation.ts";
 import { financeLeaseAmount } from "./lease-basis.ts";
 import { rpoRevenueFloor, type CalcRequest, type Lifecycle } from "./calculator.ts";
@@ -108,7 +109,7 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
   if (anchor) notes.push(`RPO floor years 1–2: ${anchor.floorToRevenue0.slice(0, 2).map(v => `${(v * 100).toFixed(0)}% of trailing revenue`).join(", ")}`);
   if (buildCapex) notes.push(shape !== taper ? `build capex ${excess.toExponential(2)} × ${shape.map(k => k.toFixed(2)).join(", ")} (the cited capex plan's timing, scaled to the taper's total)` : `build capex ${excess.toExponential(2)} tapering over four years`);
   return {
-    modelType: "fcff", currency: input.currency, midYear: input.midYear === true,
+    modelType: "fcff", currency: input.currency, midYear: input.midYear === true, horizonMonths: VALUATION_HORIZON_MONTHS,
     discountRate: { value: r, basis: "wacc", components: { riskFree: rf, beta: input.beta, equityRiskPremium: erp, costOfEquity, costOfDebt, taxRate: tax, equityWeight }, rationale: "prior from sourced components; the equity risk premium is a placeholder the research must source", sourceRefs: [] },
     shares: { base: shares, dilutionReserve: 0, basis: "prior" }, bridge: { leaseTreatment: "operating_expense", nonOperatingAssets: cash, debtAndClaims: claims, nonOperatingEquityAdjustment: 0, notes }, price,
     scenarios: {
