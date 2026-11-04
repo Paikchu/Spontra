@@ -10,6 +10,7 @@ import { verifyFindings, type FindingData } from "../../../shared/analysis-runti
 import { ANALYST_TOOLS, divergence, renderTable, runAnalyst, type AnalystModel } from "../src/analyst/agent.ts";
 import { planFinding } from "../src/analyst/plan.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
+import { writeFindings } from "../src/findings/writer.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
 import type { AgentBlock, AgentMessage, AgentReply } from "../src/tool-loop.ts";
@@ -219,4 +220,20 @@ test("a dossier prefixes filing materials by finding and keeps web materials as 
   assert.deepEqual(content.materials.map(m => m.id), [web, "ocf-customer-advances:m1"]);
   assert.deepEqual(content.documents["ocf-customer-advances"]!.rows[0]!.cells[1]!.map(b => b.kind === "quote" ? b.materialId : ""), [web, "ocf-customer-advances:m1"]);
   assert.ok(readDossierPublication({ schemaVersion: "dossier.v1", ticker: "TEST", findingsFingerprint: "fp-1", fingerprint: "a-1", generatedAt: "2026-08-01T00:00:00Z", model: "test", ...content }, "TEST"));
+});
+
+test("a draft whose every finding breaks the contract goes to the one repair with the reasons; a draft of more than eight is cut, not voided", async () => {
+  const ledger = buildLedger(data, PERIOD, publication.sources);
+  const base = { ticker: "TEST", companyName: "Test", ledger, context: null, data, modelVersion: "m", fingerprint: "fp", now: "2026-08-01T00:00:00Z", stage: <T>(_: string, cb: () => Promise<T>) => cb() };
+  const long = { ...finding, title: "x".repeat(120) };
+  const sent: Array<[string, unknown]> = [];
+  const repaired = await writeFindings({ ...base, model: async (stage, _system, payload) => { sent.push([stage, payload]); return { findings: [stage === "findings-write" ? long : finding] }; } });
+  assert.deepEqual(sent.map(s => s[0]), ["findings-write", "findings-repair"]);
+  const rejected = (sent[1]![1] as { rejected: Array<{ id: string; reasons: string[] }> }).rejected;
+  assert.equal(rejected[0]!.id, "capex-gap");
+  assert.match(rejected[0]!.reasons.join(" "), /title/);
+  assert.deepEqual(repaired.publication?.findings.map(f => f.id), ["capex-gap"]);
+  const many = Array.from({ length: 10 }, (_, i) => ({ ...finding, id: `f${i}` }));
+  const cut = await writeFindings({ ...base, model: async () => ({ findings: many }) });
+  assert.equal(cut.publication?.findings.length, 8);
 });

@@ -93,6 +93,9 @@ export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step
     return runNote({ env, ticker: params.ticker, metric, flags: input.assessment.flags.filter(f => f.metricId === metricId), data: input.data, documents: input.documents, act,
       stage: (name, cb) => step.do(`checkup-${name}`, cb), reserveTurn: () => reserveTurn(env) });
   }));
+  // Every metric's run threw: the provider failed (balance, outage), not the content. The run errors and the task retries it,
+  // instead of recording an empty checkup the same input would never run again.
+  if (settled.length && settled.every(s => s.status === "rejected")) throw (settled[0] as PromiseRejectedResult).reason;
   const outcomes = settled.map((s, i): NoteOutcome => s.status === "fulfilled" ? s.value : { metricId: input.metrics[i]!, note: null, materials: [], turns: [], issues: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`] });
   const { notes, materials } = checkupContent(outcomes);
   const trace = outcomes.map(o => ({ metricId: o.metricId, issues: o.issues, turns: o.turns }));

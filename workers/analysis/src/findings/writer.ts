@@ -1,5 +1,5 @@
 import type { AnalysisFinding, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import { readFindingsPublication, verifyFindings, type FindingData, type WithheldFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { findingsPublicationSchema, readFindingsPublication, verifyFindings, type FindingData, type WithheldFinding } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Ledger } from "./ledger.ts";
 
 export type FindingsModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
@@ -66,17 +66,31 @@ const shell = (input: WriterInput, findings: unknown): unknown => ({
   fingerprint: input.fingerprint, findings, sources: input.ledger.sources,
 });
 
+/** The most a publication holds; a writer that wrote more keeps the first ones (problems come first). */
+const MAX_FINDINGS = 8;
+
+/** Why one finding fails the public contract, in words the repair call can act on. */
+function contractReasons(input: WriterInput, item: unknown): string[] {
+  const parsed = findingsPublicationSchema.safeParse(shell(input, [item]));
+  const issues = parsed.success ? [] : parsed.error.issues.map(i => `${i.path.slice(2).join(".") || "finding"}: ${i.message}`.slice(0, 200));
+  return issues.length ? issues.slice(0, 4) : ["judgment.sourceIds must name ids from payload.sources"];
+}
+
 /** Reads the model's findings through the public contract, then keeps only those the data supports. */
-function accept(input: WriterInput, raw: unknown): { verified: AnalysisFinding[]; withheld: WithheldFinding[]; rejectedShape: boolean } {
+function accept(input: WriterInput, raw: unknown): { verified: AnalysisFinding[]; withheld: WithheldFinding[] } {
   const list = Array.isArray((raw as { findings?: unknown })?.findings) ? (raw as { findings: unknown[] }).findings : [];
-  // Read each finding on its own so one malformed item does not void the set.
-  const shaped: AnalysisFinding[] = [], malformed: unknown[] = [];
-  for (const item of list) { const one = readFindingsPublication(shell(input, [item]), input.ticker); if (one) shaped.push(one.findings[0]); else malformed.push(item); }
-  const publication = readFindingsPublication(shell(input, shaped), input.ticker);
-  if (!publication) return { verified: [], withheld: [], rejectedShape: list.length > 0 };
+  // Read each finding on its own so one malformed item does not void the set; a malformed one goes to the repair with its reasons.
+  const shaped: AnalysisFinding[] = [], malformed: WithheldFinding[] = [];
+  for (const [i, item] of list.entries()) {
+    const one = readFindingsPublication(shell(input, [item]), input.ticker);
+    if (one?.findings.length) shaped.push(one.findings[0]!);
+    else malformed.push({ id: typeof (item as { id?: unknown })?.id === "string" ? (item as { id: string }).id : `malformed-${i}`, reasons: contractReasons(input, item) });
+  }
+  const publication = shaped.length ? readFindingsPublication(shell(input, shaped.slice(0, MAX_FINDINGS)), input.ticker) : null;
+  if (!publication) return { verified: [], withheld: malformed };
   const { verified, withheld } = verifyFindings(publication, input.data);
   const ids = new Set(verified.map(f => f.id));
-  return { verified: publication.findings.filter(f => ids.has(f.id)), withheld: [...withheld, ...malformed.map((m, i) => ({ id: typeof (m as { id?: unknown })?.id === "string" ? (m as { id: string }).id : `malformed-${i}`, reasons: ["does not match the findings contract"] }))], rejectedShape: false };
+  return { verified: publication.findings.filter(f => ids.has(f.id)), withheld: [...withheld, ...malformed] };
 }
 
 /** A strength and a risk that rest on the same figure are two sides of one trade; each unpaired strength takes the first such risk. */
