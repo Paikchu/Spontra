@@ -1,6 +1,6 @@
 # Spontra Analysis 架构：从数据到估值的五层
 
-日期：2026-11-04。本文描述上线后的现状（47b62f03）。升级的动机、取舍与实施记录见 [spontra-architecture-upgrade](spontra-architecture-upgrade.md)；各层内部细节另有专文（文末索引）。
+日期：2026-11-04。本文描述上线后的现状（69cb72e3）。升级的动机、取舍与实施记录见 [spontra-architecture-upgrade](spontra-architecture-upgrade.md)；各层内部细节另有专文（文末索引）。
 
 本文只讲从 SEC 原文到估值的五层核心链路，由宏观到具体分四级：定位与原则 → 运行骨架 → 每一层 → 跨层机制。
 
@@ -14,17 +14,20 @@ Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worke
 
 | 层 | 名称 | 产物（公司级） | 读什么 | 用模型 | 联网 |
 |---|---|---|---|---|---|
-| 1 | `map` 财务地图 | 历期三表、分部、资本结构快照、事件轨 | EDGAR 文件 | 否 | 只访问 EDGAR |
-| 2 | `filings` 文件分析 | 文件库、每份文件的摘要与分析、指引、记忆、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析；指引的 IR 幻灯片） |
+| 1.1 | `map` 表格数据拆解 | 历期三表、分部、资本结构快照、事件轨 | EDGAR 文件的表格与 XBRL | 只在读笔记与利润表判定，按算术校验 | 只访问 EDGAR |
+| 1.2 | 文本拆解入库 | 文件库（section/passage）、索引卡、业务主线、业务标签 | 已归档原文 | 切分不用；卡片、主线、标签用（低推理） | 否 |
+| 2 | `filings` 文件分析 | 每份文件的报告与摘要、指引、记忆、每份文件的分析、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析；指引的 IR 幻灯片） |
 | 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗、三表体检笔记 | 第 2 层产物 | 是 | 按需（公司分析、分析师） |
-| 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 2 层产物（文件库）+ 网页 | 是 | 是（脑图的主要来源之一） |
+| 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 1.2 层文件库 + 第 1.1 层分部 + 网页 | 是 | 是（脑图的主要来源之一） |
 | 5 | `valuation` 估值 | 五维评分 + 计算模型 + 报告 | 第 2、3、4 层产物 | 是 | 按需（研究阶段） |
+
+第 1 层分两个子层：1.1 把文件的**表格**拆成数字，1.2 把文件的**文本**拆成段落入库。两者都是拆解，不做解读；解读从第 2 层开始。代码里第 1.2 层的任务（`library`、`library-cards`、`library-links`、`business-tags`、`library-search`）挂在 `filings` 开关与 scope 下，开第 2 层即一并开启；本文按职责归入第 1 层。
 
 层的定义在 `shared/analysis-contract/business-features.ts`：`LAYERS`、`FEATURES`（第 2–5 层的开关）、`LAYER_REQUIRES`（阶梯：每层要求其下一层已开）。
 
 ### 1.2 三条原则
 
-1. **上层只读下层产物，不读原文。** 第 2 层是唯一读 SEC 原文的层。第 3 层起，引用的是第 2 层已核验过的段落 id；读取端的引文重验因此必然通过。
+1. **上层只读下层产物，不读原文。** 原文只在第 1 层（拆解）与第 2 层（解读）被读。第 3 层起，引用的是第 2 层已核验过的段落 id；读取端的引文重验因此必然通过。
 2. **数字只有一个来源。** 第 2 层的每期提取（period extract）含账本（ledger），上层陈述的每个数字都来自账本行；要点的校验是确定性的（`verifyFindings`），不是让模型再核一遍。
 3. **下层产物优先，网页按需。** 第 2–5 层的 agent 都有原生 `web_search` 与读页工具，但提示词规定只在下层产物答不上时才用（文件点名却没解释的交易对手或产品、最新文件之后的事件、未跟踪同业的自有披露、行业背景），并有每次运行的搜索与读页预算；一条搜索摘要从不算证据，只有读过的页面才成为可引用的材料。第 4 层的脑图是例外：网页是它的主要来源之一。要点写作与三表体检是单次 JSON 调用或只读文件分析的窄 agent，没有网页工具。
 
@@ -88,15 +91,15 @@ flowchart LR
 
 ## 三、逐层设计
 
-### 3.1 第 1 层 `map`：财务地图
+### 3.1 第 1.1 层 `map`：表格数据拆解
 
-**职责。** 把一家公司的每一份定期报告与财报 8-K 变成可比的季度数据，不用模型。
+**职责。** 把一家公司的每一份定期报告与财报 8-K 的表格变成可比的季度数据。模型只在两处出现，且都不产数字：读笔记指位置，利润表判定定口径。
 
 **入口与任务。**
 
 | 任务 | 做什么 |
 |---|---|
-| `collect` | 从 EDGAR 取最新完整三表并发布（`financials.published`）；财报季先用 8-K 发布季度，10-Q 到了再对账 |
+| `collect` | 从 EDGAR 取最新完整三表并发布（`financials.published`）；财报季先用 8-K 发布季度，10-Q 到了再对账。新文件经**读笔记**（见下）入账 |
 | `archive` | 归档其余现行报告（如无 2.02 项的 8-K），之后任何模块只从归档读原文（见 [sec-archive](sec-archive.md)） |
 | `history` | 季度收入历史 |
 | `map-derive` | 从归档重建更早的季度与资本结构快照（`map.derived`） |
@@ -106,21 +109,42 @@ flowchart LR
 
 **产物。** 完整发布（三表 + 分部 + 来源）、派生快照（旧季度、资本结构、RPO）、SEC 基本面序列、事件轨。所有数字带来源 accession。
 
+**读笔记（`financial-data/read-note.ts`，`read-note.v3`）。** 新文件的季度怎么进账：代码先把文件里的每张表切成文本行，模型读一遍后只写一张"笔记"——最新一期的每个金额在第几张表、第几行、正负号、哪一列是本期，以及它引用的期末日期原文。笔记里**从不出现金额**。代码按笔记指的位置去读金额，再做算术：完整性门知道的每个合计都要勾稽，文件里重复出现的上一季收入列要与已发布的那一季相等；全部对上才接受这一期，否则笔记作废、这期不发布（`filing_read_notes` 记状态与问题）。笔记写错的后果是校验失败，而不是发布一个错数。
+
 **校验。** 算术：报表自身勾稽、相邻累计期对照、重述通过比较前后文件得出；分部拆分按文件声明的计算弧与收入表配平。
 
-### 3.2 第 2 层 `filings`：文件分析
+### 3.2 第 1.2 层：文本拆解入库
 
-**职责。** 唯一读 SEC 原文的层。把归档文件变成上层可直接引用的分析与段落，并把本期关键数字确定性地提取出来。
+**职责。** 把归档原文的叙述部分（MD&A、风险因素、附注、8-K 正文）拆成带稳定 id 的段落存进 D1，并给每份文件打上索引卡、业务主线与业务标签。上层引用的每一条原文段落都指向这里。
+
+```mermaid
+flowchart LR
+  arch["filing.archived"] --> lib["library<br/>切分文件为 section/passage（无模型）"]
+  lib --> cards["library-cards<br/>索引卡（低推理）"]
+  cards --> links["library-links<br/>业务主线与行业类别"]
+  links --> tags["business-tags<br/>两级业务标签 + 向量配对"]
+  lib --> search["library-search<br/>AI Search 索引"]
+```
+
+| 任务 | 做什么 | 产物 |
+|---|---|---|
+| `library` | 从 R2 读归档 HTML 一次，按 item/章节切成 section 与 passage | `sec_documents` / `sec_sections` / `sec_passages` |
+| `library-cards` | 每份文件一张索引卡，说明各章节讲什么 | 文件库卡片 |
+| `library-links` | 从卡片与段落提取业务主线与行业类别 | 业务链接 |
+| `business-tags` | 两级业务标签，bge-m3 向量配出同业单元对（`business_tag_pairs`） | 同业标签 |
+| `library-search` | 把段落送进 AI Search 供召回 | 索引 |
+
+只有 `library` 读 R2；其余三个模型任务读 D1 段落。它们不解读文件，只是让文件可定位、可检索、可配同业，所以归第 1 层而不是第 2 层。标签放在这里还有一个原因：同业比较的质量取决于打了标签的公司数量，拆解层比解读层便宜，覆盖的公司更多。
+
+### 3.3 第 2 层 `filings`：文件分析
+
+**职责。** 解读。把每份文件变成上层可直接引用的报告、摘要、指引、记忆与分析，并把本期关键数字确定性地提取出来。读的是第 1.1 层的数字、第 1.2 层的段落，以及（sec-report 与 guidance）整份归档原文。
 
 **任务链。**
 
 ```mermaid
 flowchart TB
-  arch["filing.archived"] --> lib["library<br/>切分文件为 section/passage（无模型）"]
-  lib --> cards["library-cards<br/>索引卡（低推理）"]
-  cards --> links["library-links<br/>业务主线与行业类别"]
-  links --> tags["business-tags<br/>两级业务标签 + 向量配对"]
-  arch --> rep["sec-report<br/>读笔记 → 报告摘要、8-K 摘要"]
+  arch["filing.archived"] --> rep["sec-report<br/>整份文件 → 报告正文、摘要、8-K 摘要"]
   arch -->|8-K| guid["guidance<br/>管理层指引"]
   rep -->|report.published 定期报告| mem["memory<br/>记忆条目"]
   rep --> items["items<br/>每份文件一篇分析"]
@@ -134,33 +158,42 @@ flowchart TB
 
 | 产物 | 存放 | 说明 |
 |---|---|---|
-| 文件库 | `sec_documents` / `sec_sections` / `sec_passages`，AI Search 召回 | 段落有稳定 id，上层引文全部指向这里 |
-| 读笔记 | `filing_read_notes`（read-note.v3） | 新文件由模型读一次，算术核对后才写摘要 |
-| 报告摘要、8-K 摘要 | `sec_published_reports` 等 | `verification_status` 已核验/部分 |
+| 报告正文与摘要、8-K 摘要 | `sec_published_reports`、`sec_filing_summaries` | 见下；`verificationStatus` verified / partial / failed |
 | 指引 | guidance 产物 | 来自财报 8-K、IR 幻灯片、已存通话记录 |
 | 记忆 | `d1-memory` | 每份定期报告的记忆条目，公司分析的输入 |
 | **每份文件的分析** | `item-analysis:v1:<ticker>:<id>`，索引 `items:v1:<ticker>` | 由共享 agent loop 写、`compose` 核验；`items/library.ts` 的 `listFilingAnalyses`/`readFilingAnalysis` 是上层读它的唯一接口 |
 | **每期提取** | `period-extract:v1:<ticker>`（`period-extract.v1`） | 见下 |
 
-**每期提取（`extract/period-extract.ts`）。** 无模型，从第 1 层的完整发布、派生快照、SEC 基本面和第 2 层的指引确定性地切出：八个季度的 `FindingData`（三表、资本、基本面、指引）与账本 `Ledger`（上层可陈述的每一个数字，带 yoy/qoq 与来源）、三表体检的标记。指纹按内容（覆盖的期、最新积压、指引内容、基本面哈希）而非重建时间，所以只有内容变了才发 `extract.published`。它的存在就是为了让第 3 层不再回头读第 1 层。
+**sec-report（`sec/pipeline.ts`，`sec-analysis.v4`）是什么。** 每份定期报告（10-K/10-Q/20-F）与事件报告（8-K/6-K）各跑一次的 Workflow，产出这份文件的**读者报告**：正文 3–8 节、1–5 条变化、可证伪的条件、摘要（`headline` / `bullets` / `analystView`），以及可放的图。定期报告走完整路径：原文切成带位置的证据块 → 全文扫描出披露候选 → 加载 Company Facts 里本期已验证的 XBRL 事实与历史序列 → manager 提问 → 各节点研究 → manager 复审（最多一轮修复）→ 确定性财务透镜 → 综合成文 → 结构校验 → 独立编辑评审（一次修订）。8-K/6-K 走简析路径。它另外把这份文件的会计期写进库（guidance 按它给指引定日期），并发 `report.published`，memory 由此生成记忆条目。细节见 [sec-reader-report](sec-reader-report.md)。
 
-**items 的工具策略。** `ITEM_POLICY = company_overview / read_series / find_sections / read_section / search / read_web / compose / finish`：这里允许读原文段落，是整个系统里模型读原文的最后一处（连同 sec-report 的读笔记）。网页预算每次运行 2 次搜索、2 次读页，只给文件点名却没解释的东西。
+**sec-report 的校验为什么是确定性的。** 这份报告是模型读整篇原文写出来的，而原文里的数字模型会抄错、会算错、会把累计期当单季。所以数字不信模型：
 
-**第 2 层在哪里读原文、读的是什么。** 第 1 层只产数字：三表、分部、资本结构、来源 accession，不保留叙述文字（MD&A、风险因素、附注、8-K 正文）。把叙述整理进数据库正是第 2 层的第一步，所以"原文已在库里"指的是第 2 层自己的文件库。具体的读取点：
+- 文中的关键指标（`keyMetrics`）逐条对回证据——要么是 XBRL 事实，要么是带证据块 id 的事实；对不上的指标被丢弃，不改写成对的，并记进 `dataQuality.warnings`。
+- 同比、环比、百分点变化由代码从序列算，不让模型写增长率；比率的变化按百分点，不按相对值。
+- 现金流桥（OCF − 资本开支等）由代码按原表的符号算，`arithmeticVerified` 标在透镜上。
+- 通过的指标数 ≥2 且 XBRL 覆盖率 ≥90% 才记 `verified`，否则 `partial`；一个都对不上记 `failed`。状态随报告存储，前端照状态展示。
+
+这与第 1.1 层读笔记的算术校验是同一个思路：模型负责"在哪、怎么读、说明什么"，数字由代码从来源取并勾稽。
+
+**每期提取（`extract/period-extract.ts`）。** 无模型，从第 1.1 层的完整发布、派生快照、SEC 基本面和第 2 层的指引确定性地切出：八个季度的 `FindingData`（三表、资本、基本面、指引）与账本 `Ledger`（上层可陈述的每一个数字，带 yoy/qoq 与来源）、三表体检的标记。指纹按内容（覆盖的期、最新积压、指引内容、基本面哈希）而非重建时间，所以只有内容变了才发 `extract.published`。它的存在就是为了让第 3 层不再回头读第 1.1 层。
+
+**items 的工具策略。** `ITEM_POLICY = company_overview / read_series / find_sections / read_section / search / read_web / compose / finish`：这里允许读第 1.2 层的段落，是整个系统里模型读原文的最后一处（连同 sec-report 与 guidance）。网页预算每次运行 2 次搜索、2 次读页，只给文件点名却没解释的东西。
+
+**第 2 层在哪里读原文、读的是什么。** 第 1.1 层只产数字，第 1.2 层只产段落；两者都不解读。第 2 层的读取点：
 
 | 步骤 | 读的是 | 从哪读 |
 |---|---|---|
-| `library` | 归档的 HTML，切成 section/passage 写入 D1 | R2 一次，每份文件 |
-| `sec-report`（读笔记） | 整份归档文件，按第 1 层数字做算术核对后写摘要 | R2（sec-archive 的 `archivedFiling`） |
+| `sec-report` | 整份归档文件（含附件）、本期 XBRL 事实、历史序列 | R2（sec-archive 的 `archivedFiling`）+ Company Facts |
 | `guidance` | 财报 8-K 正文、IR 幻灯片、已存通话记录 | R2 + 指引存储 |
 | `memory` | sec-report 自己写出的报告产物 | R2（`sec_memory_jobs.source_r2_key`） |
-| `items`、`library-cards`、`library-links`、`business-tags` | 文件库段落 | D1；只有尚未入库的现行报告回退读 R2 的预处理文本 |
+| `items` | 第 1.2 层的文件库段落、第 1.1 层的序列 | D1；只有尚未入库的现行报告回退读 R2 的预处理文本 |
+| `extract` | 第 1.1 层发布与派生、Company Facts、指引 | D1 / KV，无模型 |
 
-第 1 层的意义在于数字：第 2 层每一处模型读文字的地方，都拿第 1 层核过的数字去约束它（读笔记的算术核对、每期提取的账本），而不是让模型自己从文字里抄数。
+第 1 层的意义在于数字与定位：第 2 层每一处模型读文字的地方，都拿第 1.1 层核过的数字去约束它（sec-report 的指标对证、每期提取的账本），引用则落到第 1.2 层的段落 id，而不是让模型自己从文字里抄数、凭记忆引文。
 
-### 3.3 第 3 层 `findings`：关键点
+### 3.4 第 3 层 `findings`：关键点
 
-**职责。** 以公司为单位跨文件综合。四个任务都只读第 2 层。
+**职责。** 以公司为单位跨文件综合。四个任务都只读第 2 层的产物。
 
 | 任务 | 输入 | 产物 | 版本 |
 |---|---|---|---|
@@ -190,20 +223,20 @@ flowchart LR
 
 **失败语义。** 模型调用全部失败（如余额不足 402）时，运行报错交给任务重试，不记空结果把这份输入标为已完成。全部要点都是轻量级（不研究）才记 `dossier:empty:v1`。
 
-### 3.4 第 4 层 `tree`：业务拆解
+### 3.5 第 4 层 `tree`：业务拆解
 
 **职责。** 把地图上的每个业务节点拆成 分部 → 产品线 → 产品 → 收入 的树，并为每个业务写说明。唯一允许联网的层。
 
 | 任务 | 输入 | 产物 | 版本 |
 |---|---|---|---|
-| `tree` | 第 1 层的业务节点、文件库（`treeLibrary`）、网页搜索 | `business-tree:v1:<ticker>` | `business-tree.react.v15` |
-| `explainer` | 文件库段落 | `business-explainer:v1:<ticker>` | `business-explainer.sections.v5` |
+| `tree` | 第 1.1 层的业务节点、第 1.2 层文件库（`treeLibrary`）、网页搜索 | `business-tree:v1:<ticker>` | `business-tree.react.v15` |
+| `explainer` | 第 1.2 层文件库段落 | `business-explainer:v1:<ticker>` | `business-explainer.sections.v5` |
 
 **tree 的 ReAct 循环（`business-tree/agent.ts`）。** 工具 `read`（按来源 id 读段落）、`add`/`revise`/`remove`（harness 逐个检查节点）、`finish`，加原生 `web_search`（每个业务有搜索预算，sec.gov 被排除，SEC 原文只从文件库读）。每个节点必须锚定一段读过的文字；审阅阶段有记录的裁定可移动节点；描述阶段补写缺失说明。
 
 **网页缓存。** `web_search_cache`（D1 指针 + R2）的 scope 按 agent × ticker 划分，只用于同一次运行内去重、7 天内重跑复用与失败重试，不是跨层共享研究的机制。
 
-### 3.5 第 5 层 `valuation`：估值
+### 3.6 第 5 层 `valuation`：估值
 
 **职责。** 读前四层，给出五个维度的评分、一个可计算的模型与一份带脚注的报告。
 
@@ -219,7 +252,7 @@ flowchart LR
 
 **存储。** `valuation_versions` / `valuation_current` / `valuation_evidence`；方法变更可被 `methodChangeHeldBack` 暂扣，不自动覆盖。
 
-**与原则的已知出入。** research 阶段仍可用 `find_filing_sections`/`read_filing_section` 读债务、股数、租赁附注的原文；同业数据仍读同业的第 1 层发布。这是升级记录里明确留下的两项。
+**与原则的已知出入。** research 阶段仍可用 `find_filing_sections`/`read_filing_section` 读债务、股数、租赁附注的原文；同业数据仍读同业的第 1.1 层发布。这是升级记录里明确留下的两项。
 
 ---
 
@@ -246,8 +279,8 @@ flowchart LR
 ## 五、延伸阅读
 
 - 升级方案与实施记录：[spontra-architecture-upgrade](spontra-architecture-upgrade.md)
-- 第 1 层：[revenue-flow](revenue-flow.md)、[sec-archive](sec-archive.md)、[sec-report-continuity](sec-report-continuity.md)
-- 第 2 层：[sec-reader-report](sec-reader-report.md)、[sec-business-report](sec-business-report.md)、[guidance](guidance.md)、[transcripts](transcripts.md)
+- 第 1.1 层：[revenue-flow](revenue-flow.md)、[sec-archive](sec-archive.md)
+- 第 2 层：[sec-reader-report](sec-reader-report.md)、[sec-report-continuity](sec-report-continuity.md)、[sec-business-report](sec-business-report.md)、[guidance](guidance.md)、[transcripts](transcripts.md)
 - 第 4 层：[web-search](web-search.md)
 - 第 5 层：[valuation-price-guide](valuation-price-guide.md)
 - 可靠性：[sec-generation-reliability](sec-generation-reliability.md)
