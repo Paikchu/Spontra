@@ -15,6 +15,7 @@ import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
 import { companyName } from "./catalog/issuer-directory.ts";
+import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel, callWorkerToolModel } from "./operations.ts";
 import type { AnalysisEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
@@ -79,7 +80,7 @@ export async function executeCompanyAnalysisWorkflow(
     const packet = await step.do("business-packet", () => readPacket(env, params, "cross_period"));
     const generatedAt = await step.do("company-generation-time", async () => new Date().toISOString());
     const tools = createBusinessResearchTools({
-      database: requireDb(env), ticker: params.ticker,
+      database: requireDb(env), search: researchSearch(env), ticker: params.ticker,
       reportDate: packet.reportDate, now: generatedAt,
     });
     const availableSecReports = await step.do("business-sec-versions", () => tools.availableReports());

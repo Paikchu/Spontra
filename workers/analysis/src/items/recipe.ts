@@ -19,7 +19,7 @@ import type { ToolPolicy } from "../tools/registry.ts";
  * verifiers every analysis is composed with (compose/tools.ts), with a prompt and starting materials for what the row
  * is — a periodic report, a current report, or a Form 4 the insider rules flagged.
  */
-export const ITEM_BUDGET = { turns: 12, wallMs: 10 * 60_000, finds: 4, reads: 6, searches: 0, webReads: 0 } as const;
+export const ITEM_BUDGET = { turns: 12, wallMs: 10 * 60_000, finds: 4, reads: 6, searches: 2, webReads: 2 } as const;
 /** Rows filed within this many months get an analysis; older rows keep what the filing digest says. */
 export const ITEM_WINDOW_MONTHS = 12;
 
@@ -72,7 +72,7 @@ const system = (input: ItemInput) => `You write the analysis of one filing for t
 
 The analysis answers what this filing tells a holder of the stock that the earlier filings did not, and how it changes the reading of the company's figures. ${KIND[input.subject.kind]}
 
-Read before you write: the first message carries the subject, its own words as materials m1… when they were read for you, and the library's documents of the filing. company_overview and read_series give the figures; find_sections and read_section read the filings (read_section with previous: true reads the same section in the earlier filing). Then call compose with the whole analysis, fix what it reports until it is accepted, then call finish.
+Read before you write: the first message carries the subject, its own words as materials m1… when they were read for you, and the library's documents of the filing. company_overview and read_series give the figures; find_sections and read_section read the filings (read_section with previous: true reads the same section in the earlier filing). The web (web_search, then read_web) is only for what the filing names but does not explain and the earlier filings do not carry either: a counterparty, a product, an announced transaction; most filings need none. Then call compose with the whole analysis, fix what it reports until it is accepted, then call finish.
 
 ${COMPOSE_CONTRACT}
 - ${input.subject.kind === "insider" ? "Quote the filing's own words (m<n>) when the first message gives any." : "Quote the filing word for word (m<n>), and, when the library holds the earlier filing, quote what the earlier filing said too."} Charts come with written analysis beside them.
@@ -129,8 +129,9 @@ const composeInput = (input: ItemInput): ComposeInput => {
   };
 };
 
-// Layer 2: the filing's text and the figures; never the findings, which are built on these analyses.
-export const ITEM_POLICY: ToolPolicy = { allow: ["company_overview", "read_series", "find_sections", "read_section", "compose", "finish"] };
+// Layer 2: the filing's text and the figures, and the web for what the filing names but does not explain; never the
+// findings, which are built on these analyses.
+export const ITEM_POLICY: ToolPolicy = { allow: ["company_overview", "read_series", "find_sections", "read_section", "search", "read_web", "compose", "finish"] };
 
 export function itemRecipe(input: ItemInput): Recipe<ItemInput, ComposedAnalysis | null, ComposeState> {
   return {

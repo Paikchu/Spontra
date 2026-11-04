@@ -15,10 +15,10 @@ Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worke
 | 层 | 名称 | 产物（公司级） | 读什么 | 用模型 | 联网 |
 |---|---|---|---|---|---|
 | 1 | `map` 财务地图 | 历期三表、分部、资本结构快照、事件轨 | EDGAR 文件 | 否 | 只访问 EDGAR |
-| 2 | `filings` 文件分析 | 文件库、每份文件的摘要与分析、指引、记忆、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 否（指引的 IR 幻灯片例外） |
-| 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗、三表体检笔记 | 第 2 层产物 | 是 | 否 |
-| 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 2 层产物（文件库）+ 网页 | 是 | **是** |
-| 5 | `valuation` 估值 | 五维评分 + 计算模型 + 报告 | 第 2、3、4 层产物 | 是 | 否 |
+| 2 | `filings` 文件分析 | 文件库、每份文件的摘要与分析、指引、记忆、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析；指引的 IR 幻灯片） |
+| 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗、三表体检笔记 | 第 2 层产物 | 是 | 按需（公司分析、分析师） |
+| 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 2 层产物（文件库）+ 网页 | 是 | 是（脑图的主要来源之一） |
+| 5 | `valuation` 估值 | 五维评分 + 计算模型 + 报告 | 第 2、3、4 层产物 | 是 | 按需（研究阶段） |
 
 层的定义在 `shared/analysis-contract/business-features.ts`：`LAYERS`、`FEATURES`（第 2–5 层的开关）、`LAYER_REQUIRES`（阶梯：每层要求其下一层已开）。
 
@@ -26,7 +26,7 @@ Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worke
 
 1. **上层只读下层产物，不读原文。** 第 2 层是唯一读 SEC 原文的层。第 3 层起，引用的是第 2 层已核验过的段落 id；读取端的引文重验因此必然通过。
 2. **数字只有一个来源。** 第 2 层的每期提取（period extract）含账本（ledger），上层陈述的每个数字都来自账本行；要点的校验是确定性的（`verifyFindings`），不是让模型再核一遍。
-3. **联网只在第 4 层。** 业务拆解要看厂商页面，别的层不搜网。公司分析、分析师、估值在升级中都去掉了搜索与网页工具。
+3. **下层产物优先，网页按需。** 第 2–5 层的 agent 都有原生 `web_search` 与读页工具，但提示词规定只在下层产物答不上时才用（文件点名却没解释的交易对手或产品、最新文件之后的事件、未跟踪同业的自有披露、行业背景），并有每次运行的搜索与读页预算；一条搜索摘要从不算证据，只有读过的页面才成为可引用的材料。第 4 层的脑图是例外：网页是它的主要来源之一。要点写作与三表体检是单次 JSON 调用或只读文件分析的窄 agent，没有网页工具。
 
 两条配合原则的工程约束：
 
@@ -144,7 +144,19 @@ flowchart TB
 
 **每期提取（`extract/period-extract.ts`）。** 无模型，从第 1 层的完整发布、派生快照、SEC 基本面和第 2 层的指引确定性地切出：八个季度的 `FindingData`（三表、资本、基本面、指引）与账本 `Ledger`（上层可陈述的每一个数字，带 yoy/qoq 与来源）、三表体检的标记。指纹按内容（覆盖的期、最新积压、指引内容、基本面哈希）而非重建时间，所以只有内容变了才发 `extract.published`。它的存在就是为了让第 3 层不再回头读第 1 层。
 
-**items 的工具策略。** `ITEM_POLICY = company_overview / read_series / find_sections / read_section / compose / finish`：这里允许读原文段落，是整个系统里模型读原文的最后一处（连同 sec-report 的读笔记）。
+**items 的工具策略。** `ITEM_POLICY = company_overview / read_series / find_sections / read_section / search / read_web / compose / finish`：这里允许读原文段落，是整个系统里模型读原文的最后一处（连同 sec-report 的读笔记）。网页预算每次运行 2 次搜索、2 次读页，只给文件点名却没解释的东西。
+
+**第 2 层在哪里读原文、读的是什么。** 第 1 层只产数字：三表、分部、资本结构、来源 accession，不保留叙述文字（MD&A、风险因素、附注、8-K 正文）。把叙述整理进数据库正是第 2 层的第一步，所以"原文已在库里"指的是第 2 层自己的文件库。具体的读取点：
+
+| 步骤 | 读的是 | 从哪读 |
+|---|---|---|
+| `library` | 归档的 HTML，切成 section/passage 写入 D1 | R2 一次，每份文件 |
+| `sec-report`（读笔记） | 整份归档文件，按第 1 层数字做算术核对后写摘要 | R2（sec-archive 的 `archivedFiling`） |
+| `guidance` | 财报 8-K 正文、IR 幻灯片、已存通话记录 | R2 + 指引存储 |
+| `memory` | sec-report 自己写出的报告产物 | R2（`sec_memory_jobs.source_r2_key`） |
+| `items`、`library-cards`、`library-links`、`business-tags` | 文件库段落 | D1；只有尚未入库的现行报告回退读 R2 的预处理文本 |
+
+第 1 层的意义在于数字：第 2 层每一处模型读文字的地方，都拿第 1 层核过的数字去约束它（读笔记的算术核对、每期提取的账本），而不是让模型自己从文字里抄数。
 
 ### 3.3 第 3 层 `findings`：关键点
 
@@ -174,7 +186,7 @@ flowchart LR
 - 超过 8 条只保留前 8 条；每条不过契约的原因随修复请求一起给模型。
 - 没有任何要点通过时，仍发布要闻贴片（stat tiles），要点为空。
 
-**分析师与体检的工具。** 升级后只剩 `filings`、`read_filing_analysis`、`peers`、`similar_businesses`、`compile`、`finish`（分析师），`read_filing_analysis`、`finish`（体检）。没有 `find_sections`/`read_section`，没有网页。引文来自文件分析的段落，带段落 id。
+**分析师与体检的工具。** 分析师：`filings`、`read_filing_analysis`、`read_web`、`peers`、`similar_businesses`、`compile`、`finish`，加原生 `web_search`（deep 档 3 搜 3 读，standard 档 2 搜 2 读）。体检：`read_filing_analysis`、`finish`。都没有 `find_sections`/`read_section`。引文来自文件分析的段落或读过的网页，各带 id。公司分析读已发布的 SEC 分析报告，网页按需（最多 4 次搜索），不再要求必须搜。
 
 **失败语义。** 模型调用全部失败（如余额不足 402）时，运行报错交给任务重试，不记空结果把这份输入标为已完成。全部要点都是轻量级（不研究）才记 `dossier:empty:v1`。
 
@@ -201,7 +213,7 @@ flowchart LR
 
 | 阶段 | 工具（`RESEARCH_TOOLS` 等） | 产出 |
 |---|---|---|
-| research | `read_financials`、`read_filing_analyses`/`read_filing_analysis`、`read_findings`、`read_business_tree`、`list_filings`/`find_filing_sections`/`read_filing_section`、`read_guidance`、`read_transcript`、`submit_dimension`、`finish_research` | businessQuality、growthExecution、financialResilience、mispricingCatalysts 四维评分，每条引用登记过的证据 |
+| research | `read_financials`、`read_filing_analyses`/`read_filing_analysis`、`read_findings`、`read_business_tree`、`list_filings`/`find_filing_sections`/`read_filing_section`、`read_guidance`、`read_transcript`、`search_evidence`/`read_web_evidence`（3 搜 4 读）、`submit_dimension`、`finish_research` | businessQuality、growthExecution、financialResilience、mispricingCatalysts 四维评分，每条引用登记过的证据 |
 | assumptions | `configure_valuation`、各 `set_*_case`、`calculate_prepared_valuation`、`declare_model_insufficient`、`submit_dimension`（valuationSafety） | 一个模型、三个情景共享一个有来源的折现率、方法权重与情景概率；计算器是代码，失败的门不记录 |
 | compose | `compose_valuation`、`finish_valuation` | 报告与脚注 |
 
@@ -219,7 +231,7 @@ flowchart LR
 
 ### 4.2 产物版本与账
 
-每个发布都经 `AiRunStore.saveVersion` 留一个版本；`ai_usage` 记每次模型调用的 kind、stage、token、`search_calls` 与结果。验收时看三样：各层 `pipeline_log` 的 done 次数、`ai_usage` 里 `search_calls` 只出现在 tree/explainer/guidance、每次 compose 的修复不超过一轮。
+每个发布都经 `AiRunStore.saveVersion` 留一个版本；`ai_usage` 记每次模型调用的 kind、stage、token、`search_calls` 与结果。验收时看三样：各层 `pipeline_log` 的 done 次数、`ai_usage` 里各 kind 的 `search_calls` 不超过其预算、每次 compose 的修复不超过一轮。
 
 ### 4.3 失败与自动关闭
 

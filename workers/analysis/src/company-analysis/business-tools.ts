@@ -1,6 +1,8 @@
+import type { NativeSearch } from "../web-search/native.ts";
 import type { BusinessDeepDive } from "../../../../shared/analysis-contract/company-analysis.ts";
 import type { CompanyAnalysisD1Database } from "./repository.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import type { WebSearchService } from "../web-search/service.ts";
 import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type BusinessSource = BusinessDeepDive["sources"][number];
@@ -10,19 +12,24 @@ export type BusinessToolResult = { sourceId: string | null; observation: unknown
 export interface BusinessResearchTools {
   availableReports(): Promise<AvailableSecReport[]>;
   readSecReport(periodId: string): Promise<BusinessToolResult>;
+  registerSearch(batch: NativeSearch): BusinessToolResult;
+  readWeb(url: string): Promise<BusinessToolResult>;
   sources(): BusinessSource[];
-  restore(sources: BusinessSource[]): void;
+  restore(sources: BusinessSource[], result: BusinessToolResult): void;
 }
 
 /** SEC reports are already published and verified; the model never reads unpublished drafts. */
 export function createBusinessResearchTools(input: {
   database: CompanyAnalysisD1Database;
+  search: WebSearchService;
   ticker: string;
   reportDate: string;
   now: string;
 }): BusinessResearchTools {
   const reports = new D1SecRepository(input.database);
   const sources = new Map<string, BusinessSource>();
+  const searchHits = new Map<string, { id: string; snippet: string }>();
+  const scope = { scope: `spontra:business:${input.ticker}`, maxAgeMs: 6 * 60 * 60_000 };
   let available: AvailableSecReport[] | null = null;
   const resultSources = () => [...sources.values()];
   return {
@@ -80,13 +87,46 @@ export function createBusinessResearchTools(input: {
         limitations: report.dataQuality.warnings.slice(0, 5),
       } };
     },
+    registerSearch(batch) {
+      if (batch.error) return { sourceId: null, observation: { error: batch.error } };
+      const hits = batch.hits.filter((hit) => isHttps(hit.url)).slice(0, 5).map((hit) => {
+        let existing = searchHits.get(hit.url);
+        if (!existing && searchHits.size < 20) {
+          existing = { id: `web-${searchHits.size + 1}`, snippet: hit.snippet.slice(0, 1_500) };
+          searchHits.set(hit.url, existing);
+        }
+        if (!existing) return null;
+        sources.set(existing.id, {
+          id: existing.id, title: hit.title.slice(0, 240) || batch.query,
+          url: hit.url, kind: "web", publishedAt: isoDate(hit.publishedAt), retrievedAt: input.now,
+        });
+        return { sourceId: existing.id, title: hit.title, url: hit.url, snippet: existing.snippet, publishedAt: hit.publishedAt };
+      }).filter((hit) => hit !== null);
+      return { sourceId: null, observation: { hits } };
+    },
+    async readWeb(url) {
+      // The model may only open a URL actually discovered by this run, never an arbitrary address.
+      const hit = searchHits.get(url);
+      if (!hit) return { sourceId: null, observation: { error: "URL was not returned by search" } };
+      const result = await input.search.fetchContent({ url, depth: "advanced" }, { ...scope, maxAgeMs: 24 * 60 * 60_000 });
+      const source = sources.get(hit.id);
+      if (source) sources.set(hit.id, { ...source, retrievedAt: result.fetchedAt });
+      return { sourceId: hit.id, observation: { sourceId: hit.id, url, text: result.data.text.slice(0, 14_000), completeness: result.data.completeness } };
+    },
     sources: resultSources,
-    restore(snapshot) {
-      // A Workflow can replay a completed tool step without invoking its callback. Restore citation
-      // provenance before the next model/tool turn.
+    restore(snapshot, result) {
+      // A Workflow can replay a completed tool step without invoking its callback. Restore both
+      // citation provenance and discovered URLs before the next model/tool turn.
       for (const source of snapshot) sources.set(source.id, source);
+      const observation = result.observation as { hits?: Array<{ url: string; sourceId: string; snippet: string }> };
+      for (const hit of observation.hits ?? []) searchHits.set(hit.url, { id: hit.sourceId, snippet: hit.snippet });
     },
   };
+}
+
+function isHttps(value: string): boolean {
+  try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password; }
+  catch { return false; }
 }
 
 function isoDate(value: string | null): string | null {

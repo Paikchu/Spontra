@@ -521,6 +521,7 @@ EDGAR 交易所目录约一万个代码、六七千家发行人。不能像今�
 - **C 上层收口**：findings 的输入加逐文件分析（`payload.filings`）；items 不再读 findings；analyst 与 checkup 改用 `filings` / `read_filing_analysis`（读第 2 层分析及其已核验段落），去掉 `find_sections` / `read_section` 与网页；compose 只给一次修复，修不好扣留（`REPAIR_ROUNDS`）。
 - **C′ 公司分析不联网**（CRWV 验收时发现）：`company-analysis` 是第 3 层输入，原先必须用 web_search，在 DeepSeek 上因结果条目缺 `url`/`title` 整次失败，并卡住 findings 及其上层。现只读已发布的 SEC 分析报告；提示词版本号未改，已有公司的分析在下一份文件触发时才按新方式重写。web_search 结果解析改为跳过不合格条目（第 4 层脑图同样因此失败）。
 - **C″ 要点不再整份作废**（CRWV 验收时发现）：要点稿里每条都不合契约（或超过 8 条）时，原先直接返回空且不给原因，唯一一次修复也不会触发，CRWV 因此发布了 0 条要点。现在超过 8 条只保留前 8 条；不合契约的每条带着字段级原因进入那一次修复。分析师卷宗与三表体检遇到所有模型调用都失败（如 DeepSeek 余额不足 402）时让本次运行报错、交给任务重试，不再记一个空结果把这份输入标成已完成。
+- **C‴ 网页按需开放**（2026-11-04）：用户决定第 2–5 层都可在下层产物答不上时联网。items 的策略加 `search`/`read_web`（2 搜 2 读）；公司分析恢复原生搜索但不再强制；分析师恢复 `read_web` 与原生搜索（deep 3/3，standard 2/2）；估值 `RESEARCH_TOOLS` 加回 `search_evidence`/`read_web_evidence`。提示词都写明网页只补下层没有的内容。版本号未升，老公司在下一份文件时切换。
 - **D 估值读前四层**：valuation 加 `read_filing_analyses`、`read_filing_analysis`、`read_findings`、`read_business_tree`，去掉网页工具；指纹含要点、脑图、逐文件分析；订阅 `findings.published`、`tree.published`、`items.published`。
 
 与方案的出入（留待后续）：
