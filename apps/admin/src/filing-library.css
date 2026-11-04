@@ -62,14 +62,14 @@
 .fl-header p { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 6px; color: var(--ink-muted); font-size: 12px; }
 .fl-header h2 { margin: 0; color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
 .fl-header a { font-size: 13px; font-weight: 600; }
-.fl-header-actions { display: flex; align-items: center; gap: var(--space-4); flex: none; }
+.fl-header-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); flex: none; }
 .fl-header-actions a { white-space: nowrap; }
 .fl-header > div { min-width: 0; }
 .fl-header h2 { overflow-wrap: anywhere; }
 .fl-rerun { display: inline-flex; align-items: center; gap: 6px; height: var(--control-sm); padding: 0 14px; border: 1px solid var(--line); border-radius: var(--sp-radius-sm); background: var(--surface-raised); color: var(--ink); box-shadow: inset 0 1px 0 var(--sheen); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .fl-rerun:hover { border-color: var(--line-strong); background: var(--fill-strong); }
 .fl-notice { margin: 0; padding: 10px 14px; border-radius: var(--sp-radius-sm); background: var(--brand-soft); color: var(--brand); font-size: 13px; }
-.fl-columns { display: grid; grid-template-columns: minmax(200px, 32%) minmax(0, 1fr); gap: var(--space-5); flex: 1; min-height: 0; padding-bottom: var(--space-4); }
+.fl-columns { display: grid; grid-template-columns: minmax(200px, 32%) minmax(0, 1fr); gap: var(--space-5); flex: 1; min-height: 0; padding-bottom: var(--space-4); overflow-anchor: none; }
 .fl-outline { margin: 0; padding: 0 var(--space-2) var(--space-5) 0; overflow: auto; border-right: 1px solid var(--line); list-style: none; }
 .fl-outline button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 4px 8px; border: 0; border-radius: var(--sp-radius-sm); background: transparent; text-align: left; transition: background-color 160ms var(--sp-ease); }
 .fl-outline button:hover { background: var(--fill); }
@@ -174,6 +174,8 @@
 }
 .fl-cols[data-navigation=collapsed] { grid-template-columns: minmax(0, 1fr); }
 .fl-cols > .fl-col[hidden] { display: none; }
+.fl-columns[data-outline=collapsed] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.fl-outline[hidden] { display: none; }
 
 .fl-form { flex: none; color: var(--ink-soft); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .fl-document-tabs button { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }

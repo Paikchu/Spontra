@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { BookmarkSimpleIcon, CaretDownIcon, CaretLeftIcon as ChevronLeft, ArrowsClockwiseIcon as RefreshCw, ArrowCounterClockwiseIcon as RotateCcw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { BookmarkSimpleIcon, CaretDownIcon, CaretLeftIcon as ChevronLeft, ListIcon, ArrowsClockwiseIcon as RefreshCw, ArrowCounterClockwiseIcon as RotateCcw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import { usePageActive } from './admin-page';
 import type { LibraryDocumentDetail, LibraryDocumentSummary, LibraryOverview, LibrarySectionDetail, LibraryTable } from '@/shared/analysis-contract/filing-library';
 import { adminApi, AdminApiError } from './admin-api';
@@ -55,9 +55,58 @@ function Filings({ filings, accession, onOpen }: { filings: Filing[]; accession:
   </li>)}</ul></section>)}</div>;
 }
 
+/** Anchor the first visible text line: a fixed scrollTop would move the text when its width changes. */
+function captureReadingPosition(reader: HTMLDivElement): (() => void) | null {
+  const pageScroll = getComputedStyle(reader).overflowY === 'visible';
+  const viewportTop = () => pageScroll
+    ? Math.max(0, reader.closest('.fl-page')?.querySelector('.fl-bookmark-bar')?.getBoundingClientRect().bottom ?? 0)
+    : reader.getBoundingClientRect().top;
+  const top = viewportTop(), bottom = pageScroll ? window.innerHeight : reader.getBoundingClientRect().bottom;
+  const walker = document.createTreeWalker(reader, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!(node instanceof Text) || !node.data.trim()) continue;
+    range.selectNodeContents(node);
+    if (![...range.getClientRects()].some(rect => rect.bottom > top + 1 && rect.top < bottom)) continue;
+    let start = 0, end = node.length - 1;
+    while (start < end) {
+      const middle = Math.floor((start + end) / 2);
+      range.setStart(node, middle); range.setEnd(node, middle + 1);
+      if (range.getBoundingClientRect().bottom <= top + 1) start = middle + 1;
+      else end = middle;
+    }
+    range.setStart(node, start); range.setEnd(node, start + 1);
+    const offset = range.getBoundingClientRect().top - top;
+    return () => {
+      const delta = range.getBoundingClientRect().top - viewportTop() - offset;
+      if (pageScroll) window.scrollBy({ top: delta, behavior: 'instant' });
+      else reader.scrollBy({ top: delta, behavior: 'instant' });
+    };
+  }
+  return null;
+}
+
 /** One filing: its documents as tabs, the chosen document's outline, and a section's passages and index card. */
 function FilingDocuments({ filing, documentId, sectionId, onDocument, onSection, fail }: { filing: Filing; documentId: string; sectionId: string; onDocument: (id: string) => void; onSection: (id: string) => void; fail: (e: unknown) => void }) {
   const [detail, setDetail] = useState<LibraryDocumentDetail | null>(null), [section, setSection] = useState<LibrarySectionDetail | null>(null), [notice, setNotice] = useState('');
+  const [outlineOpen, setOutlineOpen] = useState(true);
+  const outlineId = useId(), reader = useRef<HTMLDivElement>(null), restorePosition = useRef<(() => void) | null>(null);
+  const position = useRef<{ restore: () => void; reader: HTMLDivElement; scrollTop: number; pageTop: number; width: number } | null>(null);
+  useEffect(() => { position.current = null; }, [documentId, sectionId]);
+  useLayoutEffect(() => {
+    const restore = restorePosition.current;
+    restorePosition.current = null;
+    if (!restore || !reader.current) return;
+    restore();
+    const node = reader.current;
+    position.current = { restore, reader: node, scrollTop: node.scrollTop, pageTop: window.scrollY, width: node.clientWidth };
+  }, [outlineOpen]);
+  function toggleOutline() {
+    const node = reader.current, saved = position.current;
+    if (node) restorePosition.current = saved && saved.reader === node && saved.scrollTop === node.scrollTop && saved.pageTop === window.scrollY && saved.width === node.clientWidth
+      ? saved.restore : captureReadingPosition(node);
+    setOutlineOpen(open => !open);
+  }
   const failRef = useRef(fail);
   useEffect(() => { failRef.current = fail; }, [fail]);
   useEffect(() => { const c = new AbortController(); void adminApi<LibraryDocumentDetail>(`library/documents/${documentId}`, { signal: c.signal }).then(setDetail).catch(e => { if (!c.signal.aborted) failRef.current(e); }); return () => c.abort(); }, [documentId]);
@@ -70,16 +119,16 @@ function FilingDocuments({ filing, documentId, sectionId, onDocument, onSection,
     <header className="fl-header"><div>
       <p><span className="fl-form">{filing.head.form}</span>申报 {day(filing.head.filedAt)}{filing.head.reportDate ? ` · 报告期 ${filing.head.reportDate}` : ''}</p>
       <h2>{filing.accession}</h2></div>
-      <div className="fl-header-actions"><a href={document.documentUrl} target="_blank" rel="noreferrer">SEC 原文 ↗</a><button className="fl-rerun" onClick={rerun}><RotateCcw size={15} />重新拆解</button></div>
+      <div className="fl-header-actions"><button className="fm-button" aria-expanded={outlineOpen} aria-controls={outlineId} disabled={!shown} onClick={toggleOutline}><ListIcon size={15} aria-hidden="true" />{outlineOpen ? '收起目录' : '展开目录'}</button><a href={document.documentUrl} target="_blank" rel="noreferrer">SEC 原文 ↗</a><button className="fl-rerun" onClick={rerun}><RotateCcw size={15} />重新拆解</button></div>
     </header>
     {filing.docs.length > 1 && <nav className="fl-views fl-document-tabs" aria-label="文件">{filing.docs.map(d => <button key={d.documentId} aria-pressed={d.documentId === documentId} onClick={() => onDocument(d.documentId)}>{fileName(d.documentUrl)}</button>)}</nav>}
     {notice && <p className="fl-notice" role="status">{notice}</p>}
     {document.status === 'unreadable' ? <p className="fl-empty">无法读取：{reasons[document.failureReason ?? ''] ?? document.failureReason}</p>
       : document.structureCheck.status === 'segments_missing' && <p className="fl-caption">标题缺少业务部门：{document.structureCheck.missing.join('、')}</p>}
-    {!shown ? <p className="fl-empty">加载中</p> : <div className="fl-columns">
-      <ol className="fl-outline" aria-label="章节">{shown.outline.map(s => <li key={s.sectionId} style={{ paddingLeft: s.depth * 14 }}><button aria-pressed={sectionId === s.sectionId} onClick={() => onSection(s.sectionId)}>
+    {!shown ? <p className="fl-empty">加载中</p> : <div className="fl-columns" data-outline={outlineOpen ? 'open' : 'collapsed'}>
+      <ol id={outlineId} className="fl-outline" aria-label="章节" hidden={!outlineOpen}>{shown.outline.map(s => <li key={s.sectionId} style={{ paddingLeft: s.depth * 14 }}><button aria-pressed={sectionId === s.sectionId} onClick={() => onSection(s.sectionId)}>
         <span className="fl-title">{s.title}</span></button></li>)}</ol>
-      <div className="fl-reader" role="region" aria-label="章节内容" tabIndex={0}>{reading ? <>
+      <div ref={reader} className="fl-reader" role="region" aria-label="章节内容" tabIndex={0}>{reading ? <>
         <p className="fl-path">{reading.section.path.join(' › ')}</p>
         {reading.card && <div className="fl-card">{reading.card.gist && <p>{reading.card.gist}</p>}{!!reading.card.answers.length && <ul>{reading.card.answers.map(a => <li key={a}>{a}</li>)}</ul>}</div>}
         {reading.passages.map(p => <article key={p.passageId} className="fl-passage">{p.table ? <TableView table={p.table} /> : <p>{p.text}</p>}</article>)}
