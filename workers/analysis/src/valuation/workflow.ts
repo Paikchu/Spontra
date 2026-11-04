@@ -21,10 +21,12 @@ import { ValuationStore } from "./store.ts";
 import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, VALUATION_CASE_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState, type FrozenResearchSource, type ValuationCaseKey } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
-export const VALUATION_VERSION = "valuation.v12";
+export const VALUATION_VERSION = "valuation.v13";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
-const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, researchFinalize: { turns: 8, wallMs: 12 * 60_000 }, configure: { turns: 4, wallMs: 10 * 60_000 }, valuationCase: { turns: 4, wallMs: 10 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
+const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, researchFinalize: { turns: 8, wallMs: 12 * 60_000 }, configure: { turns: 4, wallMs: 10 * 60_000 }, valuationCase: { turns: 8, wallMs: 15 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
+/** Wait after a model-output failure before the next turn: 20 s, 40 s, 80 s, then 90 s. */
+const MODEL_RETRY_WAIT_MS = 20_000, MODEL_RETRY_WAIT_MAX_MS = 90_000;
 
 export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
   return featureTickersFor(env, "valuation");
@@ -213,11 +215,25 @@ async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
     id: loop.recipeId, budget: loop.budget, system: () => loop.system, open: () => state, tools: () => tools, policy: { allow: loop.allow }, settled: loop.settled, settle: s => s, nudge: NUDGE,
   };
   const modelVersion = modelFor(env, loop.tool), reasoning = reasoningFor(env, loop.tool);
+  const store = new ValuationStore(requireDb(env)), runs = new AiRunStore(requireDb(env));
+  // A model-output failure (a stalled or invalid stream, unparsable JSON) is noted on the run and waited out before the
+  // next turn, since a provider that just failed tends to fail again at once; the turn's budget still counts it.
+  let failures = 0;
   const act = (stage: string, system: string, toolSchemas: unknown[], messages: AgentMessage[]): Promise<AgentReply> => step.do(`${stage}-act`, async () => {
-    try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: toolSchemas as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { reasoning, ticker: state.input.ticker, runId, kind: loop.tool }); }
-    catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
+    try {
+      const reply = await callWorkerToolModel(env, fetcher, stage, { system, tools: toolSchemas as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { reasoning, ticker: state.input.ticker, runId, kind: loop.tool });
+      failures = 0;
+      return reply;
+    } catch (error) {
+      if (!(error instanceof SecModelOutputError)) throw error;
+      failures += 1;
+      const detail = `${error.code}: ${error.message}`.slice(0, 300);
+      console.warn(JSON.stringify({ event: "valuation-model-output", ticker: state.input.ticker, runId, stage, code: error.code, message: error.message.slice(0, 300), failures }));
+      if (runId) await quietly(() => runs.step("valuation", state.input.ticker, runId, `${stage}-error:${error.code}`, new Date().toISOString()));
+      await new Promise(resolve => setTimeout(resolve, Math.min(MODEL_RETRY_WAIT_MS * 2 ** (failures - 1), MODEL_RETRY_WAIT_MAX_MS)));
+      return { error: detail };
+    }
   });
-  const store = new ValuationStore(requireDb(env));
   const host: LoopHost = {
     // Switched off or re-requested while the run was working: the loop ends before its next model call.
     reserve: async () => { const ok = generation === null || await stillEligible(env, state.input.ticker, store, generation); if (!ok) state.cancelled = true; return ok; },
@@ -414,6 +430,6 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     if (outcome.current) await quietly(() => new AiRunStore(db).saveVersion("valuation", params.ticker, { ...publication, trace: turns.slice(-80) }, publication.generatedAt));
     return { ...outcome, reason: outcome.current ? "published" : publication.reportStatus === "insufficient" ? "research incomplete; previous report retained" : "generation moved on" };
   });
-  if (!published.current) return { status: publication.reportStatus === "insufficient" ? "empty" as const : "superseded" as const, reason: published.reason };
+  if (!published.current) return { status: publication.reportStatus === "insufficient" ? "empty" as const : "superseded" as const, reason: published.reason, trace: turns.slice(-24).map(t => ({ turn: t.turn, action: t.action, input: t.input.slice(0, 400), observation: t.observation.slice(0, 600) })) };
   return { status: publication.reportStatus === "ready" ? "ready" as const : "empty" as const, reportStatus: publication.reportStatus, verdict: publication.verdict, score: publication.weightedScore, evidence: evidence.length, turns: turns.length, versionId: publication.versionId };
 }
