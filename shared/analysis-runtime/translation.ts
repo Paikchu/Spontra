@@ -134,6 +134,8 @@ const STANDARD_TERMS = new Set(["rpo", "gaap", "non-gaap", "gpu", "cpu", "ai", "
 const WORD_NUMBERS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, half: 0.5 };
 type Figure = { value: number; tolerance: number; raw: string; scaled: boolean; word?: true };
 const figures = (s: string): Figure[] => [...proseFigures(s), ...(s.toLowerCase().match(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g) ?? []).map(w => ({ value: WORD_NUMBERS[w]!, tolerance: 0, raw: String(WORD_NUMBERS[w]), scaled: false, word: true as const }))];
+/** "one" is often a pronoun ("not an ordinary one") that Chinese writes without a numeral: its absence is never a missing figure, though a 1 the translation writes still has it to account for. */
+const optionalWord = (f: Figure) => f.word === true && f.value === 1;
 /** How Chinese writes a number the English spelled as a word: "four quarters" is 四个季度, "one-off" 一次性, "twelve months" 十二个月. */
 const ZH_NUMERALS: Record<number, string[]> = { 0.5: ["半"], 1: ["一", "单"], 2: ["二", "两", "双"], 3: ["三"], 4: ["四"], 5: ["五"], 6: ["六"], 7: ["七"], 8: ["八"], 9: ["九"], 10: ["十"], 11: ["十一"], 12: ["十二"] };
 const same = (a: Figure, b: Figure) => Math.abs(a.value - b.value) <= Math.max(a.tolerance, b.tolerance, Math.abs(a.value) * 0.005) + 1e-9;
@@ -162,7 +164,7 @@ export function checkTranslation(source: string, target: string): string[] {
   if (!target.trim()) return ["empty"];
   if (placeholders(source) !== placeholders(target)) problems.push("placeholders changed");
   const from = figures(source), to = figures(target);
-  const missing = from.filter(f => !accounted(f, to, target)), added = proseFigures(target).filter(f => !accounted(f, from, source));
+  const missing = from.filter(f => !optionalWord(f) && !accounted(f, to, target)), added = proseFigures(target).filter(f => !accounted(f, from, source));
   if (missing.length) problems.push(`figures missing: ${missing.map(f => f.raw).join(", ")}`);
   if (added.length) problems.push(`figures added: ${added.map(f => f.raw).join(", ")}`);
   if (source.includes("\n") && outline(source) !== outline(target)) problems.push("markdown outline changed");

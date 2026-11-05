@@ -101,7 +101,9 @@ export async function readValuationResponse(db: D1Database, rawTicker: string, o
   const attempt = current?.latest_attempt_json ? JSON.parse(current.latest_attempt_json) as ValuationAttempt : null;
   const versions = await store.versions(ticker);
   const availability: ValuationResponse["availability"] = report ? report.reportStatus === "ready" ? "ready" : "insufficient" : attempt?.status === "failed" ? "failed" : attempt?.reportStatus === "insufficient" ? "insufficient" : "preparing";
-  const outdated = !!report && !!attempt && attempt.status !== "succeeded" && attempt.updatedAt > report.generatedAt;
+  // A newer attempt still in flight makes the retained report "updating"; one that finished without publishing (insufficient,
+  // failed, superseded) leaves the retained report current, and the response names that attempt so the page can say so.
+  const outdated = !!report && !!attempt && ["queued", "running", "waiting"].includes(attempt.status) && attempt.updatedAt > report.generatedAt;
   const quote = report ? await latestValuationQuote(db, ticker, report.quote) : null;
   const priceGuide = priceGuideOf({ report, quote, asOf: new Date().toISOString(), outdated });
   return { ...empty, availability, report, priceGuide, latestAttempt: attempt, outdated, versions };

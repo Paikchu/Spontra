@@ -746,7 +746,9 @@ export function proseFigures(prose: string): Array<{ value: number; tolerance: n
     const after = prose.slice(match.index! + match[0].length);
     // A range writes its unit once, after the last number: "$90–95B" and "$2 to $3 billion" scale both ends.
     const unit = /^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^\s?(?:[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
-    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
+    // A Chinese range writes its magnitude once too: 900–950亿 scales both ends.
+    const rangeMagnitude = magnitude ? null : /^\s?(?:[–—-]|至|到)\s?\d[\d,]*(?:\.\d+)?\s?(万亿|亿|万)/.exec(after)?.[1] ?? null;
+    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : rangeMagnitude ? ZH_MAGNITUDE[rangeMagnitude]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
     if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
     const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;
     out.push({ value: Math.abs(number * scale), tolerance: 0.5 * 10 ** -digits * scale, raw: raw!.replace(/,/g, "").replace("−", ""), scaled: scale !== 1 });

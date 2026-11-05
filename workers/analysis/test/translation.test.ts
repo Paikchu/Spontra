@@ -203,3 +203,11 @@ test("the checker compares figures at full value, so unit changes, ordinals, pos
   assert.equal(normalizeTranslation("下降 0.21 个百分点，增至 28.5 亿美元，5000 万股"), "下降 0.21个百分点，增至 28.5亿美元，5000万股");
   assert.deepEqual(collectProse("events", { summary: { headline: "公司预计营收增长。" } }), [], "text already in Chinese is not sent");
 });
+
+test("a Chinese range scales both ends by the magnitude written once, and a pronoun \"one\" is not a figure", async () => {
+  const { checkTranslation } = await import("../../../shared/analysis-runtime/translation.ts");
+  const source = "At least $30B in FY29 on $90-95B gross / at most $70B net FY27 capex; that makes the floor a stress path, not an ordinary one.";
+  const target = "2029 财年至少 300亿美元，2027 财年资本开支总额 900–950亿美元、净额至多 700亿美元；这使得下限成为压力路径而非正常路径。";
+  assert.deepEqual(checkTranslation(source, target), []);
+  assert.deepEqual(checkTranslation("Revenue of $2 to $3 billion.", "收入 20亿至30亿美元。"), []);
+});

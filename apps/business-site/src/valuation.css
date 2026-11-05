@@ -26,6 +26,8 @@
 .val-position[data-tone="loss"] { --tone: var(--loss); }
 .val-banner { margin: 0 0 16px; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--foreground); background: color-mix(in srgb, var(--chart-3) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--chart-3) 30%, transparent); }
 .val-banner[data-tone="info"] { background: color-mix(in srgb, var(--up) 8%, var(--surface)); border-color: color-mix(in srgb, var(--up) 25%, transparent); }
+.val-banner[data-tone="warn"] { color: var(--muted-foreground); }
+.val-banner[data-tone="warn"] b { color: var(--foreground); }
 .val-banner b { font-weight: 620; margin-right: 6px; }
 
 /* Every section is a block under a hairline. */
@@ -142,7 +144,7 @@
 .val-why-list h4, .val-why-list h5 { margin: 4px 0 0; }
 
 /* The written report, read straight through; the lists of what delivers or breaks the case carry a run-in label. */
-.val-prose { display: grid; gap: 8px; max-width: 86ch; }
+.val-prose { display: grid; gap: 8px; }
 .val-prose h4 { margin: 6px 0 0; }
 .val-prose p { font-size: 15px; }
 .val-list { margin: 0; padding-left: 20px; display: grid; gap: 4px; }

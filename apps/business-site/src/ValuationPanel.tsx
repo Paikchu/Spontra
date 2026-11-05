@@ -28,7 +28,7 @@ const m = messages({
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
   insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
-  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; the previous report is retained",
+  updating: "A newer assessment is in progress", attemptNotPublished: (date: string) => `The assessment of ${date} was not published.`, attemptFailed: "The run failed before it could finish.", attemptCounterEvidence: "Its review left decisive counter-evidence unanswered, so its assumptions need another look.", attemptIncomplete: "It did not finish within its run.", attemptReview: "Its review did not complete.", attemptInsufficient: "It did not establish enough to replace the current report.", retained: (date: string) => `The report researched on ${date} stays in force.`,
   dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
   readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
 
@@ -69,7 +69,7 @@ const m = messages({
   preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
   failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
   insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
-  updating: "新的评估正在进行", updateFailed: "最近一次评估未完成，暂保留上一版报告",
+  updating: "新的评估正在进行", attemptNotPublished: (date: string) => `${date} 的评估未发布。`, attemptFailed: "运行在完成前失败。", attemptCounterEvidence: "复核发现决定性的反方证据未被回应，假设需要重新审视。", attemptIncomplete: "运行未在预算内完成。", attemptReview: "复核未完成。", attemptInsufficient: "结论不足以替换当前报告。", retained: (date: string) => `沿用 ${date} 研究的报告。`,
   dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
   readThesis: "展开完整论证", hideThesis: "收起完整论证",
 
@@ -417,10 +417,16 @@ function Sources({ report, open, onOpen, onClose }: { report: ValuationPublicati
   </section>;
 }
 
+/** The newest attempt against the shown report: a run in progress, or one that ended without publishing and why. */
 function Status({ valuation }: { valuation: ValuationResponse }) {
-  const attempt = valuation.latestAttempt;
-  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt && ["failed", "empty", "superseded", "cancelled"].includes(attempt.status) ? m.updateFailed : m.updating}</p>;
-  if (valuation.report?.reportStatus === "insufficient") return <p className="val-banner" data-tone="warn"><b>{m.insufficient}</b> {m.insufficientNote}</p>;
+  const attempt = valuation.latestAttempt, report = valuation.report;
+  if (report && valuation.outdated) return <p className="val-banner" data-tone="info">{m.updating}</p>;
+  if (report && attempt && attempt.updatedAt > report.generatedAt && ["failed", "empty", "superseded", "cancelled"].includes(attempt.status)) {
+    const codes = new Set(attempt.gaps.map(g => g.code));
+    const reason = attempt.status === "failed" ? m.attemptFailed : codes.has("unresolved_counter_evidence") ? m.attemptCounterEvidence : codes.has("research_budget_exhausted") ? m.attemptIncomplete : codes.has("review_incomplete") ? m.attemptReview : m.attemptInsufficient;
+    return <p className="val-banner" data-tone="warn"><b>{m.attemptNotPublished(day(attempt.updatedAt))}</b> {reason} {m.retained(day(report.researchAsOf))}</p>;
+  }
+  if (report?.reportStatus === "insufficient") return <p className="val-banner" data-tone="warn"><b>{m.insufficient}</b> {m.insufficientNote}</p>;
   return null;
 }
 
