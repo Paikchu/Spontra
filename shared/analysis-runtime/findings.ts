@@ -745,9 +745,10 @@ export function proseFigures(prose: string): Array<{ value: number; tolerance: n
     if (!Number.isFinite(number)) continue;
     const after = prose.slice(match.index! + match[0].length);
     // A range writes its unit once, after the last number: "$90–95B" and "$2 to $3 billion" scale both ends.
-    const unit = /^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^\s?(?:[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
-    // A Chinese range writes its magnitude once too: 900–950亿 scales both ends.
-    const rangeMagnitude = magnitude ? null : /^\s?(?:[–—-]|至|到)\s?\d[\d,]*(?:\.\d+)?\s?(万亿|亿|万)/.exec(after)?.[1] ?? null;
+    // A range or a list writes its unit once, after the last number: "$90–95B", "$2 to $3 billion" and "86.3, 122.8 and 112.9 USD billion" scale every member.
+    const unit = /^\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^(?:\s?(?:,|and|or|[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?)+\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
+    // A Chinese range or list writes its magnitude once too: 900–950亿, 863、1228 和 1129亿 scale every member.
+    const rangeMagnitude = magnitude ? null : /^(?:\s?(?:[–—-]|至|到|、|,|和|及|与|或)\s?\d[\d,]*(?:\.\d+)?)+\s?(万亿|亿|万)/.exec(after)?.[1] ?? null;
     const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : rangeMagnitude ? ZH_MAGNITUDE[rangeMagnitude]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
     if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
     const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;

@@ -210,4 +210,6 @@ test("a Chinese range scales both ends by the magnitude written once, and a pron
   const target = "2029 财年至少 300亿美元，2027 财年资本开支总额 900–950亿美元、净额至多 700亿美元；这使得下限成为压力路径而非正常路径。";
   assert.deepEqual(checkTranslation(source, target), []);
   assert.deepEqual(checkTranslation("Revenue of $2 to $3 billion.", "收入 20亿至30亿美元。"), []);
+  // A list shares its unit after the last member, in English (with the currency before the unit) and in Chinese.
+  assert.deepEqual(checkTranslation("The RPO schedule gives contracted revenue of roughly 86.3, 122.8, 122.8, 112.9 and 112.9 USD billion for the next five years.", "RPO 时间表给出未来五年约 863、1228、1228、1129 和 1129亿美元的已签约收入。"), []);
 });
