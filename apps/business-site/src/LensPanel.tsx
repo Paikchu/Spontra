@@ -108,13 +108,15 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   const hoverOf = useCallback((chartId: string) => (period: number | null) => { const c = lens?.charts[chartId]; setHover(period != null && c ? c.periods[period]?.end ?? null : null); }, [lens]);
   if (!lens) return null;
   const watch = finding.watch, outcome = finding.watchOutcome;
+  // The figures block lists every figure of the evidence: a document that places it twice draws it once.
+  const figures = lens.document.rows.flatMap(r => r.cells.flat()).find(b => b.kind === "figures");
   const block = (b: LensBlock, key: number): ReactNode => {
     switch (b.kind) {
       case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{normalizeDisplayText(compact ? firstSentence(finding.judgment.text) : finding.judgment.text)}{cites(finding.judgment.sourceIds)}</p>;
       case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{normalizeDisplayText(p.text)}{cites(p.sourceIds)}</p>);
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
       case "html": return <HtmlFrame key={key} picture={b.html} />;
-      case "figures": return <Table key={key} className="lens-table lens-evidence">
+      case "figures": return b !== figures ? null : <Table key={key} className="lens-table lens-evidence">
         <TableHeader><TableRow><TableHead>{m.metric}</TableHead><TableHead>{m.current}</TableHead><TableHead>{m.compared}</TableHead><TableHead>{m.change}</TableHead></TableRow></TableHeader>
         <TableBody>{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</TableBody>
       </Table>;

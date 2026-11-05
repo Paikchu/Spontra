@@ -113,7 +113,10 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
     const lens = verified[0] ? verifyLensDocument(document, finding, resolved, facts, input.periodEnd, { locale: input.locale }, { ticker, materials: state.materials }) : null;
     if (verified[0] && !lens) errors.push("document: nothing verifies; it needs its judgment block and blocks whose references resolve");
     for (const reason of lens?.reasons ?? []) errors.push(`document: ${reason}`);
-    const quotes = document.rows.flatMap(r => r.cells.flat()).flatMap(b => b.kind === "quote" ? [state.materials.find(m => m.id === b.materialId)] : []);
+    const blocks = document.rows.flatMap(r => r.cells.flat());
+    // The figures block lists every figure of the evidence, so a second one repeats the first.
+    if (blocks.filter(b => b.kind === "figures").length > 1) errors.push("document: one figures block at most; it already lists every figure of the evidence");
+    const quotes = blocks.flatMap(b => b.kind === "quote" ? [state.materials.find(m => m.id === b.materialId)] : []);
     if (input.quoteFiling && !quotes.some(m => m?.kind === "sec")) errors.push("document: quote at least one filing material (m<n>) word for word");
     if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_section with previous: true)");
     for (const line of input.check?.(finding) ?? []) errors.push(line);
@@ -181,4 +184,4 @@ function sources(state: ComposeState): ExplainerSource[] {
 /** The analysis contract and lens blocks, as every composing recipe's prompt states them. */
 export const COMPOSE_CONTRACT = `An analysis: {"title": "...", "kind": "risk|strength|shift|watch", "judgment": "80–180 words", "evidence": [{"ref": <ref>, "periodEnd": "YYYY-MM-DD", "span": "quarter|fiscal_year", "compare": "yoy|qoq" optional}], "document": {"rows": [{"title": "optional, no digits", "cells": [[block, ...], [block, ...]]}]}}.
 - Every number in the title and judgment must be one its evidence produces, written as the evidence writes it. A ref is copied exactly from company_overview's catalogue, a finding's evidence, or the refs the first message lists.
-- The document uses the lens blocks: {"kind":"judgment"} exactly once, in the first row; {"kind":"figures"}; {"kind":"chart","chart":{...}} (lens chart grammar, at most three); {"kind":"prose","paragraphs":[{"text":"...","sourceIds":[]}]}; {"kind":"quote","materialId":"m1","text":"exact words from that material"}; {"kind":"table","table":{...}}; {"kind":"sources"}.`;
+- The document uses the lens blocks: {"kind":"judgment"} exactly once, in the first row; {"kind":"figures"} at most once (it lists every figure of the evidence); {"kind":"chart","chart":{...}} (lens chart grammar, at most three); {"kind":"prose","paragraphs":[{"text":"...","sourceIds":[]}]}; {"kind":"quote","materialId":"m1","text":"exact words from that material"}; {"kind":"table","table":{...}}; {"kind":"sources"}.`;

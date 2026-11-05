@@ -26,8 +26,12 @@ import { itemOpening, itemPeriodEnd, itemRecipe, itemSubjects, type ItemInput, t
 import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from "./read.ts";
 import { sha256 } from "../sha256.ts";
 
-/** Changing the item recipe's prompt, tools or materials writes every row's analysis again (through the fingerprint). */
-export const ITEMS_VERSION = "items.v1";
+/**
+ * The recipe version of each kind of row: changing a kind's prompt, tools or materials writes that kind's analyses
+ * again. ITEMS_VERSION is the task's version and goes into the fingerprint, so moving any kind starts a run.
+ */
+export const ITEM_VERSIONS: Record<ItemKind, string> = { report: "items.v1", current: "items.v1", insider: "items.insider.v2" };
+export const ITEMS_VERSION = `items:${Object.values(ITEM_VERSIONS).join(",")}`;
 /** Rows analysed at once; each is its own loop of durable steps. */
 const CONCURRENCY = 3;
 
@@ -128,7 +132,8 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
   const written = await step.do("items-written", async () => {
     const keys = plan.subjects.map(s => itemAnalysisKey(ticker, s.id));
     const rows = (await db.prepare("SELECT cache_key k, json_extract(payload, '$.version') v FROM sec_cache WHERE cache_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(keys)).all<{ k: string; v: string | null }>()).results;
-    return rows.filter(r => r.v === ITEMS_VERSION).map(r => r.k);
+    const kinds = new Map(plan.subjects.map(s => [itemAnalysisKey(ticker, s.id), s.kind]));
+    return rows.filter(r => r.v === ITEM_VERSIONS[kinds.get(r.k)!]).map(r => r.k);
   });
   const pending = plan.subjects.filter(s => !written.includes(itemAnalysisKey(ticker, s.id)));
   const data = pending.length ? await loadStageData(env, ticker, { findings: false }) : null;
@@ -160,7 +165,7 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
       const outcome = await runAgentLoop(recipe, input, state, messages, act, host);
       const composed = outcome.output;
       if (composed) await step.do(`item-${subject.id}-save`, async () => {
-        const record: StoredItem = { schemaVersion: "item-analysis.v1", ticker, itemId: subject.id, itemKind: subject.kind, periodEnd: input.periodEnd, generatedAt: now, version: ITEMS_VERSION, ...composed, trace: turns };
+        const record: StoredItem = { schemaVersion: "item-analysis.v1", ticker, itemId: subject.id, itemKind: subject.kind, periodEnd: input.periodEnd, generatedAt: now, version: ITEM_VERSIONS[subject.kind], ...composed, trace: turns };
         await new D1SecRepository(db).setCache(itemAnalysisKey(ticker, subject.id), record, now);
         return true;
       });

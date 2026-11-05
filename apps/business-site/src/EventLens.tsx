@@ -39,8 +39,8 @@ const m = messages({
  * The event in focus, holding the whole stage the way a finding does: its analysis, written by the agent every
  * analysis is written by and verified here as a finding is, drawn by the finding's own blocks. Until a filing has one
  * (a routine Form 4, a company without AI analysis), the filing's own summary stands in, in the same single-column
- * document; the summary's headline is the title, so it is not repeated. A Form 4 shows only its
- * filer's every transaction of the company, newest first.
+ * document; the summary's headline is the title, so it is not repeated. A Form 4's analysis is one article about that
+ * filing alone; a Form 4 without one shows its filer's every transaction of the company, newest first.
  */
 export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onClose }: {
   event: CompanyEvent;
@@ -69,7 +69,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} after={history} fallback={<div className="lens-doc">{history ?? <div className="lens-doc-row"><div className="lens-doc-cell">
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc">{history ?? <div className="lens-doc-row"><div className="lens-doc-cell">
       {event.summary ? <>
         <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
         {event.summary.analystView && <p className="event-view"><b>{m.analystView}</b><span lang={langOf(event.summary.analystView)}>{event.summary.analystView}</span></p>}

@@ -84,7 +84,7 @@ test("a current report is read from its own words, seeded as m1, and its analysi
   assert.equal(outcome.output?.finding.lens.type, "document");
 });
 
-test("a flagged Form 4 must cite its own figures through event refs, and one of the owner's earlier filings when there is one", async () => {
+test("a flagged Form 4 is an article about that filing alone: its own figures, the owner's earlier sales in words, one figures block", async () => {
   const flagged = event("0000000001-26-000003", "4", "2026-08-05", { insider: insider("1", 50_000, 100_000) });
   const earlier = event("0000000001-26-000006", "4", "2026-03-02", { insider: insider("1", 5_000, 150_000) });
   const withHistory = { ...events, events: [...events.events, earlier] };
@@ -92,22 +92,24 @@ test("a flagged Form 4 must cite its own figures through event refs, and one of 
   const subject = itemSubjects(filings, withHistory, new Date("2026-08-10T00:00:00Z")).find(s => s.kind === "insider") ?? { kind: "insider" as const, id: flagged.id, date: flagged.filedAt, form: flagged.form, event: flagged };
   const input: ItemInput = { env: { DB: {} as D1Database } as AnalysisEnv, data, subject, periodEnd: PERIOD, documents: [], earlierAvailable: false, seed: [], now: "2026-08-10T00:00:00Z" };
   const doc = { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }]] }] };
-  const report = (ids: string[]) => ({ title: "The chief executive sells a third of the stake", kind: "watch", evidence: ids.map(id => ({ ref: { event: { id, field: "sharesSold" } }, periodEnd: id === flagged.id ? flagged.eventDate : earlier.eventDate, span: "quarter" })), document: doc,
+  const report = (ids: string[], document: unknown = doc) => ({ title: "The chief executive sells a third of the stake", kind: "watch", evidence: ids.map(id => ({ ref: { event: { id, field: "sharesSold" } }, periodEnd: id === flagged.id ? flagged.eventDate : earlier.eventDate, span: "quarter" })), document,
     judgment: "The chief executive sold a third of the direct holding in one filing, outside a trading plan, after a much smaller sale earlier in the year. A sale this size from the top officer is the rule's attention case; it signals reduced exposure rather than anything about the quarter." });
   const { outcome, results, opening } = await run(input, [
-    [["compose", { report: report([earlier.id]) }]],
-    [["compose", { report: report([flagged.id, earlier.id]) }]],
+    [["compose", { report: report([flagged.id, earlier.id], { rows: [doc.rows[0], { cells: [[{ kind: "figures" }]] }] }) }]],
+    [["compose", { report: report([flagged.id]) }]],
     [["finish", {}]],
   ]);
-  assert.ok(opening.subject.refs.some((r: { ref: { event: { id: string } } }) => r.ref.event.id === earlier.id));
-  assert.match(results[0]!, /cite at least one figure of this filing/);
+  assert.ok(opening.subject.refs.every((r: { ref: { event: { id: string } } }) => r.ref.event.id === flagged.id));
+  assert.deepEqual(opening.subject.ownerEarlierSales, [{ date: earlier.eventDate, plan10b51: earlier.insider!.rule10b51, size: "smaller than this filing's" }]);
+  assert.match(results[0]!, /cite this filing's figures only/);
+  assert.match(results[0]!, /one figures block at most/);
   assert.match(results[1]!, /accepted as written/);
   assert.equal(outcome.reason, "finished");
   // One repair only: an analysis the repair does not fix is withheld, and the run ends without spending more turns.
   const twice = await run(input, [
     [["compose", { report: report([earlier.id]) }]],
-    [["compose", { report: report([flagged.id]) }]],
     [["compose", { report: report([flagged.id, earlier.id]) }]],
+    [["compose", { report: report([flagged.id]) }]],
   ]);
   assert.match(twice.results[0]!, /this is the one repair/);
   assert.equal(twice.state.withheld, true);

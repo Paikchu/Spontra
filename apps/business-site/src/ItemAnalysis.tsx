@@ -35,17 +35,15 @@ export function useVerifiedAnalysis(analysis: (ComposedAnalysis & { periodEnd: s
 }
 
 /** The analysis's lens document, drawn by the same blocks as a finding's; until it is known, `fallback` stands in once it is known to be missing. */
-export function ItemAnalysisBody({ analysis, verified, ticker, nodeColor, fallback, after }: {
+export function ItemAnalysisBody({ analysis, verified, ticker, nodeColor, fallback }: {
   analysis: ItemAnalysis | null | undefined;
   verified: { finding: VerifiedFinding; facts: FindingData } | null;
   ticker: string;
   nodeColor: (id: string) => string;
   fallback: ReactNode;
-  /** Rows that close the analysis's document; the fallback places its own. */
-  after?: ReactNode;
 }) {
   if (analysis === undefined) return <div className="lens-doc" aria-busy="true"><i className="lens-loading" aria-hidden="true" /></div>;
   if (!analysis || !verified) return <>{fallback}</>;
   const layout = analysis.finding.lens.type === "document" ? analysis.finding.lens.document : undefined;
-  return <LensBlocks finding={verified.finding} data={verified.facts} sources={analysis.sources} materials={analysis.materials} ticker={ticker} nodeColor={nodeColor} compact={false} layout={layout}>{after}</LensBlocks>;
+  return <LensBlocks finding={verified.finding} data={verified.facts} sources={analysis.sources} materials={analysis.materials} ticker={ticker} nodeColor={nodeColor} compact={false} layout={layout} />;
 }
