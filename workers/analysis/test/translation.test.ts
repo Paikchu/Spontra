@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { FindingsPublication } from "../../../shared/analysis-contract/findings.ts";
-import { proseNumbers } from "../../../shared/analysis-runtime/findings.ts";
+import { evidenceCandidates, numberSupported, proseNumbers, type ResolvedEvidence } from "../../../shared/analysis-runtime/findings.ts";
 import { checkTranslation, collectProse, langOf, localize, normalizeTranslation } from "../../../shared/analysis-runtime/translation.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
@@ -67,6 +67,14 @@ test("Chinese amounts read as the figures English prose writes, so verification 
   assert.deepEqual(proseNumbers("Capex was $28.5 billion, up 235.2%, 90.4 pp more; $350 million; 12 months; Q1 FY2027"), [28.5, 235.2, 90.4, 350]);
   assert.deepEqual(proseNumbers("资本开支为 285亿美元，增长 235.2%，多 90.4个百分点；3.5亿美元；12 个月；第 1 季度；2027 财年"), [28.5, 235.2, 90.4, 350]);
   assert.deepEqual(proseNumbers("1700亿美元，5000万美元，123万股"), [170, 50, 1_230_000]);
+});
+
+test("form and rule names are not figures: Form 4, Rule 10b5-1, a 10b5-1 plan, Schedule 13D, Item 5.02", () => {
+  assert.deepEqual(proseNumbers("His Form 4 reports a sale under Rule 10b5-1, the 10b5-1 plan he adopted; Schedule 13D and Item 5.02 are not figures, 333 shares at $173.07 are."), [333, 173.07]);
+  // A sale's proceeds as the page writes them, in thousands, and in whole dollars.
+  const current = { value: 57_632.31, unit: "USD" as const, currency: "USD", periodStart: null, periodEnd: "2026-10-29", span: "quarter" as const, accessions: [] };
+  const candidates = evidenceCandidates({ current, compare: null, delta: null, ratio: null } as unknown as ResolvedEvidence);
+  for (const written of proseNumbers("proceeds of $57.6K, or $57,632, or 5.76万美元")) assert.ok(numberSupported(written, candidates), String(written));
 });
 
 test("a translation must keep every figure, placeholder and markdown line, be Chinese, and add no English", () => {

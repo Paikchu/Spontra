@@ -662,7 +662,8 @@ export function resolveEvidence(data: FindingData, e: FindingEvidence, locale: L
 /* ---------- Verification ---------- */
 
 /** Amounts are written in trillions, billions or millions of dollars ("$55.7 billion"), as the ledger writes them. */
-const AMOUNT_SCALES = [1e12, 1e9, 1e6];
+/** The scales an amount is written at: trillions to millions, thousands ("$57.6K", as the page writes them) and whole dollars. */
+const AMOUNT_SCALES = [1e12, 1e9, 1e6, 1e3, 1];
 
 /** Numbers a reader could have written from this evidence, in the units English prose uses. */
 export function evidenceCandidates(r: ResolvedEvidence): number[] {
@@ -690,13 +691,13 @@ const ZH_MAGNITUDE: Record<string, number> = { "万亿": 1e12, "亿": 1e8, "万"
 /**
  * A number in prose, with what may mark it as a period, a count or a name rather than a figure: a fiscal-period
  * prefix (FY2026, Q3, H1, 第) or a month name (May 31); a period unit (12 months, 8 quarters, a 3-year plan, 12 个月),
- * an ordinal (4th), a quarter or half suffix (3Q, 2H) or a form name (10-K, 8-K). Digits inside an ISO date or a word
- * are never read. A Chinese magnitude after the number (285亿) is captured so the amount can be read in full.
+ * an ordinal (4th), a quarter or half suffix (3Q, 2H), a form name (10-K, 8-K, Form 4, Schedule 13D, Item 5.02) or a rule
+ * name (Rule 10b5-1, 10b5-1 plan). Digits inside an ISO date or a word are never read. A Chinese magnitude after the number (285亿) is captured so the amount can be read in full.
  */
 const PROSE_NUMBER = new RegExp(
-  String.raw`(?<![\w.])(?<!\d{4}-)(?<!\d{4}-\d{2}-)(FY\s?|[QH](?=\d)|第\s?|(?:${MONTH_NAME})\.?\s)?` +
+  String.raw`(?<![\w.])(?<!\d{4}-)(?<!\d{4}-\d{2}-)(FY\s?|[QH](?=\d)|第\s?|(?:Form|Schedule|Rule|Item)\s|(?:${MONTH_NAME})\.?\s)?` +
   String.raw`([-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)` +
-  String.raw`(\s?-?(?:${PERIOD_UNIT})\b|(?:st|nd|rd|th)\b|[QH](?![a-z])|-[KQF]\b|\s?${PERIOD_UNIT_ZH})?` +
+  String.raw`(\s?-?(?:${PERIOD_UNIT})\b|(?:st|nd|rd|th)\b|[QH](?![a-z])|-[KQF]\b|[a-z]\d[\w-]*|\s?${PERIOD_UNIT_ZH})?` +
   String.raw`(\s?(?:万亿|亿|万))?`,
   "gi");
 

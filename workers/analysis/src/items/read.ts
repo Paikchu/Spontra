@@ -7,8 +7,8 @@ import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-da
 export const itemsIndexKey = (ticker: string) => `items:v1:${ticker}`;
 export const itemAnalysisKey = (ticker: string, id: string) => `item-analysis:v1:${ticker}:${id}`;
 
-/** What the last run covered: every due row, and whether it has an analysis. Its fingerprint is what the task compares. */
-export type ItemsIndex = { version: string; fingerprint: string; generatedAt: string; items: Array<{ id: string; kind: ItemKind; written: boolean }> };
+/** What the last run covered: every due row, whether it has an analysis and, when its run wrote none, why. Its fingerprint is what the task compares. */
+export type ItemsIndex = { version: string; fingerprint: string; generatedAt: string; items: Array<{ id: string; kind: ItemKind; written: boolean; reason?: string }> };
 /** As stored: the analysis with every turn of the loop that wrote it, for the operator; readers never get the trace. */
 export type StoredItem = ItemAnalysis & { trace: TurnRecord[] };
 

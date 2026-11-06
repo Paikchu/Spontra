@@ -30,7 +30,7 @@ import { sha256 } from "../sha256.ts";
  * The recipe version of each kind of row: changing a kind's prompt, tools or materials writes that kind's analyses
  * again. ITEMS_VERSION is the task's version and goes into the fingerprint, so moving any kind starts a run.
  */
-export const ITEM_VERSIONS: Record<ItemKind, string> = { report: "items.v1", current: "items.v1", insider: "items.insider.v2" };
+export const ITEM_VERSIONS: Record<ItemKind, string> = { report: "items.v1", current: "items.v1", insider: "items.insider.v3" };
 export const ITEMS_VERSION = `items:${Object.values(ITEM_VERSIONS).join(",")}`;
 /** Rows analysed at once; each is its own loop of durable steps. */
 const CONCURRENCY = 3;
@@ -169,7 +169,9 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
         await new D1SecRepository(db).setCache(itemAnalysisKey(ticker, subject.id), record, now);
         return true;
       });
-      return { id: subject.id, kind: subject.kind, written: !!composed, reason: `${outcome.reason}:${outcome.turns}`, turns: turns.length };
+      // A withheld analysis names what its checks refused, so the index says why the row kept the filing digest.
+      const refused = state.withheld && state.draft ? ` ${state.draft.errors.join("; ")}` : "";
+      return { id: subject.id, kind: subject.kind, written: !!composed, reason: `${outcome.reason}:${outcome.turns}${refused}`.slice(0, 600), turns: turns.length };
     };
     for (let i = 0; i < pending.length; i += CONCURRENCY) {
       const batch = pending.slice(i, i + CONCURRENCY);
@@ -180,7 +182,10 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
   // The index takes this run's fingerprint whatever each row came to, so the same rows are not run again until they change;
   // a row whose loop wrote nothing keeps the filing digest on the page.
   await step.do("items-publish", async () => {
-    const index: ItemsIndex = { version: ITEMS_VERSION, fingerprint: params.fingerprint, generatedAt: now, items: plan.subjects.map(s => ({ id: s.id, kind: s.kind, written: written.includes(itemAnalysisKey(ticker, s.id)) || !!outcomes.find(o => o.id === s.id)?.written })) };
+    const index: ItemsIndex = { version: ITEMS_VERSION, fingerprint: params.fingerprint, generatedAt: now, items: plan.subjects.map(s => {
+      const outcome = outcomes.find(o => o.id === s.id);
+      return written.includes(itemAnalysisKey(ticker, s.id)) || outcome?.written ? { id: s.id, kind: s.kind, written: true } : { id: s.id, kind: s.kind, written: false, ...(outcome ? { reason: outcome.reason } : {}) };
+    }) };
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
         .bind(itemsIndexKey(ticker), JSON.stringify(index), now),
