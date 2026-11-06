@@ -60,7 +60,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
-import { companyIdentity, coreSlots, issuerHeader, type CompanyIdentity } from "./company-meta";
+import { coreSlots } from "./company-meta";
 import { useMedia, useSideScroll } from "./side-scroll";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
 import { verifyNote } from "@/shared/analysis-runtime/checkup-notes";
@@ -299,7 +299,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, company: companyProp = null, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -316,8 +316,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   eventsPhase?: "ready" | "loading" | "error";
   detailsLoading?: boolean;
   onRetryEvents?: () => void;
-  /** The issuer's name and fiscal calendar for the header, resolved from data (company-meta.ts). */
-  company?: CompanyIdentity | null; }) {
+}) {
   const locale = useLocale();
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   // `?period=` opens a report other than the latest (a home card links straight to the quarter it reports).
@@ -705,11 +704,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
   const topLevel = items.filter(i => !i.parent).length;
   const narrow = useMedia("(max-width: 640px)");
-  // The issuer as the page resolved it, its filer line (a 20-F, a reporting currency) redone for the quarter on the stage.
-  const company = useMemo((): CompanyIdentity => {
-    const base = companyProp ?? companyIdentity({ locale, explainerName: explainer?.companyName, treeName: tree?.companyName, flow, filings, events });
-    return { ...base, ...issuerHeader({ base, quarter, filings, events }) };
-  }, [companyProp, locale, explainer, tree, flow, filings, events, quarter]);
   // On narrow screens the statement scrolls sideways inside the chart: an edge fade and a swipe hint say there is more.
   const chartRef = useRef<HTMLDivElement>(null);
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
@@ -726,7 +720,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tabs stand at its top right.
   const lensUp = !!stageOverride || !!(focusedCheck && assessment) || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} company={company.filingLabel ? { sub: company.filingLabel } : null} foot={railFoot}>
+    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
       {/* The businesses, open from the start: the company's revenue and change, next quarter's guidance on its own line, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">

@@ -152,10 +152,6 @@ button { cursor: pointer; }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
-/* The issuer under the ticker: the filer context its figures need (a 20-F, a reporting currency). */
-.rail-top[data-company] { flex-wrap: wrap; row-gap: 6px; }
-.rail-company-meta { flex: 0 0 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 6px; }
-.rail-company-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
 .rail-actions { display: flex; gap: 2px; flex: none; }
 /* Ghost tools: the ticker is the rail's title, the tools a quiet row beside it that fills only under the pointer. */
 .rail-actions .icon-button { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--faint); }
@@ -171,7 +167,7 @@ button { cursor: pointer; }
   main[data-rail="collapsed"] .rail { align-self: start; }
   main[data-rail="collapsed"] .rail-top { flex-direction: column; gap: 8px; padding: 12px 0; border-bottom-color: transparent; }
   main[data-rail="collapsed"] .company { flex: none; }
-  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur, main[data-rail="collapsed"] .rail-company-meta { display: none; }
+  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur { display: none; }
   main[data-rail="collapsed"] .rail-actions { flex-direction: column; }
   main[data-rail="collapsed"] .rail-toggle { order: -1; }
 }
@@ -1586,7 +1582,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 /* ---------- Phone company page (U21/U22): figures first, chart next, the rail's sections after ---------- */
 @media (max-width: 640px) {
   .rail-top { order: 0; flex-wrap: nowrap; gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
-  .rail-top[data-company] { flex-wrap: wrap; }
   .rail-top .company { gap: 8px; }
   .rail-top .company-logo { width: 28px; height: 28px; border-radius: 8px; }
   .rail-top .company-ticker { flex: none; font-size: 16px; }

@@ -67,10 +67,8 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
  * Floating card: the company row stays put, everything below it scrolls inside the card.
  * Once the list moves, a blur band under the row softens what slides beneath it; the scrollbar thumb only shows while scrolling or hovered.
  */
-export function Rail({ ticker, actions, label, company = null, foot = null, children }: {
+export function Rail({ ticker, actions, label, foot = null, children }: {
   ticker: string; actions: ReactNode; label?: string;
-  /** Filer context under the ticker that the figures need to be read right: a foreign issuer's 20-F, a reporting currency. */
-  company?: { sub: string } | null;
   /** The console under the scrolling body: the way to ask, and the open console over the card. */
   foot?: ReactNode;
   children?: ReactNode;
@@ -99,10 +97,9 @@ export function Rail({ ticker, actions, label, company = null, foot = null, chil
     idle.current = window.setTimeout(() => delete el.dataset.scrolling, 900);
   }
   return <Sidebar collapsible="none" asChild><aside className="rail" ref={aside} aria-label={label} data-scrolled={scrolled || undefined}>
-    <SidebarHeader asChild><div className="rail-top" data-company={company ? "" : undefined}>
+    <SidebarHeader asChild><div className="rail-top">
       <CompanyMark ticker={ticker} />
       {actions}
-      {company && <div className="rail-company-meta"><span className="rail-company-sub" title={company.sub}>{company.sub}</span></div>}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>
     {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" ref={body} onScroll={onScroll}>{children}</div></SidebarContent>}

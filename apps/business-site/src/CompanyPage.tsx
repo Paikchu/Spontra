@@ -1,7 +1,6 @@
 import { RateNotice } from "./ModuleFailure";
 import { Component, useState, type ReactNode } from "react";
-import { messages, useLocale } from "@/packages/web/src/i18n";
-import type { HomeCompany } from "@/shared/analysis-contract/home";
+import { messages } from "@/packages/web/src/i18n";
 import "@/packages/web/src/business-flow/business-flow.css";
 import { BusinessMap } from "./BusinessMap";
 import { CompanySkeleton } from "./CompanySkeleton";
@@ -11,7 +10,6 @@ import { openingFace, useLiveCompany } from "./live-company";
 import { UpdateNotice } from "./UpdateNotice";
 import { useStageHost } from "./stage/StageHost";
 import { usePageTurning } from "./page-turn";
-import { companyIdentity } from "./company-meta";
 import type { CompanyOpening } from "./company-opening";
 
 const m = messages({ title: "Business View" }, { title: "Business View" });
@@ -32,11 +30,9 @@ class ChartBoundary extends Component<
     );
   }
 }
-export default function CompanyPage({ ticker, opening, tools, onSeen, covered, companies, onHome, onSearch, catalog = null }: {
+export default function CompanyPage({ ticker, opening, tools, onSeen, covered, companies, onHome, onSearch }: {
   ticker: string;
   opening: CompanyOpening;
-  /** The home catalog's entry for this company: its Chinese name and latest fiscal period. */
-  catalog?: HomeCompany | null;
   tools: ReactNode;
   onSeen: (ticker: string) => void;
   /** Whether the catalog lists the company: null when it could not load, undefined while it is being read. */
@@ -48,8 +44,6 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   const { moduleErrors, retryModule, rateLimited, data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
-  const locale = useLocale();
-  const company = companyIdentity({ locale, catalog, issuer: publication?.issuer, explainerName: publication?.explainer?.companyName, treeName: publication?.tree?.companyName, flow, filings, events });
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
   const [arrival] = useState(face);
@@ -92,7 +86,6 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           onView={stage.onView}
           railFoot={stage.railFoot}
           focusRequest={stage.focusRequest}
-          company={company}
         />
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
       </ChartBoundary>

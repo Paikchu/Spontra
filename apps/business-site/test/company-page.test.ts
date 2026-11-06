@@ -12,7 +12,6 @@ import { capital, company, filings, findings, flow, TICKER, valuation } from "..
 import type { ValuationResponse } from "../../../shared/analysis-contract/valuation.ts";
 import type { FindingsPublication } from "../../../shared/analysis-contract/findings.ts";
 import type { PublicFilingDigestPage } from "../../../shared/analysis-contract/filings.ts";
-import { companyIdentity, type CompanyIdentity } from "../src/company-meta.ts";
 
 // The page imports assets through Vite (a font `?url`, stylesheets); here they resolve to an empty module.
 register(new URL("./fixtures/asset-hooks.mjs", import.meta.url));
@@ -34,19 +33,16 @@ function browser(search = "") {
   g.removeEventListener ??= () => {};
 }
 
-function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, options: { filings?: PublicFilingDigestPage | null; issuer?: { name: string; fiscalYearEndMonth: number | null; annualForm?: string | null }; identity?: CompanyIdentity; valuation?: ValuationResponse | null; findings?: FindingsPublication | null; search?: string; moduleErrors?: import("../../../shared/analysis-contract/revisions.ts").MapResource[] } = {}) {
+function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, options: { filings?: PublicFilingDigestPage | null; valuation?: ValuationResponse | null; findings?: FindingsPublication | null; search?: string; moduleErrors?: import("../../../shared/analysis-contract/revisions.ts").MapResource[] } = {}) {
   setLocale(locale);
   browser(options.search);
   const pageFilings = options.filings ?? null;
-  // As CompanyPage.tsx resolves it: the issuer, the publications, the flow and the filings.
-  const identity = options.identity ?? companyIdentity({ locale, issuer: options.issuer ?? company.issuer, explainerName: company.explainer.companyName, flow: payload, filings: pageFilings });
   return renderToStaticMarkup(h(SidebarProvider, { asChild: true, open: true, keyboardShortcut: null, persistState: false },
-    h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, company: identity, valuation: options.valuation ?? null, findings: options.findings ?? null, moduleErrors: options.moduleErrors }))));
+    h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, valuation: options.valuation ?? null, findings: options.findings ?? null, moduleErrors: options.moduleErrors }))));
 }
 
 /** A foreign issuer: its quarters in New Taiwan dollars on a calendar fiscal year, its annual report a 20-F. */
 const foreignFlow = (): PublicBusinessFlow => ({ ...flow, quarters: flow.quarters.map(q => ({ ...q, currency: "TWD", fiscalYearEndMonth: undefined })) });
-const filings0: PublicFilingDigestPage = filings;
 const foreignFilings: PublicFilingDigestPage = { ...filings, filings: [...filings.filings, { ...filings.filings[1]!, accessionNumber: "0001-26-000003", form: "20-F" }] };
 
 /** The fixture with a bank-shaped latest quarter (no gross profit, no operating income) and a revenue adjustment. */
@@ -64,32 +60,14 @@ function bankFlow(): PublicBusinessFlow {
 
 const slotsOf = (html: string) => [...html.matchAll(/<div class="stat"( data-missing="true")?[^>]*>.*?<\/div>/g)].map(m => m[0]);
 
-test("U25: neither the stage nor the rail carries the fiscal quarter pill or the fiscal year end", () => {
+test("U25: neither the stage nor the rail carries the fiscal quarter pill, the fiscal year end or a filer line", () => {
   for (const locale of ["zh-CN", "en"] as const) {
-    const html = render(locale);
-    assert.doesNotMatch(html, /stage-kicker|period-mark|fiscal-meta|fiscal-note|stage-fiscal-meta|rail-company-name|brand-company-name/);
-    assert.doesNotMatch(html, /财年截至|FY ends/);
-    // A domestic filer reporting in dollars has no filer line at all.
-    assert.doesNotMatch(html, /rail-company-meta/);
-  }
-});
-
-test("U25: a foreign issuer's form and currency stay on the rail, without the fiscal year end", () => {
-  const zh = render("zh-CN", foreignFlow(), { filings: foreignFilings, issuer: { name: "Acme Corp", fiscalYearEndMonth: 12 } });
-  assert.match(zh, /<div class="rail-company-meta"><span class="rail-company-sub" title="20-F · 报告货币：新台币">20-F · 报告货币：新台币<\/span><\/div>/);
-  assert.doesNotMatch(zh, /财年截至/);
-  const en = render("en", foreignFlow(), { filings: foreignFilings, issuer: { name: "Acme Corp", fiscalYearEndMonth: 12 } });
-  assert.match(en, /<span class="rail-company-sub"[^>]*>20-F · Reports in TWD<\/span>/);
-  // A company prop with only a name and fiscal month still gets the line from the flow and the filings.
-  const bare = render("en", foreignFlow(), { filings: foreignFilings, identity: { name: "Acme Corp", fullName: null, fiscalYearEndMonth: 12, annualForm: null, filingLabel: null } });
-  assert.match(bare, /<span class="rail-company-sub"[^>]*>20-F · Reports in TWD<\/span>/);
-});
-
-test("U22: on production's data, an empty filings feed and the form on the issuer, the line still names the 20-F", () => {
-  const issuer = { name: "Acme Corp", fiscalYearEndMonth: 12, annualForm: "20-F" };
-  for (const filings of [null, { ...filings0, filings: [] }]) {
-    assert.match(render("zh-CN", foreignFlow(), { filings, issuer }), /<span class="rail-company-sub"[^>]*>20-F · 报告货币：新台币<\/span>/);
-    assert.match(render("en", foreignFlow(), { filings, issuer }), /<span class="rail-company-sub"[^>]*>20-F · Reports in TWD<\/span>/);
+    for (const html of [render(locale), render(locale, foreignFlow(), { filings: foreignFilings })]) {
+      assert.doesNotMatch(html, /stage-kicker|period-mark|fiscal-meta|fiscal-note|stage-fiscal-meta|rail-company-name|brand-company-name/);
+      assert.doesNotMatch(html, /财年截至|FY ends/);
+      // Not even a foreign issuer reporting in another currency gets a line under the ticker.
+      assert.doesNotMatch(html, /rail-company|20-F ·|报告货币|Reports in/);
+    }
   }
 });
 
@@ -224,9 +202,7 @@ test("U21: on phones the page reads top bar, figures and chart, then the rail's 
   // Headline figures keep the page face: monospace read as terminal output.
   assert.match(phone, /\.stat-value \{[^}]*font-size: 22px; line-height: 28px; font-weight: 620;[^}]*tabular-nums/);
   assert.doesNotMatch(phone, /\.stat-value \{[^}]*font-family: var\(--mono\)/);
-  assert.doesNotMatch(phone, /\.rail-company-meta \{[^}]*display:\s*none/);
   assert.doesNotMatch(phone, /brand-company-name/);
-  assert.match(phone, /\.rail-top\[data-company\] \{ flex-wrap: wrap; \}/);
   // Wide screens keep their header: a missing figure's cell is for the phone grid only.
   assert.match(media(await read("../src/style.css"), "min-width: 641px"), /\.stats > div\[data-missing="true"\] \{ display: none; \}/);
 });
