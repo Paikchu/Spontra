@@ -14,6 +14,7 @@ import { track } from "./track";
 import { useHomeDigest } from "./home-data";
 import { turnPage } from "./page-turn";
 import { createCompanyOpening } from "./company-opening";
+import { startVitals } from "./vitals";
 
 const m = messages({
   title: "Business View", description: "Business map · Businesses, revenue, costs and net income from SEC filings",
@@ -281,6 +282,7 @@ function App() {
     </>
   );
 }
+startVitals();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

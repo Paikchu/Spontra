@@ -1,0 +1,401 @@
+{
+  "base": "https://spontra-business-map.max-zhangyuchen.workers.dev",
+  "lang": "en-US",
+  "at": "2026-11-06T12:13:54.849Z",
+  "profiles": [
+    {
+      "name": "slow",
+      "latency": 150,
+      "down": 200000,
+      "up": 93750,
+      "cpu": 4
+    },
+    {
+      "name": "fast",
+      "latency": 0,
+      "down": -1,
+      "up": -1,
+      "cpu": 1
+    }
+  ],
+  "medians": [
+    {
+      "profile": "slow",
+      "path": "/",
+      "runs": 7,
+      "content": 3716,
+      "lcp": 3288,
+      "fcp": 3288,
+      "ttfb": 1034,
+      "jsBeforeContentKB": 157,
+      "jsKB": 157,
+      "totalKB": 371,
+      "requests": 16,
+      "missingContent": 0
+    },
+    {
+      "profile": "slow",
+      "path": "/companies/NVDA",
+      "runs": 7,
+      "content": 5482,
+      "lcp": 5528,
+      "fcp": 3448,
+      "ttfb": 1047,
+      "jsBeforeContentKB": 351,
+      "jsKB": 351,
+      "totalKB": 607,
+      "requests": 24,
+      "missingContent": 0
+    },
+    {
+      "profile": "fast",
+      "path": "/",
+      "runs": 7,
+      "content": 2794,
+      "lcp": 2544,
+      "fcp": 2544,
+      "ttfb": 1023,
+      "jsBeforeContentKB": 157,
+      "jsKB": 157,
+      "totalKB": 371,
+      "requests": 16,
+      "missingContent": 0
+    },
+    {
+      "profile": "fast",
+      "path": "/companies/NVDA",
+      "runs": 7,
+      "content": 3440,
+      "lcp": 3464,
+      "fcp": 2652,
+      "ttfb": 1040,
+      "jsBeforeContentKB": 351,
+      "jsKB": 351,
+      "totalKB": 607,
+      "requests": 24,
+      "missingContent": 0
+    }
+  ],
+  "samples": {
+    "slow": {
+      "/": [
+        {
+          "ttfb": 1069,
+          "fcp": 3740,
+          "lcp": 3740,
+          "content": 4089.900000035763,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 16
+        },
+        {
+          "ttfb": 1050,
+          "fcp": 3180,
+          "lcp": 3180,
+          "content": 3575,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 13
+        },
+        {
+          "ttfb": 1034,
+          "fcp": 3208,
+          "lcp": 3208,
+          "content": 3554.399999976158,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 27
+        },
+        {
+          "ttfb": 932,
+          "fcp": 3504,
+          "lcp": 3504,
+          "content": 5822.399999976158,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 17
+        },
+        {
+          "ttfb": 883,
+          "fcp": 3288,
+          "lcp": 3288,
+          "content": 3715.600000023842,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 14
+        },
+        {
+          "ttfb": 973,
+          "fcp": 3260,
+          "lcp": 3260,
+          "content": 3695.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 15
+        },
+        {
+          "ttfb": 1040,
+          "fcp": 3540,
+          "lcp": 3540,
+          "content": 7817.699999988079,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 16
+        }
+      ],
+      "/companies/NVDA": [
+        {
+          "ttfb": 986,
+          "fcp": 3216,
+          "lcp": 5776,
+          "content": 5717.899999976158,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1054,
+          "fcp": 3492,
+          "lcp": 5324,
+          "content": 5280.199999988079,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 944,
+          "fcp": 3268,
+          "lcp": 5392,
+          "content": 5348.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1093,
+          "fcp": 3468,
+          "lcp": 5796,
+          "content": 5754.299999952316,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1047,
+          "fcp": 3448,
+          "lcp": 5528,
+          "content": 5481.899999976158,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1130,
+          "fcp": 3476,
+          "lcp": 5548,
+          "content": 5505.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 911,
+          "fcp": 3252,
+          "lcp": 5312,
+          "content": 5263.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        }
+      ]
+    },
+    "fast": {
+      "/": [
+        {
+          "ttfb": 1154,
+          "fcp": 3056,
+          "lcp": 3056,
+          "content": 3290.699999988079,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 15
+        },
+        {
+          "ttfb": 1116,
+          "fcp": 2544,
+          "lcp": 2544,
+          "content": 2794.099999964237,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 23
+        },
+        {
+          "ttfb": 1022,
+          "fcp": 2668,
+          "lcp": 2668,
+          "content": 4411.800000011921,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 13
+        },
+        {
+          "ttfb": 950,
+          "fcp": 2156,
+          "lcp": 2156,
+          "content": 2401.599999964237,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 18
+        },
+        {
+          "ttfb": 1023,
+          "fcp": 2456,
+          "lcp": 2456,
+          "content": 2685.199999988079,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 16
+        },
+        {
+          "ttfb": 1033,
+          "fcp": 2684,
+          "lcp": 2684,
+          "content": 2931.399999976158,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 22
+        },
+        {
+          "ttfb": 926,
+          "fcp": 2244,
+          "lcp": 2244,
+          "content": 2518.2999999523163,
+          "contentMark": null,
+          "jsBeforeContentKB": 157,
+          "jsKB": 157,
+          "totalKB": 371,
+          "requests": 16
+        }
+      ],
+      "/companies/NVDA": [
+        {
+          "ttfb": 1074,
+          "fcp": 2432,
+          "lcp": 3036,
+          "content": 3007.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1024,
+          "fcp": 2664,
+          "lcp": 3476,
+          "content": 3446.300000011921,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1368,
+          "fcp": 3284,
+          "lcp": 4156,
+          "content": 4127,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1021,
+          "fcp": 2448,
+          "lcp": 3348,
+          "content": 3319.800000011921,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 1898,
+          "fcp": 3612,
+          "lcp": 4404,
+          "content": 4362.800000011921,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        },
+        {
+          "ttfb": 988,
+          "fcp": 2652,
+          "lcp": 3464,
+          "content": 3439.5,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 19
+        },
+        {
+          "ttfb": 1040,
+          "fcp": 2440,
+          "lcp": 3040,
+          "content": 3012.699999988079,
+          "contentMark": null,
+          "jsBeforeContentKB": 351,
+          "jsKB": 351,
+          "totalKB": 607,
+          "requests": 24
+        }
+      ]
+    }
+  }
+}

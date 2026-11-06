@@ -1,7 +1,7 @@
 /** Anonymous product events. The server rejects anything outside this list. */
 export const TRACK_NAMES = [
   "page_view", "search_submit", "search_select", "company_tab_view", "finding_expand",
-  "source_click", "chart_period_change", "lang_toggle", "theme_toggle", "error_shown",
+  "source_click", "chart_period_change", "lang_toggle", "theme_toggle", "error_shown", "web_vitals",
 ] as const;
 
 export type TrackName = (typeof TRACK_NAMES)[number];
@@ -85,7 +85,7 @@ export function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<st
   }
 }
 
-function browserEnv(): TrackDelivery | null {
+function browserEnv(path?: string): TrackDelivery | null {
   if (typeof window === "undefined") return null;
   const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
   let storage: TrackDelivery["storage"] = null;
@@ -98,7 +98,7 @@ function browserEnv(): TrackDelivery | null {
     fetch: (url, body) => { void fetch(url, { method: "POST", body, keepalive: true, headers: { "content-type": "application/json" } }).catch(() => {}); },
     storage,
     privacy: nav,
-    path: location.pathname,
+    path: path ?? location.pathname,
     lang: document.documentElement.lang === "zh-CN" ? "zh-CN" : "en",
     theme: document.documentElement.classList.contains("light") ? "light" : "dark",
     now: Date.now(),
@@ -106,8 +106,8 @@ function browserEnv(): TrackDelivery | null {
   };
 }
 
-/** Fire-and-forget. Failure is discarded and never retried. */
-export function track(name: TrackName, props?: Record<string, string | number>): void {
-  const env = browserEnv();
+/** Fire-and-forget. Failure is discarded and never retried. `path` defaults to the current address. */
+export function track(name: TrackName, props?: Record<string, string | number>, path?: string): void {
+  const env = browserEnv(path);
   if (env) sendTrack(env, name, props);
 }

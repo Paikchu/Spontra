@@ -11,6 +11,7 @@ import type { DigestStatus } from "./home-data";
 import { stripBandPath, stripOf } from "./home-strip";
 import { PeriodMark } from "./PeriodMark";
 import { PrivacyNote } from "./PrivacyNote";
+import { markContent } from "./vitals";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { worthWatching, type SignalTab, type WorthWatchingCard } from "./worth-watching";
@@ -242,6 +243,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     ? recent.slice(0, 5).map(ticker => ({ ticker, popular: false }))
     : (digest?.popular ?? []).slice(0, 5).map(ticker => ({ ticker, popular: true }));
   const shown = sorted(companies, sort);
+  useEffect(() => { if (digestStatus === "ready" && shown.length > 0) markContent("home"); }, [digestStatus, shown.length]);
   const groups = grouped(worthWatching(companies, tab, 8));
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const [now] = useState(() => new Date());

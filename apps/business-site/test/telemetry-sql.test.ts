@@ -21,6 +21,7 @@ test('SQLite aggregates match the in-memory model for every range', async t => {
     ...['z', '中', 'A', 'a'].map(q => ({ ...rows[0]!, received: now, name: 'search_submit' as const, props: { q, empty: 1 } })),
   );
   rows.push(...Array.from({ length: 5 }, (_, i) => ({ ...rows[1]!, received: now, sid: `22222222-2222-4222-8222-${String(i).padStart(12, '0')}`, actor: 'shared-hash' })));
+  rows.push(...[300, 900, 1500].map((lcp, i) => ({ ...rows[0]!, received: now - i * 86_400_000, name: 'web_vitals' as const, path: i ? '/companies/NVDA' : '/', props: { lcp, cls: i } })));
   for (const row of rows) repo.add(row);
   for (const range of ['24h', '7d', '4w'] as const) assert.deepEqual(repo.summary(range, now), summarize(rows, range, now));
   db.close();

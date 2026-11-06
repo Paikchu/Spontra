@@ -61,3 +61,8 @@
   .usage-kpis, .usage-columns { grid-template-columns: 1fr; }
   .usage-head h1 { font-size: 28px; }
 }
+.usage-vitals table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 20px; }
+.usage-vitals th, .usage-vitals td { padding: 4px 0; text-align: right; font-weight: 400; }
+.usage-vitals th[scope="row"], .usage-vitals thead th:first-child { text-align: left; color: var(--muted-foreground); }
+.usage-vitals thead th { color: var(--muted-foreground); }
+.usage-vitals td { font-family: var(--mono); font-variant-numeric: tabular-nums; }

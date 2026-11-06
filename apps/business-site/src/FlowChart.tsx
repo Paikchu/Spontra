@@ -2,6 +2,7 @@ import { useMedia } from "./side-scroll";
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { peekChartBox } from "./chart-box";
+import { markContent } from "./vitals";
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { estimateTextWidth, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { priorMarks } from "@/packages/web/src/model/business-flow-compare";
@@ -256,6 +257,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const box = useRef<HTMLDivElement>(null);
   // The pane measured before this chart mounted, so the first paint is already fitted.
   const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
+  useEffect(() => { if (size) markContent("company"); }, [size]);
   useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;

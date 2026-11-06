@@ -1,4 +1,4 @@
-import type { TelemetryRange, TelemetrySummary } from "./telemetry.ts";
+import { VITAL_METRICS, type TelemetryRange, type TelemetrySummary, type VitalMetric } from "./telemetry.ts";
 import "./usage-board.css";
 
 export type UsageLabels = {
@@ -17,7 +17,17 @@ export type UsageLabels = {
   none: string;
   ranges: Record<TelemetryRange, string>;
   eventName: Record<string, string>;
+  vitals: string;
+  samples: string;
+  vitalRoute: Record<"home" | "company", string>;
+  vitalName: Record<VitalMetric, string>;
 };
+
+function vital(key: VitalMetric, value: number | null): string {
+  if (value == null) return "—";
+  if (key === "cls") return (value / 1000).toFixed(3);
+  return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${value} ms`;
+}
 
 function percent(value: number | null): string {
   if (value == null) return "—";
@@ -86,6 +96,16 @@ export function UsageBoard({ summary, range, onRange, labels, pending, failed, o
                   <b>{item.count}</b>
                 </li>)}
               </ul>
+            </article>
+            <article className="usage-card usage-vitals">
+              <h2>{labels.vitals}</h2>
+              {!summary?.vitals?.length ? <p className="usage-empty">{labels.none}</p> : <table>
+                <thead><tr><th scope="col" />{summary.vitals.map(item => <th scope="col" key={item.route}>{labels.vitalRoute[item.route]}</th>)}</tr></thead>
+                <tbody>
+                  {VITAL_METRICS.map(key => <tr key={key}><th scope="row">{labels.vitalName[key]}</th>{summary.vitals!.map(item => <td key={item.route}>{vital(key, item.p75[key])}</td>)}</tr>)}
+                  <tr><th scope="row">{labels.samples}</th>{summary.vitals.map(item => <td key={item.route}>{item.samples}</td>)}</tr>
+                </tbody>
+              </table>}
             </article>
           </div>
         </>}

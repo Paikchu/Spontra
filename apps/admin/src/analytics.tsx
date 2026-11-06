@@ -28,7 +28,12 @@ const labels: UsageLabels = {
     lang_toggle: "切换语言",
     theme_toggle: "切换主题",
     error_shown: "显示错误",
+    web_vitals: "性能采样",
   },
+  vitals: "加载性能 p75",
+  samples: "样本数",
+  vitalRoute: { company: "公司页", home: "首页" },
+  vitalName: { content: "主图出现", lcp: "LCP", fcp: "FCP", ttfb: "TTFB", inp: "INP", cls: "CLS" },
 };
 
 /** Anonymous usage from the public site. The numbers are the aggregate, never a raw address. */

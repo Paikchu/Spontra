@@ -38,7 +38,37 @@ export type TelemetrySummary = {
   events: Array<{ name: TrackName; count: number }>;
   expandRate: number | null;
   errorRate: number | null;
+  /** p75 of each Web Vital per landing route; absent in summaries from before Web Vitals were collected. */
+  vitals?: VitalsSummary[];
 };
+
+export const VITAL_METRICS = ["content", "lcp", "fcp", "ttfb", "inp", "cls"] as const;
+export type VitalMetric = (typeof VITAL_METRICS)[number];
+/** Milliseconds, except `cls`, which is in thousandths. A metric with no sample is null. */
+export type VitalsSummary = { route: "home" | "company"; samples: number; p75: Record<VitalMetric, number | null> };
+
+/** Nearest-rank 75th percentile. */
+function p75(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.ceil(sorted.length * 0.75) - 1]!;
+}
+
+/** Field Web Vitals grouped by the route the page was loaded on. */
+export function summarizeVitals(rows: ReadonlyArray<{ path: string; props: TelemetryProps }>): VitalsSummary[] {
+  const groups = new Map<VitalsSummary["route"], Array<TelemetryProps>>();
+  for (const row of rows) {
+    const route = row.path === "/" ? "home" : /^\/companies\/[^/]+\/?$/.test(row.path) ? "company" : null;
+    if (!route) continue;
+    groups.set(route, [...(groups.get(route) ?? []), row.props]);
+  }
+  return (["company", "home"] as const).flatMap(route => {
+    const samples = groups.get(route);
+    if (!samples) return [];
+    const metric = (key: VitalMetric) => p75(samples.flatMap(props => typeof props[key] === "number" ? [props[key] as number] : []));
+    return [{ route, samples: samples.length, p75: Object.fromEntries(VITAL_METRICS.map(key => [key, metric(key)])) as Record<VitalMetric, number | null> }];
+  });
+}
 
 type RepositoryWrites = {
   allow(actor: string, minute: number, limit: number): boolean;
@@ -170,6 +200,7 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
     events: TRACK_NAMES.map(name => ({ name, count: counts.get(name) ?? 0 })),
     expandRate: rate(counts.get("finding_expand") ?? 0, companyViews),
     errorRate: rate(counts.get("error_shown") ?? 0, pageViews),
+    vitals: summarizeVitals(events.filter(event => event.name === "web_vitals")),
   };
 }
 
@@ -271,6 +302,9 @@ export function sqlRepository(sql: TelemetrySql): SummaryRepository {
       const companyViews = Number(query("COUNT(*) AS n", "AND name = 'page_view' AND path GLOB '/companies/*'")[0]?.n ?? 0);
       summary.expandRate = rate(counts.get("finding_expand") ?? 0, companyViews);
       summary.errorRate = rate(counts.get("error_shown") ?? 0, summary.pageViews);
+      summary.vitals = summarizeVitals(query("path, props", "AND name = 'web_vitals'").flatMap(row => {
+        try { const props = propsOf(JSON.parse(String(row.props))); return props ? [{ path: String(row.path), props }] : []; } catch { return []; }
+      }));
       return summary;
     },
     prune(oldestEvent, oldestMinute) {
