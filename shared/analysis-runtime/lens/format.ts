@@ -18,6 +18,8 @@ function formatFigure(value: number, unit: ValueUnit, currency: string | null, r
   if (unit === "points") return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}${pp(locale)}`;
   if (unit === "per_share") return locale === "en" && (currency ?? "USD") === "USD" ? `$${value.toFixed(2)}` : perShare(value, currency ?? "USD", locale);
   if (unit === "ratio") return ref && ratioForm(ref) === "percent" ? `${Number((value * 100).toFixed(1))}%` : multiple(String(Number(value.toFixed(2))), locale);
+  // A share count groups its thousands, as the filings write it: 403,189.
+  if (unit === "shares") return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
   return String(Number(value.toFixed(2)));
 }
 

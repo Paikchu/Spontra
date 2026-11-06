@@ -21,13 +21,13 @@ const m = messages({
   focusThis: "Focus this", exitComparison: "Exit comparison", compare: (kind: string) => `Compare · ${kind}`,
   close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
-  metric: "Metric", current: "Current", compared: "Compared with", change: "Change",
+  metric: "Metric", current: "Current", compared: "Compared with", change: "Change", value: "Value", traded: (date: string) => `Traded ${date}`,
 }, {
   finding: (title: string) => `要点：${title}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
   close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
-  metric: "指标", current: "本期", compared: "对比", change: "变化",
+  metric: "指标", current: "本期", compared: "对比", change: "变化", value: "数值", traded: (date: string) => `交易日 ${date}`,
 });
 const VERDICT = labels({ above: "Above guidance", within: "Within guidance", below: "Below guidance" }, { above: "高于指引", within: "处于指引区间", below: "低于指引" });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
@@ -110,6 +110,8 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   const watch = finding.watch, outcome = finding.watchOutcome;
   // The figures block lists every figure of the evidence: a document that places it twice draws it once.
   const figures = lens.document.rows.flatMap(r => r.cells.flat()).find(b => b.kind === "figures");
+  // A figure with nothing to compare (a Form 4's trade) leaves the comparison columns out rather than filling them with dashes.
+  const compared = finding.resolved.some(r => r.compare != null || r.guidance != null);
   const block = (b: LensBlock, key: number): ReactNode => {
     switch (b.kind) {
       case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{normalizeDisplayText(compact ? firstSentence(finding.judgment.text) : finding.judgment.text)}{cites(finding.judgment.sourceIds)}</p>;
@@ -117,8 +119,8 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
       case "html": return <HtmlFrame key={key} picture={b.html} />;
       case "figures": return b !== figures ? null : <Table key={key} className="lens-table lens-evidence">
-        <TableHeader><TableRow><TableHead>{m.metric}</TableHead><TableHead>{m.current}</TableHead><TableHead>{m.compared}</TableHead><TableHead>{m.change}</TableHead></TableRow></TableHeader>
-        <TableBody>{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</TableBody>
+        <TableHeader><TableRow><TableHead>{m.metric}</TableHead><TableHead>{compared ? m.current : m.value}</TableHead>{compared && <><TableHead>{m.compared}</TableHead><TableHead>{m.change}</TableHead></>}</TableRow></TableHeader>
+        <TableBody>{finding.resolved.map((r, i) => <Evidence key={i} r={r} compared={compared} lit={hover != null && near(r.current.periodEnd, hover)} />)}</TableBody>
       </Table>;
       case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
         <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{normalizeDisplayText(watch.condition)}</span></p>
@@ -169,14 +171,19 @@ function Outcome({ r }: { r: ResolvedEvidence }) {
   </span>;
 }
 
-/** One figure as a table row: the value for its period, what it is compared with, and the change or the verdict against guidance. */
-function Evidence({ r, lit }: { r: ResolvedEvidence; lit: boolean }) {
+/**
+ * One figure as a table row: the value for its period (a trade's own date for a Form 4 figure), what it is compared
+ * with, and the change or the verdict against guidance; `compared` false leaves those two cells out.
+ */
+function Evidence({ r, compared, lit }: { r: ResolvedEvidence; compared: boolean; lit: boolean }) {
   const change = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}</em>
     : r.compare ? <em data-trend={trend(r.delta)}>{r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
   return <TableRow data-lit={lit || undefined}>
-    <TableHead scope="row">{r.label}<small>{spanLabel(r.current, getLocale())}</small></TableHead>
+    <TableHead scope="row">{r.label}<small>{"event" in r.evidence.ref ? m.traded(r.current.periodEnd) : spanLabel(r.current, getLocale())}</small></TableHead>
     <TableCell><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b></TableCell>
-    <TableCell>{r.compare ? <>{formatValue(r.compare, r.evidence.ref)}{r.compareLabel && <small>{r.compareLabel}</small>}</> : "—"}</TableCell>
-    <TableCell>{change ?? "—"}</TableCell>
+    {compared && <>
+      <TableCell>{r.compare ? <>{formatValue(r.compare, r.evidence.ref)}{r.compareLabel && <small>{r.compareLabel}</small>}</> : "—"}</TableCell>
+      <TableCell>{change ?? "—"}</TableCell>
+    </>}
   </TableRow>;
 }
