@@ -13,7 +13,7 @@ const json = (body: unknown, status: number) => Response.json(body, { status, he
 
 /** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(financials|business-map|ai|library|reports)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
@@ -30,6 +30,12 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && /^(?:|find|facts|search|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?|wiki\/[A-Z][A-Z0-9.-]{0,11}|companies\/[A-Z][A-Z0-9.-]{0,11}|documents\/[a-f0-9]{64}(?:\/sections\/s[a-f0-9]{28})?)$/.test(route);
     const write = request.method === "POST" && /^(?:documents\/[a-f0-9]{64}\/rerun|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
+    if (!read && !write) return json({ error: "Not found" }, 404);
+  }
+  if (path[0] === "reports") {
+    const route = path.slice(1).join("/");
+    const read = request.method === "GET" && route === "";
+    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/regenerate$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "financials") {

@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/packages/web/src/ui/t
 import { runElapsed, runView } from './run-progress';
 import { ValuationInputs } from './valuation-inputs';
 import { CompanyUsage } from './company-usage';
+import { CompanyReports } from './company-reports';
 import { useOnReturn, usePageActive } from './admin-page';
 import { addressTicker } from './address-ticker';
 import './business-map-companies.css';
@@ -303,6 +304,7 @@ function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,foc
         <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
           {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</div></section>
       </div>
+      <CompanyReports ticker={c.ticker} onUnauthorized={onUnauthorized}/>
       <ValuationInputs ticker={c.ticker} onUnauthorized={onUnauthorized}/>
     </div></td></tr>}
   </tbody>;

@@ -47,6 +47,7 @@ const REPORTS_CTE = `WITH entries AS (
 export async function listAdminReports(env: AdminEnv, url: URL, now = Date.now()): Promise<ReportAdminPage> {
   const search = (url.searchParams.get("search") ?? "").trim().slice(0, 100);
   const status = url.searchParams.get("status") ?? "";
+  const ticker = url.searchParams.get("ticker");
   if (status && !["unreviewed", "reviewed", "processing", "failed", "pending"].includes(status)) throw new Error("INVALID_QUERY");
   let cursor: { date: string; ticker: string; accession: string } | null = null;
   const raw = url.searchParams.get("cursor");
@@ -58,6 +59,7 @@ export async function listAdminReports(env: AdminEnv, url: URL, now = Date.now()
   const clauses: string[] = []; const args: string[] = [lease, lease, lease];
   if (search) { clauses.push("(instr(lower(ticker), lower(?)) > 0 OR instr(lower(companyName), lower(?)) > 0)"); args.push(search, search); }
   if (status) { clauses.push("status = ?"); args.push(status); }
+  if (ticker) { clauses.push("ticker = ?"); args.push(ticker.toUpperCase().slice(0, 12)); }
   if (cursor) { clauses.push("(sortDate, ticker, accessionNumber) < (?, ?, ?)"); args.push(cursor.date, cursor.ticker, cursor.accession); }
   const rows = await env.DB!.prepare(`${REPORTS_CTE} SELECT * FROM hydrated ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
     ORDER BY sortDate DESC, ticker DESC, accessionNumber DESC LIMIT 41`).bind(...args).all<ReportAdminItem & { sortDate: string }>();

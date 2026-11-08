@@ -106,3 +106,16 @@ test("the admin proxy reads and saves a company's valuation inputs, with room fo
   assert.equal((await handleReportAdminProxy(new Request(url, { method: "POST", body: "{}" }), path, env)).status, 403);
   assert.deepEqual(seen, ["GET /admin/business-map/companies/ACME/valuation-inputs", "POST /admin/business-map/companies/ACME/valuation-inputs"]);
 });
+
+test("the admin proxy passes a company's filing list and a filing's report regeneration through, and nothing else under reports", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { const u = new URL(String(url)); seen.push(u.pathname + u.search); return Response.json({ ok: true }); } } };
+  const headers = { origin: "https://admin.example" };
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/reports?ticker=NET", { headers }), ["reports"], env)).status, 200);
+  const regenerate = ["reports", "NET", "0001477333-26-000061", "regenerate"];
+  assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${regenerate.join("/")}`, { method: "POST", body: "{}", headers }), regenerate, env)).status, 200);
+  for (const path of [["reports", "NET", "0001477333-26-000061", "review"], ["reports", "NET", "x", "regenerate"]]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path.join("/")}`, { method: "POST", body: "{}", headers }), path, env)).status, 404, path.join("/"));
+  }
+  assert.deepEqual(seen, ["/admin/reports?ticker=NET", "/admin/reports/NET/0001477333-26-000061/regenerate"]);
+});
