@@ -22,6 +22,8 @@ type RunRow = { kind: RunKind; id: string; params: string; created_at: number; s
 export type RunView = { kind: RunKind | null; id: string | null; status: RunStatus | null; step: string | null; updatedAt: string | null };
 const FINAL = new Set<RunStatus>(["complete", "errored", "terminated"]);
 const OUTPUT_LIMIT = 1024 * 1024;
+/** Longer than one invocation can live, so the wake set before a run only fires if that invocation died or hung. */
+const WATCHDOG_MS = 16 * 60_000;
 
 /**
  * One durable run on the Agents SDK: the task's params, its status and its step journal in this Agent's SQLite, and
@@ -31,7 +33,7 @@ const OUTPUT_LIMIT = 1024 * 1024;
 export class TaskRunner extends Agent<Env, RunView> {
   initialState: RunView = { kind: null, id: null, status: null, step: null, updatedAt: null };
   private readonly cache = new Map<string, StepRecord>();
-  private busy = false;
+  private busySince = 0;
   private rewake = false;
   private tables = false;
   /** The run's agent sessions: each recipe run (an item, a report, a valuation loop, a lens) is a Pi session here. */
@@ -97,6 +99,12 @@ export class TaskRunner extends Agent<Env, RunView> {
     return { status: row.status, ...(row.error ? { error: JSON.parse(row.error) } : {}), ...(row.output ? { output: JSON.parse(row.output) } : {}) };
   }
 
+  /** The run's state and what each of its agent sessions did, turn by turn. */
+  async report() {
+    const row = this.row();
+    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport() };
+  }
+
   async terminate(): Promise<void> {
     const row = this.row();
     if (!row || FINAL.has(row.status)) return;
@@ -124,10 +132,11 @@ export class TaskRunner extends Agent<Env, RunView> {
     const row = this.row();
     if (!row || FINAL.has(row.status)) return;
     // A wake that arrives while one runs (a session settled meanwhile) is taken up when that one ends.
-    if (this.busy) { this.rewake = true; return; }
-    this.busy = true;
+    if (this.busySince && Date.now() - this.busySince < WATCHDOG_MS) { this.rewake = true; return; }
+    this.busySince = Date.now();
     this.rewake = false;
     try {
+      await this.wake(Date.now() + WATCHDOG_MS);
       this.setStatus("running");
       const task = RUN_TASKS[row.kind];
       const env = this.taskEnv();
@@ -146,7 +155,7 @@ export class TaskRunner extends Agent<Env, RunView> {
         this.setStatus("errored", { error: JSON.stringify(outcome.error) });
         console.error(JSON.stringify({ event: "run-errored", kind: row.kind, id: row.id, error: outcome.error.message.slice(0, 500) }));
       }
-    } finally { this.busy = false; }
+    } finally { this.busySince = 0; }
   }
 
   private journal(): Journal {
