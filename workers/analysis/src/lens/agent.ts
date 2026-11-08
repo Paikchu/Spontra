@@ -11,7 +11,7 @@ import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime
 import { lensDocumentOf } from "../../../../shared/analysis-runtime/lens/legacy.ts";
 import { compileDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";
 import type { Ledger } from "../findings/ledger.ts";
-import { runAgentLoop, sequential, type LoopHost, type Recipe, type TurnRecord } from "../agent-loop.ts";
+import type { Recipe, TurnRecord } from "../recipe.ts";
 import { asObject, type AgentAct, type AgentMessage, type AgentTool } from "../tool-loop.ts";
 import { defineTool, schemasFor, type AnyTool, type ToolPolicy } from "../tools/registry.ts";
 
@@ -164,7 +164,6 @@ export type LensRunInput = {
   periodEnd: string;
   catalogue: LensCatalogueRow[];
   data: FindingData;
-  model: LensModel;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
   /** The harness's browser; unset (tests, no binding) leaves pictures unmeasured. */
   render?: PictureRenderer;
@@ -173,7 +172,7 @@ export type LensRunInput = {
 const list = (w: LensWarning[]) => w.map(x => `${x.where}: ${x.message}`);
 
 /**
- * The layout recipe for one finding, on the loop every agent shares (agent-loop.ts): the model proposes a document,
+ * The layout recipe for one finding, run as a Pi session (pi/host.ts): the model proposes a document,
  * the harness compiles it against the data and audits the layout, and the model reads the result until it finishes.
  * The last document that compiled without errors is the outcome; a finding that never gets one keeps its original chart.
  */
@@ -231,21 +230,6 @@ export const lensOpening = (input: LensRunInput): string => {
   return JSON.stringify({ subject, evidence: lensEvidence(input.resolved), catalogue: input.catalogue, starting: lensDocumentOf(finding, input.data, input.periodEnd), budget: { turns: LENS_BUDGET.turns } });
 };
 
-/** One finding's lens, run by the shared loop with every model turn a durable step (`<finding>-t<n>-act`). */
-export async function runLensAgent(input: LensRunInput): Promise<LensOutcome> {
-  const recipe = lensRecipe(input);
-  const state = recipe.open(input);
-  const turns: LensTurn[] = [];
-  const messages: AgentMessage[] = [{ role: "user", content: lensOpening(input) }];
-  const act: AgentAct = (stage, system, tools, msgs) => input.stage(`${stage}-act`, () => input.model(`lens-${stage.replace(/-t(\d+)$/, "-$1")}`, system, tools, msgs));
-  const host: LoopHost = {
-    reserve: async () => true, record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
-    signal: new AbortController().signal, now: () => 0, stage: input.stage,
-  };
-  const outcome = await runAgentLoop(recipe, input, state, messages, act, host);
-  return { id: input.finding.id, document: outcome.output, turns, warnings: state.accepted?.warnings ?? [] };
-}
-
 /** The figures behind a picture: each ref compiled alone over the asked periods, as the page would label them. */
 function readSeries(input: Pick<LensRunInput, "data" | "periodEnd">, args: Record<string, unknown>): string {
   const span = args.span === "fiscal_year" ? "fiscal_year" : args.span === "quarter" ? "quarter" : null;
@@ -263,11 +247,13 @@ function readSeries(input: Pick<LensRunInput, "data" | "periodEnd">, args: Recor
   return `${span} periods ending ${input.periodEnd}; text as the page writes it, [raw value] for scales:\n${lines.join("\n")}`;
 }
 
+/** Runs one finding's lens recipe: a Pi session in production (findings/workflow.ts), a scripted driver in tests. */
+export type LensRunner = (input: LensRunInput) => Promise<LensOutcome>;
 export type LensWriteInput = {
   publication: FindingsPublication;
   ledger: Ledger;
   data: FindingData;
-  model: LensModel;
+  run: LensRunner;
   version: string;
   now: string;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
@@ -281,7 +267,7 @@ export type LensWriteInput = {
 export async function writeLensDocuments(input: LensWriteInput): Promise<{ publication: FindingsPublication; trace: LensTrace }> {
   const { verified } = verifyFindings(input.publication, input.data);
   const catalogue = lensCatalogue(input.ledger, input.data, input.publication.periodEnd);
-  const outcomes = await Promise.allSettled(verified.map(f => runLensAgent({ finding: f, resolved: f.resolved, periodEnd: input.publication.periodEnd, catalogue, data: input.data, model: input.model, render: input.render, stage: (name, cb) => input.stage(`lens-${name}`, cb) })));
+  const outcomes = await Promise.allSettled(verified.map(f => input.run({ finding: f, resolved: f.resolved, periodEnd: input.publication.periodEnd, catalogue, data: input.data, render: input.render, stage: (name, cb) => input.stage(`lens-${name}`, cb) })));
   const results: LensOutcome[] = outcomes.map((o, i) => o.status === "fulfilled" ? o.value : { id: verified[i]!.id, document: null, turns: [], warnings: [`failed: ${o.reason instanceof Error ? o.reason.message : String(o.reason)}`] });
   const byId = new Map(results.map(r => [r.id, r]));
   const findings = input.publication.findings.map(f => { const doc = byId.get(f.id)?.document; return doc ? { ...f, lens: { type: "document" as const, document: doc } } : f; });

@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { DossierPublication } from "../../../../shared/analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
@@ -17,13 +16,14 @@ import { findingsInput } from "../findings/workflow.ts";
 import { readStoredFindings } from "../findings/read.ts";
 import { lensCatalogue } from "../lens/agent.ts";
 import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerSecModel, callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { sessionRunner, type SessionRunner } from "../pi/runs.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { SEC_MODEL_OUTPUT_TOKENS } from "../retry-policy.ts";
-import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
+import { analystRecipe, runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput, type AnalystSpec, type AnalystState } from "./agent.ts";
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
@@ -33,7 +33,7 @@ export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 /** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed errors at once. */
-export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void> };
+export type AnalystDeps = { model?: AnalystModel; run?: SessionRunner; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void>; runId?: string };
 /** A model provider outage: no researched finding got an answer. The run waits and tries again, longer each time. */
 const OUTAGE_WAITS_MS = [30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
 /** Model turns per UTC day across all companies; a cap, not a target. */
@@ -101,6 +101,12 @@ async function reserveTurn(env: AnalysisEnv, now: string): Promise<boolean> {
   return !!row;
 }
 
+/** One finding's session, rebuilt from its spec; each model call is reserved against the day's allowance. */
+export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promise<PiLoaded<AnalystState>> {
+  return { recipe: analystRecipe(spec, env), input: spec, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
+    ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: () => reserveTurn(env, new Date().toISOString()) };
+}
+
 /**
  * Whether a run met a model provider outage rather than a content problem: no researched finding got an answer. A
  * finding is unanswered when it failed, or when none of its turns got a usable reply (each reads as an invalid turn
@@ -130,17 +136,13 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const categories = [...new Set((await readLinks(db, { ticker: params.ticker }).catch(() => [])).filter(l => (l.status === "verified" || l.status === "confirmed") && l.industryCategory).map(l => l.industryCategory!))];
   const catalogue = lensCatalogue(input.ledger, data, input.findings.periodEnd);
   const tuning = { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "analyst" };
-  // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
   const model: AnalystModel = deps.model ?? {
-    act: async (stage, system, tools, messages) => {
-      try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { ...tuning, maxTokens: SEC_MODEL_OUTPUT_TOKENS }); }
-      catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
-    },
     judge: async (stage, system, payload) => {
       try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, tuning); }
       catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
     },
   };
+  const run = deps.run ?? sessionRunner(env, step);
   // Peers by business tags when the tags have paired the company, else by shared category.
   const comparable = comparablePeers(peers, params.ticker)?.filter(c => c.pair.tier !== "adjacent") ?? null;
   const peerTickers = comparable ? comparable.map(c => c.ticker) : peersOf(data, params.ticker);
@@ -155,7 +157,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     settled = await Promise.allSettled(verified.map(async f => {
       const plan = planFinding(f, data, peerTickers);
       if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
-      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], peerUnits, model, stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
+      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, record: input.findings.record ?? [], peerUnits, model, run, operationId: `${deps.runId ?? params.fingerprint.slice(0, 16)}:analyst-${prefix}${f.id}`, ...(deps.runId ? { runId: deps.runId } : {}), stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), now, background: background(f, previous, data, input.context) });
     }));
     const researched = settled.filter((_, k) => planFinding(verified[k]!, data, peerTickers).tier !== "light");
     const outage = providerOutage(researched);

@@ -11,7 +11,7 @@ const filing = (form: string, accessionNumber = "0001104659-26-065681"): SecFili
 const point = (unit: string) => ({ periodScope: "quarter", startDate: "2026-07-01", endDate: "2026-09-30", basis: "reported", unit, currency: "USD" });
 const step: WorkflowStepLike = { do: (_name, callback) => callback({ attempt: 1 }) };
 
-/** A workflow run over one filing; every operation records its name, and the manager stops the run after discovery. */
+/** A workflow run over one filing; every operation records its name, and the report session stops the run after discovery. */
 function run(form: string, units: [string, string]) {
   const calls: string[] = [], jobs: WorkflowJobUpdate[] = [];
   const target = filing(form);
@@ -27,7 +27,7 @@ function run(form: string, units: [string, string]) {
     finishDiscovery: async () => { calls.push("discovery-finish"); return { groundedDisclosures: 0 }; },
     summarizeEvent: async () => { calls.push("event-summary"); return {}; },
     publishEvent: async () => { calls.push("publish-event"); },
-    plan: async () => { calls.push("manager"); throw new Error("stop after discovery"); },
+    writeReport: async () => { calls.push("report"); throw new Error("stop after discovery"); },
   } as unknown as AnalysisOperations;
   return { calls, jobs, done: executeSecAnalysisWorkflow({ ticker: "NBIS", requestedBy: "scheduled", accessionNumber: target.accessionNumber }, "scheduled-NBIS-1", step, operations) };
 }
@@ -42,10 +42,10 @@ test("a filing whose history mixes units fails at the brief, before any discover
   assert.match(failure.errorDetail ?? "", /Conflicting history units for capex/);
 });
 
-test("a usable brief is built before discovery, and the run goes on to the manager", async () => {
+test("a usable brief is built before discovery, and the run goes on to the report session", async () => {
   const { calls, done } = run("20-F", ["USD", "USD"]);
   await done;
-  assert.deepEqual(calls, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "manager"]);
+  assert.deepEqual(calls, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "report"]);
 });
 
 test("each step a filing's job enters is recorded as the job's stage, with its detail and without the bookkeeping steps", async () => {
@@ -62,10 +62,10 @@ test("each step a filing's job enters is recorded as the job's stage, with its d
     buildBrief: async () => ({ history: { series: [] } }),
     scanDisclosures: async (_f: SecFiling, _r: unknown, index: number) => ({ index, start: 0, end: 1, status: "complete", disclosures: [], rejected: 0 }),
     finishDiscovery: async () => ({ groundedDisclosures: 1 }),
-    plan: async () => { throw new Error("stop after discovery"); },
+    writeReport: async (_f: SecFiling, _r: unknown, _c: unknown, _b: unknown, _x: unknown, s: WorkflowStepLike) => s.do("report:0001104659-26-065681:inputs", async () => { throw new Error("stop after discovery"); }),
   } as unknown as AnalysisOperations;
   await executeSecAnalysisWorkflow({ ticker: "NBIS", requestedBy: "scheduled", accessionNumber: target.accessionNumber }, "scheduled-NBIS-stages", step, operations);
-  assert.deepEqual(stages, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "manager"]);
+  assert.deepEqual(stages, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "report:inputs"]);
 });
 
 test("an exhibit-only amendment is published from the filing and does not enter the reader report", async () => {

@@ -15,8 +15,11 @@ export interface BusinessResearchTools {
   registerSearch(batch: NativeSearch): BusinessToolResult;
   readWeb(url: string): Promise<BusinessToolResult>;
   sources(): BusinessSource[];
-  restore(sources: BusinessSource[], result: BusinessToolResult): void;
 }
+
+/** What the tools have found: the citable sources, the URLs searches returned, and the reports the run may read. */
+export type ResearchMemory = { sources: Map<string, BusinessSource>; searchHits: Map<string, { id: string; snippet: string }>; available: AvailableSecReport[] | null };
+export const researchMemory = (available: AvailableSecReport[] | null = null): ResearchMemory => ({ sources: new Map(), searchHits: new Map(), available });
 
 /** SEC reports are already published and verified; the model never reads unpublished drafts. */
 export function createBusinessResearchTools(input: {
@@ -25,16 +28,14 @@ export function createBusinessResearchTools(input: {
   ticker: string;
   reportDate: string;
   now: string;
-}): BusinessResearchTools {
+}, memory: ResearchMemory = researchMemory()): BusinessResearchTools {
   const reports = new D1SecRepository(input.database);
-  const sources = new Map<string, BusinessSource>();
-  const searchHits = new Map<string, { id: string; snippet: string }>();
+  const { sources, searchHits } = memory;
   const scope = { scope: `spontra:business:${input.ticker}`, maxAgeMs: 6 * 60 * 60_000 };
-  let available: AvailableSecReport[] | null = null;
   const resultSources = () => [...sources.values()];
   return {
     async availableReports() {
-      if (available) return available;
+      if (memory.available) return memory.available;
       const rows = await input.database.prepare(`
         SELECT r.period_id AS periodId, p.end_date AS periodEnd, p.period_scope AS periodScope, r.report_version AS reportVersion
         FROM sec_published_reports r JOIN sec_periods p ON r.period_id = p.period_id AND r.ticker = p.ticker
@@ -43,8 +44,8 @@ export function createBusinessResearchTools(input: {
       `).bind(input.ticker, input.reportDate).all<AvailableSecReport>();
       const byPeriod = new Map<string, AvailableSecReport>();
       for (const row of rows.results) if (!byPeriod.has(row.periodId)) byPeriod.set(row.periodId, row);
-      available = [...byPeriod.values()].slice(0, 4);
-      return available;
+      memory.available = [...byPeriod.values()].slice(0, 4);
+      return memory.available;
     },
     async readSecReport(periodId) {
       const frozen = (await this.availableReports()).find((report) => report.periodId === periodId);
@@ -114,13 +115,6 @@ export function createBusinessResearchTools(input: {
       return { sourceId: hit.id, observation: { sourceId: hit.id, url, text: result.data.text.slice(0, 14_000), completeness: result.data.completeness } };
     },
     sources: resultSources,
-    restore(snapshot, result) {
-      // A Workflow can replay a completed tool step without invoking its callback. Restore both
-      // citation provenance and discovered URLs before the next model/tool turn.
-      for (const source of snapshot) sources.set(source.id, source);
-      const observation = result.observation as { hits?: Array<{ url: string; sourceId: string; snippet: string }> };
-      for (const hit of observation.hits ?? []) searchHits.set(hit.url, { id: hit.sourceId, snippet: hit.snippet });
-    },
   };
 }
 

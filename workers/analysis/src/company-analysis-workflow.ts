@@ -1,5 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
-import type { WorkflowStepConfig } from "cloudflare:workers";
+import type { RunStep, StepConfig as WorkflowStepConfig } from "./durable-runs/engine.ts";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
@@ -11,12 +10,14 @@ import { D1CompanyAnalysisRepository, type CompanyAnalysisRunUpdate } from "./co
 import { sha256 } from "./sha256.ts";
 import { hashString } from "./sec/analysis.ts";
 import { assertFeatureTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
-import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
+import { businessRecipe, runBusinessModelAgent, type BusinessSpec, type BusinessState } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
 import { companyName } from "./catalog/issuer-directory.ts";
 import { researchSearch } from "./web-search/research-search.ts";
-import { callWorkerSecModel, callWorkerToolModel } from "./operations.ts";
+import { callWorkerSecModel } from "./operations.ts";
+import type { PiLoaded } from "./pi/host.ts";
+import { sessionRunner } from "./pi/runs.ts";
 import type { AnalysisEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
 import { FUNDAMENTALS_STALE_AFTER_MS } from "../../../shared/analysis-contract/fundamentals.ts";
@@ -27,7 +28,14 @@ export type CompanyWorkflowStep = {
   do<T>(name: string, callback: () => Promise<T>): Promise<T>;
   do<T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
   sleep(name: string, duration: number): Promise<void>;
+  waitFor?: RunStep["waitFor"];
 };
+
+/** The research session, rebuilt from its spec: the database and the web reader come from the env. */
+export async function businessLoader(spec: BusinessSpec, env: AnalysisEnv): Promise<PiLoaded<BusinessState>> {
+  return { recipe: businessRecipe(spec, { database: requireDb(env), search: researchSearch(env) }), input: spec, model: modelFor(env, "company-analysis"),
+    effort: reasoningFor(env, "company-analysis"), ledger: { kind: "company-analysis", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) } };
+}
 
 /** Each model turn is a durable checkpoint; one logical Agent session can exceed a single step. */
 export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
@@ -107,7 +115,8 @@ export async function executeCompanyAnalysisWorkflow(
       ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
       model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker, runId: workflowInstanceId, kind: "company-analysis" }),
-      act: (stage, system, tools, messages) => callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker, runId: workflowInstanceId, kind: "company-analysis" }),
+      run: sessionRunner(env, { do: (name, callback) => step.do(name, COMPANY_AGENT_MODEL_STEP_CONFIG, callback), ...(step.waitFor ? { waitFor: step.waitFor.bind(step) } : {}) }),
+      operationId: `${workflowInstanceId}:business`, runId: workflowInstanceId,
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {

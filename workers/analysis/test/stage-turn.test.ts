@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { verifyFindings } from "../../../shared/analysis-runtime/findings.ts";
 import { DEFAULT_SCENE_ROWS } from "../../../shared/analysis-contract/scene.ts";
-import { runAgentLoop, sequential, type LoopHost } from "../src/agent-loop.ts";
+import { runAgentLoop, sequential, type LoopHost } from "./support/recipe-driver.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";
 import { issueReader, readerOf } from "../src/stage/identity.ts";

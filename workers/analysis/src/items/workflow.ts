@@ -1,17 +1,17 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import type { CompanyEvent, EventsPublication } from "../../../../shared/analysis-contract/events.ts";
 import type { PublicFilingDigestPage } from "../../../../shared/analysis-contract/filings.ts";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
 import type { ItemKind } from "../../../../shared/analysis-contract/item-analysis.ts";
 import { readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
-import { runAgentLoop, sequential, type LoopHost, type TurnRecord } from "../agent-loop.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { runRecipeSession } from "../pi/runs.ts";
+import type { ComposeState } from "../compose/tools.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { requireDb } from "../core.ts";
 import { eventsCacheKey } from "../events/read.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { listLibraryDocuments } from "../filing-library/store.ts";
-import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import type { AnalysisEnv } from "../operations.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -19,8 +19,7 @@ import type { FilingBlock } from "../sec/analysis.ts";
 import { prepareSecFiling, selectEventBlocks } from "../sec/pipeline.ts";
 import { archivedFiling, archiveHolds } from "../sec-archive/index.ts";
 import { getPublicFilingPage } from "../sec/public-api.ts";
-import { loadStageData } from "../stage/data.ts";
-import type { AgentMessage, AgentReply } from "../tool-loop.ts";
+import { loadStageData, type StageData } from "../stage/data.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { itemOpening, itemPeriodEnd, itemRecipe, itemSubjects, type ItemInput, type ItemSubject } from "./recipe.ts";
 import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from "./read.ts";
@@ -118,6 +117,25 @@ async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubjec
 
 type ItemOutcome = { id: string; kind: ItemKind; written: boolean; reason: string; turns: number };
 
+/** What one row's Pi session is rebuilt from; the company's facts are read again. */
+type ItemSpec = { ticker: string; subject: ItemSubject; now: string; prepared: Awaited<ReturnType<typeof prepareItem>>; runId: string };
+
+/** The facts a row's analysis reads: the stage data with the events publication Form 4 refs resolve from. */
+async function itemFacts(env: AnalysisEnv, ticker: string): Promise<StageData | null> {
+  const data = await loadStageData(env, ticker, { findings: false });
+  if (!data) return null;
+  const events = await new D1SecRepository(requireDb(env)).getCache<unknown>(eventsCacheKey(ticker)).then(s => s ? readEventsPublication(s.payload, ticker) : null) as EventsPublication | null;
+  return { ...data, data: { ...data.data, events } };
+}
+
+/** Rebuilds a row's recipe from its spec, on start and after an eviction. */
+export async function itemsLoader(spec: ItemSpec, env: AnalysisEnv): Promise<PiLoaded<ComposeState>> {
+  const facts = await itemFacts(env, spec.ticker);
+  if (!facts) throw new Error(`items: no stage data for ${spec.ticker}`);
+  const input: ItemInput = { env, data: facts, subject: spec.subject, periodEnd: itemPeriodEnd(spec.subject, facts), now: spec.now, ...spec.prepared };
+  return { recipe: itemRecipe(input), input, model: modelFor(env, "items"), effort: reasoningFor(env, "items"), ledger: { kind: "items", ticker: spec.ticker, runId: spec.runId } };
+}
+
 /**
  * One company's run: every due row without an analysis at this version gets one, written by the item recipe on the
  * shared loop with every model turn and outside read a durable step; each analysis is stored as soon as it is written,
@@ -136,40 +154,32 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
     return rows.filter(r => r.v === ITEM_VERSIONS[kinds.get(r.k)!]).map(r => r.k);
   });
   const pending = plan.subjects.filter(s => !written.includes(itemAnalysisKey(ticker, s.id)));
-  const data = pending.length ? await loadStageData(env, ticker, { findings: false }) : null;
+  // The facts are read inside steps only, so the wakes that check on the sessions do not read them again.
+  let factsLoad: Promise<StageData | null> | undefined;
+  const facts = () => (factsLoad ??= itemFacts(env, ticker));
+  const hasData = pending.length ? await step.do("items-data", async () => !!await facts()) : false;
   const outcomes: ItemOutcome[] = [];
-  if (data) {
-    // Form 4 figures are cited through `{ event }` refs, which the verifier resolves from the events publication.
-    const events = await new D1SecRepository(db).getCache<unknown>(eventsCacheKey(ticker)).then(s => s ? readEventsPublication(s.payload, ticker) : null) as EventsPublication | null;
-    const facts = { ...data, data: { ...data.data, events } };
-    const act = (stage: string, system: string, tools: unknown[], messages: AgentMessage[]): Promise<AgentReply> => step.do(`${stage}-act`, async () => {
-      try {
-        return await callWorkerToolModel(env, fetch, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelFor(env, "items"), 4 * 60_000,
-          { reasoning: reasoningFor(env, "items"), ticker, kind: "items", runId });
-      } catch (error) {
-        if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) };
-        throw error;
-      }
-    });
+  if (hasData) {
     const writeItem = async (subject: ItemSubject): Promise<ItemOutcome> => {
       const prepared = await step.do(`item-${subject.id}-prepare`, () => prepareItem(env, ticker, subject));
-      const input: ItemInput = { env, data: facts, subject, periodEnd: itemPeriodEnd(subject, facts), now, ...prepared };
-      const recipe = itemRecipe(input);
-      const state = recipe.open(input);
-      const messages: AgentMessage[] = [{ role: "user", content: itemOpening(input, state) }];
-      const turns: TurnRecord[] = [];
-      const host: LoopHost = {
-        reserve: async () => true, record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
-        stage: (name, work) => step.do(name, work), signal: new AbortController().signal, now: () => Date.parse(now),
-      };
-      const outcome = await runAgentLoop(recipe, input, state, messages, act, host);
+      const { opening, periodEnd } = await step.do(`item-${subject.id}-open`, async () => {
+        const data = await facts();
+        if (!data) throw new Error(`items: no stage data for ${ticker}`);
+        const input: ItemInput = { env, data, subject, periodEnd: itemPeriodEnd(subject, data), now, ...prepared };
+        return { opening: itemOpening(input, itemRecipe(input).open(input)), periodEnd: input.periodEnd };
+      });
+      // Each row's analysis is one Pi session of this run's Agent, rebuilt from its spec after an eviction.
+      const spec: ItemSpec = { ticker, subject, now, prepared, runId };
+      const outcome = await runRecipeSession<ReturnType<ReturnType<typeof itemRecipe>["settle"]>, ComposeState>(env, step, "items", spec, opening, `${runId}:item-${subject.id}`);
       const composed = outcome.output;
+      const turns = outcome.trail;
       if (composed) await step.do(`item-${subject.id}-save`, async () => {
-        const record: StoredItem = { schemaVersion: "item-analysis.v1", ticker, itemId: subject.id, itemKind: subject.kind, periodEnd: input.periodEnd, generatedAt: now, version: ITEM_VERSIONS[subject.kind], ...composed, trace: turns };
+        const record: StoredItem = { schemaVersion: "item-analysis.v1", ticker, itemId: subject.id, itemKind: subject.kind, periodEnd, generatedAt: now, version: ITEM_VERSIONS[subject.kind], ...composed, trace: turns };
         await new D1SecRepository(db).setCache(itemAnalysisKey(ticker, subject.id), record, now);
         return true;
       });
       // A withheld analysis names what its checks refused, so the index says why the row kept the filing digest.
+      const state = outcome.state;
       const refused = state.withheld && state.draft ? ` ${state.draft.errors.join("; ")}` : "";
       return { id: subject.id, kind: subject.kind, written: !!composed, reason: `${outcome.reason}:${outcome.turns}${refused}`.slice(0, 600), turns: turns.length };
     };

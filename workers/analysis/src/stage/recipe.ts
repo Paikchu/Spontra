@@ -6,7 +6,7 @@ import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { assignIds, readSceneDraft } from "../../../../shared/analysis-runtime/scene/schema.ts";
 import { describeScene, verifyScene, type VerifiedScene } from "../../../../shared/analysis-runtime/scene/verify.ts";
-import type { Recipe } from "../agent-loop.ts";
+import type { Recipe } from "../recipe.ts";
 import { lensEvidence } from "../lens/agent.ts";
 import { defineTool, type AnyTool, type ToolPolicy } from "../tools/registry.ts";
 

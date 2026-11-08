@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
@@ -7,7 +6,7 @@ import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { companyName as listedName } from "../catalog/issuer-directory.ts";
 import { assertFeatureTicker, requireDb } from "../core.ts";
-import { callWorkerSecModel, callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { buildHighlightTable, type Ledger } from "./ledger.ts";
@@ -16,9 +15,9 @@ import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
-import { writeLensDocuments, type LensModel, type LensTrace } from "../lens/agent.ts";
+import { writeLensDocuments, type LensRunner, type LensTrace } from "../lens/agent.ts";
+import { piLensRunner } from "../lens/pi.ts";
 import { browserRenderer } from "../lens/draw.ts";
-import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
@@ -27,7 +26,7 @@ export const FINDINGS_VERSION = "findings.writer.v11";
 /** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
 export const LENS_VERSION = "lens.agent.v6";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
-export type FindingsDeps = { model?: FindingsModel; lens?: LensModel; fetcher?: typeof fetch };
+export type FindingsDeps = { model?: FindingsModel; runLens?: LensRunner; fetcher?: typeof fetch };
 
 /** The model reasons at length before it writes, and the provider counts that against the output limit; the default limit leaves room. */
 const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
@@ -107,13 +106,9 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, filings: input.filings, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage,
   });
-  // Each verified finding's lens document, composed by the agent at low reasoning through its tools; a broken or stalled
-  // reply is its turn gone wrong, not a failed step. HTTP failures and timeouts still retry the step.
-  const lensModel: LensModel = deps.lens ?? (async (stage, system, tools, messages) => {
-    try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelFor(env, "lens"), 3 * 60_000, { reasoning: reasoningFor(env, "lens"), ticker: params.ticker }); }
-    catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
-  });
-  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage, render: env.BROWSER ? browserRenderer(env.BROWSER) : undefined }).catch(() => null) : null;
+  // Each verified finding's lens document, composed by the agent at low reasoning through its tools, one Pi session each.
+  const runLens = deps.runLens ?? piLensRunner(env, step, params.ticker);
+  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, run: runLens, version: LENS_VERSION, now, stage, render: env.BROWSER ? browserRenderer(env.BROWSER) : undefined }).catch(() => null) : null;
   const outcome = lensed ? { ...draft, publication: lensed.publication } : draft;
   const lensTrace: LensTrace | null = lensed?.trace ?? null;
   // The headline figures of each statement view for this report; a failed call publishes the findings without them.

@@ -1,26 +1,40 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { getAgentByName } from "agents";
 import type { UserReport } from "../../../../shared/analysis-contract/user-report.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
-import { runAgentLoop, sequential, type LoopHost } from "../agent-loop.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { runRecipeSession } from "../pi/runs.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
-import type { AgentMessage, AgentReply } from "../tool-loop.ts";
+import type { AnalysisEnv } from "../operations.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import type { StageAgent } from "./agent.ts";
 import { refund, reserve } from "./budget.ts";
 import { loadStageData } from "./data.ts";
 import { sha256 } from "../sha256.ts";
-import { reportDocuments, reportOpening, reportRecipe, type ReportInput } from "./report.ts";
+import { reportDocuments, reportOpening, reportRecipe, type ReportInput, type ReportState } from "./report.ts";
 
 export type ReportParams = { userId: string; address: string | null; conversationId: string; ticker: string; question: string; locale: Locale };
 export type ReportOutcome = { runId: string; reportId: string | null; reason: string };
+/** What the report's Pi session is rebuilt from; the stage data and the library's documents are read again. */
+type ReportSpec = { params: ReportParams; now: string; runId: string; userHash: string };
+
+/** Rebuilds the report recipe from its spec; each model call is reserved against the reader's report allowance. */
+export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<PiLoaded<ReportState>> {
+  const { params } = spec;
+  const data = await loadStageData(env, params.ticker);
+  if (!data) throw new Error(`report: no stage data for ${params.ticker}`);
+  const { documents, earlierAvailable } = await reportDocuments(env, params.ticker, data.periodEnd);
+  const input: ReportInput = { env, data, question: params.question, locale: params.locale, documents, now: spec.now, earlierAvailable };
+  return {
+    recipe: reportRecipe(input), input, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
+    ledger: { kind: "stage-report", ticker: params.ticker, runId: spec.runId, userHash: spec.userHash, conversationId: params.conversationId },
+    reserve: async () => (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address })).ok,
+  };
+}
 type StageEnv = AnalysisEnv & { StageAgent?: DurableObjectNamespace };
 
 /**
- * One reader's report: the report recipe run by the shared loop with every model
- * call and every outside read a durable step, so a restart replays what was done instead of paying for it again. The
+ * One reader's report: the report recipe run as a Pi session of this run's Agent, which checkpoints every model
+ * call and tool call, so a restart continues what was done instead of paying for it again. The
  * report is saved under the run's id and the reader's conversation is told, as the last two steps.
  */
 export async function executeReportWorkflow(params: ReportParams, steps: WorkflowStepLike, env: StageEnv, runId: string): Promise<ReportOutcome> {
@@ -44,34 +58,14 @@ export async function executeReportWorkflow(params: ReportParams, steps: Workflo
     await tell(outcome);
     return outcome;
   };
-  const data = await loadStageData(env, params.ticker);
-  if (!data) return finish(null, "no-data");
+  // Journalled, so the wakes that check on the session do not read the stage data and documents again.
+  const ready = await steps.do("report-data", async () => !!await loadStageData(env, params.ticker));
+  if (!ready) return finish(null, "no-data");
   const now = await steps.do("report-time", async () => new Date().toISOString());
-  const { documents, earlierAvailable } = await reportDocuments(env, params.ticker, data.periodEnd);
-  const input: ReportInput = { env, data, question: params.question, locale: params.locale, documents, now, earlierAvailable };
-  const recipe = reportRecipe(input);
-  const state = recipe.open(input);
-  const messages: AgentMessage[] = [{ role: "user", content: reportOpening(input) }];
   const userHash = await sha256(params.userId);
-  let turn = 0;
-  const act = (stage: string, system: string, tools: unknown[], msgs: AgentMessage[]): Promise<AgentReply> => steps.do(`${stage}-act`, async () => {
-    try {
-      return await callWorkerToolModel(env, fetch, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: msgs as Anthropic.Beta.BetaMessageParam[] }, modelFor(env, "analyst"), 4 * 60_000,
-        { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "stage-report", runId, userHash, conversationId: params.conversationId });
-    } catch (error) {
-      if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) };
-      throw error;
-    }
-  });
-  const host: LoopHost = {
-    reserve: () => { turn++; return steps.do(`report-reserve-${turn}`, async () => (await reserve(db, "stage-report-calls", { reader: params.userId, address: params.address })).ok); },
-    record: () => {},
-    execute: (_t, calls, run) => sequential(calls, run),
-    stage: (name, work) => steps.do(name, work),
-    signal: new AbortController().signal,
-    now: () => Date.parse(now),
-  };
-  const outcome = await runAgentLoop(recipe, input, state, messages, act, host);
+  const spec: ReportSpec = { params, now, runId, userHash };
+  const opening = await steps.do("report-opening", async () => reportOpening((await reportLoader(spec, env)).input as ReportInput));
+  const outcome = await runRecipeSession<UserReport | null>(env, steps, "report", spec, opening, `${runId}:report`);
   const report = outcome.output;
   if (!report) return finish(null, `${outcome.reason}:${outcome.turns}`);
   await steps.do("report-save", async () => {

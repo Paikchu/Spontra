@@ -1,44 +1,14 @@
-import { nativeSearches, NATIVE_SEARCH_INSTRUCTION } from "./web-search/native.ts";
-import { CALLS_PER_TURN, FAILED_REPLIES, replyFailure, replyText, toolCalls, type AgentAct, type AgentBlock, type AgentMessage, type ToolCall } from "./tool-loop.ts";
-import { resultBlock, runTool, schemasFor, type AnyTool, type ToolOutcome, type ToolPolicy } from "./tools/registry.ts";
-
 /**
- * One agent's loop, shared by every recipe: the model replies, the harness runs the
- * calls it makes through the tool pipeline, and the results go back until a terminal tool settles the run or the
- * budget runs out. The exchange only grows: each reply goes back exactly as it came, thinking included.
+ * A scripted driver for recipe tests: the loop the recipes ran on before Pi, with the model replaced by the test's
+ * replies. Production runs every recipe as a Pi session (src/pi/host.ts); this exercises a recipe's tools, policy and
+ * settlement without a Durable Object.
  */
-export type Recipe<I, O, S> = {
-  id: string;
-  budget: { turns: number; wallMs: number };
-  system(input: I): string;
-  open(input: I): S;
-  tools(state: S): AnyTool<S>[];
-  policy: ToolPolicy;
-  /** True once a terminal tool has settled the run. */
-  settled(state: S): boolean;
-  settle(state: S, reason: "finished" | "budget" | "failed" | "interrupted" | "cancelled"): O;
-  /** What the model is told when a reply calls no tool. */
-  nudge: string;
-};
+import { nativeSearches, NATIVE_SEARCH_INSTRUCTION } from "../../src/web-search/native.ts";
+import { CALLS_PER_TURN, FAILED_REPLIES, replyFailure, replyText, toolCalls, type AgentAct, type AgentBlock, type AgentMessage, type ToolCall } from "../../src/tool-loop.ts";
+import { resultBlock, runTool, schemasFor, type AnyTool, type ToolOutcome, type ToolPolicy } from "../../src/tools/registry.ts";
 
-export type TurnRecord = { turn: number; thought: string; action: string; input: string; observation: string };
-
-/** Where the loop's effects go: the per-turn allowance, the trail, and how calls run. */
-export type LoopHost = {
-  /** Reserves one model call against the daily allowances; false ends the run. */
-  reserve(): Promise<boolean>;
-  record(turn: TurnRecord): void;
-  /** Runs one turn's calls; the stage runs safe calls together, a Workflow one durable step each. */
-  execute(turn: number, calls: ToolCall[], run: (call: ToolCall) => Promise<ToolOutcome>): Promise<ToolOutcome[]>;
-  /** Called with a reply's first tool name as soon as the stream shows it (the stage's waiting state). */
-  onToolStart?(name: string): void;
-  signal: AbortSignal;
-  now(): number;
-  /** Durable steps for outside work; unset runs the work directly. */
-  stage?<T>(name: string, work: () => Promise<T>): Promise<T>;
-};
-
-export type LoopOutcome<O> = { output: O; reason: "finished" | "budget" | "failed" | "interrupted" | "cancelled"; turns: number; asked: string | null };
+export type { Recipe, TurnRecord, LoopHost, LoopOutcome } from "../../src/recipe.ts";
+import { defaultBudgetLine, type Recipe, type LoopHost, type LoopOutcome } from "../../src/recipe.ts";
 
 /**
  * Runs the recipe over `messages`, which the caller owns: the stage keeps one array across a conversation, a
@@ -56,6 +26,7 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
     if (host.now() - started > recipe.budget.wallMs) return finish("budget");
     if (!await host.reserve()) return finish("budget");
     turn++;
+    recipe.onTurn?.(state, turn);
     const reply = await act(`${recipe.id}-t${turn}`, system, schemasFor(tools, recipe.policy, state), messages);
     const failure = replyFailure(reply);
     if (failure !== null || "error" in reply) {
@@ -84,14 +55,15 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
     }
     quiet = 0;
     host.onToolStart?.(calls[0]!.name);
-    const left = recipe.budget.turns - turn;
-    const budgetLine = `Budget left: ${left} turn${left === 1 ? "" : "s"}.${left <= 1 ? " Finish now with what you have." : ""}`;
     const runnable = calls.slice(0, CALLS_PER_TURN);
     const outcomes = await host.execute(turn, runnable, call => {
       const index = runnable.indexOf(call);
       const stage = <T>(name: string, work: () => Promise<T>) => host.stage ? host.stage(`${recipe.id}-t${turn}-c${index}-${name}`, work) : work();
       return runTool(tools, recipe.policy, call, { state, signal: host.signal, recipe: recipe.id, stage });
     });
+    // Written after the calls ran, as the Pi host writes it, so it counts what they spent.
+    const left = recipe.budget.turns - turn;
+    const budgetLine = recipe.budgetLine?.(state, left) ?? defaultBudgetLine(left);
     const results: AgentBlock[] = [];
     let asked: string | null = null;
     calls.forEach((call, i) => {
@@ -114,3 +86,24 @@ export const sequential = async (calls: ToolCall[], run: (call: ToolCall) => Pro
   for (const call of calls) out.push(await run(call));
   return out;
 };
+
+/**
+ * A `SessionRunner` on this driver: the session's loader rebuilds the recipe from its spec, as the Pi host does, and
+ * the test's replies stand in for the model.
+ */
+export function scriptedRunner(load: (kind: string, spec: unknown) => Promise<import("../../src/pi/host.ts").PiLoaded>, act: AgentAct): import("../../src/pi/runs.ts").SessionRunner {
+  return async <O, S>(kind: string, spec: unknown, opening: string) => {
+    const loaded = await load(kind, spec);
+    const state = loaded.recipe.open(loaded.input);
+    loaded.hydrate?.(state);
+    const trail: import("../../src/recipe.ts").TurnRecord[] = [];
+    let capped = false;
+    const host: LoopHost = {
+      reserve: async () => { if (!loaded.reserve || await loaded.reserve(state)) return true; capped = true; return false; },
+      record: (entry) => { trail.push(entry); loaded.record?.(entry); }, execute: (_t, calls, run) => sequential(calls, run),
+      signal: new AbortController().signal, now: () => 0,
+    };
+    const outcome = await runAgentLoop(loaded.recipe, loaded.input, state, [{ role: "user", content: opening }], act, host);
+    return { ...outcome, output: outcome.output as O, capped, trail, state: state as S };
+  };
+}

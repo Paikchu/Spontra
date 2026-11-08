@@ -1,5 +1,5 @@
 import type { ItemAnalysis, ItemAnalysisResponse, ItemKind } from "../../../../shared/analysis-contract/item-analysis.ts";
-import type { TurnRecord } from "../agent-loop.ts";
+import type { TurnRecord } from "../recipe.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";

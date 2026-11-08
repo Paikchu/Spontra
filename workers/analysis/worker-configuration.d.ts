@@ -26,27 +26,12 @@ interface __BaseEnv_Env {
 	TRANSLATION_ENABLED: "true";
 	DEEPSEEK_API_KEY: string;
 	StageAgent: DurableObjectNamespace<import("./src/index").StageAgent>;
-	GUIDANCE_WORKFLOW: Workflow<Parameters<import("./src/index").GuidanceWorkflow['run']>[0]['payload']>;
-	BUSINESS_EXPLAINER_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessExplainerWorkflow['run']>[0]['payload']>;
-	BUSINESS_TREE_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessTreeWorkflow['run']>[0]['payload']>;
-	VALUATION_WORKFLOW: Workflow<Parameters<import("./src/index").ValuationWorkflow['run']>[0]['payload']>;
-	LIBRARY_CARDS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryCardsWorkflow['run']>[0]['payload']>;
-	LIBRARY_LINKS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryLinksWorkflow['run']>[0]['payload']>;
-	BUSINESS_TAGS_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessTagsWorkflow['run']>[0]['payload']>;
-	TRANSLATE_WORKFLOW: Workflow<Parameters<import("./src/index").TranslateWorkflow['run']>[0]['payload']>;
-	ANALYST_WORKFLOW: Workflow<Parameters<import("./src/index").AnalystWorkflow['run']>[0]['payload']>;
-	CHECKUP_WORKFLOW: Workflow<Parameters<import("./src/index").CheckupWorkflow['run']>[0]['payload']>;
-	FINDINGS_WORKFLOW: Workflow<Parameters<import("./src/index").FindingsWorkflow['run']>[0]['payload']>;
-	ITEMS_WORKFLOW: Workflow<Parameters<import("./src/index").ItemsWorkflow['run']>[0]['payload']>;
-	SEC_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").SecAnalysisWorkflow['run']>[0]['payload']>;
-	SEC_MEMORY_WORKFLOW: Workflow<Parameters<import("./src/index").SecMemoryWorkflow['run']>[0]['payload']>;
-	COMPANY_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").CompanyAnalysisWorkflow['run']>[0]['payload']>;
-	REPORT_WORKFLOW: Workflow<Parameters<import("./src/index").ReportWorkflow['run']>[0]['payload']>;
+	TASK_RUNS: DurableObjectNamespace<import("./src/index").TaskRunner>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "StageAgent";
+		durableNamespaces: "StageAgent" | "TaskRunner";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

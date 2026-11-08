@@ -422,8 +422,8 @@ test("depreciation and stock compensation fall back to the SEC series where the 
 
 import { earlierMaterial, noteFigures, noteIssues, verifyNote } from "../../../shared/analysis-runtime/checkup-notes.ts";
 import type { FindingMaterial, FindingPassage } from "../../../shared/analysis-contract/findings.ts";
-import { runNote, NOTE_TOOLS } from "../src/checkup/agent.ts";
-import type { AnalysisEnv } from "../src/operations.ts";
+import { noteRecipe, runNote, NOTE_TOOLS, type NoteSpec } from "../src/checkup/agent.ts";
+import { scriptedRunner } from "./support/recipe-driver.ts";
 
 const capexMetric = () => assessStatements(standard, PERIOD).dimensions.flatMap(d => d.metrics).find(m => m.id === "capex-to-depreciation")!;
 const capexFlags = () => assessStatements(standard, PERIOD).flags.filter(f => f.metricId === "capex-to-depreciation");
@@ -466,10 +466,11 @@ test("the page shows only the paragraphs whose numbers hold and the quotes found
 test("the writer's finish is held to the same check, and a model that never reads gets no note", async () => {
   assert.deepEqual(NOTE_TOOLS.map(t => t.name), ["read_filing_analysis", "finish"]);
   let calls = 0;
+  const run = scriptedRunner(async (_kind, spec) => ({ recipe: noteRecipe(spec as NoteSpec, undefined as unknown as D1Database), input: spec, model: "m", effort: "low", ledger: { kind: "checkup" } }),
+    async () => ({ content: [{ type: "tool_use", id: `t${++calls}`, name: "finish", input: { paragraphs: [{ text: goodText, sourceIds: ["m1"] }], quotes: [] } }], stopReason: "tool_use" }));
   const outcome = await runNote({
-    env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", metric: capexMetric(), flags: capexFlags(), data: standard, documents: [],
-    act: async () => ({ content: [{ type: "tool_use", id: `t${++calls}`, name: "finish", input: { paragraphs: [{ text: goodText, sourceIds: ["m1"] }], quotes: [] } }], stopReason: "tool_use" }),
-    stage: (_, cb) => cb(), reserveTurn: async () => true, budget: { turns: 3, reads: 1 },
+    db: undefined as unknown as D1Database, ticker: "TEST", metric: capexMetric(), flags: capexFlags(), data: standard, run, operationId: "note",
+    stage: (_, cb) => cb(), budget: { turns: 3, reads: 1 },
   });
   assert.equal(outcome.note, null);
   assert.equal(calls, 3);

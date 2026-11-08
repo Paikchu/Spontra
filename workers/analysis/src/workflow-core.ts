@@ -1,13 +1,8 @@
-import type { WorkflowStepContext } from "cloudflare:workers";
-import type { EditorialIssue } from "./sec/editorial.ts";
+import type { StepContext } from "./durable-runs/engine.ts";
 import { DISCOVERY_BUDGET_WARNING, type DiscoveryChunk } from "./sec/discovery.ts";
 import {
-  MAX_REPAIR_NODES_PER_ROUND,
-  MAX_REPAIR_ROUNDS,
   buildSecAnalysisBrief,
   SEC_ANALYSIS_SCHEMA_VERSION,
-  unresolvedFingerprint,
-  type ManagerRepairTask,
   type ManagerReview,
   type SecAnalysisBrief,
 } from "./sec/analysis.ts";
@@ -16,13 +11,12 @@ import type {
   SecFilingSummary,
   SecNodePlan,
   SecNodeResult,
-  SecNodeSpec,
 } from "./sec/sec.ts";
 import { SEC_SUMMARY_VERSION } from "./sec/sec.ts";
 import type { SecAnalysisArtifact, SecAnalysisContext } from "./sec/types.ts";
 import type { SecWorkflowParams } from "./core.ts";
 import type { CoverAmendment } from "./sec/amendment.ts";
-import { modelExecutionForAttempt, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
+import { modelExecutionForAttempt, type SecModelExecution } from "./retry-policy.ts";
 import { SecModelOutputError } from "./model-stream.ts";
 import { SecModelHttpError } from "./model-recovery.ts";
 
@@ -39,67 +33,16 @@ export function jobAnalysisVersionFor(form: string): string {
     : SEC_ANALYSIS_SCHEMA_VERSION;
 }
 
-export type WorkflowStepContextLike = Pick<WorkflowStepContext, "attempt">;
+export type WorkflowStepContextLike = StepContext;
 
 export type WorkflowStepLike = {
   do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T>;
+  /** Waits for work that runs outside the steps (a Pi session); see RunStep.waitFor. */
+  waitFor?<T>(name: string, check: () => Promise<T | null>, recheck: number): Promise<T>;
 };
 
 function executionFor(context?: WorkflowStepContextLike): SecModelExecution {
   return modelExecutionForAttempt(context?.attempt ?? 1);
-}
-
-export type ManagerRepairLoopRuntime = {
-  review(round: number, nodes: SecNodeResult[], execution?: SecModelExecution): Promise<ManagerReview>;
-  repair(task: ManagerRepairTask, round: number, execution?: SecModelExecution): Promise<SecNodeResult>;
-};
-
-export async function runManagerRepairLoop(
-  accessionNumber: string,
-  step: WorkflowStepLike,
-  _plan: SecNodePlan,
-  initialNodes: SecNodeResult[],
-  runtime: ManagerRepairLoopRuntime,
-): Promise<{ nodes: SecNodeResult[]; review: ManagerReview; rounds: number }> {
-  const nodes = [...initialNodes];
-  let rounds = 0;
-  let review = await step.do(`manager-review:${accessionNumber}:round:0`, (context) => runtime.review(0, nodes, executionFor(context)));
-  let previousFingerprint = unresolvedFingerprint(review);
-  while (review.status === "needs_repair" && rounds < MAX_REPAIR_ROUNDS) {
-    const tasks = [...review.repairTasks].sort(byMateriality).slice(0, MAX_REPAIR_NODES_PER_ROUND);
-    if (!tasks.length) {
-      review = { ...review, status: "partial", stopReason: "analysis_incomplete" };
-      break;
-    }
-    rounds += 1;
-    const repaired: SecNodeResult[] = [];
-    for (const [index, task] of tasks.entries()) {
-      repaired.push(await step.do(
-        `repair-node:${accessionNumber}:round:${rounds}:${index}:${task.id}`,
-        (context) => runtime.repair(task, rounds, executionFor(context)),
-      ));
-    }
-    for (const result of repaired) {
-      const index = nodes.findIndex((node) => node.id === result.id);
-      if (index >= 0) nodes[index] = result;
-      else nodes.push(result);
-    }
-    review = await step.do(`manager-review:${accessionNumber}:round:${rounds}`, (context) => runtime.review(rounds, nodes, executionFor(context)));
-    const fingerprint = unresolvedFingerprint(review);
-    if (review.status === "needs_repair" && fingerprint === previousFingerprint) {
-      review = { ...review, status: "partial", repairTasks: [], stopReason: "no_progress" };
-      break;
-    }
-    previousFingerprint = fingerprint;
-  }
-  if (review.status === "needs_repair") review = { ...review, status: "partial", repairTasks: [], stopReason: "max_rounds" };
-  if (review.status === "partial" && !review.stopReason) review = { ...review, stopReason: "analysis_incomplete" };
-  return { nodes, review, rounds };
-}
-
-function byMateriality(left: ManagerRepairTask, right: ManagerRepairTask): number {
-  const rank = { high: 0, medium: 1, low: 2 } as const;
-  return rank[left.materiality] - rank[right.materiality];
 }
 
 export type PreparedFilingReference = {
@@ -126,12 +69,14 @@ export type WorkflowJobUpdate = {
   completedAt?: string;
 };
 
+export type WrittenReport = { plan: SecNodePlan; nodes: SecNodeResult[]; managerReview: ManagerReview; rounds: number; result: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null } };
+
 export type AnalysisOperations = {
   loadFiling?(ticker: string, accessionNumber: string): Promise<SecFiling | null>;
   restoreAnalysis?(filing: SecFiling, reference: PreparedFilingReference): Promise<{ plan: SecNodePlan; nodes: SecNodeResult[]; review: ManagerReview; rounds: number } | null>;
   scanDisclosures?(filing: SecFiling, reference: PreparedFilingReference, index: number, execution?: SecModelExecution): Promise<DiscoveryChunk>;
   finishDiscovery?(filing: SecFiling, reference: PreparedFilingReference, chunks: DiscoveryChunk[]): Promise<{ groundedDisclosures: number }>;
-  auditDisclosures?(filing: SecFiling, reference: PreparedFilingReference, plan: SecNodePlan, nodes: SecNodeResult[], execution?: SecModelExecution): Promise<SecNodeSpec[]>;
+
   classifyEarnings?(filing: SecFiling, execution?: SecModelExecution): Promise<string | null>;
   groupEarnings?(filings: SecFiling[], periods: Map<string, string | null>): Promise<SecFiling[]>;
   discover(ticker: string): Promise<{ feed: unknown; filings: SecFiling[] }>;
@@ -140,18 +85,13 @@ export type AnalysisOperations = {
   getContext(filing: SecFiling, prepared?: PreparedFilingReference): Promise<SecAnalysisContext>;
   prepare(filing: SecFiling): Promise<PreparedFilingReference>;
   buildBrief?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext): Promise<SecAnalysisBrief>;
-  plan(filing: SecFiling, prepared: PreparedFilingReference, brief?: SecAnalysisBrief, execution?: SecModelExecution): Promise<SecNodePlan>;
-  analyzeNode(spec: SecNodeSpec, filing: SecFiling, prepared: PreparedFilingReference, brief?: SecAnalysisBrief, round?: number, execution?: SecModelExecution): Promise<SecNodeResult>;
-  review?(filing: SecFiling, prepared: PreparedFilingReference, brief: SecAnalysisBrief, plan: SecNodePlan, nodes: SecNodeResult[], round: number, execution?: SecModelExecution): Promise<ManagerReview>;
-  composePresentation?(filing: SecFiling, prepared: PreparedFilingReference, report: SecAnalysisArtifact['report'], nodes: SecNodeResult[], brief: SecAnalysisBrief, execution?: SecModelExecution): Promise<SecAnalysisArtifact['report']>;
-  auditReport?(prepared: PreparedFilingReference, nodes: SecNodeResult[], brief: SecAnalysisBrief,
-    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution, context?: { plan: SecNodePlan; previousIssues: EditorialIssue[] }): Promise<{ issues: string[]; reviewedAt: string; findings?: EditorialIssue[]; notes?: string[] }>;
-  reviseReport?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief: SecAnalysisBrief, review: ManagerReview,
-    issues: string[], execution?: SecModelExecution, revision?: { draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }; round: number; findings?: EditorialIssue[] }): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
+  /** Writes the periodic filing's report as one agent session (sec/report-agent.ts); returns the passed report. */
+  writeReport(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, brief: SecAnalysisBrief,
+    restored: { plan: SecNodePlan; nodes: SecNodeResult[]; review: ManagerReview; rounds: number } | null, step: WorkflowStepLike): Promise<WrittenReport>;
   summarizeEvent(filing: SecFiling, prepared: PreparedFilingReference, execution?: SecModelExecution): Promise<SecFilingSummary>;
   /** Publishes the filing's own amendment note. Absent, a cover amendment follows the full report path. */
   publishAmendment?(filing: SecFiling, note: CoverAmendment): Promise<void>;
-  summarize(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief?: SecAnalysisBrief, review?: ManagerReview, execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
+
   publish(artifact: SecAnalysisArtifact, summary: SecFilingSummary | null): Promise<void | { memoryJobId?: string }>;
   enqueueMemory?(jobId: string, ticker: string): Promise<void>;
   publishEvent(summary: SecFilingSummary): Promise<void>;
@@ -169,6 +109,7 @@ function jobStageSteps(step: WorkflowStepLike, accession: string, jobId: string,
   if (!operations.markJobStage) return step;
   const marker = `:${accession}`;
   return {
+    ...(step.waitFor ? { waitFor: step.waitFor.bind(step) } : {}),
     do: (name, callback) => step.do(name, async (context) => {
       const at = name.indexOf(marker), stage = at > 0 ? name.slice(0, at) : "";
       if (stage && stage !== "status" && stage !== "job" && stage !== "memory-enqueue") {
@@ -279,38 +220,11 @@ export async function executeSecAnalysisWorkflow(
       const { context, brief } = periodic!;
       stage = "brief";
       assertBriefCanProceed(brief, Boolean(restored || discoveryResult?.groundedDisclosures));
-      stage = "manager";
-      const plan = restored?.plan ?? await jobStep.do(`manager:${accession}`, async (stepContext) => {
-        const planned = await operations.plan(filing, prepared, brief, executionFor(stepContext));
-        if (!planned.nodes.length) throw new Error("Manager planned no analysis nodes");
-        return planned;
-      });
-      stage = "nodes-round-0";
-      const nodes = restored?.nodes ?? await mapWithConcurrency(plan.nodes, SEC_NODE_CONCURRENCY, (spec, index) => jobStep.do(
-        `node:${accession}:round:0:${index}:${spec.id}`,
-        (stepContext) => operations.analyzeNode(spec, filing, prepared, brief, 0, executionFor(stepContext)),
-      ));
-      if (!restored && operations.auditDisclosures) {
-        stage = "discovery-audit";
-        const tasks = await jobStep.do(`discovery-audit:${accession}`, (stepContext) => operations.auditDisclosures!(filing, prepared, plan, nodes, executionFor(stepContext)));
-        for (const task of tasks) {
-          const plannedIndex = plan.nodes.findIndex((node) => node.id === task.id);
-          if (plannedIndex < 0) plan.nodes.push(task); else plan.nodes[plannedIndex] = task;
-          const result = await jobStep.do(`discovery-repair:${accession}:${task.id}`, (stepContext) => operations.analyzeNode(task, filing, prepared, brief, 2, executionFor(stepContext)));
-          const resultIndex = nodes.findIndex((node) => node.id === result.id);
-          if (resultIndex < 0) nodes.push(result); else nodes[resultIndex] = result;
-        }
-      }
-      stage = "manager-review";
-      const loop = restored ?? await runManagerRepairLoop(accession, jobStep, plan, nodes, {
-        review: (round, currentNodes, execution) => operations.review
-          ? operations.review(filing, prepared, brief, plan, currentNodes, round, execution)
-          : Promise.resolve(fallbackManagerReview(plan, currentNodes)),
-        repair: (task, round, execution) => operations.analyzeNode({ ...task, id: task.targetNodeId }, filing, prepared, brief, round, execution),
-      });
-      const managerReview: ManagerReview = loop.review;
-      stage = "synthesis";
-      let result = await jobStep.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
+      stage = "report";
+      const written = await operations.writeReport(filing, prepared, context, brief, restored, jobStep);
+      const { plan, managerReview } = written;
+      const loop = { nodes: written.nodes, rounds: written.rounds };
+      let result = written.result;
       const discoveryWarnings = [
         ...(result.artifact.report.discovery?.warnings ?? []),
         // The Chinese match covers plans restored from reports written before the English prompts.
@@ -341,28 +255,6 @@ export async function executeSecAnalysisWorkflow(
         }));
         failed.push(accession);
         continue;
-      }
-      if (operations.auditReport) {
-        let previousIssues: EditorialIssue[] = [];
-        for (let round = 0; round <= 4; round += 1) {
-          stage = "editorial-review";
-          const draft = result;
-          const audit = await jobStep.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext), { plan, previousIssues }));
-          if (!audit.issues.length) {
-            result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt, ...(audit.notes?.length ? { notes: audit.notes } : {}) };
-            break;
-          }
-          if (round === 4 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
-          stage = "editorial-revision";
-          const revisionRound = round + 1;
-          result = await jobStep.do(`editorial-revision:${accession}:${revisionRound}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues,
-            revisionRound >= 2 ? { ...executionFor(stepContext), model: SEC_FALLBACK_MODEL } : executionFor(stepContext), { draft, round: revisionRound, findings: audit.findings }));
-          previousIssues = audit.findings ?? [];
-        }
-      }
-      if (!result.artifact.report.reader && !result.artifact.report.presentation && operations.composePresentation) {
-        stage = "presentation";
-        result.artifact.report = await jobStep.do(`presentation:${accession}`, (stepContext) => operations.composePresentation!(filing, prepared, result.artifact.report, loop.nodes, brief, executionFor(stepContext)));
       }
       const summary = result.summary ? {
         ...result.summary,
@@ -457,22 +349,4 @@ function assertHistoryUnits(brief: SecAnalysisBrief): void {
       identities.set(key, unit);
     }
   }
-}
-
-function fallbackManagerReview(plan: SecNodePlan, nodes: SecNodeResult[]): ManagerReview {
-  const results = new Map(nodes.map((node) => [node.id, node]));
-  const questions = plan.nodes.map((node) => {
-    const result = results.get(node.id);
-    const answered = result?.status === "complete" && Boolean(result.narrative || result.findings.length);
-    return { questionId: node.id, status: answered ? "answered" as const : "unanswered" as const, explanation: answered ? "Node completed" : result?.error ?? "Node incomplete" };
-  });
-  const unresolvedQuestions = plan.nodes.filter((_node, index) => questions[index].status !== "answered").map((node) => node.question);
-  return {
-    status: unresolvedQuestions.length ? "partial" : "complete",
-    questions,
-    repairTasks: [],
-    unresolvedQuestions,
-    coverageScore: questions.length ? questions.filter((question) => question.status === "answered").length / questions.length : 0,
-    stopReason: unresolvedQuestions.length ? "analysis_incomplete" : "complete",
-  };
 }

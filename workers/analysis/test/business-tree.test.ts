@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leadIn, pageExcerpt, runBusinessTree as runTreeAgent, sectionHeading, TREE_TOOLS, type TreeBlock, type TreeLibrary, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
+import { leadIn, pageExcerpt, runBusinessTree as runTreeAgent, sectionHeading, treeRecipe, TREE_TOOLS, type BranchStatic, type TreeBlock, type TreeLibrary, type TreeMessage, type TreeModel as ReviewModel, type TreeReply, type TreeRunInput, type TreeSearch, type TreeSpec } from "../src/business-tree/agent.ts";
+import type { AgentAct, AgentTool } from "../src/tool-loop.ts";
+import { scriptedRunner } from "./support/recipe-driver.ts";
+
+/** The test's model: scripted turns for the session, and the review's JSON. */
+type TreeModel = ReviewModel & { act(stage: string, system: string, tools: AgentTool[], messages: TreeMessage[]): Promise<TreeReply> };
 
 /**
  * SEC documents are read from the filing library alone (docs/sec-archive.md). These tests describe the library with the
@@ -11,10 +16,11 @@ const libraryOf = (search: TreeSearch, filings: Array<{ url: string; title: stri
   read: async (url, terms, maxChars) => pageExcerpt((await search.fetchContent({ url, depth: "advanced" }, { scope: "test", maxAgeMs: 0 })).data.text, terms, maxChars),
   businessSection: async () => null,
 });
-const runBusinessTree: typeof runTreeAgent = input => runTreeAgent({ ...input, filingLibrary: input.filingLibrary ?? libraryOf(input.search, input.filings ?? []), model: {
-  ...input.model,
-  act: async (...args) => {
-    const reply = await input.model.act(...args);
+const runBusinessTree = (input: Omit<TreeRunInput, "model" | "run"> & { model: TreeModel }) => {
+  const filingLibrary = input.filingLibrary ?? libraryOf(input.search, input.filings ?? []);
+  // A scripted "search" call stands for the web search the session makes; the turn's stage reads as business-tree-<b>-<turn>.
+  const act: AgentAct = async (stage, system, tools, messages) => {
+    const reply = await input.model.act(stage.replace(/-t(\d+)$/, "-$1"), system, tools, messages as TreeMessage[]);
     if ("error" in reply) return reply;
     const content: TreeBlock[] = [];
     for (const block of reply.content) {
@@ -24,9 +30,13 @@ const runBusinessTree: typeof runTreeAgent = input => runTreeAgent({ ...input, f
       content.push({ ...block, type: "server_tool_use", name: "web_search" }, { type: "web_search_tool_result", tool_use_id: block.id, content: hits.map(h => ({ type: "web_search_result", url: h.url, title: h.title, page_age: null })) },
         { type: "text", text: "Search leads", citations: hits.map(h => ({ type: "web_search_result_location", url: h.url, cited_text: h.snippet })) });
     }
-    return { ...reply, content };
-  },
-} });
+    return { ...reply, content } as never;
+  };
+  const ctxOf = (spec: TreeSpec): BranchStatic => ({ ...input, filingLibrary, model: input.model, run: undefined as never, stage: (_name, work) => work(),
+    scope: { scope: "test", maxAgeMs: 0 }, business: spec.business, index: spec.index, others: spec.others, single: spec.single });
+  const run = scriptedRunner(async (_kind, spec) => ({ recipe: treeRecipe(spec as TreeSpec, ctxOf(spec as TreeSpec)), input: spec, model: "m", effort: "low", ledger: { kind: "tree" } }), act);
+  return runTreeAgent({ ...input, filingLibrary, model: input.model, run });
+};
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
@@ -242,7 +252,7 @@ test("finishing with a bare category line is answered once with a request for na
 test("replies that keep failing stop the run with the provider's words instead of spending the budget", async () => {
   let turns = 0;
   const failing: TreeModel = { act: async () => { turns++; return { error: "stream_incomplete: Model business-tree-1-1 stream interrupted: Overloaded" }; }, judge: async () => ({ issues: [] }) };
-  await assert.rejects(run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], failing), /3 model replies in a row failed; last: stream_incomplete: .*Overloaded/);
+  await assert.rejects(run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], failing), /replies kept failing; last: stream_incomplete: .*Overloaded/);
   assert.equal(turns, 3);
   const declining: TreeModel = { act: async () => ({ content: [], stopReason: "refusal", refusalCategory: "general_harms" }), judge: async () => ({ issues: [] }) };
   await assert.rejects(run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], declining), /last: refusal \(general_harms\)/);
@@ -254,7 +264,7 @@ test("the exchange only grows: each reply goes back exactly as returned, thinkin
   const replies: Record<string, TreeReply> = {
     "1-1": { stopReason: "tool_use", content: [thinking, { type: "tool_use", id: "toolu_read", name: "read", input: { source: "b1-s1", focus: "XBOX" } }] },
     "1-2": { error: "stream_incomplete: interrupted" },
-    "1-3": calls(["search", { query: "Microsoft Xbox Game Pass subscription pricing" }], ["Read", { source: "b1-s1", focus: "Surface" }]),
+    "1-3": calls(["search", { query: "Microsoft Xbox Game Pass subscription pricing" }], ["read", { source: "b1-s1", focus: "Surface" }]),
     "1-4": { stopReason: "end_turn", content: [{ type: "text", text: "Done." }] },
     "1-5": { stopReason: "end_turn", content: [{ type: "text", text: "Still done." }] },
   };
@@ -272,7 +282,7 @@ test("the exchange only grows: each reply goes back exactly as returned, thinkin
   const results = sent[1]![2]!.content as TreeBlock[];
   assert.equal(results[0]!.tool_use_id, "toolu_read");
   assert.match(String(results[0]!.content), /XBOX[\s\S]*Budget left: 15 turns, 6 searches, 5 reads/);
-  // Two calls in one reply, the second named in another case, each get their result.
+  // A search and a call in one reply each get their result.
   const both = sent[3]!.at(-1)!.content as TreeBlock[];
   assert.deepEqual(both.map(b => b.type), ["tool_result", "text"]);
   assert.match(String(both[0]!.content), /^\[b1-s1\]/);

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assessStatements } from "../../../shared/analysis-runtime/statement-analysis.ts";
-import { executeCheckupWorkflow } from "../src/checkup/workflow.ts";
+import { checkupLoader, executeCheckupWorkflow } from "../src/checkup/workflow.ts";
+import type { NoteSpec } from "../src/checkup/agent.ts";
+import { scriptedRunner } from "./support/recipe-driver.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
 import type { AgentAct } from "../src/tool-loop.ts";
 import type { WorkflowStepLike } from "../src/workflow-core.ts";
@@ -10,17 +12,17 @@ import { resolvedFor } from "./fixtures/company-settings.ts";
 
 const assessment = assessStatements(data, PERIOD);
 const metricId = assessment.flags[0]!.metricId;
-const firstTurn = `checkup-${metricId}-t1`;
 const params = { ticker: "TEST", fingerprint: "budget-test" };
 
 // Only budget bindings are recorded in memory. Input/publication stages are already
 // durable, so no database or network operation runs in this workflow fixture.
-function harness(cap: number, options: { beforeStage?: (name: string) => void; retryFirstTurn?: boolean } = {}) {
+function harness(cap: number) {
   const reservations: string[] = [];
   const units = new Map<string, number>();
   const completed = new Map<string, unknown>([
     ["checkup-input", { data, assessment, metrics: [metricId], documents: [], fingerprint: params.fingerprint }],
     ["checkup-empty", undefined],
+    [`checkup-${metricId}-filings`, []],
   ]);
   const db = {
     prepare(sql: string) {
@@ -47,85 +49,37 @@ function harness(cap: number, options: { beforeStage?: (name: string) => void; r
   const step: WorkflowStepLike = {
     async do<T>(name: string, callback: () => Promise<T>): Promise<T> {
       if (completed.has(name)) return structuredClone(completed.get(name)) as T;
-      options.beforeStage?.(name);
-      let value: T;
-      try { value = await callback(); }
-      catch (error) {
-        if (!options.retryFirstTurn || name !== firstTurn) throw error;
-        value = await callback();
-      }
+      const value = await callback();
       completed.set(name, structuredClone(value));
       return value;
     },
   };
-  return { reservations, units, run: (act: AgentAct) => executeCheckupWorkflow(params, step, env, { act }) };
+  return { reservations, units, run: (act: AgentAct) => executeCheckupWorkflow(params, step, env, { run: scriptedRunner((_kind, spec) => checkupLoader(spec as NoteSpec, env), act) }) };
 }
 
-test("checkup reserves against the UTC day when its model stage actually executes", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T23:59:59Z") });
-  const h = harness(1, { beforeStage(name) {
-    if (name === firstTurn) t.mock.timers.tick(1_000);
-  } });
-  let calls = 0;
-  const result = await h.run(async () => {
-    calls++;
-    return { content: [], stopReason: "end_turn" };
-  });
-  assert.equal(result.status, "empty");
-  assert.equal(calls, 1, "the current day's cap stops the second model call");
-  assert.deepEqual(h.reservations, ["2026-11-03", "2026-11-03"]);
-  assert.deepEqual([...h.units], [["2026-11-03", 1]]);
-});
-
-test("replaying completed checkup model stages does not reserve again even at the daily cap", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T12:00:00Z") });
-  const h = harness(2);
-  let calls = 0;
-  const act: AgentAct = async () => {
-    calls++;
-    return { content: [], stopReason: "end_turn" };
-  };
-  const first = await h.run(act);
-  assert.equal(calls, 2);
-  assert.equal(h.reservations.length, 2);
-  const replay = await h.run(act);
-  assert.equal(h.reservations.length, 2, "completed model stages reuse their reservations");
-  assert.equal(calls, 2);
-  assert.deepEqual(replay, first);
-});
-
-test("each real checkup model-stage retry reserves on its own execution day", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T23:59:59Z") });
-  const h = harness(2, { retryFirstTurn: true });
-  let calls = 0;
-  const result = await h.run(async () => {
-    if (++calls === 1) {
-      t.mock.timers.tick(1_000);
-      throw new Error("model transport failed");
-    }
-    return { content: [], stopReason: "end_turn" };
-  });
-  assert.equal(result.status, "empty");
-  assert.equal(calls, 3);
-  assert.deepEqual(h.reservations, ["2026-11-02", "2026-11-03", "2026-11-03"]);
-  assert.deepEqual([...h.units], [["2026-11-02", 1], ["2026-11-03", 2]]);
-});
-
-test("a completed budget-denied stage remains denied on replay the next day", async (t) => {
+test("each model call of a note reserves against the UTC day it is made, and the cap ends the note", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T23:59:59Z") });
   const h = harness(1);
-  h.units.set("2026-11-02", 1);
-  const act: AgentAct = async () => { assert.fail("an exhausted budget must not call the model"); };
-  const first = await h.run(act);
-  assert.equal(first.status, "empty");
-  assert.equal(h.reservations.length, 1);
-  t.mock.timers.tick(1_000);
-  const replay = await h.run(act);
-  assert.deepEqual(h.reservations, ["2026-11-02"]);
-  assert.deepEqual(replay, first);
+  let calls = 0;
+  const result = await h.run(async () => {
+    calls++;
+    t.mock.timers.tick(1_000);
+    return { content: [], stopReason: "end_turn" };
+  });
+  assert.equal(result.status, "empty");
+  const capped = harness(1);
+  let once = 0;
+  await capped.run(async () => { once++; return { content: [], stopReason: "end_turn" }; });
+  assert.equal(once, 1, "within one day the cap stops the second model call");
+  assert.equal(calls, 2, "the second call draws on the next day's allowance");
+  assert.deepEqual(h.reservations, ["2026-11-02", "2026-11-03"]);
+  assert.deepEqual([...h.units], [["2026-11-02", 1], ["2026-11-03", 1]]);
 });
 
-test("a checkup whose every model call throws errors for the task's retry instead of recording an empty checkup", async () => {
-  const h = harness(5);
-  await assert.rejects(h.run(async () => { throw new Error("Model deepseek-flash HTTP 402: Insufficient Balance"); }), /Insufficient Balance/);
+test("an exhausted allowance makes no model call", async () => {
+  const h = harness(1);
+  h.units.set(new Date().toISOString().slice(0, 10), 1);
+  const result = await h.run(async () => { assert.fail("an exhausted budget must not call the model"); });
+  assert.equal(result.status, "empty");
+  assert.equal(h.reservations.length, 1);
 });

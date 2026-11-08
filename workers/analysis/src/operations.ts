@@ -1,3 +1,5 @@
+import { readReportInputs, reportOpening, type ReportOutcome, type ReportSpec } from "./sec/report-agent.ts";
+import { runRecipeSession } from "./pi/runs.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { aiToolSetting, reasoningFor, type ReasoningEffort } from "./ai-config.ts";
 import { boundedModelIO } from "./model-io.ts";
@@ -8,37 +10,26 @@ export { readModelContent } from "./model-stream.ts";
 export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
-import { normalizeEditorialIssues, editorialRequirements, editorialGate } from "./sec/editorial.ts";
-import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { fiscalPeriodsInSequence } from "./sec/fiscal-sequence.ts";
-import { attachDiscovery, auditDisclosureCoverage, DISCOVERY_VERSION, discoveryChunkCount, discoveryChunkRequest, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
+import { attachDiscovery, DISCOVERY_VERSION, discoveryChunkCount, discoveryChunkRequest, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
 import { buildSecOutline } from "./sec/report.ts";
 import {
-  analyzePreparedSecNode,
   buildPreparedSecBrief,
-  failedSecNode,
   discoverSecTicker,
-  PRESENTATION_FALLBACK_WARNING,
-  planPreparedSecFiling,
   prepareSecFiling,
-  reviewPreparedSecAnalysis,
   summarizePreparedSecEvent,
-  summarizePreparedSecFiling,
   type PreparedSecFiling,
   type PreparedSecFilingMeta,
   type SecModelCall,
 } from "./sec/pipeline.ts";
-import { SEC_PRESENTATION_SCHEMA } from "../../../shared/analysis-contract/sec-presentation.ts";
-import { buildSecTrends, composeSecPresentation } from "./sec/presentation.ts";
-import { figureCatalog } from "./sec/figures.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import type { SecAnalysisArtifact } from "./sec/types.ts";
-import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, type SecFilingSummary, type SecNodePlan, type SecNodeResult, type SecNodeSpec } from "./sec/sec.ts";
+import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, type SecFilingSummary } from "./sec/sec.ts";
 import { coverAmendmentNote, coverAmendmentSummary, type CoverAmendment } from "./sec/amendment.ts";
-import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type ManagerReview, type SecHistorySnapshot } from "./sec/analysis.ts";
+import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type SecHistorySnapshot } from "./sec/analysis.ts";
 import { normalizeCompanyFacts } from "./sec/history.ts";
 import { archivedFiling, archiveHolds, archiveUnsupported, edgarListings, type EdgarListings } from "./sec-archive/index.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
@@ -46,7 +37,7 @@ import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
 import { outboxStatement } from "./pipeline/outbox.ts";
-import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_MODEL_STALL_MS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { PreparedFilingReference, AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
@@ -76,6 +67,8 @@ export type TagIndex = {
 };
 
 export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
+  /** The Pi sessions of the durable run executing this task (durable-runs/runner.ts); absent elsewhere. */
+  PI?: import("./pi/runs.ts").PiRuns;
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
@@ -242,27 +235,6 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
           Math.max(1, deadline - Date.now()), { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), ticker, runId: workflowInstanceId, kind: "sec-analysis" }),
       });
     };
-  };
-  const draftCheckpoint = (reference: PreparedFilingReference, round: number) => {
-    const name = `editorial/${encodeURIComponent(workflowInstanceId)}/round-${round}/candidate`;
-    const key = `${reference.key.replace(/^filings\//, "analysis/")}/${SEC_ANALYSIS_SCHEMA_VERSION}/${name}.json`;
-    return {
-      async load(): Promise<Record<string, unknown> | undefined> {
-        const saved = await env.SEC_FILINGS.get(key);
-        return saved ? JSON.parse(await saved.text()) as Record<string, unknown> : undefined;
-      },
-      async saveCandidate(candidate: Record<string, unknown>) { await putArtifact(env.SEC_FILINGS, reference, name, candidate); },
-    };
-  };
-  const primaryEvidence = async (reference: PreparedFilingReference, nodes: SecNodeResult[]) => {
-    const prepared = await readPrepared(env.SEC_FILINGS, reference);
-    const ids = new Set(nodes.flatMap((n) => [...(n.evidenceIds ?? []), ...(n.facts ?? []).flatMap((f) => f.evidenceIds)]));
-    let remaining = 160_000;
-    return prepared.blocks.filter((b) => ids.has(`ev:${b.blockId}`) || ids.has(b.blockId)).map((b) => {
-      const text = b.body.slice(0, Math.max(0, Math.min(remaining, 12_000)));
-      remaining -= text.length;
-      return { evidenceId: `ev:${b.blockId}`, heading: b.heading, text, truncated: text.length < b.body.length };
-    });
   };
   return {
     loadFiling: async (ticker, accession) => {
@@ -456,22 +428,6 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       await putArtifact(env.SEC_FILINGS, reference, "discovery/final", enriched.discovery);
       return {groundedDisclosures:enriched.discovery?.disclosures.length ?? 0};
     },
-    auditDisclosures: async (_filing, reference, plan, nodes, execution) => {
-      const meta = await readMeta(env.SEC_FILINGS, reference);
-      try {
-        const tasks = await auditDisclosureCoverage(meta, plan, nodes, modelFor(reference.filing.ticker, execution));
-        await putArtifact(env.SEC_FILINGS, reference, "discovery/audit", tasks);
-        await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
-        return tasks;
-      } catch (error) {
-        if (!execution?.finalAttempt) throw error;
-        const warning = "The disclosure omission audit did not finish, so complete coverage of important items cannot be confirmed.";
-        if (meta.discovery) meta.discovery.warnings.push(warning);
-        meta.materialWarnings = [...(meta.materialWarnings ?? []), warning];
-        await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
-        return [];
-      }
-    },
     buildBrief: async (_filing, reference, context) => {
       const meta = await readMeta(env.SEC_FILINGS, reference);
       const history = context.history ?? await readHistory(env.SEC_FILINGS, reference);
@@ -479,107 +435,30 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       await putArtifact(env.SEC_FILINGS, reference, "brief", brief);
       return brief;
     },
-    plan: async (_filing, reference, brief, execution): Promise<SecNodePlan> => {
-      const plan = await planPreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), modelFor(reference.filing.ticker, execution), brief);
-      await putArtifact(env.SEC_FILINGS, reference, "manager-plan", plan);
-      return plan;
-    },
-    analyzeNode: async (spec: SecNodeSpec, _filing, reference, brief, round = 0, execution): Promise<SecNodeResult> => {
-      const prepared = await readPrepared(env.SEC_FILINGS, reference);
-      let result: SecNodeResult;
-      try {
-        result = await analyzePreparedSecNode(prepared, spec, modelFor(reference.filing.ticker, execution), brief);
-      } catch (error) {
-        // Rethrow so the Workflow step retries and escalates to the fallback model; only the
-        // final attempt degrades to an error node so one flaky response cannot lose the filing.
-        if (execution && !execution.finalAttempt) throw error;
-        result = failedSecNode(spec, error);
-      }
-      await putArtifact(env.SEC_FILINGS, reference, `nodes/round-${round}/${spec.id}`, result);
-      return result;
-    },
-    review: async (_filing, reference, brief, plan, nodes, round, execution): Promise<ManagerReview> => {
-      const result = await reviewPreparedSecAnalysis(await readMeta(env.SEC_FILINGS, reference), brief, plan, nodes, round, modelFor(reference.filing.ticker, execution));
-      await putArtifact(env.SEC_FILINGS, reference, `manager-review/round-${round}`, result);
-      return result;
-    },
     summarizeEvent: async (filing, reference, execution) => ({
       ...await summarizePreparedSecEvent(await readPrepared(env.SEC_FILINGS, reference), modelFor(reference.filing.ticker, execution), new Date(), await readHistory(env.SEC_FILINGS, reference)),
       ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     }),
-    summarize: async (_filing, reference, context, plan, nodes, brief, review, execution) => {
-      await putArtifact(env.SEC_FILINGS, reference, "nodes/final", nodes);
-      if (review) await putArtifact(env.SEC_FILINGS, reference, "manager-review/final", review);
-      const checkpoint = draftCheckpoint(reference, 0);
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(reference.filing.ticker, execution), new Date(), plan, nodes, brief, review, undefined,
-        { candidate: await checkpoint.load(), saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
-      if (!result.artifact.report.reader) throw new Error("Synthesis did not produce the required reader report");
-      if (result.summary && _filing.earningsGroup) result.summary.earningsGroup = _filing.earningsGroup;
-      const synthesisKey = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
-      return { ...result, artifact: { ...result.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, synthesisKey) } };
-    },
-    auditReport: async (reference, nodes, brief, result, round, execution, context) => {
-      if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
-      const marketSnapshot = await identifyReaderMarketSnapshot(result.artifact.filing.ticker, result.artifact.report.marketSnapshot);
-      const audit = await modelFor(reference.filing.ticker, execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
-          headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
-          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], availableFigures: figureCatalog(result.artifact.report.figures ?? []), financialLens: result.artifact.report.financialLens, marketSnapshot,
-          facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
-          nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
-          limitations: result.artifact.report.dataQuality,
-          requiredTopics: context ? editorialRequirements(context.plan, nodes, result.artifact.managerReview) : [],
-          previousIssues: context?.previousIssues ?? [],
-          primaryEvidence: context ? await primaryEvidence(reference, nodes) : [],
-          renderedComponents: { cashBridge: result.artifact.report.financialLens?.cashBridge,
-            standardFCFVisible: Boolean(result.artifact.report.financialLens?.cashBridge),
-            adjustedFCFVisible: result.artifact.report.financialLens?.cashBridge?.adjustedFCF !== undefined,
-            placement: "Only fields that actually exist are shown; when adjustedFCFVisible=false the page has no second FCF, and the text must not claim both are shown side by side" },
+    writeReport: async (filing, reference, context, brief, restored, step) => {
+      const operationId = `report:${reference.filing.accessionNumber}`;
+      await step.do(`${operationId}:inputs`, async () => {
+        await Promise.all([putArtifact(env.SEC_FILINGS, reference, "context", context), putArtifact(env.SEC_FILINGS, reference, "brief", brief)]);
       });
-      await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
-      const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? []), ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
-      const previousIssues = context?.previousIssues ?? [];
-      const findings = normalizeEditorialIssues(audit, allowed, new Set(previousIssues.map((i) => i.id)));
-      const { blocking, notes } = editorialGate(findings, round, previousIssues);
-      return { findings, issues: blocking.map((i) => `${i.id}: ${i.detail} Acceptance: ${i.acceptance}`), notes: notes.map((i) => `${i.id}: ${i.detail}`.slice(0, 600)), reviewedAt: new Date().toISOString() };
-    },
-    reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution, revision) => {
-      if (!revision?.draft.summary || !revision.draft.artifact.report.reader) throw new Error("Editorial revision requires the reviewed draft");
-      const checkpoint = draftCheckpoint(reference, revision.round);
-      const saved = await checkpoint.load();
-      const original = { ...revision.draft.summary, ...revision.draft.artifact.report, readerReport: revision.draft.artifact.report.reader, report: "" };
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(reference.filing.ticker, execution), new Date(), plan, nodes, brief, review, issues,
-        { candidate: saved ?? original, patch: !saved, issues: revision.findings ?? issues, saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
-      if (!result.artifact.report.reader) throw new Error("Editorial revision did not produce a reader report");
-      delete result.artifact.report.editorialReview;
-      if (filing.earningsGroup) result.summary.earningsGroup = filing.earningsGroup;
-      const key = await putArtifact(env.SEC_FILINGS, reference, `editorial/${encodeURIComponent(workflowInstanceId)}/round-${revision.round}/result`, result);
-      result.artifact.artifactKeys = collectArtifactKeys(reference, key);
-      return result;
-    },
-    composePresentation: async (filing, reference, report, nodes, brief, execution) => {
-      const trends = buildSecTrends(brief, filing.filingDate, filing.reportDate);
-      const usableNodes = nodes.filter((node) => node.status === "complete" && (node.narrative || node.findings.length));
-      if (!usableNodes.length) return report;
-      try {
-        const candidate = await modelFor(reference.filing.ticker, execution)("presentation", "You are the editor of a company business research report. Design only the reading structure for the completed analysis; never generate facts, body text or data. Output exactly one JSON object following the schema, with density and sections at the top level. Cover every node in requiredNodeIds; a node without narrative uses findings and must not be left out. Do not repeat the same node's text as both narrative and callout. A chart directly follows the narrative/findings/callout of the same node. When an available trend relates directly to a business question, choose at least one chart that helps explain it; never let company-wide revenue stand in for segment or customer data. Use only the IDs and block types provided. Write section titles in plain, concise English.", {
-          schema: SEC_PRESENTATION_SCHEMA,
-          requiredNodeIds: usableNodes.map((node) => node.id),
-          nodes: usableNodes.map((node) => ({
-            nodeId: node.id, title: node.title, summary: node.narrative.slice(0, 500), findings: node.findings,
-            allowedBlocks: [...(node.narrative ? ["narrative"] : []), ...(node.narrative || node.findings.length ? ["callout"] : []), ...(node.findings.length ? ["findings"] : []), ...(node.evidence.length ? ["evidence"] : []), ...(trends.length ? ["chart"] : [])],
-          })),
-          availableMetrics: report.keyMetrics.filter((metric) => metric.status === "verified" || metric.status === "derived").map((metric) => metric.metricKey),
-          availableCharts: trends,
-        });
-        await putArtifact(env.SEC_FILINGS, reference, "presentation/candidate", candidate);
-        const presentation = composeSecPresentation(candidate.presentation ?? candidate, usableNodes, report.keyMetrics, trends);
-        if (!presentation) throw new Error("Presentation references or coverage failed validation");
-        await putArtifact(env.SEC_FILINGS, reference, "presentation/resolved", presentation);
-        return { ...report, presentation, dataQuality: { ...report.dataQuality, warnings: report.dataQuality.warnings.filter((warning) => warning !== PRESENTATION_FALLBACK_WARNING) } };
-      } catch (error) {
-        if (!execution?.finalAttempt) throw error;
-        return { ...report, dataQuality: { ...report.dataQuality, warnings: [...new Set([...report.dataQuality.warnings, "Report layout retries did not finish; the complete standard report is kept."])] } };
+      const { prepared } = await readReportInputs(env, reference);
+      const spec: ReportSpec = { reference, workflowInstanceId, restored };
+      const outcome = await runRecipeSession<ReportOutcome>(env, step, "sec-report", spec, reportOpening(prepared, brief, restored), operationId);
+      const written = outcome.output;
+      if (!written.passed || !written.plan || !written.review) {
+        throw new Error(written.issues.length ? `Reader report failed editorial review: ${written.issues.join("; ").slice(0, 1000)}`
+          : `Synthesis did not finish: the report session ended (${outcome.reason}) without a passed report`);
       }
+      const passed = written.passed;
+      const result = await step.do(`${operationId}:result`, async () => {
+        const stored = await readJson<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }>(env.SEC_FILINGS, passed.resultKey);
+        stored.artifact.report.editorialReview = { status: "passed", reviewedAt: passed.reviewedAt, ...(passed.notes.length ? { notes: passed.notes } : {}) };
+        return { ...stored, artifact: { ...stored.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, passed.resultKey) } };
+      });
+      return { plan: written.plan, nodes: written.nodes, managerReview: written.review, rounds: written.rounds, result };
     },
     publish: async (artifact, summary) => {
       if (artifact.report.reader && artifact.report.editorialReview?.status !== "passed") throw new Error("Reader report has not passed editorial review");
@@ -827,99 +706,6 @@ async function requestWorkerSecModelContent(
     clearTimeout(budgetTimer);
     await recordModelCall(env, metrics, started, { ...options, runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined) });
   }
-}
-
-/** One agent turn taken through client tools: the reply's content blocks as they are to be sent back, and why it stopped. */
-export type ToolTurnReply = { content: ContentBlock[]; stopReason: string | null; refusalCategory: string | null };
-type ContentBlock = { type: string } & Record<string, unknown>;
-/** A tool turn's thinking plus its calls; an `add` of eight nodes with anchors and revenue entries fits well inside. */
-const TOOL_TURN_TOKENS = 32_000;
-
-/**
- * One turn of an agent loop that acts through client tools. Claude Sonnet 5.5 and Opus 5.5 refuse a forced `tool_choice`,
- * so the tools are strict (arguments always match their schema) and the prompt asks for a call. `messages` must only ever
- * grow: a thinking block stays valid only while the system prompt, the tools and every earlier turn are sent unchanged.
- * HTTP failures throw as in `callWorkerSecModel`; a broken or stalled stream throws `SecModelOutputError`; a refusal or a
- * reply cut off at the token limit comes back with its stop reason, for the loop to decide.
- */
-export async function callWorkerToolModel(
-  env: AnalysisEnv, fetcher: typeof fetch, stage: string,
-  request: { system: string; tools: Anthropic.Beta.BetaTool[]; messages: Anthropic.Beta.BetaMessageParam[] },
-  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, tuning?: ModelCallTuning,
-): Promise<ToolTurnReply> {
-  const apiKey = await resolveWorkerModelKey(env, fetcher);
-  const started = Date.now();
-  const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
-  const maxTokens = tuning?.maxTokens ?? TOOL_TURN_TOKENS;
-  const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(request.messages).length, maxTokens, reasoning: tuning?.reasoning ?? "high", mode: "tool-turn" };
-  const controller = new AbortController();
-  let timeoutKind = "execution-budget", liveAt = Date.now();
-  let watchdog: ReturnType<typeof setInterval> | undefined;
-  const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
-  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
-  const client = modelClient(apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); }, () => {
-    // Headers are in: from here a connection silent for the stall window, pings included, has stalled.
-    clearTimeout(firstTimer);
-    metrics.headersMs ??= Date.now() - started;
-    watchdog ??= setInterval(() => { if (Date.now() - liveAt >= SEC_MODEL_STALL_MS) { timeoutKind = "stream-stall"; controller.abort(); } }, 1_000);
-  });
-  try {
-    const message = await client.beta.messages.stream({
-      model,
-      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-      tools: request.tools,
-      thinking: { type: "adaptive" },
-      messages: request.messages,
-      // The exchange is cached up to its newest turn, so each turn reads every earlier one from the cache.
-      cache_control: { type: "ephemeral" },
-      output_config: { effort: tuning?.reasoning ?? "high" },
-      max_tokens: maxTokens,
-    }, { signal: controller.signal }).finalMessage();
-    const refusalCategory = typeof message.stop_details?.category === "string" ? message.stop_details.category : null;
-    Object.assign(metrics, { servedModel: message.model, usage: message.usage, finishReason: message.stop_reason, refusalCategory, outputCharacters: JSON.stringify(message.content).length });
-    const fallbacks = message.content.filter(b => b.type === "fallback").length;
-    if (fallbacks) metrics.fallbacks = fallbacks;
-    return { content: echoable(objectInputs(JSON.parse(JSON.stringify(message.content)) as ContentBlock[])), stopReason: message.stop_reason, refusalCategory };
-  } catch (error) {
-    if (controller.signal.aborted) {
-      metrics.error = `model-timeout:${timeoutKind}`;
-      if (timeoutKind === "stream-stall") throw new SecModelOutputError("stream_stall", `Model ${stage} stream stalled: no bytes for ${SEC_MODEL_STALL_MS / 1000}s`);
-      throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
-    }
-    if (error instanceof Anthropic.APIError && error.status !== undefined) {
-      const failure = httpFailure(error, model, stage, apiKey);
-      Object.assign(metrics, { error: `http:${error.status}`, providerCode: failure.providerCode });
-      throw failure;
-    }
-    // An error event inside the stream (overloaded mid-reply) or a dropped connection: this turn has no reply.
-    metrics.error = "stream_incomplete";
-    throw new SecModelOutputError("stream_incomplete", `Model ${stage} stream interrupted: ${error instanceof Error ? error.message.replaceAll(apiKey, "[redacted]").slice(0, 300) : "transport error"}`);
-  } finally {
-    clearTimeout(firstTimer);
-    clearTimeout(budgetTimer);
-    clearInterval(watchdog);
-    await recordModelCall(env, metrics, started, tuning ?? {});
-  }
-}
-
-/**
- * The reply as it may go back: after a fallback mid-reply, the declined model's thinking and tool calls before the last
- * switch point are not the served reply and cannot be echoed; its text, and everything after the switch, can.
- */
-function echoable(content: ContentBlock[]): ContentBlock[] {
-  const boundary = content.findLastIndex(b => b.type === "fallback");
-  return boundary < 0 ? content : content.filter((b, i) => i > boundary || b.type === "text");
-}
-
-/** DeepSeek may stream a tool call's arguments as one JSON string; agents read, and the next turn echoes, an object. */
-function objectInputs(content: ContentBlock[]): ContentBlock[] {
-  return content.map(b => {
-    if (b.type !== "tool_use" || typeof b.input !== "string") return b;
-    try {
-      const input: unknown = JSON.parse(b.input);
-      return input && typeof input === "object" && !Array.isArray(input) ? { ...b, input } : b;
-    } catch { return b; }
-  });
 }
 
 /** DeepSeek's Anthropic-format endpoint, which the SDK speaks unchanged. */

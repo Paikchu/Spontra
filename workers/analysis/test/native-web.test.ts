@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { DeepSeekWebProvider } from "../src/web-search/deepseek.ts";
 import { nativeSearches, nativeSearchSchema, type NativeSearch } from "../src/web-search/native.ts";
-import { runAgentLoop, sequential, type Recipe } from "../src/agent-loop.ts";
+import { runAgentLoop, sequential, type Recipe } from "./support/recipe-driver.ts";
 import { defineTool } from "../src/tools/registry.ts";
 import type { AgentBlock, AgentMessage, AgentReply } from "../src/tool-loop.ts";
 import { aiUsageFromMetrics } from "../src/ai-runs/usage.ts";

@@ -8,14 +8,15 @@ import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
-import type Anthropic from "@anthropic-ai/sdk";
-import { callWorkerSecModel, callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { sessionRunner } from "../pi/runs.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
-import { runBusinessTree, type TreeBusiness } from "./agent.ts";
+import { runBusinessTree, treeRecipe, type BranchStatic, type TreeBusiness, type TreeSpec, type TreeState } from "./agent.ts";
 import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
@@ -73,6 +74,21 @@ export async function businessTreeFingerprint(env: AnalysisEnv, ticker: string):
   return (await readInput(env, ticker)).fingerprint;
 }
 
+/** One business's session, rebuilt from its spec: the library and the web reader come from the env. */
+export async function treeLoader(spec: TreeSpec, env: AnalysisEnv): Promise<PiLoaded<TreeState>> {
+  const ctx: BranchStatic = {
+    ticker: spec.ticker, companyName: spec.companyName, periodEnd: spec.periodEnd, businesses: [], filings: spec.filings, search: researchSearch(env),
+    modelVersion: spec.modelVersion, fingerprint: spec.fingerprint, now: spec.now, filingLibrary: treeLibrary(requireDb(env), spec.ticker, spec.filings, { headings: true }),
+    // The reviews run after the session, in the run itself.
+    model: { judge: async () => { throw new Error("business tree: no review inside a session"); } },
+    run: async () => { throw new Error("business tree: no nested session"); },
+    stage: (_name, work) => work(), scope: { scope: `spontra:business-tree:${spec.ticker}`, maxAgeMs: 7 * 24 * 60 * 60_000 },
+    business: spec.business, index: spec.index, others: spec.others, single: spec.single,
+  };
+  return { recipe: treeRecipe(spec, ctx), input: spec, model: modelFor(env, "tree"), effort: reasoningFor(env, "tree"),
+    ledger: { kind: "tree", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) } };
+}
+
 export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
   // Switched off in the admin after the run was scheduled: nothing to write, and nothing that failed.
   // The `tree` feature's companies after the admin's switches (company-policy.ts).
@@ -90,16 +106,13 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings, { headings: true }),
     // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
     model: {
-      act: async (stage, system, tools, messages) => {
-        try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, tuning); }
-        catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
-      },
       judge: async (stage, system, payload) => {
         try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, tuning); }
         catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
       },
     },
     stage: (name, callback) => step.do(`tree-${name}`, callback),
+    run: sessionRunner(env, step), ...(runId ? { runId } : {}),
   });
   if (!readBusinessTree(tree, params.ticker, { research: true })) throw new Error("Business tree failed its public contract.");
   await step.do("tree-publish", async () => {

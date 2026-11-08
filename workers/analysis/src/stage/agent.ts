@@ -1,18 +1,17 @@
 import { Agent, type Connection, type ConnectionContext, type WSMessage } from "agents";
-import type Anthropic from "@anthropic-ai/sdk";
+import { withRuns } from "../durable-runs/binding.ts";
 import { DEFAULT_SCENE_ROWS, type NoticeCode, type SceneDocument, type SceneRow } from "../../../../shared/analysis-contract/scene.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
-import { sequential, runAgentLoop, type LoopHost } from "../agent-loop.ts";
+import { PiHost, type PiLoaded } from "../pi/host.ts";
+import { piModelIds } from "../pi/model.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
-import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
-import type { AgentMessage, AgentReply, ToolCall } from "../tool-loop.ts";
-import type { ToolOutcome } from "../tools/registry.ts";
+import type { AnalysisEnv } from "../operations.ts";
+import type { ToolCall } from "../tool-loop.ts";
 import { refund, reserve, type Spender } from "./budget.ts";
 import { loadStageData } from "./data.ts";
 import { sha256 } from "../sha256.ts";
-import { STAGE_BUDGET, stageRecipeFor, stageTools, type StageView } from "./recipe.ts";
+import { STAGE_BUDGET, stageRecipeFor, type StageOutcome, type StageTurn, type StageView } from "./recipe.ts";
 
 /**
  * One reader's conversation with the stage, an Agents SDK Agent and so a Durable
@@ -50,7 +49,12 @@ export type StageCommand =
 type Owner = { user_id: string; ticker: string; locale: string };
 const TRANSCRIPT_SENT = 40;
 /** Tool results the exchange keeps before it is folded into a summary at the next turn's start. */
-const FOLD_AFTER_RESULTS = 80;
+/** Every turn of a conversation runs on its root Pi session. */
+const STAGE_SESSION = "1";
+/** What a turn's session is rebuilt from after an eviction; the stage's data is read again. */
+type StageSpec = { turnId: string; address: string | null; userHash: string };
+/** What a turn needs to land its result, kept with the turn so a turn Pi resumed after an eviction can land it too. */
+type TurnContext = { before: number; address: string | null; startedAt: string; basis: SceneDocument["basis"] };
 const MAX_TEXT = 600;
 
 const emptyScene = (): SceneDocument => ({ schemaVersion: "scene.v1", scope: { periodEnd: "" }, basis: {}, rows: DEFAULT_SCENE_ROWS.map(r => ({ ...r })) });
@@ -60,18 +64,31 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   initialState: StageState = { scene: emptyScene(), revision: 0, applied: 0, contentLanguage: "en" };
   private running: AbortController | null = null;
   private view: StageView | null = null;
+  private readonly completions = new Map<string, Promise<void>>();
+  /** Which allowance ran out in a turn, for its notice. */
+  private readonly capHits = new Map<string, "reader" | "address" | "global">();
+  /** The conversation's model exchange: one Pi session, kept, checkpointed and compacted by Pi. */
+  private readonly pi = new PiHost({ sql: this.ctx.storage.sql, env: this.env }, { stage: spec => this.loadStage(spec as StageSpec) }, {
+    models: () => piModelIds(this.env as StageEnv),
+    onSettled: operationId => { void this.completeTurn(operationId); },
+  });
+  private readonly piInstalled = this.lifecycle.use(this.pi.harness);
 
   async onStart(props?: StageProps): Promise<void> {
     void this.sql`CREATE TABLE IF NOT EXISTS owner (user_id TEXT NOT NULL, ticker TEXT NOT NULL, locale TEXT NOT NULL)`;
-    void this.sql`CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL)`;
+    // The exchange lived here before Pi kept it; an older object's table is dropped.
+    void this.sql`DROP TABLE IF EXISTS messages`;
     void this.sql`CREATE TABLE IF NOT EXISTS transcript (seq INTEGER PRIMARY KEY AUTOINCREMENT, entry TEXT NOT NULL)`;
     void this.sql`CREATE TABLE IF NOT EXISTS scenes (revision INTEGER PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, scene TEXT NOT NULL)`;
     void this.sql`CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, turn TEXT NOT NULL, entry TEXT NOT NULL)`;
     void this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, at TEXT NOT NULL, status TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0)`;
     void this.sql`CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, question TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open')`;
     if (props && !this.owner()) void this.sql`INSERT INTO owner (user_id, ticker, locale) VALUES (${props.userId}, ${props.ticker}, ${props.locale})`;
-    // A turn the object was evicted in the middle of is marked, not run again: its model calls are already paid.
-    for (const t of this.sql<{ id: string }>`SELECT id FROM turns WHERE status = 'running'`) {
+    try { void this.sql`ALTER TABLE turns ADD COLUMN context TEXT`; } catch { /* Present already. */ }
+    // A turn the object was evicted in the middle of goes on: Pi resumes its session, and the turn settles when it ends.
+    // One that never reached Pi (no context) is marked interrupted.
+    for (const t of this.sql<{ id: string; context: string | null }>`SELECT id, context FROM turns WHERE status = 'running'`) {
+      if (t.context) { this.resume(t.id); continue; }
       void this.sql`UPDATE turns SET status = 'interrupted' WHERE id = ${t.id}`;
       this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "notice", code: "turn-interrupted" });
     }
@@ -123,17 +140,12 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     return true;
   }
 
-  private loadMessages(): AgentMessage[] {
-    return this.sql<{ role: string; content: string }>`SELECT role, content FROM messages ORDER BY seq`.map(r => ({ role: r.role as AgentMessage["role"], content: JSON.parse(r.content) as AgentMessage["content"] }));
-  }
-  private saveMessages(messages: AgentMessage[], from: number) {
-    messages.slice(from).forEach((m, i) => { void this.sql`INSERT INTO messages (seq, role, content) VALUES (${from + i}, ${m.role}, ${JSON.stringify(m.content)})`; });
-  }
-
   private async turn(text: string, address: string | null): Promise<void> {
     const owner = this.owner();
     if (!owner) return;
     if (this.running) return;
+    // A turn Pi resumed after an eviction still holds the conversation's session; a new one waits for it to settle.
+    if (this.completions.size) return;
     const env = await companyPolicyEnvironment(this.env as StageEnv);
     const locale: Locale = owner.locale === "zh-CN" ? "zh-CN" : "en";
     const turnId = uid();
@@ -145,67 +157,71 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     if (!says.ok) { this.notice(says.which === "global" ? "global-cap-reached" : "quota-reached"); return; }
     const controller = new AbortController();
     this.running = controller;
-    void this.sql`INSERT INTO turns (id, at, status) VALUES (${turnId}, ${new Date().toISOString()}, 'running')`;
-    this.emit({ type: "stage:turn", turn: { id: turnId, phase: "thinking", status: null } });
-    let calls = 0, status = "failed", capHit: "reader" | "address" | "global" | null = null, firstError: string | null = null, reason: string | null = null;
     const startedAt = new Date().toISOString();
+    void this.sql`INSERT INTO turns (id, at, status) VALUES (${turnId}, ${startedAt}, 'running')`;
+    this.emit({ type: "stage:turn", turn: { id: turnId, phase: "thinking", status: null } });
     try {
       const data = await loadStageData(env, owner.ticker);
-      if (!data) { this.notice("turn-failed"); return; }
-      const before = this.state.revision;
-      const input = { data, locale, scene: this.state.scene.rows, view: this.view };
-      const recipe = stageRecipeFor(input);
-      const state = recipe.open(input);
-      state.onDraft = rows => this.emit({ type: "stage:draft", rows });
-      let messages = this.loadMessages();
-      // A long exchange is folded at a turn's start into one summary, so the cache breaks once rather than every turn.
-      if (messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(b => b.type === "tool_result") : []).length > FOLD_AFTER_RESULTS) {
-        const recent = this.sql<{ entry: string }>`SELECT entry FROM transcript ORDER BY seq DESC LIMIT 6`.map(r => r.entry).reverse();
-        void this.sql`DELETE FROM messages`;
-        messages = [{ role: "user", content: JSON.stringify({ summary: "Earlier turns of this conversation, folded.", stage: this.state.scene.rows, recent }) }, { role: "assistant", content: [{ type: "text", text: "Noted." }] }];
-        void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify({ action: "fold" })})`;
+      if (!data) throw new Error("stage data unavailable");
+      const context: TurnContext = { before: this.state.revision, address, startedAt, basis: data.basis };
+      void this.sql`UPDATE turns SET context = ${JSON.stringify(context)} WHERE id = ${turnId}`;
+      // The conversation is one Pi session; each turn is one run on it, and Pi compacts it when it grows too long.
+      const opening = JSON.stringify({ request: text, view: this.view, stage: this.state.scene.rows.map(r => ({ title: r.title, cells: r.cells.map(c => c.map(b => b.kind)) })), budget: { turns: STAGE_BUDGET.turns } });
+      const spec: StageSpec = { turnId, address, userHash };
+      const started = await this.pi.start("stage", spec, opening, { operationId: turnId, session: STAGE_SESSION });
+      if (started.refused && !this.capHits.has(turnId)) this.capHits.set(turnId, "reader");
+      else controller.signal.addEventListener("abort", () => void this.pi.abort(turnId));
+      await this.completeTurn(turnId, started.refused ? "capped" : undefined);
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      console.error(JSON.stringify({ event: "stage-turn", outcome: "error", conversation: this.name, error: message }));
+      if (this.sql<{ status: string }>`SELECT status FROM turns WHERE id = ${turnId}`[0]?.status === "running") {
+        void this.sql`UPDATE turns SET status = 'failed' WHERE id = ${turnId}`;
+        this.notice("turn-failed");
+        await this.closeTurn(turnId, { status: "failed", calls: 0, reason: null, firstError: message, startedAt, who });
       }
-      const start = messages.length;
-      messages.push({ role: "user", content: JSON.stringify({ request: text, view: this.view, stage: this.state.scene.rows.map(r => ({ title: r.title, cells: r.cells.map(c => c.map(b => b.kind)) })), budget: { turns: STAGE_BUDGET.turns } }) });
-      const tools = stageTools(input);
-      const act = async (stage: string, system: string, schemas: unknown[], msgs: AgentMessage[]): Promise<AgentReply> => {
-        try {
-          return await callWorkerToolModel(env, fetch, `stage-${stage}`, { system, tools: schemas as Anthropic.Beta.BetaTool[], messages: msgs as Anthropic.Beta.BetaMessageParam[] }, modelFor(env, "stage"), 60_000,
-            { reasoning: reasoningFor(env, "stage"), ticker: owner.ticker, kind: "stage", runId: turnId, userHash, conversationId: this.name });
-        } catch (error) {
-          return { error: `${error instanceof SecModelOutputError ? error.code : "request"}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) };
-        }
-      };
-      const host: LoopHost = {
-        reserve: async () => {
-          const r = await reserve(db, "stage-calls", who).catch(() => ({ ok: false as const, which: "global" as const }));
-          if (!r.ok) { capHit = r.which; return false; }
-          calls++;
-          return true;
-        },
-        record: entry => {
-          if (entry.action === "invalid" && !firstError) firstError = entry.observation.slice(0, 500);
-          void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify(entry)})`;
-        },
-        execute: async (_turn, list, run) => {
-          const safe = new Set(tools.filter(t => t.concurrencySafe).map(t => t.name));
-          const status = (call: ToolCall) => this.emit({ type: "stage:turn", turn: { id: turnId, phase: this.phaseOf(call.name), status: { tool: call.name, ...(argOf(call) ? { arg: argOf(call) } : {}) } } });
-          const runOne = (call: ToolCall): Promise<ToolOutcome> => { status(call); return run(call); };
-          return list.every(c => safe.has(c.name)) ? Promise.all(list.map(runOne)) : sequential(list, runOne);
-        },
-        onToolStart: name => this.emit({ type: "stage:turn", turn: { id: turnId, phase: this.phaseOf(name), status: null } }),
-        signal: controller.signal,
-        now: () => Date.now(),
-      };
-      const outcome = await runAgentLoop({ ...recipe, tools: () => tools }, input, state, messages, act, host);
-      this.saveMessages(messages, start);
-      // A report the turn proposed stops the loop before it runs; the reader decides.
-      const result: typeof outcome.output = outcome.asked ? { kind: "report", question: outcome.asked } : outcome.output;
+    } finally {
+      if (this.running === controller) this.running = null;
+    }
+  }
+
+  /** A turn Pi resumed after an eviction: it holds the stage as a running turn does, and the reader can cancel it. */
+  private resume(turnId: string) {
+    const controller = new AbortController();
+    this.running = controller;
+    controller.signal.addEventListener("abort", () => void this.pi.abort(turnId));
+    void this.completeTurn(turnId).finally(() => { if (this.running === controller) this.running = null; });
+  }
+
+  /** One turn's session settled: its result goes on the stage. Runs once per turn, also for a turn Pi resumed after an eviction. */
+  private completeTurn(turnId: string, refused?: "capped"): Promise<void> {
+    const pending = this.completions.get(turnId);
+    if (pending) return pending;
+    const work = this.settleTurn(turnId, refused).finally(() => this.completions.delete(turnId));
+    this.completions.set(turnId, work);
+    return work;
+  }
+
+  private async settleTurn(turnId: string, refused?: "capped"): Promise<void> {
+    const row = this.sql<{ status: string; context: string | null }>`SELECT status, context FROM turns WHERE id = ${turnId}`[0];
+    const owner = this.owner();
+    if (!row || row.status !== "running" || !owner || !row.context) return;
+    const context = JSON.parse(row.context) as TurnContext;
+    const locale: Locale = owner.locale === "zh-CN" ? "zh-CN" : "en";
+    const who: Spender = { reader: owner.user_id, address: context.address };
+    let status = "failed", reason: string | null = null, calls = 0, firstError: string | null = null;
+    try {
+      if (refused) { this.notice(this.capHits.get(turnId) === "global" ? "global-cap-reached" : "quota-reached"); status = "capped"; return; }
+      const outcome = await this.pi.finish<StageOutcome>(turnId);
+      calls = outcome.turns;
+      firstError = outcome.trail.find(e => e.action === "invalid")?.observation.slice(0, 500) ?? null;
+      // A report the turn proposed stops the run before it runs; the reader decides.
+      const result: StageOutcome = outcome.asked ? { kind: "report", question: outcome.asked } : outcome.output;
       reason = `${outcome.reason}:${result.kind}:${outcome.turns}`;
       if (result.kind === "scene") {
         // A report that finished during the turn keeps its place: its block joins the turn's scene.
-        const kept = this.state.revision === before ? [] : this.state.scene.rows.filter(r => r.cells.flat().some(b => b.kind === "report" || b.kind === "progress"));
-        const committed = this.commit([...kept, ...result.rows].slice(0, 8), { periodEnd: result.periodEnd, ...(result.findingId ? { findingId: result.findingId } : {}) }, data.basis, "finish", this.state.revision);
+        const kept = this.state.revision === context.before ? [] : this.state.scene.rows.filter(r => r.cells.flat().some(b => b.kind === "report" || b.kind === "progress"));
+        const committed = this.commit([...kept, ...result.rows].slice(0, 8), { periodEnd: result.periodEnd, ...(result.findingId ? { findingId: result.findingId } : {}) }, context.basis, "finish", this.state.revision);
         if (committed) this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "stage", revision: this.state.revision });
         status = "done";
       } else if (result.kind === "report") {
@@ -216,8 +232,9 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       } else if (result.kind === "answer") {
         this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "answer", paragraphs: result.paragraphs, contentLanguage: locale });
         status = "done";
-      } else if (capHit) {
-        this.notice(capHit === "global" ? "global-cap-reached" : "quota-reached");
+      } else if (outcome.capped) {
+        const which = this.capHits.get(turnId);
+        this.notice(which === "global" ? "global-cap-reached" : "quota-reached");
         status = "capped";
       } else {
         this.notice(outcome.reason === "cancelled" ? "turn-interrupted" : "turn-failed");
@@ -228,17 +245,52 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       console.error(JSON.stringify({ event: "stage-turn", outcome: "error", conversation: this.name, error: firstError }));
       this.notice("turn-failed");
     } finally {
-      this.running = null;
-      void this.sql`UPDATE turns SET status = ${status}, calls = ${calls} WHERE id = ${turnId}`;
-      this.emit({ type: "stage:draft", rows: null });
-      this.emit({ type: "stage:turn", turn: null });
-      // A turn that spent nothing on the model gives its say back.
-      if (calls === 0) await refund(db, "stage-says", who, 1).catch(() => {});
-      await db.prepare("UPDATE stage_conversations SET last_at = ?, turns = turns + 1 WHERE id = ?").bind(new Date().toISOString(), this.name).run().catch(() => {});
-      // The turn's record for the operator: how it ended and the first model failure, never the reader's words.
-      await db.prepare("INSERT OR IGNORE INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at, finished_at, result, error) VALUES (?, ?, 'stage-turn', ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(owner.user_id, turnId, owner.ticker, this.name, turnId, status, startedAt, new Date().toISOString(), JSON.stringify({ calls, reason }), firstError).run().catch(() => {});
+      this.capHits.delete(turnId);
+      await this.closeTurn(turnId, { status, calls, reason, firstError, startedAt: context.startedAt, who });
     }
+  }
+
+  private async closeTurn(turnId: string, end: { status: string; calls: number; reason: string | null; firstError: string | null; startedAt: string; who: Spender }): Promise<void> {
+    const owner = this.owner();
+    const db = this.env.DB;
+    void this.sql`UPDATE turns SET status = ${end.status}, calls = ${end.calls} WHERE id = ${turnId}`;
+    this.emit({ type: "stage:draft", rows: null });
+    this.emit({ type: "stage:turn", turn: null });
+    if (!db || !owner) return;
+    // A turn that spent nothing on the model gives its say back.
+    if (end.calls === 0) await refund(db, "stage-says", end.who, 1).catch(() => {});
+    await db.prepare("UPDATE stage_conversations SET last_at = ?, turns = turns + 1 WHERE id = ?").bind(new Date().toISOString(), this.name).run().catch(() => {});
+    // The turn's record for the operator: how it ended and the first model failure, never the reader's words.
+    await db.prepare("INSERT OR IGNORE INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at, finished_at, result, error) VALUES (?, ?, 'stage-turn', ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(owner.user_id, turnId, owner.ticker, this.name, turnId, end.status, end.startedAt, new Date().toISOString(), JSON.stringify({ calls: end.calls, reason: end.reason }), end.firstError).run().catch(() => {});
+  }
+
+  /** What a stage turn's Pi session is rebuilt from: the stage's data and tools, its allowance, its trail and its events. */
+  private async loadStage(spec: StageSpec): Promise<PiLoaded<StageTurn>> {
+    const owner = this.owner();
+    if (!owner) throw new Error("stage: no owner");
+    const env = await companyPolicyEnvironment(this.env as StageEnv);
+    const data = await loadStageData(env, owner.ticker);
+    if (!data) throw new Error("stage data unavailable");
+    const locale: Locale = owner.locale === "zh-CN" ? "zh-CN" : "en";
+    const input = { data, locale, scene: this.state.scene.rows, view: this.view };
+    const who: Spender = { reader: owner.user_id, address: spec.address };
+    return {
+      recipe: stageRecipeFor(input), input,
+      hydrate: state => { state.onDraft = rows => this.emit({ type: "stage:draft", rows }); },
+      model: modelFor(env, "stage"), effort: reasoningFor(env, "stage"),
+      ledger: { kind: "stage", ticker: owner.ticker, runId: spec.turnId, userHash: spec.userHash, conversationId: this.name },
+      reserve: async () => {
+        const r = await reserve(env.DB!, "stage-calls", who).catch(() => ({ ok: false as const, which: "global" as const }));
+        if (!r.ok) this.capHits.set(spec.turnId, r.which);
+        return r.ok;
+      },
+      record: entry => { void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${spec.turnId}, ${JSON.stringify(entry)})`; },
+      onToolStart: (name, args) => {
+        const call = { type: "tool_use", id: "", name, input: args } as ToolCall;
+        this.emit({ type: "stage:turn", turn: { id: spec.turnId, phase: this.phaseOf(name), status: { tool: name, ...(argOf(call) ? { arg: argOf(call) } : {}) } } });
+      },
+    };
   }
 
   /** The reader confirmed or declined a proposed report; a confirmed one starts its Workflow under a key that repeats for the same question the same day. */
@@ -257,7 +309,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       }
     }
     if (!yes) return;
-    const env = this.env as StageEnv & { REPORT_WORKFLOW?: Workflow };
+    const env = withRuns(this.env as StageEnv & { REPORT_WORKFLOW?: { create(options: { id: string; params: unknown }): Promise<unknown> } });
     const db = env.DB!;
     if (!env.REPORT_WORKFLOW) { this.notice("report-failed"); return; }
     const day = new Date().toISOString().slice(0, 10);

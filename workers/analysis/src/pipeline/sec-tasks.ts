@@ -35,7 +35,12 @@ async function reconcileGuidance(env: Parameters<typeof driveWorkflow>[0], ticke
       .bind(ticker).all<{ accession: string; workflow_instance_id: string }>()).results;
     for (const row of running) {
       let status: { status: string; error?: unknown };
-      try { status = await (await env.GUIDANCE_WORKFLOW.get(row.workflow_instance_id)).status(); } catch { continue; }
+      try { status = await (await env.GUIDANCE_WORKFLOW.get(row.workflow_instance_id)).status(); }
+      catch (error) {
+        // A run started before the move from Workflows to durable runs has no runner; it is retried like a failed one.
+        if (!/instance\.not_found/.test(String(error))) continue;
+        status = { status: "errored", error: { message: "run not found" } };
+      }
       if (!["errored", "terminated"].includes(status.status)) continue;
       const failure = `Workflow ${row.workflow_instance_id} ${status.status}: ${String((status.error as { message?: string } | undefined)?.message ?? "").slice(0, 300)}`;
       const attempts = (state.events[row.accession]?.attempts ?? 0) + 1;

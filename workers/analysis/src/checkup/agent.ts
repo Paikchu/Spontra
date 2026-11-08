@@ -6,10 +6,12 @@ import { DIMENSION_NAMES, METRIC_DEFS } from "../../../../shared/analysis-runtim
 import { DERIVED_FORMULA, refLabel } from "../../../../shared/analysis-runtime/findings.ts";
 import type { FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import { renderTable } from "../analyst/agent.ts";
-import type { TocDocument } from "../filing-library/tool.ts";
 import { listFilingAnalyses, readFilingAnalysis, type FilingAnalysisEntry } from "../items/library.ts";
-import type { AnalysisEnv } from "../operations.ts";
-import { asObject, CALLS_PER_TURN, closedObject, FAILED_REPLIES, replyFailure, replyText, toolCalls, toolResult, type AgentAct, type AgentBlock, type AgentMessage, type AgentTool } from "../tool-loop.ts";
+import { asObject, closedObject, type AgentClientTool } from "../tool-loop.ts";
+import { handPolicy, handTool } from "../pi/hand-tools.ts";
+import type { SessionRunner } from "../pi/runs.ts";
+import type { Recipe } from "../recipe.ts";
+import type { NoteFigures } from "../../../../shared/analysis-runtime/checkup-notes.ts";
 
 /**
  * The checkup note writer: for one metric the checkup flags, a short analysis
@@ -36,7 +38,7 @@ Method:
 5. finish checks the analysis and either accepts it or lists what to fix; fix and finish again.`;
 
 const STRINGS = { type: "array", items: { type: "string" } };
-export const NOTE_TOOLS: AgentTool[] = [
+export const NOTE_TOOLS: AgentClientTool[] = [
   {
     name: "read_filing_analysis", strict: true,
     description: "Read one filing analysis (id from filings): its conclusion and the verbatim passages it quoted, each becoming a material [m<n>]; focus terms select the passages and table rows about them.",
@@ -52,19 +54,24 @@ export const NOTE_TOOLS: AgentTool[] = [
   },
 ];
 
+/** What one metric's note session is rebuilt from: everything its tools read, decided when the run started it. */
+export type NoteSpec = { ticker: string; metricId: string; ruleIds: string[]; figures: NoteFigures; periodEnd: string; earlierAvailable: boolean; budget: NoteBudget; runId?: string };
+type Material = FindingMaterial & { passage: FindingPassage };
+export type NoteState = { materials: Material[]; byPassage: Map<string, string>; reads: number; accepted: CheckupNote | null; issues: string[] };
+export type NoteResult = { note: CheckupNote | null; materials: FindingMaterial[]; issues: string[] };
+
 export type NoteRunInput = {
-  env: AnalysisEnv;
   ticker: string;
   metric: AssessedMetric;
   flags: Flag[];
   data: FindingData;
-  /** The library's periodic filings, for the fingerprint only: the note reads their analyses, never them. */
-  documents: TocDocument[];
-  act: AgentAct;
+  db: D1Database;
+  /** Runs the note's session: a Pi session in production, a scripted driver in tests. */
+  run: SessionRunner;
+  operationId: string;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
-  /** Reserve per model-stage attempt; completed stages replay without reserving again. False ends the note. */
-  reserveTurn: () => Promise<boolean>;
   budget?: NoteBudget;
+  runId?: string;
 };
 
 /**
@@ -84,108 +91,82 @@ function definition(data: FindingData, metricId: string): string {
 }
 
 
-/** One metric's note: the model reads through the harness and finishes; the harness accepts only a note that holds. */
+
+/** The note writer as a recipe: its tools read the library through `db` and keep everything they learn in the state. */
+export function noteRecipe(spec: NoteSpec, db: D1Database): Recipe<NoteSpec, NoteResult, NoteState> {
+  const { ticker, periodEnd, budget } = spec;
+  const register = (state: NoteState, passage: FindingPassage) => {
+    const seen = state.byPassage.get(passage.passageId);
+    if (seen) return seen;
+    const id = `m${state.materials.length + 1}`;
+    state.materials.push({ id, kind: "sec", title: passage.title, url: passage.url, publishedAt: passage.filedAt, passageId: passage.passageId, documentId: passage.documentId, form: passage.form, path: passage.path, passage });
+    state.byPassage.set(passage.passageId, id);
+    return id;
+  };
+  const strings = (v: unknown) => Array.isArray(v) ? v.filter((f): f is string => typeof f === "string").slice(0, 8) : undefined;
+  const tools = [
+    handTool<NoteState>(NOTE_TOOLS[0]!, async (args, state) => {
+      if (state.reads >= budget.reads) return { observation: "No reads left; finish with what you have read.", error: true };
+      const id = typeof args.id === "string" && args.id.trim() ? args.id.trim().slice(0, 40) : undefined;
+      if (!id) return { observation: "read_filing_analysis needs an id from filings.", error: true };
+      state.reads++;
+      const focus = strings(args.focus);
+      const found = await readFilingAnalysis(db, ticker, id);
+      if (!found) return { observation: `No filing analysis ${id}; the ids are in filings.` };
+      const terms = (focus ?? []).map(f => f.toLowerCase()).filter(Boolean);
+      const chosen = terms.length ? found.passages.filter(p => terms.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : found.passages;
+      const when = earlierMaterial({ title: found.title, publishedAt: found.filedAt }, periodEnd) ? "earlier report" : "current report";
+      const out = (chosen.length ? chosen : found.passages).slice(0, 12).map(passage => `[${register(state, passage)}] ${passage.form} filed ${passage.filedAt} › ${passage.path.join(" › ")}\n${passage.table ? renderTable(passage.table, focus ?? []) : passage.text.slice(0, 2400)}`);
+      return { observation: `${found.form} for ${found.periodEnd} (${when}) — ${found.title}\nconclusion: ${found.judgment}\n\n${out.join("\n\n") || "(this analysis quoted no passage)"}\n\nReads left: ${budget.reads - state.reads}.` };
+    }),
+    handTool<NoteState>(NOTE_TOOLS[1]!, (args, state) => {
+      const paragraphs = (Array.isArray(args.paragraphs) ? args.paragraphs : []).flatMap(p => { const o = asObject(p); return o && typeof o.text === "string" ? [{ text: unescaped(o.text).trim().slice(0, 1400), sourceIds: (Array.isArray(o.sourceIds) ? o.sourceIds : []).filter((s): s is string => typeof s === "string").slice(0, 6) }] : []; }).slice(0, 3);
+      const quotes = (Array.isArray(args.quotes) ? args.quotes : []).flatMap(q => { const o = asObject(q); return o && typeof o.text === "string" && typeof o.materialId === "string" ? [{ kind: "quote" as const, materialId: o.materialId, text: unescaped(o.text).trim().slice(0, 600) }] : []; }).slice(0, 4);
+      const issues = noteIssues({ paragraphs, quotes }, spec.figures, state.materials, state.materials.map(m => m.passage), periodEnd, spec.earlierAvailable);
+      if (quotes.length < 2) issues.push("at least two quotes are needed: one from the current report and one from an earlier report");
+      if (paragraphs.some(p => p.text.split(/\s+/).length < 40)) issues.push("each paragraph needs at least 40 words");
+      state.issues = issues;
+      if (issues.length) return { observation: `Not accepted:\n  ${issues.join("\n  ")}`, error: true };
+      state.accepted = { metricId: spec.metricId, ruleIds: spec.ruleIds, paragraphs, quotes };
+      return { observation: "Accepted." };
+    }),
+  ];
+  return {
+    id: `checkup-${spec.metricId}`,
+    budget: { turns: budget.turns, wallMs: 45 * 60_000 },
+    system: () => SYSTEM,
+    open: () => ({ materials: [], byPassage: new Map(), reads: 0, accepted: null, issues: [] }),
+    tools: () => tools,
+    policy: handPolicy(tools),
+    settled: state => state.accepted !== null,
+    settle: state => {
+      const quoted = new Set(state.accepted?.quotes.map(q => q.materialId) ?? []), cited = new Set(state.accepted?.paragraphs.flatMap(p => p.sourceIds) ?? []);
+      const kept = state.materials.filter(m => quoted.has(m.id) || cited.has(m.id)).map(({ passage: _, ...m }) => { void _; return m; });
+      return { note: state.accepted, materials: kept, issues: state.accepted ? [] : state.issues };
+    },
+    nudge: "Continue by calling the tools; finish once the analysis is written.",
+  };
+}
+
+/** One metric's note as one session: the model reads through the tools and finishes; only a note that holds is accepted. */
 export async function runNote(input: NoteRunInput): Promise<NoteOutcome> {
-  const { env, ticker, metric } = input;
-  const db = env.DB!;
+  const { ticker, metric } = input;
   const budget = input.budget ?? NOTE_BUDGET;
   const periodEnd = metric.evidence.periodEnd;
   const figures = noteFigures(input.data, metric, input.flags);
-  const materials: Array<FindingMaterial & { passage: FindingPassage }> = [];
-  const byPassage = new Map<string, string>();
-  const turns: NoteTurn[] = [];
-  const used = { reads: 0 };
+  const analyses = await input.stage(`${metric.id}-filings`, () => listFilingAnalyses(input.db, ticker).catch(() => [] as FilingAnalysisEntry[]));
   // An earlier report is available when an analysis is written for a report well before this one.
-  const analyses = await listFilingAnalyses(db, ticker).catch(() => [] as FilingAnalysisEntry[]);
   const earlierAvailable = analyses.some(a => a.kind === "report" && Date.parse(periodEnd) - Date.parse(a.periodEnd) > 45 * 86_400_000);
-  const state: { accepted: CheckupNote | null; issues: string[] } = { accepted: null, issues: [] };
-
-  const register = (passage: FindingPassage) => {
-    const seen = byPassage.get(passage.passageId);
-    if (seen) return seen;
-    const id = `m${materials.length + 1}`;
-    materials.push({ id, kind: "sec", title: passage.title, url: passage.url, publishedAt: passage.filedAt, passageId: passage.passageId, documentId: passage.documentId, form: passage.form, path: passage.path, passage });
-    byPassage.set(passage.passageId, id);
-    return id;
-  };
-  const read = async (id: string, focus: string[] | undefined) => {
-    const found = await readFilingAnalysis(db, ticker, id);
-    if (!found) return `No filing analysis ${id}; the ids are in filings.`;
-    const terms = (focus ?? []).map(f => f.toLowerCase()).filter(Boolean);
-    const chosen = terms.length ? found.passages.filter(p => terms.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : found.passages;
-    const when = earlierMaterial({ title: found.title, publishedAt: found.filedAt }, periodEnd) ? "earlier report" : "current report";
-    const out = (chosen.length ? chosen : found.passages).slice(0, 12).map(passage => `[${register(passage)}] ${passage.form} filed ${passage.filedAt} › ${passage.path.join(" › ")}\n${passage.table ? renderTable(passage.table, focus ?? []) : passage.text.slice(0, 2400)}`);
-    return `${found.form} for ${found.periodEnd} (${when}) — ${found.title}\nconclusion: ${found.judgment}\n\n${out.join("\n\n") || "(this analysis quoted no passage)"}`;
-  };
-  const left = (turn: number) => `Budget left: ${budget.turns - turn} turns, ${budget.reads - used.reads} reads.${budget.turns - turn <= 1 ? " Finish now with what you have read." : ""}`;
-
   const def = METRIC_DEFS.get(metric.id)!;
-  const messages: AgentMessage[] = [{ role: "user", content: JSON.stringify({
+  const opening = JSON.stringify({
     subject: { company: ticker, metric: def.label[0], definition: definition(input.data, metric.id), dimension: DIMENSION_NAMES[def.dimension], report: periodEnd, span: metric.span === "fiscal_year" ? "trailing four quarters" : "quarter" },
     rules: input.flags.map(f => ({ rule: f.ruleId, level: f.level, threshold: f.threshold, since: f.since.slice(0, 7) })),
     figures: figures.lines,
     filings: analyses,
     earlierReportAnalysed: earlierAvailable,
     budget,
-  }) }];
-  let failed = 0, quiet = 0;
-  for (let turn = 1; turn <= budget.turns && !state.accepted; turn++) {
-    const reply = await input.stage(`${metric.id}-t${turn}`, async () => {
-      if (!await input.reserveTurn()) return null;
-      return input.act(`checkup-${metric.id}-${turn}`, SYSTEM, NOTE_TOOLS, messages);
-    });
-    if (reply === null) { turns.push({ turn, thought: "", action: "budget", input: "", observation: "The day's model budget is spent." }); break; }
-    const failure = replyFailure(reply);
-    if (failure !== null || "error" in reply) { turns.push({ turn, thought: "", action: "invalid", input: "", observation: String(failure).slice(0, 600) }); if (++failed >= FAILED_REPLIES) break; continue; }
-    failed = 0;
-    messages.push({ role: "assistant", content: reply.content });
-    const said = replyText(reply.content).slice(0, 400), calls = toolCalls(reply.content);
-    if (!calls.length) {
-      turns.push({ turn, thought: said, action: "none", input: "", observation: "The reply called no tool." });
-      if (++quiet >= 2) break;
-      messages.push({ role: "user", content: "Continue by calling the tools; finish once the analysis is written." });
-      continue;
-    }
-    quiet = 0;
-    const results: AgentBlock[] = [];
-    for (const [i, call] of calls.entries()) {
-      const args = asObject(call.input) ?? {};
-      const outcome = state.accepted ? { observation: "Not run: the analysis was already accepted." }
-        : i >= CALLS_PER_TURN ? { observation: `Not run: at most ${CALLS_PER_TURN} calls run per turn.` }
-        : await perform(call.name.trim().toLowerCase(), args, `${metric.id}-t${turn}-${i + 1}`);
-      const observation = outcome.observation.slice(0, 10_000);
-      turns.push({ turn, thought: i ? "" : said, action: call.name.slice(0, 20), input: JSON.stringify(args).slice(0, 4000), observation });
-      results.push(toolResult(call, `${observation}\n\n${left(turn)}`, "error" in outcome && outcome.error === true));
-    }
-    if (!state.accepted) messages.push({ role: "user", content: results });
-  }
-  const quoted = new Set(state.accepted?.quotes.map(q => q.materialId) ?? []), cited = new Set(state.accepted?.paragraphs.flatMap(p => p.sourceIds) ?? []);
-  const kept = materials.filter(m => quoted.has(m.id) || cited.has(m.id)).map(({ passage: _, ...m }) => { void _; return m; });
-  return { metricId: metric.id, note: state.accepted, materials: kept, turns, issues: state.accepted ? [] : state.issues };
-
-  async function perform(name: string, args: Record<string, unknown>, step: string): Promise<{ observation: string; error?: boolean }> {
-    const text = (k: string, max = 200) => typeof args[k] === "string" && (args[k] as string).trim() ? (args[k] as string).trim().slice(0, max) : undefined;
-    const terms = (k: string) => Array.isArray(args[k]) ? (args[k] as unknown[]).filter((f): f is string => typeof f === "string").slice(0, 8) : undefined;
-    switch (name) {
-      case "read_filing_analysis": {
-        if (used.reads >= budget.reads) return { observation: "No reads left; finish with what you have read.", error: true };
-        const id = text("id", 40);
-        if (!id) return { observation: "read_filing_analysis needs an id from filings.", error: true };
-        used.reads++;
-        return { observation: await input.stage(`${step}-analysis`, () => read(id, terms("focus"))) };
-      }
-      case "finish": {
-        const paragraphs = (Array.isArray(args.paragraphs) ? args.paragraphs : []).flatMap(p => { const o = asObject(p); return o && typeof o.text === "string" ? [{ text: unescaped(o.text).trim().slice(0, 1400), sourceIds: (Array.isArray(o.sourceIds) ? o.sourceIds : []).filter((s): s is string => typeof s === "string").slice(0, 6) }] : []; }).slice(0, 3);
-        const quotes = (Array.isArray(args.quotes) ? args.quotes : []).flatMap(q => { const o = asObject(q); return o && typeof o.text === "string" && typeof o.materialId === "string" ? [{ kind: "quote" as const, materialId: o.materialId, text: unescaped(o.text).trim().slice(0, 600) }] : []; }).slice(0, 4);
-        const issues = noteIssues({ paragraphs, quotes }, figures, materials, materials.map(m => m.passage), periodEnd, earlierAvailable);
-        if (quotes.length < 2) issues.push("at least two quotes are needed: one from the current report and one from an earlier report");
-        if (paragraphs.some(p => p.text.split(/\s+/).length < 40)) issues.push("each paragraph needs at least 40 words");
-        state.issues = issues;
-        if (issues.length) return { observation: `Not accepted:\n  ${issues.join("\n  ")}`, error: true };
-        state.accepted = { metricId: metric.id, ruleIds: input.flags.map(f => f.ruleId), paragraphs, quotes };
-        return { observation: "Accepted." };
-      }
-      default: return { observation: `There is no tool "${name}"; use read_filing_analysis or finish.`, error: true };
-    }
-  }
+  });
+  const spec: NoteSpec = { ticker, metricId: metric.id, ruleIds: input.flags.map(f => f.ruleId), figures, periodEnd, earlierAvailable, budget, ...(input.runId ? { runId: input.runId } : {}) };
+  const outcome = await input.run<NoteResult, NoteState>("checkup", spec, opening, input.operationId);
+  return { metricId: metric.id, note: outcome.output.note, materials: outcome.output.materials, turns: outcome.trail, issues: outcome.output.issues };
 }

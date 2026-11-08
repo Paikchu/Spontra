@@ -1,4 +1,4 @@
-import { nativeSearches, nativeSearchTool, datedHits, NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
+import { datedHits } from "../web-search/native.ts";
 import type { FindingMaterial, FindingPassage, FindingRecordEntry, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LENS_LIMITS, type LensDocument } from "../../../../shared/analysis-contract/lens.ts";
@@ -13,7 +13,6 @@ import { SECTOR_LABELS, TAG_FACETS, type TagFacet } from "../../../../shared/ana
 import { INDUSTRY_CATEGORIES } from "../../../../shared/analysis-contract/filing-library.ts";
 import { similarBusinesses } from "../business-tags/match.ts";
 import { compileDocument, verifyLensDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";
-import type { TocDocument } from "../filing-library/tool.ts";
 import { listFilingAnalyses, readFilingAnalysis, type FilingAnalysisEntry } from "../items/library.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, readWebPage } from "./web.ts";
 import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
@@ -21,14 +20,14 @@ import type { SearchHit } from "../web-search/types.ts";
 import { earlierMaterial } from "../../../../shared/analysis-runtime/checkup-notes.ts";
 import { lensCatalogue, lensEvidence, type LensCatalogueRow } from "../lens/agent.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { asObject, CALLS_PER_TURN, closedObject, FAILED_REPLIES, replyFailure, replyText, toolCalls, toolResult, type AgentAct, type AgentBlock, type AgentMessage, type AgentTool } from "../tool-loop.ts";
+import { asObject, closedObject, type AgentClientTool } from "../tool-loop.ts";
+import { handPolicy, handSearch, handTool, type HandResult } from "../pi/hand-tools.ts";
+import type { SessionRunner } from "../pi/runs.ts";
+import type { Recipe } from "../recipe.ts";
 import type { Plan } from "./plan.ts";
 
-/** The analyst's model: its loop's turns through the tools, and one JSON call for the remove-only review. */
+/** The analyst's one JSON call, for the remove-only review; an empty object when the reply was not one. */
 export type AnalystModel = {
-  /** One turn of the loop, taken through the tools. `messages` is the whole exchange so far; it only ever grows. */
-  act: AgentAct;
-  /** One JSON object, for the review; an empty object when the reply was not one. */
   judge(stage: string, system: string, payload: unknown): Promise<Record<string, unknown>>;
 };
 /** One call of the loop as the operator reads it; `thought` is what the reply said beside its calls, often nothing. */
@@ -62,7 +61,7 @@ const STRINGS = { type: "array", items: { type: "string" } };
 /** Open: the lens grammar is larger than a strict schema may be, and the harness checks every document against it. */
 const DOCUMENT = { type: "object", description: "The whole lens document, {rows:[...]}, in the grammar the system prompt describes." };
 /** The loop's actions as Claude tools. The research tools are strict; compile and finish carry a whole document and are checked by the harness. */
-export const ANALYST_TOOLS: AgentTool[] = [
+export const ANALYST_TOOLS: AgentClientTool[] = [
   {
     name: "filings", strict: true,
     description: "The written filing analyses of the company, or of a comparable peer (ticker), newest report first: each with its id (the filing's accession), form, filing date, report period and title.",
@@ -88,30 +87,40 @@ export const ANALYST_TOOLS: AgentTool[] = [
   { name: "finish", description: "Accept the document: the one given here, compiled first, or else the last one compiled. Only a document whose last compile had no errors is accepted.", input_schema: { type: "object", properties: { document: DOCUMENT }, required: [] } },
 ];
 
-/** Every passage this run has read, numbered in the order it was read; a quote may only point at one of these. */
-class Materials {
-  readonly list: Array<FindingMaterial & { passage: FindingPassage }> = [];
-  private byPassage = new Map<string, string>();
-  register(passage: FindingPassage): string {
-    const seen = this.byPassage.get(passage.passageId);
-    if (seen) return seen;
-    const id = `m${this.list.length + 1}`;
-    this.list.push({ id, kind: "sec", title: passage.title, url: passage.url, publishedAt: passage.filedAt, passageId: passage.passageId, documentId: passage.documentId, form: passage.form, path: passage.path, passage });
-    this.byPassage.set(passage.passageId, id);
-    return id;
-  }
-  /** A web page reads under its own id; its passage id is the stored excerpt's id, so the read route can re-serve it. */
-  registerWeb(passage: FindingPassage, publishedAt: string | null): string {
-    const seen = this.byPassage.get(passage.passageId);
-    if (seen) return seen;
-    const id = passage.passageId;
-    this.list.push({ id, kind: "web", title: passage.title, url: passage.url, publishedAt, passageId: passage.passageId, path: passage.path, passage });
-    this.byPassage.set(passage.passageId, id);
-    return id;
-  }
-  get passages(): FindingPassage[] { return this.list.map(m => m.passage); }
-  get materials(): FindingMaterial[] { return this.list.map(({ passage: _, ...m }) => { void _; return m; }); }
+type AnalystMaterial = FindingMaterial & { passage: FindingPassage };
+/** Everything one finding's session has learned: the passages read (a quote may only point at one), the spend, the hits, the drafts. */
+export type AnalystState = {
+  list: AnalystMaterial[]; byPassage: Map<string, string>;
+  used: { reads: number; finds: number; searches: number; webReads: number };
+  hits: SearchHit[];
+  last: { document: LensDocument; errors: number; warnings: string[] } | null;
+  accepted: LensDocument | null;
+};
+/** What one finding's session is rebuilt from, decided when the run started it. */
+export type AnalystSpec = {
+  ticker: string; finding: VerifiedFinding; plan: Plan; data: FindingData; record: FindingRecordEntry[]; now: string;
+  analyses: FilingAnalysisEntry[]; earlierAvailable: boolean; runId?: string;
+};
+export type AnalystResult = { document: LensDocument | null; materials: AnalystMaterial[]; warnings: string[] };
+
+function register(state: AnalystState, passage: FindingPassage): string {
+  const seen = state.byPassage.get(passage.passageId);
+  if (seen) return seen;
+  const id = `m${state.list.length + 1}`;
+  state.list.push({ id, kind: "sec", title: passage.title, url: passage.url, publishedAt: passage.filedAt, passageId: passage.passageId, documentId: passage.documentId, form: passage.form, path: passage.path, passage });
+  state.byPassage.set(passage.passageId, id);
+  return id;
 }
+/** A web page reads under its own id; its passage id is the stored excerpt's id, so the read route can re-serve it. */
+function registerWeb(state: AnalystState, passage: FindingPassage, publishedAt: string | null): string {
+  const seen = state.byPassage.get(passage.passageId);
+  if (seen) return seen;
+  const id = passage.passageId;
+  state.list.push({ id, kind: "web", title: passage.title, url: passage.url, publishedAt, passageId: passage.passageId, path: passage.path, passage });
+  state.byPassage.set(passage.passageId, id);
+  return id;
+}
+const bare = (list: AnalystMaterial[]): FindingMaterial[] => list.map(({ passage: _, ...m }) => { void _; return m; });
 
 export type AnalystRunInput = {
   env: AnalysisEnv;
@@ -123,13 +132,13 @@ export type AnalystRunInput = {
   categories: IndustryCategory[];
   /** The comparable units of the company's direct and partial peers. */
   peerUnits?: string[];
-  /** The newest periodic filings in the library, for the fingerprint only: the analyst reads their analyses, never them. */
-  documents: TocDocument[];
   record: FindingRecordEntry[];
   model: AnalystModel;
+  /** Runs the finding's session: a Pi session in production, a scripted driver in tests. */
+  run: SessionRunner;
+  operationId: string;
+  runId?: string;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
-  /** False once the day's model turns are spent; the loop then finishes with what it has. */
-  reserveTurn: () => Promise<boolean>;
   /** The run's clock, for retrieval stamps on web materials. */
   now: string;
   /** Context, never a source: the company narrative written earlier, and what the previous publication said about these figures. */
@@ -203,65 +212,40 @@ export function renderTable(table: NonNullable<FindingPassage["table"]>, focus: 
   return `${head}\n${body.join("\n")}${rest}`;
 }
 
-type Outcome = { observation: string; error?: boolean };
 
+/** The chart grammar the opening describes to the model. */
+const CHART_GRAMMAR = "{id, title? (the claim, not the name), subtitle? (how to read it), focus?: {periods?: [latest|first|YYYY-MM-DD], series?: [ids]} (drawn in colour, the rest grey), periodNote?: series id written under the period labels instead of drawn, aspect: wide|square|tall, span, periods 2–12, series:[{id, ref, transform?: value|yoy|qoq, label?}], marks:[{type: bar|line|area|step|dot|stacked_bar|stacked_area|waterfall|rule, series:[ids], color?: revenue|profit|expense|loss|up|muted|biz-0..4, axis?: left|right}], annotations?:[{series, period: latest|first|YYYY-MM-DD, text with {value} {change} {label} {period}}], bands?, periodLabels?: all|sparse, legend?: top|none}";
 
 /**
- * One finding's analysis: the model reads layer 2's filing analyses and the peers through the harness, composes a lens document,
- * and the harness compiles, verifies and audits every draft until one is accepted; a second, remove-only call then
- * reviews it. The outcome is the accepted document with the materials its quotes rest on, or nothing.
+ * One finding's analysis as a recipe: the model reads layer 2's filing analyses and the peers through the tools,
+ * composes a lens document, and every draft is compiled, verified and audited until one is accepted.
  */
-export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome> {
-  const { finding, plan, env, ticker } = input;
+export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv): Recipe<AnalystSpec, AnalystResult, AnalystState> {
+  const { finding, plan, ticker } = spec;
   const db = env.DB!;
-  const materials = new Materials();
   const candidates = finding.resolved.flatMap(evidenceCandidates);
-  const turns: AnalystTurn[] = [];
-  const used = { reads: 0, finds: 0, searches: 0, webReads: 0 };
-  const hits: SearchHit[] = [];
   const search = researchSearchConfigured(env) ? researchSearch(env) : null;
-  const searchesLeft = () => search ? plan.budget.searches - used.searches : 0, webReadsLeft = () => search ? plan.budget.webReads - used.webReads : 0;
+  const searchesLeft = (s: AnalystState) => search ? plan.budget.searches - s.used.searches : 0;
+  const webReadsLeft = (s: AnalystState) => search ? plan.budget.webReads - s.used.webReads : 0;
   const yearBefore = finding.periodEnd.replace(/^(\d{4})/, (_, y: string) => String(Number(y) - 1));
-  const state: { last: { document: LensDocument; errors: number; warnings: string[] } | null; accepted: LensDocument | null } = { last: null, accepted: null };
-  const dataWith = (): FindingData => ({ ...input.data, passages: [...(input.data.passages ?? []), ...materials.passages] });
-  // Every analysis reads the earlier reports (the user's rule): when an earlier report's analysis exists, a document must quote it.
-  const analyses = await listFilingAnalyses(db, ticker).catch(() => [] as FilingAnalysisEntry[]);
-  const earlierAvailable = analyses.some(a => a.kind === "report" && Date.parse(finding.periodEnd) - Date.parse(a.periodEnd) > 45 * 86_400_000);
+  const dataWith = (s: AnalystState): FindingData => ({ ...spec.data, passages: [...(spec.data.passages ?? []), ...s.list.map(m => m.passage)] });
   // The tickers whose analyses may be read: the company and its comparable peers.
-  const readable = new Set([ticker, ...peersOf(input.data, ticker), ...(comparablePeers(input.data.peers, ticker) ?? []).map(c => c.ticker)]);
-  const verify = (document: LensDocument) => {
-    const data = dataWith();
-    const verified = verifyLensDocument(document, finding, finding.resolved, data, finding.periodEnd, {}, { ticker, materials: materials.materials, record: input.record });
+  const readable = new Set([ticker, ...peersOf(spec.data, ticker), ...(comparablePeers(spec.data.peers, ticker) ?? []).map(c => c.ticker)]);
+  const verify = (s: AnalystState, document: LensDocument) => {
+    const data = dataWith(s);
+    const verified = verifyLensDocument(document, finding, finding.resolved, data, finding.periodEnd, {}, { ticker, materials: bare(s.list), record: spec.record });
     const compiled = compileDocument(document, data, finding.periodEnd);
     const warnings = auditDocument({ document, compiled, candidates, watch: finding.watch, judgmentChars: finding.judgment.text.length, figures: finding.resolved.length, verifyReasons: verified?.reasons ?? ["nothing in the document verifies"] });
-    const quotes = document.rows.flatMap(r => r.cells.flat()).flatMap(b => b.kind === "quote" ? [materials.list.find(m => m.id === b.materialId)] : []);
-    const noEarlier = earlierAvailable && !quotes.some(m => m && m.kind === "sec" && earlierMaterial(m, finding.periodEnd));
+    const quotes = document.rows.flatMap(r => r.cells.flat()).flatMap(b => b.kind === "quote" ? [s.list.find(m => m.id === b.materialId)] : []);
+    // Every analysis reads the earlier reports (the user's rule): when an earlier report's analysis exists, a document must quote it.
+    const noEarlier = spec.earlierAvailable && !quotes.some(m => m && m.kind === "sec" && earlierMaterial(m, finding.periodEnd));
     const errors = warnings.filter(w => w.level === "error").length + (noEarlier ? 1 : 0);
     const tierNotes = [
       ...(plan.tier === "deep" && !quotes.length ? ["deep tier: at least one quote from a filing is expected"] : []),
       ...(noEarlier ? ["error: no quote from an earlier report; read an earlier report's analysis (read_filing_analysis) and quote a passage it quoted"] : []),
     ];
-    state.last = { document, errors, warnings: [...warnings.filter(w => w.level === "warning").map(w => `${w.where}: ${w.message}`), ...tierNotes] };
+    s.last = { document, errors, warnings: [...warnings.filter(w => w.level === "warning").map(w => `${w.where}: ${w.message}`), ...tierNotes] };
     return describeDocument(document, compiled, warnings) + (tierNotes.length ? `\nnotes:\n  ${tierNotes.join("\n  ")}` : "") + (errors ? "" : "\nThis document compiles; finish when the warnings are addressed or deliberate.");
-  };
-  const readAnalysis = async (owner: string, id: string, focus: string[] | undefined): Promise<string> => {
-    const read = await readFilingAnalysis(db, owner, id);
-    if (!read) return `No filing analysis ${id} for ${owner}; list them with filings.`;
-    const terms = (focus ?? []).map(f => f.toLowerCase()).filter(Boolean);
-    const chosen = terms.length ? read.passages.filter(p => terms.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : read.passages;
-    const lines = (chosen.length ? chosen : read.passages).slice(0, 12).map(p => {
-      const mid = materials.register(p);
-      return `[${mid}] ${p.title} › ${p.path.join(" › ")} (passageId ${p.passageId})\n${p.table ? renderTable(p.table, focus ?? []) : p.text.slice(0, 2400)}`;
-    });
-    return `${owner} ${read.form} ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion: ${read.judgment}\n\n${lines.join("\n\n") || "(this analysis quoted no passage)"}`;
-  };
-
-  /** Closes every tool result: what the run may still spend, and what to do when it is nearly spent. */
-  const budget = (turn: number) => {
-    const turnsLeft = plan.budget.turns - turn;
-    const notice = turnsLeft <= 2 ? " The budget is almost spent: compile and finish with the best document."
-      : !state.last && turn + 1 > Math.ceil(plan.budget.turns / 2) ? " Half the turns are gone and nothing has compiled: compile a first document now, then refine it." : "";
-    return `Budget left: ${turnsLeft} turns, ${plan.budget.finds - used.finds} finds, ${plan.budget.reads - used.reads} reads, ${searchesLeft()} searches, ${webReadsLeft()} web reads.${notice}`;
   };
   /** A document as a call carries it; one sent as a JSON string is read the same way, with a note. */
   const documentOf = (raw: unknown): { document: LensDocument | null; observation: string | null; note: string | null } => {
@@ -270,10 +254,111 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
     const document = readLensDocument(value);
     return { document, note, observation: document ? null : `The document does not match the contract:\n  ${lensDocumentIssues(value).join("\n  ") || "document is not an object"}\nIf the document was cut off, send a shorter one: fewer rows, shorter paragraphs, no more than three charts.` };
   };
+  const text = (args: Record<string, unknown>, k: string, max = 200) => typeof args[k] === "string" && (args[k] as string).trim() ? (args[k] as string).trim().slice(0, max) : undefined;
+  const terms = (args: Record<string, unknown>, k: string) => Array.isArray(args[k]) ? (args[k] as unknown[]).filter((f): f is string => typeof f === "string").slice(0, 8) : undefined;
+  const schema = (name: string) => ANALYST_TOOLS.find(t => t.name === name)!;
+  const owned = (args: Record<string, unknown>): string | HandResult => {
+    const owner = (text(args, "ticker", 12) ?? ticker).toUpperCase();
+    return readable.has(owner) ? owner : { observation: `${owner} is not the company or one of its comparable peers.`, error: true };
+  };
+  const tools = [
+    handTool<AnalystState>(schema("filings"), async (args) => {
+      const owner = owned(args);
+      if (typeof owner !== "string") return owner;
+      const list = owner === ticker ? spec.analyses : await listFilingAnalyses(db, owner).catch(() => []);
+      return { observation: list.length ? list.map(a => `${a.id} · ${owner} ${a.form} filed ${a.filedAt} · report ${a.periodEnd} · ${a.title}`).join("\n") : `No filing analysis is written for ${owner}.` };
+    }),
+    handTool<AnalystState>(schema("read_filing_analysis"), async (args, s) => {
+      if (s.used.reads >= plan.budget.reads) return { observation: "No reads left; compile with the materials you have.", error: true };
+      const id = text(args, "id", 40);
+      if (!id) return { observation: "read_filing_analysis needs an id from filings.", error: true };
+      const owner = owned(args);
+      if (typeof owner !== "string") return owner;
+      s.used.reads++;
+      const focus = terms(args, "focus");
+      const read = await readFilingAnalysis(db, owner, id);
+      if (!read) return { observation: `No filing analysis ${id} for ${owner}; list them with filings.` };
+      const want = (focus ?? []).map(f => f.toLowerCase()).filter(Boolean);
+      const chosen = want.length ? read.passages.filter(p => want.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : read.passages;
+      const lines = (chosen.length ? chosen : read.passages).slice(0, 12).map(p => `[${register(s, p)}] ${p.title} › ${p.path.join(" › ")} (passageId ${p.passageId})\n${p.table ? renderTable(p.table, focus ?? []) : p.text.slice(0, 2400)}`);
+      return { observation: `${owner} ${read.form} ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion: ${read.judgment}\n\n${lines.join("\n\n") || "(this analysis quoted no passage)"}` };
+    }),
+    handTool<AnalystState>(schema("read_web"), async (args, s) => {
+      if (!search) return { observation: "Web reading is not configured for this run.", error: true };
+      if (s.used.webReads >= plan.budget.webReads) return { observation: "No web reads left; compile with the materials you have.", error: true };
+      const hit = s.hits[Number((text(args, "hit") ?? "").replace(/^h/, "")) - 1];
+      if (!hit) return { observation: "read_web needs a hit id from this run's searches, e.g. h2.", error: true };
+      s.used.webReads++;
+      const focus = (terms(args, "focus") ?? []).map(f => f.toLowerCase());
+      const read = await readWebPage(env, ticker, hit, focus, spec.now, url => search.fetchContent({ url, depth: "advanced" }, { ...WEB_SCOPE(ticker), maxAgeMs: PAGE_CACHE_MS }).then(r => ({ text: r.data.text })));
+      if (!read) return { observation: `${hit.url} could not be read.`, error: true };
+      const id = registerWeb(s, read.passage, read.record.publishedAt);
+      return { observation: `[${id}] ${read.record.title} (${read.record.publishedAt ?? "undated"})\n${read.passage.text.slice(0, 3000)}` };
+    }),
+    handTool<AnalystState>(schema("peers"), () => ({ observation: divergence(spec.data, ticker, finding.periodEnd).join("\n") + "\n" + peerRefs(spec.data, ticker, finding.periodEnd).map(p => `${p.ticker}: ${p.available.join(", ") || "no comparable figure at this period"}`).join("\n") })),
+    handTool<AnalystState>(schema("similar_businesses"), async (args, s) => {
+      if (s.used.finds >= plan.budget.finds) return { observation: "No finds left; read what you have found or compile.", error: true };
+      const query = text(args, "query", 300);
+      if (!query) return { observation: "similar_businesses needs a query.", error: true };
+      s.used.finds++;
+      const facet = TAG_FACETS.find(f => f === args.facet) as TagFacet | undefined;
+      const sector = Object.hasOwn(INDUSTRY_CATEGORIES, String(args.sector)) ? args.sector as keyof typeof INDUSTRY_CATEGORIES : undefined;
+      const found = await similarBusinesses(env, { query, facet, sector, exclude: ticker }).catch(() => []);
+      return { observation: found.length ? found.map(b => `${b.ticker} · ${b.unit} · ${b.sector}/${b.facet} · "${b.label}" (${b.definition}) · score ${b.score}${b.documentId ? ` · documentId ${b.documentId} · sectionId ${b.sectionId}` : ""}`).join("\n") : "No similar businesses found (or the tag index is not configured)." };
+    }),
+    handTool<AnalystState>(schema("compile"), (args, s) => {
+      if (args.document === undefined) return { observation: "compile needs a document.", error: true };
+      const given = documentOf(args.document);
+      return given.document ? { observation: (given.note ?? "") + verify(s, given.document) } : { observation: (given.note ?? "") + given.observation!, error: true };
+    }),
+    handTool<AnalystState>(schema("finish"), (args, s) => {
+      const given = args.document === undefined ? null : documentOf(args.document);
+      if (given && !given.document) return { observation: (given.note ?? "") + given.observation!, error: true };
+      if (given?.document) verify(s, given.document);
+      if (s.last && s.last.errors === 0) { s.accepted = s.last.document; return { observation: "Accepted." }; }
+      return { observation: s.last ? `Not accepted: the last document has ${s.last.errors} error(s); fix them and compile again.` : "Nothing compiled yet; compile a document first.", error: true };
+    }),
+    // A search's hits within the year before the period are listed for read_web.
+    handSearch<AnalystState>("search_web", searchesLeft, (batch, s) => {
+      s.used.searches++;
+      const found = datedHits(batch.hits, yearBefore);
+      s.hits.push(...found.filter(h => !s.hits.some(x => x.url === h.url)));
+      return { observation: `Search sources (read before citing):\n${batch.error ?? found.map(h => `[h${s.hits.findIndex(x => x.url === h.url) + 1}] ${h.title} (${h.url})`).join("\n")}` };
+    }, EXCLUDED_HOSTS),
+  ];
+  return {
+    id: `analyst-${finding.id}`,
+    budget: { turns: plan.budget.turns, wallMs: 60 * 60_000 },
+    system: () => SYSTEM,
+    open: () => ({ list: [], byPassage: new Map(), used: { reads: 0, finds: 0, searches: 0, webReads: 0 }, hits: [], last: null, accepted: null }),
+    tools: () => tools,
+    policy: handPolicy(tools),
+    settled: s => s.accepted !== null,
+    // The budget ran out with a clean last draft: that draft is the document.
+    settle: s => ({ document: s.accepted ?? (s.last && s.last.errors === 0 ? s.last.document : null), materials: s.list, warnings: s.last?.warnings ?? [] }),
+    nudge: "Continue by calling the tools; call finish once a document compiles without errors.",
+    /** What the run may still spend, and what to do when it is nearly spent. */
+    budgetLine: (s, turnsLeft) => {
+      const notice = turnsLeft <= 2 ? " The budget is almost spent: compile and finish with the best document."
+        : !s.last && plan.budget.turns - turnsLeft + 1 > Math.ceil(plan.budget.turns / 2) ? " Half the turns are gone and nothing has compiled: compile a first document now, then refine it." : "";
+      return `Budget left: ${turnsLeft} turns, ${plan.budget.finds - s.used.finds} finds, ${plan.budget.reads - s.used.reads} reads, ${searchesLeft(s)} searches, ${webReadsLeft(s)} web reads.${notice}`;
+    },
+  };
+}
 
-  // The exchange only grows: each reply goes back exactly as it came, thinking included, and each call's result follows
-  // it, so Claude keeps its reasoning from turn to turn. The opening carries the finding and everything known at the start.
-  const messages: AgentMessage[] = [{ role: "user", content: JSON.stringify({
+/**
+ * One finding's analysis: one session composes the document (analystRecipe); a second, remove-only call then reviews
+ * it. The outcome is the accepted document with the materials its quotes rest on, or nothing.
+ */
+export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome> {
+  const { finding, plan, env, ticker } = input;
+  const db = env.DB!;
+  const analyses = await input.stage(`${finding.id}-filings`, () => listFilingAnalyses(db, ticker).catch(() => [] as FilingAnalysisEntry[]));
+  const earlierAvailable = analyses.some(a => a.kind === "report" && Date.parse(finding.periodEnd) - Date.parse(a.periodEnd) > 45 * 86_400_000);
+  const yearBefore = finding.periodEnd.replace(/^(\d{4})/, (_, y: string) => String(Number(y) - 1));
+  const webOn = researchSearchConfigured(env);
+  // The opening carries the finding and everything known at the start.
+  const opening = JSON.stringify({
     subject: { id: finding.id, kind: finding.kind, severity: finding.severity, title: finding.title, judgment: finding.judgment.text, periodEnd: finding.periodEnd, view: finding.anchors.view, watch: finding.watch ?? null, tier: plan.tier },
     lines: plan.lines, evidence: lensEvidence(finding.resolved), catalogue: input.catalogue, peerRefs: peerRefs(input.data, ticker, finding.periodEnd),
     filings: analyses,
@@ -281,64 +366,22 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
     background: input.background ?? null,
     events: (input.data.events?.events ?? []).filter(e => e.eventDate >= yearBefore).slice(0, 24).map(e => ({ id: e.id, form: e.form, date: e.eventDate, class: e.class, description: e.description.slice(0, 160), insider: e.insider ? { owner: e.insider.ownerName, title: e.insider.title, sold: e.insider.sold?.shares ?? null, heldAfter: e.insider.heldAfter, plan: e.insider.rule10b51 } : null })),
     starting: lensDocumentOf(finding, input.data, finding.periodEnd),
-    chartGrammar: "{id, title? (the claim, not the name), subtitle? (how to read it), focus?: {periods?: [latest|first|YYYY-MM-DD], series?: [ids]} (drawn in colour, the rest grey), periodNote?: series id written under the period labels instead of drawn, aspect: wide|square|tall, span, periods 2–12, series:[{id, ref, transform?: value|yoy|qoq, label?}], marks:[{type: bar|line|area|step|dot|stacked_bar|stacked_area|waterfall|rule, series:[ids], color?: revenue|profit|expense|loss|up|muted|biz-0..4, axis?: left|right}], annotations?:[{series, period: latest|first|YYYY-MM-DD, text with {value} {change} {label} {period}}], bands?, periodLabels?: all|sparse, legend?: top|none}",
-    budget: { turns: plan.budget.turns, finds: plan.budget.finds, reads: plan.budget.reads, searches: searchesLeft(), webReads: webReadsLeft() },
-  }) }];
-  let failedReplies = 0, quietReplies = 0;
-  for (let turn = 1; turn <= plan.budget.turns; turn++) {
-    if (!await input.reserveTurn()) { turns.push({ turn, thought: "", action: "budget", input: "", observation: "The day's model budget is spent; the run finishes with the last clean document." }); break; }
-    const reply = await input.stage(`${finding.id}-t${turn}-act`, () => input.model.act(`analyst-${finding.id}-${turn}`, `${SYSTEM}\n${NATIVE_SEARCH_INSTRUCTION}`, [...ANALYST_TOOLS, ...(searchesLeft() > 0 ? [nativeSearchTool(searchesLeft(), EXCLUDED_HOSTS)] : [])], messages));
-    // No usable reply (the provider failed, Claude declined, or the reply was cut off): nothing joins the exchange and the
-    // next turn asks again. Several in a row end the finding with what it has.
-    const failure = replyFailure(reply);
-    if (failure !== null || "error" in reply) {
-      turns.push({ turn, thought: "", action: "invalid", input: "", observation: String(failure).slice(0, 1000) });
-      if (++failedReplies >= FAILED_REPLIES) break;
-      continue;
-    }
-    failedReplies = 0;
-    messages.push({ role: "assistant", content: reply.content });
-    const said = replyText(reply.content).slice(0, 600);
-    // Native searches ran on the provider: their hits are listed for read_web, and a reply that only searched goes on.
-    const webNotes: AgentBlock[] = [];
-    for (const batch of nativeSearches(reply.content)) {
-      used.searches++;
-      const found = datedHits(batch.hits, yearBefore);
-      hits.push(...found.filter(h => !hits.some(x => x.url === h.url)));
-      const observation = batch.error ?? found.map(h => `[h${hits.findIndex(x => x.url === h.url) + 1}] ${h.title} (${h.url})`).join("\n");
-      webNotes.push({ type: "text", text: `Native search sources (read before citing):\n${observation}` });
-      turns.push({ turn, thought: "", action: "web_search", input: batch.query, observation });
-    }
-    const calls = toolCalls(reply.content);
-    if (!calls.length && webNotes.length) { quietReplies = 0; messages.push({ role: "user", content: webNotes }); continue; }
-    if (!calls.length) {
-      // A reply with no call is asked once to go on; a second in a row ends the finding with what it has.
-      turns.push({ turn, thought: said, action: "none", input: "", observation: "The reply called no tool." });
-      if (++quietReplies >= 2) break;
-      messages.push({ role: "user", content: "Continue by calling the tools; call finish once a document compiles without errors." });
-      continue;
-    }
-    quietReplies = 0;
-    const results: AgentBlock[] = [];
-    for (const [i, call] of calls.entries()) {
-      const args = asObject(call.input) ?? {};
-      const outcome: Outcome = state.accepted ? { observation: "Not run: the document was already accepted." }
-        : i >= CALLS_PER_TURN ? { observation: `Not run: at most ${CALLS_PER_TURN} calls run per turn; call it again.` }
-        : await perform(call.name.trim().toLowerCase(), args, `${finding.id}-t${turn}-${i + 1}`);
-      const observation = outcome.observation.slice(0, 10_000);
-      turns.push({ turn, thought: i ? "" : said, action: call.name.slice(0, 20), input: JSON.stringify(args).slice(0, 6000), observation });
-      results.push(toolResult(call, `${observation}\n\n${budget(turn)}`, outcome.error));
-    }
-    if (state.accepted) break;
-    messages.push({ role: "user", content: [...results, ...webNotes] });
-  }
-  if (!state.accepted && state.last && state.last.errors === 0) state.accepted = state.last.document;
+    chartGrammar: CHART_GRAMMAR,
+    budget: { turns: plan.budget.turns, finds: plan.budget.finds, reads: plan.budget.reads, searches: webOn ? plan.budget.searches : 0, webReads: webOn ? plan.budget.webReads : 0 },
+  });
+  const spec: AnalystSpec = { ticker, finding, plan, data: input.data, record: input.record, now: input.now, analyses, earlierAvailable, ...(input.runId ? { runId: input.runId } : {}) };
+  const session = await input.run<AnalystResult, AnalystState>("analyst", spec, opening, input.operationId);
+  const { materials } = session.output;
+  let accepted = session.output.document;
+  const turns: AnalystTurn[] = [...session.trail];
+  if (session.capped) turns.push({ turn: session.turns, thought: "", action: "budget", input: "", observation: "The day's model budget is spent; the run finishes with the last clean document." });
+  const dataWith = (): FindingData => ({ ...input.data, passages: [...(input.data.passages ?? []), ...materials.map(m => m.passage)] });
   const review: string[] = [];
-  if (state.accepted) {
+  if (accepted) {
     // An independent pass that can only take things out: a verbatim quote can still mislead, which no substring check sees.
-    const reviewed = await input.stage(`${finding.id}-review`, () => input.model.judge(`analyst-${finding.id}-review`, REVIEW_SYSTEM, { finding: { title: finding.title, judgment: finding.judgment.text }, document: state.accepted, materials: materials.list.map(m => ({ id: m.id, path: m.path?.join(" › "), text: m.passage.text.slice(0, 2000) })) })).catch(() => ({ remove: [] }));
+    const reviewed = await input.stage(`${finding.id}-review`, () => input.model.judge(`analyst-${finding.id}-review`, REVIEW_SYSTEM, { finding: { title: finding.title, judgment: finding.judgment.text }, document: accepted, materials: materials.map(m => ({ id: m.id, path: m.path?.join(" › "), text: m.passage.text.slice(0, 2000) })) })).catch(() => ({ remove: [] }));
     const removals = Array.isArray(reviewed.remove) ? reviewed.remove as Array<{ row?: unknown; cell?: unknown; block?: unknown; reason?: unknown }> : [];
-    const doc: LensDocument = { rows: state.accepted.rows.map(r => ({ ...r, cells: r.cells.map(c => [...c]) })) };
+    const doc: LensDocument = { rows: accepted.rows.map(r => ({ ...r, cells: r.cells.map(c => [...c]) })) };
     for (const r of removals.sort((a, b) => Number(b.block) - Number(a.block))) {
       const block = doc.rows[Number(r.row)]?.cells[Number(r.cell)]?.[Number(r.block)];
       if (!block || !["quote", "prose", "table", "chart"].includes(block.kind)) continue;
@@ -346,71 +389,11 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
       review.push(`${block.kind} at ${r.row}.${r.cell}.${r.block}: ${typeof r.reason === "string" ? r.reason.slice(0, 300) : "removed"}`);
     }
     doc.rows = doc.rows.map(r => ({ ...r, cells: r.cells.filter(c => c.length) })).filter(r => r.cells.length);
-    if (review.length) { const check = verifyLensDocument(doc, finding, finding.resolved, dataWith(), finding.periodEnd, {}, { ticker, materials: materials.materials, record: input.record }); if (check) state.accepted = doc; else review.push("review removals left nothing verifiable; the accepted document stands"); }
+    if (review.length) { const check = verifyLensDocument(doc, finding, finding.resolved, dataWith(), finding.periodEnd, {}, { ticker, materials: bare(materials), record: input.record }); if (check) accepted = doc; else review.push("review removals left nothing verifiable; the accepted document stands"); }
   }
-  const used_ids = new Set<string>();
-  for (const b of state.accepted?.rows.flatMap(r => r.cells.flat()) ?? []) if (b.kind === "quote") used_ids.add(b.materialId);
-  return { id: finding.id, tier: plan.tier, lines: plan.lines.map(l => l.key), document: state.accepted, materials: materials.materials.filter(m => used_ids.has(m.id)), turns, warnings: state.last?.warnings ?? [], review };
-
-  /** Runs one tool call. Reads of the filing analyses are durable steps under `step`; compiling is pure. */
-  async function perform(name: string, args: Record<string, unknown>, step: string): Promise<Outcome> {
-    const text = (k: string, max = 200) => typeof args[k] === "string" && (args[k] as string).trim() ? (args[k] as string).trim().slice(0, max) : undefined;
-    const terms = (k: string) => Array.isArray(args[k]) ? (args[k] as unknown[]).filter((f): f is string => typeof f === "string").slice(0, 8) : undefined;
-    switch (name) {
-      case "filings": {
-        const owner = (text("ticker", 12) ?? ticker).toUpperCase();
-        if (!readable.has(owner)) return { observation: `${owner} is not the company or one of its comparable peers.`, error: true };
-        const list = owner === ticker ? analyses : await input.stage(`${step}-filings`, () => listFilingAnalyses(db, owner).catch(() => []));
-        return { observation: list.length ? list.map(a => `${a.id} · ${owner} ${a.form} filed ${a.filedAt} · report ${a.periodEnd} · ${a.title}`).join("\n") : `No filing analysis is written for ${owner}.` };
-      }
-      case "read_filing_analysis": {
-        if (used.reads >= plan.budget.reads) return { observation: "No reads left; compile with the materials you have.", error: true };
-        const id = text("id", 40);
-        const owner = (text("ticker", 12) ?? ticker).toUpperCase();
-        if (!id) return { observation: "read_filing_analysis needs an id from filings.", error: true };
-        if (!readable.has(owner)) return { observation: `${owner} is not the company or one of its comparable peers.`, error: true };
-        used.reads++;
-        return { observation: await input.stage(`${step}-analysis`, () => readAnalysis(owner, id, terms("focus"))) };
-      }
-      case "similar_businesses": {
-        if (used.finds >= plan.budget.finds) return { observation: "No finds left; read what you have found or compile.", error: true };
-        const query = text("query", 300);
-        if (!query) return { observation: "similar_businesses needs a query.", error: true };
-        used.finds++;
-        const facet = TAG_FACETS.find(f => f === args.facet) as TagFacet | undefined;
-        const sector = Object.hasOwn(INDUSTRY_CATEGORIES, String(args.sector)) ? args.sector as keyof typeof INDUSTRY_CATEGORIES : undefined;
-        const found = await input.stage(`${step}-similar`, () => similarBusinesses(env, { query, facet, sector, exclude: ticker }).catch(() => []));
-        return { observation: found.length ? found.map(b => `${b.ticker} · ${b.unit} · ${b.sector}/${b.facet} · "${b.label}" (${b.definition}) · score ${b.score}${b.documentId ? ` · documentId ${b.documentId} · sectionId ${b.sectionId}` : ""}`).join("\n") : "No similar businesses found (or the tag index is not configured)." };
-      }
-      case "read_web": {
-        if (!search) return { observation: "Web reading is not configured for this run.", error: true };
-        if (used.webReads >= plan.budget.webReads) return { observation: "No web reads left; compile with the materials you have.", error: true };
-        const hit = hits[Number((text("hit") ?? "").replace(/^h/, "")) - 1];
-        if (!hit) return { observation: "read_web needs a hit id from this run's searches, e.g. h2.", error: true };
-        used.webReads++;
-        const focus = (terms("focus") ?? []).map(f => f.toLowerCase());
-        const read = await input.stage(`${step}-web`, () => readWebPage(env, ticker, hit, focus, input.now, url => search.fetchContent({ url, depth: "advanced" }, { ...WEB_SCOPE(ticker), maxAgeMs: PAGE_CACHE_MS }).then(r => ({ text: r.data.text }))));
-        if (!read) return { observation: `${hit.url} could not be read.`, error: true };
-        const id = materials.registerWeb(read.passage, read.record.publishedAt);
-        return { observation: `[${id}] ${read.record.title} (${read.record.publishedAt ?? "undated"})\n${read.passage.text.slice(0, 3000)}` };
-      }
-      case "peers": return { observation: divergence(input.data, ticker, finding.periodEnd).join("\n") + "\n" + peerRefs(input.data, ticker, finding.periodEnd).map(p => `${p.ticker}: ${p.available.join(", ") || "no comparable figure at this period"}`).join("\n") };
-      case "compile": {
-        if (args.document === undefined) return { observation: "compile needs a document.", error: true };
-        const given = documentOf(args.document);
-        return given.document ? { observation: (given.note ?? "") + verify(given.document) } : { observation: (given.note ?? "") + given.observation!, error: true };
-      }
-      case "finish": {
-        const given = args.document === undefined ? null : documentOf(args.document);
-        if (given && !given.document) return { observation: (given.note ?? "") + given.observation!, error: true };
-        if (given?.document) verify(given.document);
-        const last = state.last;
-        if (last && last.errors === 0) { state.accepted = last.document; return { observation: "Accepted." }; }
-        return { observation: last ? `Not accepted: the last document has ${last.errors} error(s); fix them and compile again.` : "Nothing compiled yet; compile a document first.", error: true };
-      }
-      default: return { observation: `There is no tool "${name}"; use filings, read_filing_analysis, read_web, peers, similar_businesses, compile or finish.`, error: true };
-    }
-  }
+  const quoted = new Set<string>();
+  for (const b of accepted?.rows.flatMap(r => r.cells.flat()) ?? []) if (b.kind === "quote") quoted.add(b.materialId);
+  return { id: finding.id, tier: plan.tier, lines: plan.lines.map(l => l.key), document: accepted, materials: bare(materials).filter(m => quoted.has(m.id)), turns, warnings: session.output.warnings, review };
 }
 
 export { lensCatalogue, resolveEvidence, formatDelta };

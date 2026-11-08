@@ -1,4 +1,5 @@
 import { aiIsEnabled, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { withRuns } from "../durable-runs/binding.ts";
 import { FEATURES, LAYER_REQUIRES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 
 import { aiToolEnvironment } from '../ai-config.ts';
@@ -43,6 +44,8 @@ function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution
  * `AI_TOOL_SETTINGS` (ai-config.ts).
  */
 export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Promise<T> {
+  // Every handler resolves its env here first, so this is where the run bindings (one Durable Object per run) go in.
+  env = withRuns(env);
   if (!env.DB) return env;
   // A second application starts from the resolved list; a first one from nothing, never from a deployment list.
   const enabledData = env.FEATURE_RESOLVED !== undefined ? dataTickers(env) : new Set<string>();

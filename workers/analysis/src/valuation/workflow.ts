@@ -1,13 +1,16 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { runAgentLoop, sequential, type LoopHost, type Recipe, type TurnRecord } from "../agent-loop.ts";
+import type { Recipe, TurnRecord } from "../recipe.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { runRecipeSession } from "../pi/runs.ts";
+import { packState, unpackState } from "../pi/state.ts";
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { sha256 } from "../sha256.ts";
 import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerSecModel, callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import type { AgentMessage, AgentReply } from "../tool-loop.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { CONFIDENCES, CONFIDENCE_RULES, DIMENSION_TEMPLATE, EXTENDED_SCENARIO_KEYS, SCORE_ANCHOR_LEVELS, VALUATION_DIMENSIONS, VALUATION_METHODS, type ValuationAttempt, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationPublication } from "../../../../shared/analysis-contract/valuation.ts";
@@ -207,40 +210,47 @@ export function priorRequest(state: ValuationState): CalcRequest | null {
   return build(null);
 }
 
-type Loop = { recipeId: string; system: string; allow: string[]; budget: { turns: number; wallMs: number }; settled: (s: ValuationState) => boolean; tool: "valuation-research" | "valuation" };
+type Loop = { recipeId: string; system: string; allow: string[]; budget: { turns: number; wallMs: number }; tool: "valuation-research" | "valuation" };
+/** What one loop's Pi session is rebuilt from: the loop and the state it started from, packed with its Maps. */
+type ValuationSpec = { loop: Loop; state: string; generation: number | null; runId: string | null };
 
-async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: ValuationState, loop: Loop, opening: string, generation: number | null, fetcher: typeof fetch, turns: TurnRecord[], runId?: string): Promise<"finished" | "budget" | "failed" | "cancelled"> {
+/** When each loop is done, by its recipe id; a function cannot be stored with the session, so it is looked up. */
+function loopSettled(recipeId: string): (s: ValuationState) => boolean {
+  if (recipeId.startsWith("valuation-research")) return s => s.researchDone;
+  if (recipeId === "valuation-configure") return s => !!s.valuationDraft || !!s.insufficient;
+  if (recipeId.startsWith("valuation-case-")) { const key = recipeId.slice("valuation-case-".length) as ValuationCaseKey; return s => !!s.valuationDraft?.cases[key]; }
+  if (recipeId === "valuation-assume") return s => s.assumptionsDone;
+  return s => !!s.composed;
+}
+
+/** Rebuilds one valuation loop's recipe; each call first checks that the run is still wanted. */
+export async function valuationLoader(spec: ValuationSpec, env: AnalysisEnv): Promise<PiLoaded<ValuationState>> {
+  const { loop } = spec;
+  const start = unpackState<ValuationState>(spec.state);
   const tools = valuationTools(env);
   const recipe: Recipe<string, ValuationState, ValuationState> = {
-    id: loop.recipeId, budget: loop.budget, system: () => loop.system, open: () => state, tools: () => tools, policy: { allow: loop.allow }, settled: loop.settled, settle: s => s, nudge: NUDGE,
+    id: loop.recipeId, budget: loop.budget, system: () => loop.system, open: () => start, tools: () => tools, policy: { allow: loop.allow }, settled: loopSettled(loop.recipeId), settle: s => s, nudge: NUDGE,
   };
-  const modelVersion = modelFor(env, loop.tool), reasoning = reasoningFor(env, loop.tool);
-  const store = new ValuationStore(requireDb(env)), runs = new AiRunStore(requireDb(env));
-  // A model-output failure (a stalled or invalid stream, unparsable JSON) is noted on the run and waited out before the
-  // next turn, since a provider that just failed tends to fail again at once; the turn's budget still counts it.
-  let failures = 0;
-  const act = (stage: string, system: string, toolSchemas: unknown[], messages: AgentMessage[]): Promise<AgentReply> => step.do(`${stage}-act`, async () => {
-    try {
-      const reply = await callWorkerToolModel(env, fetcher, stage, { system, tools: toolSchemas as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { reasoning, ticker: state.input.ticker, runId, kind: loop.tool });
-      failures = 0;
-      return reply;
-    } catch (error) {
-      if (!(error instanceof SecModelOutputError)) throw error;
-      failures += 1;
-      const detail = `${error.code}: ${error.message}`.slice(0, 300);
-      console.warn(JSON.stringify({ event: "valuation-model-output", ticker: state.input.ticker, runId, stage, code: error.code, message: error.message.slice(0, 300), failures }));
-      if (runId) await quietly(() => runs.step("valuation", state.input.ticker, runId, `${stage}-error:${error.code}`, new Date().toISOString()));
-      await new Promise(resolve => setTimeout(resolve, Math.min(MODEL_RETRY_WAIT_MS * 2 ** (failures - 1), MODEL_RETRY_WAIT_MAX_MS)));
-      return { error: detail };
-    }
-  });
-  const host: LoopHost = {
-    // Switched off or re-requested while the run was working: the loop ends before its next model call.
-    reserve: async () => { const ok = generation === null || await stillEligible(env, state.input.ticker, store, generation); if (!ok) state.cancelled = true; return ok; },
-    record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
-    stage: (name, work) => step.do(name, work), signal: new AbortController().signal, now: () => Date.now(),
+  const store = new ValuationStore(requireDb(env));
+  return {
+    recipe, input: "", model: modelFor(env, loop.tool), effort: reasoningFor(env, loop.tool),
+    ledger: { kind: loop.tool, ticker: start.input.ticker, ...(spec.runId ? { runId: spec.runId } : {}) },
+    // Switched off or re-requested while the run was working: the loop ends after the round in flight.
+    reserve: async state => {
+      if (spec.generation === null) return true;
+      const ok = await stillEligible(env, state.input.ticker, store, spec.generation);
+      if (!ok) state.cancelled = true;
+      return ok;
+    },
   };
-  const outcome = await runAgentLoop(recipe, "", state, [{ role: "user", content: opening }], act, host);
+}
+
+/** One loop as a Pi session of this run's Agent; the state it ends with replaces the run's, as the loop's journalled result. */
+async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: ValuationState, loop: Loop, opening: string, generation: number | null, _fetcher: typeof fetch, turns: TurnRecord[], runId?: string): Promise<"finished" | "budget" | "failed" | "cancelled"> {
+  const spec: ValuationSpec = { loop, state: packState(state), generation, runId: runId ?? null };
+  const outcome = await runRecipeSession<ValuationState, ValuationState>(env, step, "valuation", spec, opening, `${runId ?? "valuation"}:${loop.recipeId}`);
+  Object.assign(state, outcome.state);
+  turns.push(...outcome.trail);
   if (state.cancelled) return "cancelled";
   return outcome.reason === "interrupted" ? "failed" : outcome.reason;
 }
@@ -355,17 +365,17 @@ export async function researchValuation({ input, market, now, step, env, mode, g
       nearTermForecast: state.nearTermForecast ?? null,
       promptSha256: await sha256(JSON.stringify({ method: VALUATION_VERSION, prompts: [RESEARCH_SYSTEM, FINALIZE_RESEARCH_SYSTEM, ASSUME_SYSTEM, COMPOSE_SYSTEM], budget: BUDGET, mode: mode.kind })) };
   };
-  let research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
+  let research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
   researchProgress.collection = research;
   if (research === "budget") {
-    research = await runLoop(env, step, state, { recipeId: "valuation-research-finalize", system: FINALIZE_RESEARCH_SYSTEM, allow: ["read_valuation_evidence", "read_financials", "submit_dimension", "finish_research"], budget: BUDGET.researchFinalize, settled: s => s.researchDone, tool: "valuation-research" }, openingResearchFinalization(state), generation, fetcher, turns, runId);
+    research = await runLoop(env, step, state, { recipeId: "valuation-research-finalize", system: FINALIZE_RESEARCH_SYSTEM, allow: ["read_valuation_evidence", "read_financials", "submit_dimension", "finish_research"], budget: BUDGET.researchFinalize, tool: "valuation-research" }, openingResearchFinalization(state), generation, fetcher, turns, runId);
     researchProgress.finalization = research;
   }
   if (research === "cancelled") return null;
   if (research !== "finished") return finish({ research, assumptions: "not_run", composition: "not_run" });
   const readAssumptions = ["read_financials", "read_valuation_evidence", "read_guidance"];
   const opening = openingAssume(state, prior?.request ?? null);
-  const configure = await runLoop(env, step, state, { recipeId: "valuation-configure", system: ASSUME_SYSTEM, allow: [...readAssumptions, "configure_valuation", "declare_model_insufficient"], budget: BUDGET.configure, settled: s => !!s.valuationDraft || !!s.insufficient, tool: "valuation" }, `${opening}\n\nThis stage submits only shared parameters with configure_valuation. Do not supply scenario paths yet. Establish the model, discount components, share/claims basis, weights, probabilities and normal-range rationale from the evidence.`, generation, fetcher, turns, runId);
+  const configure = await runLoop(env, step, state, { recipeId: "valuation-configure", system: ASSUME_SYSTEM, allow: [...readAssumptions, "configure_valuation", "declare_model_insufficient"], budget: BUDGET.configure, tool: "valuation" }, `${opening}\n\nThis stage submits only shared parameters with configure_valuation. Do not supply scenario paths yet. Establish the model, discount components, share/claims basis, weights, probabilities and normal-range rationale from the evidence.`, generation, fetcher, turns, runId);
   assumptionProgress.configuration = configure;
   if (configure === "cancelled") return null;
   if (configure !== "finished") return finish({ research, assumptions: configure, composition: "not_run" });
@@ -376,18 +386,18 @@ export async function researchValuation({ input, market, now, step, env, mode, g
         continue;
       }
       const role = key === "lower" || key === "upper" ? `the normal ${key} operating bound, distinct from stress scenarios` : `the ${key} scenario`;
-      const result = await runLoop(env, step, state, { recipeId: `valuation-case-${key}`, system: ASSUME_SYSTEM, allow: [...readAssumptions, VALUATION_CASE_TOOLS[key]], budget: BUDGET.valuationCase, settled: s => !!s.valuationDraft?.cases[key], tool: "valuation" }, `${opening}\n\nShared parameters: ${JSON.stringify(state.valuationDraft?.common)}\nPreviously submitted paths: ${JSON.stringify(state.valuationDraft?.cases)}\nThis stage supplies only ${role}. Call ${VALUATION_CASE_TOOLS[key]} with one complete path and its evidence. Follow the common model and the base horizon; do not restate other cases or calculate prices.`, generation, fetcher, turns, runId);
+      const result = await runLoop(env, step, state, { recipeId: `valuation-case-${key}`, system: ASSUME_SYSTEM, allow: [...readAssumptions, VALUATION_CASE_TOOLS[key]], budget: BUDGET.valuationCase, tool: "valuation" }, `${opening}\n\nShared parameters: ${JSON.stringify(state.valuationDraft?.common)}\nPreviously submitted paths: ${JSON.stringify(state.valuationDraft?.cases)}\nThis stage supplies only ${role}. Call ${VALUATION_CASE_TOOLS[key]} with one complete path and its evidence. Follow the common model and the base horizon; do not restate other cases or calculate prices.`, generation, fetcher, turns, runId);
       assumptionProgress.cases[key] = result;
       if (result === "cancelled") return null;
       if (result !== "finished") return finish({ research, assumptions: result, composition: "not_run" });
     }
   }
-  const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: mode.kind === "snapshot" ? [...ASSUMPTION_TOOLS, "submit_next_quarter_forecast"] : ASSUMPTION_TOOLS, budget: BUDGET.assume, settled: s => s.assumptionsDone, tool: "valuation" }, `${opening}\n\nRecorded draft: ${JSON.stringify(state.valuationDraft ?? null)}\n${state.insufficient ? `The model is explicitly insufficient: ${state.insufficient}. Record valuationSafety as null with its gap.` : "All requested paths are recorded. Start with calculate_prepared_valuation({}); do not re-emit the whole model. If calculation identifies a problem, replace only that case or the shared parameters, then calculate again."}` + (mode.kind === "snapshot" ? "\nBefore finish_assumptions, submit_next_quarter_forecast from the same frozen evidence (not a mechanical annual/4 allocation), or explicitly say why it is unavailable." : ""), generation, fetcher, turns, runId);
+  const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: mode.kind === "snapshot" ? [...ASSUMPTION_TOOLS, "submit_next_quarter_forecast"] : ASSUMPTION_TOOLS, budget: BUDGET.assume, tool: "valuation" }, `${opening}\n\nRecorded draft: ${JSON.stringify(state.valuationDraft ?? null)}\n${state.insufficient ? `The model is explicitly insufficient: ${state.insufficient}. Record valuationSafety as null with its gap.` : "All requested paths are recorded. Start with calculate_prepared_valuation({}); do not re-emit the whole model. If calculation identifies a problem, replace only that case or the shared parameters, then calculate again."}` + (mode.kind === "snapshot" ? "\nBefore finish_assumptions, submit_next_quarter_forecast from the same frozen evidence (not a mechanical annual/4 allocation), or explicitly say why it is unavailable." : ""), generation, fetcher, turns, runId);
   assumptionProgress.calculation = assume;
   if (assume === "cancelled") return null;
   if (assume !== "finished") return finish({ research, assumptions: assume, composition: "not_run" });
   state.redTeam = await redTeam(env, step, state, fetcher, runId);
-  const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, settled: s => !!s.composed, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
+  const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
   if (compose === "cancelled") return null;
   return finish({ research, assumptions: assume, composition: compose });
 }

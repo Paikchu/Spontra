@@ -1,6 +1,6 @@
 import type { UserReport } from "../../../../shared/analysis-contract/user-report.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
-import type { Recipe } from "../agent-loop.ts";
+import type { Recipe } from "../recipe.ts";
 import { COMPOSE_CONTRACT, composeTools, openCompose, type ComposeInput, type ComposeState } from "../compose/tools.ts";
 import { libraryToc, type TocDocument } from "../filing-library/tool.ts";
 import { readLibraryDocument } from "../filing-library/store.ts";

@@ -7,7 +7,7 @@ import { DAY_MS, insiderCadence, insiderCluster, insiderTone, insiderVerdict, is
 import { resolveEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
 import { railEntries } from "../../../../shared/analysis-runtime/rail.ts";
-import type { Recipe } from "../agent-loop.ts";
+import type { Recipe } from "../recipe.ts";
 import { COMPOSE_CONTRACT, composeTools, openCompose, seedMaterials, type ComposeInput, type ComposeState } from "../compose/tools.ts";
 import type { TocDocument } from "../filing-library/tool.ts";
 import type { AnalysisEnv } from "../operations.ts";

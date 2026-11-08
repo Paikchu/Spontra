@@ -81,6 +81,11 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
     let instance: Instance;
     try { instance = await binding.get(started.instanceId); state = await instance.status(); }
     catch (error) {
+      // A run started before the move from Workflows to durable runs has no runner: it is started again, not failed.
+      if (/instance\.not_found/.test(String(error))) {
+        await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(cacheKey).run();
+        return driveWorkflow(env, key, binding, start, options);
+      }
       return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId,
         workflow: "status-unavailable", error: error instanceof Error ? error.message : String(error) } };
     }

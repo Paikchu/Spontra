@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { CheckupNotes, FindingMaterial } from "../../../../shared/analysis-contract/findings.ts";
 import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract/statement-analysis.ts";
@@ -8,14 +7,13 @@ import { sha256 } from "../sha256.ts";
 import { assertFeatureTicker, requireDb } from "../core.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";
-import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerToolModel, type AnalysisEnv } from "../operations.ts";
+import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
-import { SEC_MODEL_OUTPUT_TOKENS } from "../retry-policy.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import type { AgentAct } from "../tool-loop.ts";
+import type { PiLoaded } from "../pi/host.ts";
+import { sessionRunner, type SessionRunner } from "../pi/runs.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { runNote, type NoteOutcome } from "./agent.ts";
+import { noteRecipe, runNote, type NoteOutcome, type NoteSpec, type NoteState } from "./agent.ts";
 import { checkupCacheKey, emptyCheckupKey, type CheckupRecord } from "./read.ts";
 
 export { checkupCacheKey, emptyCheckupKey, readCheckupRecord } from "./read.ts";
@@ -30,7 +28,6 @@ export type CheckupWorkflowParams = { ticker: string; fingerprint: string };
 /** Metrics a run writes about, the most pressing first. */
 const MAX_NOTES = 8;
 const DEFAULT_DAILY_TURNS = 240;
-const MODEL_BUDGET_MS = 6 * 60_000;
 
 
 async function readInput(env: AnalysisEnv, ticker: string) {
@@ -63,6 +60,12 @@ async function reserveTurn(env: AnalysisEnv): Promise<boolean> {
   return !!row;
 }
 
+/** One metric's note session, rebuilt from its spec; each model call is reserved against the day's allowance. */
+export async function checkupLoader(spec: NoteSpec, env: AnalysisEnv): Promise<PiLoaded<NoteState>> {
+  return { recipe: noteRecipe(spec, requireDb(env)), input: spec, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
+    ledger: { kind: "checkup", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: () => reserveTurn(env) };
+}
+
 /** Material ids unique across the record: a note's m<n> takes the metric's id as its prefix. */
 export function checkupContent(outcomes: NoteOutcome[]): { notes: CheckupNotes["notes"]; materials: FindingMaterial[] } {
   const notes: CheckupNotes["notes"] = [], materials: FindingMaterial[] = [];
@@ -74,28 +77,27 @@ export function checkupContent(outcomes: NoteOutcome[]): { notes: CheckupNotes["
   return { notes, materials };
 }
 
-export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: { act?: AgentAct; fetcher?: typeof fetch } = {}) {
+export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: { run?: SessionRunner; runId?: string } = {}) {
   assertFeatureTicker(env, "findings", params.ticker);
-  const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "analyst");
   const now = await step.do("checkup-time", async () => new Date().toISOString());
   const input = await step.do("checkup-input", () => readInput(env, params.ticker));
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const db = requireDb(env);
-  const tuning = { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "checkup" };
-  const act: AgentAct = deps.act ?? (async (stage, system, tools, messages) => {
-    try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { ...tuning, maxTokens: SEC_MODEL_OUTPUT_TOKENS }); }
-    catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
-  });
+  const run = deps.run ?? sessionRunner(env, step);
   const metrics = input.assessment.dimensions.flatMap(d => d.metrics);
   const settled = await Promise.allSettled(input.metrics.map(async metricId => {
     const metric = metrics.find(m => m.id === metricId)!;
-    return runNote({ env, ticker: params.ticker, metric, flags: input.assessment.flags.filter(f => f.metricId === metricId), data: input.data, documents: input.documents, act,
-      stage: (name, cb) => step.do(`checkup-${name}`, cb), reserveTurn: () => reserveTurn(env) });
+    return runNote({ ticker: params.ticker, metric, flags: input.assessment.flags.filter(f => f.metricId === metricId), data: input.data, db, run,
+      operationId: `${deps.runId ?? params.fingerprint.slice(0, 16)}:checkup-${metricId}`, stage: (name, cb) => step.do(`checkup-${name}`, cb), ...(deps.runId ? { runId: deps.runId } : {}) });
   }));
   // Every metric's run threw: the provider failed (balance, outage), not the content. The run errors and the task retries it,
   // instead of recording an empty checkup the same input would never run again.
   if (settled.length && settled.every(s => s.status === "rejected")) throw (settled[0] as PromiseRejectedResult).reason;
+  // No metric got a usable model reply: the same, with the session's failure recorded as invalid turns.
+  if (settled.length && settled.every(s => s.status === "fulfilled" && !s.value.note && s.value.turns.length > 0 && s.value.turns.every(t => t.action === "invalid" && !t.thought))) {
+    throw new Error("checkup: no metric got a model answer (provider outage)");
+  }
   const outcomes = settled.map((s, i): NoteOutcome => s.status === "fulfilled" ? s.value : { metricId: input.metrics[i]!, note: null, materials: [], turns: [], issues: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`] });
   const { notes, materials } = checkupContent(outcomes);
   const trace = outcomes.map(o => ({ metricId: o.metricId, issues: o.issues, turns: o.turns }));

@@ -12,7 +12,8 @@ import { documentFromEvidence, lensDocumentOf } from "../../../shared/analysis-r
 import { renderChartSvg } from "../../../shared/analysis-runtime/lens/render.ts";
 import { compileDocument, verifyLensDocument } from "../../../shared/analysis-runtime/lens/verify.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
-import { lensCatalogue, runLensAgent, writeLensDocuments, LENS_BUDGET, LENS_TOOLS, type LensModel } from "../src/lens/agent.ts";
+import { lensCatalogue, writeLensDocuments, LENS_BUDGET, LENS_TOOLS, type LensModel } from "../src/lens/agent.ts";
+import { runLensAgent } from "./support/lens-driver.ts";
 import type { AgentBlock, AgentMessage, AgentReply } from "../src/tool-loop.ts";
 
 let ids = 0;
@@ -194,7 +195,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   for (const system of systems) assert.doesNotMatch(system, /thought|think|reasoning|explain your|Return only JSON|history/i);
   assert.match(seen[1]!, new RegExp(`Budget left: ${LENS_BUDGET.turns - 1} turns\\.$`));
 
-  const written = await writeLensDocuments({ publication, ledger, data, model, version: "test", now: "2026-07-31T00:00:00Z", stage: (_, cb) => cb() });
+  const written = await writeLensDocuments({ publication, ledger, data, run: input => runLensAgent({ ...input, model }), version: "test", now: "2026-07-31T00:00:00Z", stage: (_, cb) => cb() });
   const lens = written.publication.findings[0]!.lens;
   assert.ok(lens.type === "document" && lens.document.rows.length === 2);
   assert.ok(readFindingsPublication(written.publication, "TEST"));

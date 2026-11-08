@@ -4,7 +4,7 @@ import type { CompanyEvent, EventsPublication, InsiderTransaction } from "../../
 import type { PublicFilingDigest, PublicFilingDigestPage } from "../../../shared/analysis-contract/filings.ts";
 import type { FindingPassage } from "../../../shared/analysis-contract/findings.ts";
 import { verifyFindings } from "../../../shared/analysis-runtime/findings.ts";
-import { runAgentLoop, sequential } from "../src/agent-loop.ts";
+import { runAgentLoop, sequential } from "./support/recipe-driver.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { itemOpening, itemRecipe, itemSubjects, type ItemInput } from "../src/items/recipe.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";

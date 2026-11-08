@@ -1,13 +1,12 @@
 import type { EdgarListings } from "../sec-archive/gateway.ts";
 import { exhibitType as exhibitTypeOf, type ArchivedFiling } from "../sec-archive/archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
-import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
-import { enforceDiscoveryCoverage } from "./discovery.ts";
+import { validateAiFiscalPeriod } from "./fiscal-period-ai.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
-import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
+import { buildSecTrends } from "./presentation.ts";
 import { buildSecFigures, figureCatalog } from "./figures.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
-import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
+import { assertReaderIntegrity, editorialRequirements } from "./editorial.ts";
 import { SEC_READER_SCHEMA, SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
 import { buildFinancialLens, normalizeReaderReport, normalizeReaderSummaryText, identifyReaderMarketSnapshot, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
@@ -26,11 +25,8 @@ import {
   type SecHistorySnapshot,
 } from "./analysis.ts";
 import {
-  buildSecNodeInput,
   buildSecOutline,
   describeSecOutline,
-  normalizeSecNodePlan,
-  normalizeSecNodeResult,
   type SecOutlineSection,
 } from "./report.ts";
 import {
@@ -47,7 +43,6 @@ import {
   type SecFilingSummary,
   type SecNodePlan,
   type SecNodeResult,
-  type SecNodeSpec,
 } from "./sec.ts";
 import type { SecAnalysisArtifact, SecAnalysisContext } from "./types.ts";
 
@@ -172,30 +167,12 @@ export async function prepareSecFiling(filing: SecFiling, archived: ArchivedFili
   };
 }
 
-export async function planPreparedSecFiling(prepared: PreparedSecFilingMeta, model: SecModelCall, brief?: SecAnalysisBrief): Promise<SecNodePlan> {
-  if (!prepared.outline.length) return { nodes: [], outlineSections: 0 };
-  const value = await model("manager", managerSystemPrompt(), {
-    ticker: prepared.filing.ticker,
-    companyName: prepared.filing.companyName,
-    form: prepared.filing.form,
-    reportDate: prepared.filing.reportDate,
-    filingDate: prepared.filing.filingDate,
-    disclosures: prepared.discovery?.disclosures ?? [],
-    sections: describeSecOutline(prepared.outline),
-    sourceMaterials: prepared.sourceMaterials ?? [],
-    earningsPeriod: prepared.filing.earningsGroup ? { periodEnd: prepared.filing.earningsGroup.periodEnd, earningsDate: prepared.filing.earningsGroup.earningsDate,
-      sources: prepared.filing.earningsGroup.sources.map(({ form, filingDate, accessionNumber }) => ({ form, filingDate, accessionNumber })) } : null,
-    brief: brief ? briefForAnalysis(brief) : null,
-  });
-  return enforceDiscoveryCoverage(normalizeSecNodePlan(value, prepared.outline), prepared.discovery);
-}
-
 /**
  * The analysis stages read current evidence plus selected historical reports. Company Memory stays on the brief — it is the
  * record written to R2 and the `priorMemory` the extraction stage needs to continue a memory thread
  * — but no planning, node or synthesis prompt sees it.
  */
-function briefForAnalysis(brief: SecAnalysisBrief): Omit<SecAnalysisBrief, "companyMemorySummary" | "memoryItems"> {
+export function briefForAnalysis(brief: SecAnalysisBrief): Omit<SecAnalysisBrief, "companyMemorySummary" | "memoryItems"> {
   // Deliberately a whitelist rather than a spread minus two keys: a field added to the brief later
   // has to be named here before it can reach a prompt.
   return {
@@ -223,53 +200,6 @@ export function selectNodeBlocks(blocks: FilingBlock[], sections: Array<{ start:
   return blocks
     .filter((block) => sections.some((section) => block.start < section.end && block.end > section.start))
     .slice(0, 24);
-}
-
-export async function analyzePreparedSecNode(
-  prepared: PreparedSecFiling,
-  spec: SecNodeSpec,
-  model: SecModelCall,
-  brief?: SecAnalysisBrief,
-): Promise<SecNodeResult> {
-  const input = buildSecNodeInput(spec, prepared.outline, prepared.document.text);
-  if (!input.sections.length) {
-    return { id: spec.id, title: spec.title, status: "empty", findings: [], narrative: "", facts: [], evidence: [] };
-  }
-  const nodeSections = spec.sectionIds.flatMap((id) => {
-    const section = prepared.outline.find((candidate) => candidate.id === id);
-    return section ? [section] : [];
-  });
-  const nodeBlocks = selectNodeBlocks(prepared.blocks, nodeSections);
-  const evidenceIds = nodeBlocks.map((block) => `ev:${block.blockId}`);
-  const value = await model(`node:${spec.id}`, nodeSystemPrompt(), {
-    ticker: prepared.filing.ticker,
-    companyName: prepared.filing.companyName,
-    form: prepared.filing.form,
-    reportDate: prepared.filing.reportDate,
-    task: { title: spec.title, question: spec.question },
-    acceptanceCriteria: spec.acceptanceCriteria ?? [],
-    history: brief ? brief.history.series.filter((series) => spec.historySeriesIds?.includes(series.seriesId)) : [],
-    xbrlFacts: brief?.currentFacts ?? [],
-    allowedMetricKeys: brief?.allowedMetricKeys ?? [],
-    evidence: nodeBlocks.map((block) => ({ evidenceId: `ev:${block.blockId}`, heading: block.heading, preview: block.preview })),
-    sections: input.sections.map(({ id, title, text, compressed }) => ({ id, title, text, compressed })),
-  });
-  const normalized = normalizeSecNodeResult(value, spec, input.evidence, new Set(evidenceIds));
-  return { ...normalized, evidenceIds };
-}
-
-/** Degrades a node the model could not produce, once retries with the fallback model are exhausted. */
-export function failedSecNode(spec: SecNodeSpec, error: unknown): SecNodeResult {
-  return {
-    id: spec.id,
-    title: spec.title,
-    status: "error",
-    findings: [],
-    narrative: "",
-    facts: [],
-    evidence: [],
-    error: error instanceof Error ? error.message : "node failed",
-  };
 }
 
 export function buildPreparedSecBrief(
@@ -398,24 +328,19 @@ export async function summarizePreparedSecEvent(
   return summary;
 }
 
-export async function summarizePreparedSecFiling(
+/**
+ * Everything the report is written from and checked against, computed from the plan, the nodes and the review: what the
+ * report writer reads (`payload`) and what assembleSecReport validates its draft with.
+ */
+export async function secSynthesisInputs(
   prepared: PreparedSecFilingMeta,
   context: SecAnalysisContext,
-  model: SecModelCall,
-  now = new Date(),
-  plan?: SecNodePlan,
-  nodes: SecNodeResult[] = [],
-  brief?: SecAnalysisBrief,
-  review?: ManagerReview,
-  editorialFeedback?: string[],
-  editorialState?: {
-    candidate?: Record<string, unknown>;
-    patch?: boolean;
-    primaryEvidence?: Array<{ evidenceId: string; text: string; truncated?: boolean }>;
-    issues?: unknown[];
-    saveCandidate?: (candidate: Record<string, unknown>) => Promise<void>;
-  },
-): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }> {
+  plan: SecNodePlan,
+  nodes: SecNodeResult[],
+  brief: SecAnalysisBrief | undefined,
+  review: ManagerReview | undefined,
+  primaryEvidence?: Array<{ evidenceId: string; text: string; truncated?: boolean }>,
+) {
   let usableNodes = nodes.filter((node) => node.status === "complete" && (node.narrative || node.findings.length));
   if (!plan?.nodes.length || !usableNodes.length) throw new Error("Manager produced no usable analysis nodes");
   const finalBrief = brief ?? buildPreparedSecBrief(prepared, context);
@@ -441,16 +366,15 @@ export async function summarizePreparedSecFiling(
   const marketSnapshot = await identifyReaderMarketSnapshot(prepared.filing.ticker, finalBrief.marketSnapshot);
   const readerEvidenceIds = new Set([...reviewEvidenceIds, ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
   const fiscalInput = prepared.fiscalSourceExcerpts ?? [];
-  const financialLens = buildFinancialLens(finalBrief, nodes, prepared.filing.reportDate, editorialState?.primaryEvidence);
+  const financialLens = buildFinancialLens(finalBrief, nodes, prepared.filing.reportDate, primaryEvidence);
   const priorEvidenceIds = finalBrief.history.series.flatMap((s) => [...s.quarters, ...s.annual])
     .filter((p) => p.endDate < prepared.filing.reportDate && p.sourceFiledAt.slice(0, 10) <= prepared.filing.filingDate).map((p) => p.observationId);
   const summaryPayload = {
     financialLens,
     marketSnapshot: marketSnapshot ?? { status: "unavailable", limitations: ["No market data was provided, so the price cannot be judged attractive or not."] },
     priorEvidenceIds,
-    editorialFeedback: editorialFeedback ?? [],
     requiredTopics: editorialRequirements(plan, nodes, finalReview),
-    primaryEvidence: editorialState?.primaryEvidence ?? nodes.map((node) => ({ nodeId: node.id, evidenceIds: node.evidenceIds, excerpts: node.evidence })),
+    primaryEvidence: primaryEvidence ?? nodes.map((node) => ({ nodeId: node.id, evidenceIds: node.evidenceIds, excerpts: node.evidence })),
     fiscalPeriodInput: { filing: prepared.filing, reportedDEI: prepared.reportedFiscalPeriod ?? null, sourceExcerpts: fiscalInput },
     brief: briefForAnalysis(finalBrief),
     nodeAnalyses: usableNodes.map(({ id, title, findings, narrative, facts, evidenceIds }) => ({ id, title, analysis: narrative || findings.map((finding) => `${finding.label}: ${finding.detail}`).join("\n"), facts: facts ?? [], evidenceIds: evidenceIds ?? [] })),
@@ -476,51 +400,23 @@ export async function summarizePreparedSecFiling(
       reviews: "[{accessionNumber,priorJudgment,status:supported|contradicted|not_verifiable|superseded,evidenceIds,explanation,nextTest}]",
     },
   };
-  let summaryValue = editorialState?.candidate ?? await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION, summaryPayload);
-  if (!editorialState?.patch) await editorialState?.saveCandidate?.(summaryValue);
-  const repair = async (problems: unknown[], round: number) => {
-    const localized = problems.map((p) => p && typeof p === "object" && "sectionIds" in p && Array.isArray(p.sectionIds) ? p.sectionIds.filter((id): id is string => typeof id === "string") : []);
-    const allowedSections = localized.length && localized.every((ids) => ids.length) ? new Set(localized.flat()) : undefined;
-    let rejectedPatch: unknown, patchError: string | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const patch = await model(`editorial-revision:${round}:${attempt}`, EDITORIAL_PATCH_PROMPT + "\n" + RESEARCH_RULES, {
-        originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
-        primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
-        nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
-        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...readerEvidenceIds], priorEvidenceIds, availableCharts: trends, availableFigures,
-        allowedSectionIds: allowedSections ? [...allowedSections] : null, rejectedPatch, patchError,
-      });
-      try { summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections); }
-      catch (error) {
-        if (attempt === 2) throw error;
-        rejectedPatch = patch; patchError = error instanceof Error ? error.message : String(error);
-        continue;
-      }
-      await editorialState?.saveCandidate?.(summaryValue);
-      return;
-    }
-  };
-  if (editorialState?.patch) await repair(editorialState.issues ?? editorialFeedback ?? [], 0);
-  let reader: ReturnType<typeof normalizeReaderReport> | undefined;
-  let readerSummary: ReturnType<typeof normalizeReaderSummaryText> | undefined;
-  for (let round = 0; round <= 3; round += 1) {
-    try {
-      if (editorialState && !summaryValue.readerReport) throw new Error("Reader report is missing; add grounded sections, changes and watch conditions using the patch schema");
-      reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
-        nodes, plan, currentEvidence: readerEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), figureKeys: new Set(figures.map((f) => f.figureKey)), requireVisual: true,
-      }) : undefined;
-      readerSummary = reader ? normalizeReaderSummaryText(summaryValue) : undefined;
-      if (reader && readerSummary) {
-        assertReaderIntegrity(reader, financialLens, [readerSummary.headline, readerSummary.analystView,
-          ...readerSummary.bullets.flatMap((bullet) => [bullet.label, bullet.detail])]);
-      }
-      break;
-    } catch (error) {
-      if (round === 3) throw error;
-      await repair([{ category: "coverage", detail: error instanceof Error ? error.message : String(error) }], round + 1);
-    }
-  }
-  if (reader) summaryValue.report = readerArticleText(reader);
+  return { prepared, context, plan, nodes, usableNodes, finalBrief, nodeFacts, qoq, yoy, finalReview, validEvidenceIds, trends, figures,
+    reviewEvidenceIds, marketSnapshot, readerEvidenceIds, fiscalInput, financialLens, priorEvidenceIds, payload: summaryPayload };
+}
+export type SecSynthesisInputs = Awaited<ReturnType<typeof secSynthesisInputs>>;
+
+/** Builds the published report from a written draft; a draft that fails a check throws with what to fix. */
+export function assembleSecReport(inputs: SecSynthesisInputs, summaryValue: Record<string, unknown>, now = new Date()): { artifact: SecAnalysisArtifact; summary: SecFilingSummary } {
+  const { prepared, plan, finalBrief, nodeFacts, qoq, yoy, finalReview, validEvidenceIds, trends, figures, reviewEvidenceIds, marketSnapshot, readerEvidenceIds, fiscalInput, financialLens, priorEvidenceIds } = inputs;
+  let { nodes, usableNodes } = inputs;
+  summaryValue = structuredClone(summaryValue);
+  if (!summaryValue.readerReport) throw new Error("Reader report is missing: readerReport is the report body");
+  const reader = normalizeReaderReport(summaryValue.readerReport, {
+    nodes, plan, currentEvidence: readerEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), figureKeys: new Set(figures.map((f) => f.figureKey)), requireVisual: true,
+  });
+  const readerSummary = normalizeReaderSummaryText(summaryValue);
+  assertReaderIntegrity(reader, financialLens, [readerSummary.headline, readerSummary.analystView, ...readerSummary.bullets.flatMap((bullet) => [bullet.label, bullet.detail])]);
+  summaryValue.report = readerArticleText(reader);
   if (finalBrief.reportContinuity) {
     const continuityNode = continuityReviewNode(finalBrief.reportContinuity, summaryValue, reviewEvidenceIds);
     nodes = [...nodes, continuityNode];
@@ -531,20 +427,19 @@ export async function summarizePreparedSecFiling(
     periodId: prepared.periodId,
     reportVersion: `${SEC_ANALYSIS_SCHEMA_VERSION}:${prepared.filing.reportDate || prepared.filing.filingDate}-${crypto.randomUUID()}`,
   }, new Set(validEvidenceIds));
-  if (readerSummary) report.headline = readerSummary.headline;
+  report.headline = readerSummary.headline;
   report.fiscalPeriod = validateAiFiscalPeriod(summaryValue.fiscalPeriod, prepared.filing, fiscalInput);
   const groundedDisclosure = prepared.discovery?.disclosures.some((item) => usableNodes.some((node) =>
     plan.nodes.find((spec) => spec.id === node.id)?.sectionIds.includes(item.id) && node.evidenceIds?.some((id) => item.evidenceIds.includes(id)))) ?? false;
   report = enforceDeterministicReportQuality(report, finalBrief, nodeFacts, groundedDisclosure);
   report = addDeterministicDeltas(report, qoq, yoy);
-  const presentation = reader ? undefined : composeSecPresentation(summaryValue.presentation, usableNodes, report.keyMetrics, trends);
-  report = { ...report, ...(presentation ? { presentation } : {}), ...(reader ? { reader } : {}), financialLens,
+  report = { ...report, reader, financialLens,
     marketSnapshot, trends, figures, sourceMaterials: prepared.sourceMaterials };
   report = {
     ...report,
     dataQuality: {
       ...report.dataQuality,
-      warnings: [...new Set([...(reader?.presentationWarnings ?? []), ...(prepared.discovery?.warnings ?? []), ...(prepared.materialWarnings ?? []), ...(!reader && summaryValue.presentation && !presentation ? [PRESENTATION_FALLBACK_WARNING] : []), ...report.dataQuality.warnings, ...(plan.warnings ?? [])])].slice(0, 20),
+      warnings: [...new Set([...(reader.presentationWarnings ?? []), ...(prepared.discovery?.warnings ?? []), ...(prepared.materialWarnings ?? []), ...report.dataQuality.warnings, ...(plan.warnings ?? [])])].slice(0, 20),
       analysisStatus: finalReview.status === "complete" ? "complete" : "partial",
       unresolvedQuestions: finalReview.unresolvedQuestions,
       failedNodeIds: nodes.filter((node) => node.status !== "complete").map((node) => node.id),
@@ -565,7 +460,7 @@ export async function summarizePreparedSecFiling(
   };
   const normalizedSummary = {
     ...normalizeSecSummary({ ...summaryValue, source: "claude", version: SEC_SUMMARY_VERSION }, prepared.filing, now),
-    ...(readerSummary ?? {}),
+    ...readerSummary,
   };
   if (!normalizedSummary.report) {
     throw new Error("Synthesis must contain a report");
@@ -575,8 +470,8 @@ export async function summarizePreparedSecFiling(
   }
   const summary = {
     ...normalizedSummary,
-    ...(reader ? { readerVersion: reader.version } : {}),
-    report: reader ? readerArticleText(reader) : appendAnalysisLimitations(normalizedSummary.report, finalReview, nodes),
+    readerVersion: reader.version,
+    report: readerArticleText(reader),
     discovery: prepared.discovery,
     nodes,
     plan,
@@ -587,17 +482,6 @@ export async function summarizePreparedSecFiling(
   return { artifact, summary };
 }
 
-function appendAnalysisLimitations(report: string | undefined, review: ManagerReview, nodes: SecNodeResult[]): string | undefined {
-  if (!report || review.status === "complete") return report;
-  const failedNodeIds = nodes.filter((node) => node.status !== "complete").map((node) => node.id);
-  const suffix = [
-    "Analysis completeness note",
-    `Stop reason: ${review.stopReason ?? "analysis_incomplete"}`,
-    `Unresolved questions: ${review.unresolvedQuestions.length ? review.unresolvedQuestions.join("; ") : "no additional disclosure"}`,
-    `Failed nodes: ${failedNodeIds.length ? failedNodeIds.join(", ") : "none"}`,
-  ].join("\n");
-  return `${report}\n\n${suffix}`;
-}
 
 function parseTickerMap(payload: unknown): Record<string, SecCompany> {
   const root = asRecord(payload);
@@ -617,7 +501,7 @@ function parseTickerMap(payload: unknown): Record<string, SecCompany> {
   return result;
 }
 
-function managerSystemPrompt() {
+export function managerSystemPrompt() {
   return [
     RESEARCH_RULES,
     "Research questions center on what changed this period, why it changed, how it affects future cash, profit and valuation, and what would overturn the judgment. Merge themes by importance; section coverage or the number of disclosures is not a goal.",
@@ -651,7 +535,7 @@ function managerReviewSystemPrompt() {
   ].join("\n");
 }
 
-function nodeSystemPrompt() {
+export function nodeSystemPrompt() {
   return [
     RESEARCH_RULES,
     "You are a section analyst on a US-equity fundamental research team and handle only the one task the editor assigned to you.",
@@ -691,7 +575,7 @@ function eventSummarySystemPrompt() {
   ].join("\n");
 }
 
-function synthesisSystemPrompt() {
+export function synthesisSystemPrompt() {
   return [
     RESEARCH_RULES,
     SEC_REPORT_STYLE_RULES,

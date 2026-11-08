@@ -23,110 +23,6 @@
     "TRANSCRIPTS_ENABLED": "true",
     "TRANSLATION_ENABLED": "true"
   },
-  "workflows": [
-    {
-      "name": "spontra-guidance",
-      "binding": "GUIDANCE_WORKFLOW",
-      "class_name": "GuidanceWorkflow",
-      "concurrency": { "limit": 2 }
-    },
-    {
-      "name": "spontra-business-explainer",
-      "binding": "BUSINESS_EXPLAINER_WORKFLOW",
-      "class_name": "BusinessExplainerWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-business-tree",
-      "binding": "BUSINESS_TREE_WORKFLOW",
-      "class_name": "BusinessTreeWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-valuation",
-      "binding": "VALUATION_WORKFLOW",
-      "class_name": "ValuationWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-library-cards",
-      "binding": "LIBRARY_CARDS_WORKFLOW",
-      "class_name": "LibraryCardsWorkflow",
-      "concurrency": { "limit": 2 }
-    },
-    {
-      "name": "spontra-library-links",
-      "binding": "LIBRARY_LINKS_WORKFLOW",
-      "class_name": "LibraryLinksWorkflow",
-      "concurrency": { "limit": 2 }
-    },
-    {
-      "name": "spontra-business-tags",
-      "binding": "BUSINESS_TAGS_WORKFLOW",
-      "class_name": "BusinessTagsWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-translate",
-      "binding": "TRANSLATE_WORKFLOW",
-      "class_name": "TranslateWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-analyst",
-      "binding": "ANALYST_WORKFLOW",
-      "class_name": "AnalystWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-checkup",
-      "binding": "CHECKUP_WORKFLOW",
-      "class_name": "CheckupWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-findings",
-      "binding": "FINDINGS_WORKFLOW",
-      "class_name": "FindingsWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-items",
-      "binding": "ITEMS_WORKFLOW",
-      "class_name": "ItemsWorkflow",
-      "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "earning-report-analysis-sec-analysis",
-      "binding": "SEC_ANALYSIS_WORKFLOW",
-      "class_name": "SecAnalysisWorkflow",
-      "concurrency": {
-        "limit": 4
-      }
-    },
-    {
-      "name": "earning-report-analysis-sec-memory",
-      "binding": "SEC_MEMORY_WORKFLOW",
-      "class_name": "SecMemoryWorkflow"
-    },
-    {
-      "name": "earning-report-analysis-company-analysis",
-      "binding": "COMPANY_ANALYSIS_WORKFLOW",
-      "class_name": "CompanyAnalysisWorkflow",
-      "concurrency": {
-        "limit": 2
-      }
-    },
-    // Reports readers ask the stage for, started by their StageAgent.
-    {
-      "name": "spontra-report",
-      "binding": "REPORT_WORKFLOW",
-      "class_name": "ReportWorkflow",
-      "concurrency": {
-        "limit": 2
-      }
-    }
-  ],
   "r2_buckets": [
     {
       "binding": "SEC_FILINGS",
@@ -192,9 +88,9 @@
   // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
   // turning the stage off is the feature switch, not a revert.
   "durable_objects": {
-    "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }]
+    "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }, { "name": "TASK_RUNS", "class_name": "TaskRunner" }]
   },
-  "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }],
+  "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }, { "tag": "runs-v1", "new_sqlite_classes": ["TaskRunner"] }],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // The only schedule: SEC filing discovery, because EDGAR pushes nothing. Everything a
   // filing leads to runs on the queues above.

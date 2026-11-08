@@ -4,7 +4,7 @@ import { z } from "zod";
 import { evidenceCandidates, resolveEvidence, verifyFindings } from "../../../shared/analysis-runtime/findings.ts";
 import { assignIds, readSceneDraft } from "../../../shared/analysis-runtime/scene/schema.ts";
 import { describeScene, verifyScene } from "../../../shared/analysis-runtime/scene/verify.ts";
-import { runAgentLoop, sequential, type LoopHost, type Recipe } from "../src/agent-loop.ts";
+import { runAgentLoop, sequential, type LoopHost, type Recipe } from "./support/recipe-driver.ts";
 import { runTool, toolSchema, type AnyTool, type ToolPolicy } from "../src/tools/registry.ts";
 import type { AgentMessage, AgentReply } from "../src/tool-loop.ts";
 import { data, finding, PERIOD, publication } from "./fixtures/stage-data.ts";

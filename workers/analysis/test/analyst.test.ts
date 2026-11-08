@@ -7,7 +7,11 @@ import type { LensDocument } from "../../../shared/analysis-contract/lens.ts";
 import type { PeersPublication } from "../../../shared/analysis-contract/peers.ts";
 import { mergeDossier, readDossierPublication } from "../../../shared/analysis-runtime/dossier.ts";
 import { verifyFindings, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
-import { ANALYST_TOOLS, divergence, renderTable, runAnalyst, type AnalystModel } from "../src/analyst/agent.ts";
+import { analystRecipe, ANALYST_TOOLS, divergence, renderTable, runAnalyst, type AnalystModel, type AnalystSpec } from "../src/analyst/agent.ts";
+import { scriptedRunner } from "./support/recipe-driver.ts";
+import type { AgentAct } from "../src/tool-loop.ts";
+
+const sessions = (act: AgentAct) => scriptedRunner(async (_kind, spec) => ({ recipe: analystRecipe(spec as AnalystSpec, { DB: undefined } as unknown as AnalysisEnv), input: spec, model: "m", effort: "low", ledger: { kind: "analyst" } }), act);
 import { planFinding } from "../src/analyst/plan.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { writeFindings } from "../src/findings/writer.ts";
@@ -102,16 +106,16 @@ test("the analyst accepts only a document that compiles, applies the review's re
   ] };
   const seen: string[] = [], sent: AgentMessage[][] = [], systems: string[] = [];
   const replies = [call("peers"), call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
+  const act: AgentAct = async (_stage, system, tools, messages) => {
+    assert.deepEqual(tools, ANALYST_TOOLS);
+    sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
+    return replies[sent.length - 1] ?? call("finish");
+  };
   const model: AnalystModel = {
-    act: async (_stage, system, tools, messages) => {
-      assert.deepEqual(tools, ANALYST_TOOLS);
-      sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
-      return replies[sent.length - 1] ?? call("finish");
-    },
     judge: async () => ({ remove: [{ row: 1, cell: 1, block: 0, reason: "two paragraphs, one claim" }, { row: 0, cell: 1, block: 0, reason: "not allowed" }] }),
   };
   const ledger = buildLedger(data, PERIOD, publication.sources);
-  const outcome = await runAnalyst({ env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model, stage: (_, cb) => cb(), reserveTurn: async () => true, now: "2026-08-01T00:00:00Z" });
+  const outcome = await runAnalyst({ env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], record: [], model, run: sessions(act), operationId: "a", stage: (_, cb) => cb(), now: "2026-08-01T00:00:00Z" });
   assert.match(seen[1]!, /PEER1/);
   assert.match(seen[2]!, /watch block/);
   assert.match(seen[3]!, /Not accepted/);
@@ -150,14 +154,14 @@ test("a turn without a usable reply joins nothing, the next asks again, and fail
   const f = verifyFindings(publication, data).verified[0]!;
   const plan = planFinding(f, data, ["PEER1", "PEER2"]);
   const ledger = buildLedger(data, PERIOD, publication.sources);
-  const runWith = (act: AnalystModel["act"]) => runAnalyst({ env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model: { act, judge: async () => ({ remove: [] }) }, stage: (_, cb) => cb(), reserveTurn: async () => true, now: "2026-08-01T00:00:00Z" });
+  const runWith = (act: AgentAct) => runAnalyst({ env: { DB: undefined } as unknown as AnalysisEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], record: [], model: { judge: async () => ({ remove: [] }) }, run: sessions(act), operationId: "a", stage: (_, cb) => cb(), now: "2026-08-01T00:00:00Z" });
   const sent: AgentMessage[][] = [], systems: string[] = [];
   const thinking: AgentBlock = { type: "thinking", thinking: "", signature: "sig-1" };
   const replies: AgentReply[] = [
     { stopReason: "tool_use", content: [thinking, { type: "tool_use", id: "toolu_peers", name: "peers", input: {} }] },
     { content: [], stopReason: "refusal", refusalCategory: "reasoning_extraction" },
     { error: "stream_incomplete: interrupted" },
-    calls(["compile", { document: JSON.stringify({ rows: [] }) }], ["Peers", {}]),
+    calls(["compile", { document: JSON.stringify({ rows: [] }) }], ["peers", {}]),
     { stopReason: "end_turn", content: [{ type: "text", text: "Done." }] },
     { stopReason: "end_turn", content: [{ type: "text", text: "Still done." }] },
   ];
@@ -168,7 +172,7 @@ test("a turn without a usable reply joins nothing, the next asks again, and fail
   assert.deepEqual(sent[2], sent[1]);
   assert.deepEqual(sent[3], sent[1]);
   assert.deepEqual(outcome.turns.slice(1, 3).map(t => [t.action, t.observation]), [["invalid", "refusal (reasoning_extraction)"], ["invalid", "stream_incomplete: interrupted"]]);
-  // Two calls in one reply each get their result: a document sent as a string is read, and a tool named in another case runs.
+  // Two calls in one reply each get their result: a document sent as a string is read, and the second call runs.
   const both = sent[4]!.at(-1)!.content as AgentBlock[];
   assert.deepEqual(both.map(b => b.tool_use_id), [replies[3]!.content[0]!.id, replies[3]!.content[1]!.id]);
   assert.match(String(both[0]!.content), /arrived as a JSON string[\s\S]*does not match the contract/);

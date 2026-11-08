@@ -1,5 +1,6 @@
-import { nativeSearches, nativeSearchTool, NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
-import type { AgentTool } from "../tool-loop.ts";
+import { handPolicy, handSearch, handTool } from "../pi/hand-tools.ts";
+import type { SessionRunner } from "../pi/runs.ts";
+import type { Recipe } from "../recipe.ts";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel, type TreeSource, type TreeStep } from "../../../../shared/analysis-contract/business-tree.ts";
 import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasContent, issuerNames, lineAliases, namedIn, namesAncestor, plainText, properName, quotedIn, quoteProblem, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { excerpt } from "../business-explainer/agent.ts";
@@ -32,19 +33,13 @@ export type TreeTool = { name: string; description: string; strict: true; input_
 /** One turn's reply: its content blocks as they are to be sent back and why it stopped, or why there is no reply. */
 export type TreeReply = { content: TreeBlock[]; stopReason: string | null; refusalCategory?: string | null } | { error: string };
 export type TreeModel = {
-  /** One turn of the loop, taken through the tools. `messages` is the whole exchange so far; it only ever grows. */
-  act(stage: string, system: string, tools: AgentTool[], messages: TreeMessage[]): Promise<TreeReply>;
-  /** One JSON object, for the review; an empty object when the reply was not one. */
+  /** One JSON object, for the reviews and descriptions; an empty object when the reply was not one. */
   judge(stage: string, system: string, payload: unknown): Promise<Record<string, unknown>>;
 };
 type Stage = <T>(name: string, callback: () => Promise<T>) => Promise<T>;
 
 /** Per business: model turns, and how many searches and reads they may make. */
 export const TREE_BUDGET = { turns: 16, searches: 6, reads: 6 } as const;
-/** Turns in a row with no usable reply before the run stops: then the provider is failing, not the model's turn. */
-const FAILED_REPLIES = 3;
-/** Tool calls one reply may make that the harness runs; the rest are answered "not run". */
-const CALLS_PER_TURN = 8;
 const READ_CHARS = 6_000;
 /** Forums, video and quote aggregators describe nothing a filing or vendor page would not. */
 const EXCLUDED = ["reddit.com", "youtube.com", "quora.com", "x.com", "twitter.com", "facebook.com", "tiktok.com", "ycharts.com", "macrotrends.net", "stocktwits.com"];
@@ -129,6 +124,8 @@ type Outcome = { observation: string; done?: boolean; error?: boolean };
 export type TreeRunInput = {
   ticker: string; companyName: string; periodEnd: string; businesses: TreeBusiness[]; filings?: TreeFiling[]; search: TreeSearch; model: TreeModel;
   modelVersion: string; fingerprint: string; now: string; stage?: Stage; filingLibrary?: TreeLibrary;
+  /** Runs each business's session: a Pi session in production, a scripted driver in tests. */
+  run: SessionRunner; runId?: string;
 };
 
 /**
@@ -136,9 +133,9 @@ export type TreeRunInput = {
  * numbers them alike. Each business has its own, under its own prefix, so businesses research in parallel.
  */
 class Library {
-  readonly list: Material[] = [];
+  readonly list: Material[];
   private readonly prefix: string;
-  constructor(prefix: string) { this.prefix = prefix; }
+  constructor(prefix: string, list: Material[] = []) { this.prefix = prefix; this.list = list; }
   register(hit: { url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }): Material | null {
     const url = canonical(hit.url);
     if (!url) return null;
@@ -171,11 +168,10 @@ export async function runBusinessTree(input: TreeRunInput): Promise<BusinessTree
   const filings = await stage("filings", () => input.filingLibrary ? libraryFilings(input, scope) : collectFilings(input, scope));
   const single = businesses.length === 1;
   // Businesses research at once: each has its own sources and step names, so the order steps finish in changes nothing.
-  const results = await Promise.all(businesses.map((business, index) => {
-    const library = new Library(`b${index + 1}`);
-    for (const filing of filings) library.register(filing);
+  const results = await Promise.all(businesses.map(async (business, index) => {
     const others = businesses.filter(b => b !== business).map(b => businessHint(b.flowNodeId, b.name));
-    return researchBranch({ ...input, stage, scope, library, business, index, others, single }).then(result => ({ ...result, library, business }));
+    const result = await researchBranch({ ...input, stage, scope, business, index, others, single, hits: filings, operationId: `${input.runId ?? input.fingerprint.slice(0, 16)}:tree-b${index + 1}` });
+    return { ...result, business };
   }));
   const research: NonNullable<BusinessTree["research"]> = results.map(r => ({ flowNodeId: r.business.flowNodeId, steps: r.steps }));
   const kept = results.filter(r => r.branch.children.some(hasContent));
@@ -210,163 +206,118 @@ const citedIds = (node: TreeNode): string[] => [...node.anchor?.sourceIds ?? [],
 
 type BranchContext = TreeRunInput & { stage: Stage; scope: { scope: string; maxAgeMs: number }; library: Library; business: TreeBusiness; index: number; others: string[]; single: boolean };
 
-async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch; steps: TreeStep[] }> {
+type TreeHit = { url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean };
+/** Everything one business's session has built and learned; stored after every call, so the session survives an eviction. */
+export type TreeState = {
+  drafts: Draft[]; rootSummary: TreeClaim | null; counter: number; used: { searches: number; reads: number };
+  refused: Map<string, number>; refusedFinish: boolean; askedDepth: boolean; turn: number; finished: boolean; list: Material[];
+};
+/** What one business's session is rebuilt from, decided when the run started it. */
+export type TreeSpec = {
+  ticker: string; companyName: string; periodEnd: string; modelVersion: string; fingerprint: string; now: string;
+  business: TreeBusiness; index: number; others: string[]; single: boolean;
+  /** The filings the flow was read from, and the sources the research starts from. */
+  filings: TreeFiling[]; hits: TreeHit[];
+  /** The annual report's own section on this business, read before the session. */
+  section: { url: string; title: string; text: string } | null;
+  runId?: string;
+};
+export type BranchStatic = Omit<BranchContext, "library">;
+
+function openTree(spec: TreeSpec): TreeState {
+  const prefix = `b${spec.index + 1}`;
+  const st: TreeState = { drafts: [], rootSummary: null, counter: 0, used: { searches: 0, reads: 0 }, refused: new Map(), refusedFinish: false, askedDepth: false, turn: 0, finished: false, list: [] };
+  const library = new Library(prefix, st.list);
+  for (const hit of spec.hits) library.register(hit);
+  // The statement's own children are the first level; the model hangs what it finds under them.
+  st.drafts = spec.business.children.map(child => ({ id: `${prefix}-n${++st.counter}`, parentId: null, name: businessHint(child.flowNodeId, child.name), gloss: null, kind: "line", flowNodeId: child.flowNodeId, summary: null, anchor: null, revenue: [] }));
+  const material = spec.section ? library.register({ url: spec.section.url, title: spec.section.title, snippet: "", publishedAt: null, own: true }) : null;
+  if (spec.section && material) { material.text = spec.section.text; material.read = true; }
+  return st;
+}
+
+/** One business's breakdown as a recipe: the model reads and searches through the tools and edits the tree; finish settles it. */
+export function treeRecipe(spec: TreeSpec, ctx: BranchStatic): Recipe<TreeSpec, null, TreeState> {
+  const prefix = `b${spec.index + 1}`;
+  return {
+    id: `business-tree-${spec.index + 1}`,
+    budget: { turns: TREE_BUDGET.turns, wallMs: 60 * 60_000 },
+    system: () => SYSTEM,
+    open: openTree,
+    tools: st => {
+      const w = branchWork({ ...ctx, library: new Library(prefix, st.list) }, st);
+      const run = (name: string) => async (args: Record<string, unknown>) => {
+        const outcome = await w.perform(name, args, `${prefix}-t${st.turn}`);
+        if (outcome.done) st.finished = true;
+        return outcome;
+      };
+      return [
+        ...TREE_TOOLS.map(t => handTool<TreeState>(t, run(t.name))),
+        handSearch<TreeState>("search_web", s => TREE_BUDGET.searches - s.used.searches, (batch, s) => {
+          s.used.searches++;
+          const library = new Library(prefix, s.list);
+          const listed = batch.hits.flatMap(hit => { const m = library.register(hit); return m ? [`[${m.id}] ${m.title} (${m.url})`] : []; });
+          return { observation: batch.error ?? `Search sources (read these before citing):\n${listed.join("\n")}` };
+        }, EXCLUDED),
+      ];
+    },
+    policy: handPolicy([...TREE_TOOLS, { name: "search_web" }]),
+    settled: st => st.finished,
+    settle: () => null,
+    nudge: "Continue the breakdown by calling the tools; call finish when it is complete.",
+    onTurn: (st, turn) => { st.turn = turn; },
+    budgetLine: (st, turnsLeft) => `Budget left: ${turnsLeft} turns, ${TREE_BUDGET.searches - st.used.searches} searches, ${TREE_BUDGET.reads - st.used.reads} reads.${turnsLeft <= 2 ? " The budget is almost spent: add what you have verified to the tree, then finish." : ""}`,
+  };
+}
+
+async function researchBranch(ctx: BranchStatic & { run: SessionRunner; operationId: string; hits: TreeHit[]; runId?: string }): Promise<{ branch: TreeBranch; steps: TreeStep[]; library: Library }> {
+  const { business, index, stage } = ctx;
+  const prefix = `b${index + 1}`;
+  const label = businessHint(business.flowNodeId, business.name);
+  // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
+  // A company with one disclosed business is that business: its annual report describes it under the company's name.
+  const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name)), ...(ctx.single ? issuerNames(ctx.companyName) : [])];
+  const section = ctx.filingLibrary ? await stage(`${prefix}-library`, () => ctx.filingLibrary!.businessSection(names, READ_CHARS)) : null;
+  const spec: TreeSpec = { ticker: ctx.ticker, companyName: ctx.companyName, periodEnd: ctx.periodEnd, modelVersion: ctx.modelVersion, fingerprint: ctx.fingerprint, now: ctx.now,
+    business, index, others: ctx.others, single: ctx.single, filings: ctx.filings ?? [], hits: ctx.hits, section, ...(ctx.runId ? { runId: ctx.runId } : {}) };
+  const start = openTree(spec);
+  const report = start.list.find(m => m.own && m.read && spec.section && m.text === spec.section.text);
+  const annualReport = report ? `[${report.id}] ${report.title}\n${report.text}` : null;
+  const before: TreeStep[] = report && annualReport ? [{ thought: "The harness read the annual report's section on this business.", action: "read", input: JSON.stringify({ source: report.id, focus: label }), observation: annualReport.slice(0, 800) }] : [];
+  // The opening carries the task and the state it starts from.
+  const opening = JSON.stringify({
+    company: ctx.companyName, ticker: ctx.ticker, period: ctx.periodEnd,
+    business: { name: label, filingName: business.name }, otherBusinesses: ctx.others,
+    tree: outline(label, start.rootSummary, start.drafts), sources: sourceList(new Library(prefix, start.list)), budget: { turns: TREE_BUDGET.turns, searches: TREE_BUDGET.searches, reads: TREE_BUDGET.reads },
+    ...(annualReport ? { annualReport } : {}),
+  });
+  const outcome = await ctx.run<null, TreeState>("tree", spec, opening, ctx.operationId);
+  // Replies that kept failing stop the run with the provider's own words, so it is retried later.
+  const last = outcome.trail.at(-1);
+  if (outcome.reason === "failed" && last?.action === "invalid") throw new Error(`Business tree for ${label}: model replies kept failing; last: ${last.observation.slice(0, 300)}`);
+  const st = outcome.state;
+  const steps = [...before, ...outcome.trail.map(t => ({ thought: t.thought.slice(0, 600), action: t.action.slice(0, 40), input: t.input.slice(0, 600), observation: t.observation.slice(0, 800) }))];
+  const library = new Library(prefix, st.list);
+  return { ...await branchWork({ ...ctx, library }, st).conclude(steps), library };
+}
+
+/** The branch's tools and its conclusion over one state: what the session's calls change, and the review after it. */
+function branchWork(ctx: BranchContext, st: TreeState) {
   const { business, index, library, stage } = ctx;
   const prefix = `b${index + 1}`;
   const label = businessHint(business.flowNodeId, business.name);
   const rootAncestors = branchAncestors(business, ctx.companyName, ctx.single);
-  let counter = 0;
-  const nextId = () => `${prefix}-n${++counter}`;
-  // The statement's own children are the first level; the model hangs what it finds under them.
-  const drafts: Draft[] = business.children.map(child => ({ id: nextId(), parentId: null, name: businessHint(child.flowNodeId, child.name), gloss: null, kind: "line", flowNodeId: child.flowNodeId, summary: null, anchor: null, revenue: [] }));
-  let rootSummary: TreeClaim | null = null;
-  const steps: TreeStep[] = [];
-  const used = { searches: 0, reads: 0 };
-  let refusedFinish = false, askedDepth = false, failedReplies = 0, quietReplies = 0, turn = 0;
-  // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
-  let annualReport: string | null = null;
-  if (ctx.filingLibrary) {
-    // A company with one disclosed business is that business: its annual report describes it under the company's name.
-    const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name)), ...(ctx.single ? issuerNames(ctx.companyName) : [])];
-    const section = await stage(`${prefix}-library`, () => ctx.filingLibrary!.businessSection(names, READ_CHARS));
-    const material = section ? library.register({ url: section.url, title: section.title, snippet: "", publishedAt: null, own: true }) : null;
-    if (section && material) {
-      material.text = section.text; material.read = true;
-      annualReport = `[${material.id}] ${material.title}\n${section.text}`;
-      steps.push({ thought: "The harness read the annual report's section on this business.", action: "read", input: JSON.stringify({ source: material.id, focus: label }), observation: annualReport.slice(0, 800) });
-    }
-  }
-
+  const nextId = () => `${prefix}-n${++st.counter}`;
+  const drafts = st.drafts;
+  const used = st.used;
   const childrenOf = (id: string | null) => drafts.filter(d => d.parentId === id);
   const depthOf = (id: string | null): number => { let depth = 0; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) depth++; return depth; };
   // A line the model named after a category is also named by its own words (lineAliases); a disclosed one only in full.
   const ancestorsOf = (id: string | null): string[] => { const names: string[] = []; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) names.push(d.name, ...(d.flowNodeId ? [] : lineAliases(d.name))); return [...names, ...rootAncestors]; };
   // How often a name was refused under a parent: after the second time the model is told to leave it out.
-  const refused = new Map<string, number>();
+  const refused = st.refused;
   const researched = () => drafts.filter(d => !d.flowNodeId || d.revenue.length || d.summary).length;
-  const budget = () => {
-    const turnsLeft = TREE_BUDGET.turns - turn;
-    return `Budget left: ${turnsLeft} turns, ${TREE_BUDGET.searches - used.searches} searches, ${TREE_BUDGET.reads - used.reads} reads.${turnsLeft <= 2 ? " The budget is almost spent: add what you have verified to the tree, then finish." : ""}`;
-  };
 
-  // The exchange only grows: each reply goes back exactly as it came, thinking included, and each call's result follows
-  // it, so Claude keeps its reasoning from turn to turn. The opening carries the task and the state it starts from.
-  const messages: TreeMessage[] = [{ role: "user", content: JSON.stringify({
-    company: ctx.companyName, ticker: ctx.ticker, period: ctx.periodEnd,
-    business: { name: label, filingName: business.name }, otherBusinesses: ctx.others,
-    tree: outline(label, rootSummary, drafts), sources: sourceList(library), budget: { turns: TREE_BUDGET.turns, searches: TREE_BUDGET.searches, reads: TREE_BUDGET.reads },
-    ...(annualReport ? { annualReport } : {}),
-  }) }];
-  for (turn = 1; turn <= TREE_BUDGET.turns; turn++) {
-    const reply = await stage(`${prefix}-t${turn}-act`, () => ctx.model.act(`business-tree-${index + 1}-${turn}`, `${SYSTEM}\n${NATIVE_SEARCH_INSTRUCTION}`, [...TREE_TOOLS, ...(used.searches < TREE_BUDGET.searches ? [nativeSearchTool(TREE_BUDGET.searches - used.searches, EXCLUDED)] : [])], messages));
-    // No usable reply (the provider failed, Claude declined, or the reply was cut off): nothing joins the exchange and the
-    // next turn asks again. Several in a row stop the run with the provider's own words, so it is retried later.
-    const failure = "error" in reply ? reply.error
-      : reply.stopReason === "refusal" ? `refusal${reply.refusalCategory ? ` (${reply.refusalCategory})` : ""}`
-      : reply.stopReason === "max_tokens" ? "max_tokens: the reply was cut off at the output limit" : null;
-    if (failure !== null || "error" in reply) {
-      steps.push({ thought: "", action: "invalid", input: "", observation: String(failure).slice(0, 800) });
-      if (++failedReplies >= FAILED_REPLIES) throw new Error(`Business tree for ${label}: ${FAILED_REPLIES} model replies in a row failed; last: ${failure}`);
-      continue;
-    }
-    failedReplies = 0;
-    messages.push({ role: "assistant", content: reply.content });
-    const webNotes: TreeBlock[] = [];
-    for (const batch of nativeSearches(reply.content)) {
-      used.searches++;
-      const listed = batch.hits.flatMap(hit => { const m = library.register(hit); return m ? [`[${m.id}] ${m.title} (${m.url})`] : []; });
-      const observation = batch.error ?? `Native search sources (read these before citing):\n${listed.join("\n")}`;
-      webNotes.push({ type: "text", text: observation });
-      steps.push({ thought: "", action: "web_search", input: batch.query, observation });
-    }
-    const said = reply.content.flatMap(b => b.type === "text" && typeof b.text === "string" ? [b.text] : []).join(" ").trim().slice(0, 600);
-    const calls = reply.content.filter((b): b is ToolCall => b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string");
-    if (!calls.length && webNotes.length) { quietReplies = 0; messages.push({ role: "user", content: webNotes }); continue; }
-    if (!calls.length) {
-      // A reply with no call is asked once to go on; a second in a row ends this business with what it has.
-      steps.push({ thought: said, action: "none", input: "", observation: "The reply called no tool." });
-      if (++quietReplies >= 2) break;
-      messages.push({ role: "user", content: "Continue the breakdown by calling the tools; call finish when it is complete." });
-      continue;
-    }
-    quietReplies = 0;
-    const results: TreeBlock[] = [];
-    let done = false;
-    for (const [i, call] of calls.entries()) {
-      const input = call.input && typeof call.input === "object" && !Array.isArray(call.input) ? call.input as Record<string, unknown> : {};
-      const outcome: Outcome = i >= CALLS_PER_TURN ? { observation: `Not run: at most ${CALLS_PER_TURN} calls run per turn; call it again.` }
-        : await perform(call.name.trim().toLowerCase(), input, `${prefix}-t${turn}-${i + 1}`);
-      done ||= !!outcome.done;
-      steps.push({ thought: i ? "" : said, action: call.name.slice(0, 40), input: JSON.stringify(input).slice(0, 600), observation: outcome.observation.slice(0, 800) });
-      results.push({ type: "tool_result", tool_use_id: call.id, content: `${outcome.observation}\n\n${budget()}`, ...(outcome.error ? { is_error: true } : {}) });
-    }
-    if (done) break;
-    messages.push({ role: "user", content: [...results, ...webNotes] });
-  }
-
-  // The review sees each node with the passages its citations point to, and may only remove.
-  const reviewed = await review(ctx, prefix, "review", label, rootSummary, drafts);
-  // A node the statement discloses stays; only what was researched can be struck. A node whose name is not a product goes; a
-  // misplaced one moves where the review says it belongs when a passage it was shown places it there, and one its own lead-in
-  // places ("This segment primarily comprises: … Acme Console …") stays, since that is the harness's own rule. Only what neither
-  // holds is struck.
-  const verdicts = reviewed.nodes.filter(v => !drafts.find(d => d.id === v.id)?.flowNodeId);
-  const remove = new Set(verdicts.filter(v => v.kind === "name").map(v => v.id));
-  const placed: string[] = [];
-  for (const v of verdicts) {
-    if (remove.has(v.id)) continue;
-    const d = drafts.find(x => x.id === v.id)!;
-    const target = v.parent === undefined ? undefined : v.parent === "root" ? null : v.parent;
-    const anchor = target !== undefined && target !== d.parentId ? relocation(d, target, remove) : null;
-    if (anchor) {
-      d.parentId = target!;
-      d.anchor = anchor;
-      placed.push(`${d.id} ${d.name} → ${target ?? "root"}`);
-    } else if (placedByLeadIn(d)) placed.push(`${d.id} ${d.name} stays: its lead-in names its parent`);
-    else remove.add(d.id);
-  }
-  // What hangs under a struck node moves up to the nearest kept node its own passage names, so one verdict on a line does
-  // not take its products with it; what no kept node can hold goes too. Drafts list parents before their children.
-  const moved: string[] = [];
-  for (const d of drafts) {
-    if (remove.has(d.id) || !d.parentId || !remove.has(d.parentId)) continue;
-    let target: string | null = d.parentId;
-    while (target !== null && remove.has(target)) target = drafts.find(x => x.id === target)!.parentId;
-    const source = d.anchor?.sourceIds[0];
-    const issuer = source && library.get(source)?.own ? issuerNames(ctx.companyName) : [];
-    const siblings = drafts.filter(x => x !== d && x.parentId === target && !remove.has(x.id));
-    if (d.anchor && namesAncestor(d.name, ancestorsOf(target), d.anchor.text, issuer) && siblings.length < TREE_LIMITS.children && !siblings.some(x => compactName(x.name) === compactName(d.name))) {
-      d.parentId = target;
-      moved.push(`${d.id} ${d.name} → ${target ?? "root"}`);
-    } else remove.add(d.id);
-  }
-  const verdictStep = (round: string, verdict: Verdict, extra: string[] = []): TreeStep => {
-    const name = (id: string) => id === "root" ? "root" : `${id} ${drafts.find(d => d.id === id)?.name ?? ""}`.trim();
-    const lines = verdict.answered ? verdict.issues.map(i => `${name(i.id)} · ${i.field}: ${i.problem}`) : ["No usable answer; the harness checks stand alone."];
-    return { thought: "", action: round, input: "", observation: [lines.length ? lines.join("\n") : "No issues.", ...extra].join("\n").slice(0, 3_000) };
-  };
-  const reviewStep = verdictStep("review", reviewed, [...(placed.length ? [`Placed: ${placed.join("; ")}`] : []), ...(moved.length ? [`Moved up: ${moved.join("; ")}`] : [])]);
-  const strike = (fields: Set<string>) => {
-    if (fields.has("root:summary")) rootSummary = null;
-    for (const d of drafts) if (fields.has(`${d.id}:summary`)) d.summary = null;
-  };
-  strike(reviewed.fields);
-  // Descriptions the loop never wrote, or wrote beyond what it read and the review struck, are written from the passages
-  // naming each node; a second review judges only those.
-  const described = await describe(remove);
-  const second = described.written.length ? await review(ctx, prefix, "describe-review", label, described.written.includes("root") ? rootSummary : null, drafts, new Set(described.written)) : null;
-  if (second) strike(second.fields);
-  const build = (parentId: string | null): TreeNode[] => drafts.filter(d => d.parentId === parentId && !remove.has(d.id)).map(d => ({
-    id: d.id, name: d.name, kind: d.kind, flowNodeId: d.flowNodeId, anchor: d.anchor,
-    gloss: reviewed.fields.has(`${d.id}:gloss`) ? null : d.gloss,
-    summary: d.summary,
-    revenue: d.revenue.filter((_, i) => !reviewed.fields.has(`${d.id}:revenue`) && !reviewed.fields.has(`${d.id}:revenue:${i}`)),
-    children: build(d.id),
-  }));
-  return {
-    branch: { flowNodeId: business.flowNodeId, name: business.name, summary: rootSummary, children: build(null) },
-    steps: [...steps.slice(0, second ? 56 : 57), reviewStep, described.step, ...(second ? [verdictStep("describe-review", second)] : [])],
-  };
 
   /** Runs one tool call. Searches and reads are durable steps under `step`; the tree edits are pure. */
   async function perform(name: string, input: Record<string, unknown>, step: string): Promise<Outcome> {
@@ -403,20 +354,20 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         const doomed = new Set([target.id]);
         for (let grew = true; grew;) { grew = false; for (const d of drafts) if (d.parentId && doomed.has(d.parentId) && !doomed.has(d.id)) { doomed.add(d.id); grew = true; } }
         for (let i = drafts.length - 1; i >= 0; i--) if (doomed.has(drafts[i]!.id)) drafts.splice(i, 1);
-        return { observation: `Removed ${[...doomed].join(", ")}.\nCurrent tree:\n${outline(label, rootSummary, drafts)}` };
+        return { observation: `Removed ${[...doomed].join(", ")}.\nCurrent tree:\n${outline(label, st.rootSummary, drafts)}` };
       }
       case "finish": {
         // A first finish with nothing found, while budget remains, is answered once with a reminder rather than accepted.
-        if (!researched() && !refusedFinish && turn < TREE_BUDGET.turns - 2 && (used.searches < TREE_BUDGET.searches || used.reads < TREE_BUDGET.reads)) {
-          refusedFinish = true;
+        if (!researched() && !st.refusedFinish && st.turn < TREE_BUDGET.turns - 2 && (used.searches < TREE_BUDGET.searches || used.reads < TREE_BUDGET.reads)) {
+          st.refusedFinish = true;
           return { observation: "The tree has no verified node yet. Read the 10-K business description or search for this business's products, then add; finish only if nothing can be found." };
         }
         // Lines named only as categories, with no named product under them and no way of charging found, are the shallow
         // end of a tree: while searches remain, ask once for the products and pricing behind them.
         // A line that already says how it charges, or names one product, still shows a reader little of what it sells.
         const thin = drafts.filter(d => d.parentId === null && childrenOf(d.id).length < 2);
-        if (thin.length && !askedDepth && turn < TREE_BUDGET.turns - 3 && used.searches < TREE_BUDGET.searches) {
-          askedDepth = true;
+        if (thin.length && !st.askedDepth && st.turn < TREE_BUDGET.turns - 3 && used.searches < TREE_BUDGET.searches) {
+          st.askedDepth = true;
           const unpriced = thin.filter(d => !d.revenue.length);
           const named = (d: Draft) => childrenOf(d.id).map(c => c.name).join(", ") || "none";
           return { observation: `These lines name fewer than two products: ${thin.map(d => `${d.id} ${d.name} (${named(d)})`).join("; ")}. Search the company's own product and pricing pages (e.g. "${ctx.companyName} ${thin[0]!.name} products pricing"), then add each line's main named products${unpriced.length ? `, and how ${unpriced.map(d => d.name).join(", ")} ${unpriced.length > 1 ? "are" : "is"} charged` : ""}. Finish only if nothing more can be found.` };
@@ -430,7 +381,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   function addNodes(raw: Record<string, unknown>): string {
     const parentKey = typeof raw.parent === "string" ? raw.parent.trim() : "root";
     const parentId = parentKey === "root" || parentKey === "" ? null : parentKey;
-    if (parentId && !drafts.some(d => d.id === parentId)) return `There is no parent node ${parentKey}; parent must be "root" or an existing node ID.\nCurrent tree:\n${outline(label, rootSummary, drafts)}`;
+    if (parentId && !drafts.some(d => d.id === parentId)) return `There is no parent node ${parentKey}; parent must be "root" or an existing node ID.\nCurrent tree:\n${outline(label, st.rootSummary, drafts)}`;
     const depth = depthOf(parentId) + 1;
     if (depth > TREE_LIMITS.depth) return `The tree is at most ${TREE_LIMITS.depth} levels deep; nothing more can hang under ${parentKey}.`;
     const nodes = Array.isArray(raw.nodes) ? raw.nodes.slice(0, 8) : [];
@@ -465,7 +416,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
       accepted.length ? `Accepted ${accepted.length}: ${accepted.join("; ")}` : "No node was accepted.",
       ...(rejected.length ? [`Rejected:\n${rejected.join("\n")}`] : []),
       ...(notes.length ? [`Notes:\n${notes.join("\n")}`] : []),
-      `Current tree:\n${outline(label, rootSummary, drafts)}`,
+      `Current tree:\n${outline(label, st.rootSummary, drafts)}`,
     ].join("\n");
   }
 
@@ -473,8 +424,8 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     if (raw.id === "root") {
       const summary = claimOf(raw.summary, TREE_LIMITS.summary);
       if (typeof summary === "string") return `root.summary rejected: ${summary}`;
-      rootSummary = summary;
-      return `Updated the description of this business.\nCurrent tree:\n${outline(label, rootSummary, drafts)}`;
+      st.rootSummary = summary;
+      return `Updated the description of this business.\nCurrent tree:\n${outline(label, st.rootSummary, drafts)}`;
     }
     const draft = drafts.find(d => d.id === raw.id);
     if (!draft) return `There is no node ${String(raw.id)}.`;
@@ -485,7 +436,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
       draft.anchor = anchor;
     }
     const notes = fill(draft, raw, ancestors, true);
-    return [`Revised ${draft.id} ${draft.name}.`, ...(notes.length ? [`Notes:\n${notes.join("\n")}`] : []), `Current tree:\n${outline(label, rootSummary, drafts)}`].join("\n");
+    return [`Revised ${draft.id} ${draft.name}.`, ...(notes.length ? [`Notes:\n${notes.join("\n")}`] : []), `Current tree:\n${outline(label, st.rootSummary, drafts)}`].join("\n");
   }
 
   /** Optional fields: what fails is left out with a note, never guessed. A revise replaces only the fields it names. */
@@ -521,7 +472,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     const evidence = (name: string) => library.list.flatMap(m => passages(library.seen(m.id), [name]).map(text => ({ sourceId: m.id, text }))).slice(0, DESCRIBE_PASSAGES);
     const under = (d: Draft) => { const names = [label]; for (let p = drafts.find(x => x.id === d.parentId); p; p = drafts.find(x => x.id === p!.parentId)) names.splice(1, 0, p.name); return names.join(" › "); };
     const asked = [
-      ...(rootSummary ? [] : [{ id: "root", under: "", name: label, gloss: null as string | null, evidence: evidence(label) }]),
+      ...(st.rootSummary ? [] : [{ id: "root", under: "", name: label, gloss: null as string | null, evidence: evidence(label) }]),
       ...drafts.filter(d => !d.summary && !removed.has(d.id)).map(d => ({ id: d.id, under: under(d), name: d.name, gloss: d.gloss, evidence: evidence(d.name) })),
     ].filter(n => n.evidence.length);
     if (!asked.length) return { step: { thought: "", action: "describe", input: "", observation: "No undescribed node is named in what was read." }, written: [] };
@@ -537,7 +488,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         const claim = claimOf({ text: entry.text, sourceIds: Array.isArray(entry.sourceIds) ? entry.sourceIds.filter(id => shown.has(id)) : [] }, TREE_LIMITS.summary);
         const problem = typeof claim === "string" ? claim : /\bpassages?\b/i.test(claim.text) ? "writes about the passages instead of the node" : null;
         if (typeof claim === "string" || problem) { refused.push(`${node.id} ${problem}`); continue; }
-        if (node.id === "root") rootSummary = claim;
+        if (node.id === "root") st.rootSummary = claim;
         else drafts.find(d => d.id === node.id)!.summary = claim;
         written.push(node.id);
       }
@@ -628,6 +579,73 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     if (!ids.length) return "sourceIds must be IDs of sources already listed";
     return { text: clean, sourceIds: ids };
   }
+  async function conclude(steps: TreeStep[]): Promise<{ branch: TreeBranch; steps: TreeStep[] }> {
+    // The review sees each node with the passages its citations point to, and may only remove.
+    const reviewed = await review(ctx, prefix, "review", label, st.rootSummary, drafts);
+    // A node the statement discloses stays; only what was researched can be struck. A node whose name is not a product goes; a
+    // misplaced one moves where the review says it belongs when a passage it was shown places it there, and one its own lead-in
+    // places ("This segment primarily comprises: … Acme Console …") stays, since that is the harness's own rule. Only what neither
+    // holds is struck.
+    const verdicts = reviewed.nodes.filter(v => !drafts.find(d => d.id === v.id)?.flowNodeId);
+    const remove = new Set(verdicts.filter(v => v.kind === "name").map(v => v.id));
+    const placed: string[] = [];
+    for (const v of verdicts) {
+      if (remove.has(v.id)) continue;
+      const d = drafts.find(x => x.id === v.id)!;
+      const target = v.parent === undefined ? undefined : v.parent === "root" ? null : v.parent;
+      const anchor = target !== undefined && target !== d.parentId ? relocation(d, target, remove) : null;
+      if (anchor) {
+        d.parentId = target!;
+        d.anchor = anchor;
+        placed.push(`${d.id} ${d.name} → ${target ?? "root"}`);
+      } else if (placedByLeadIn(d)) placed.push(`${d.id} ${d.name} stays: its lead-in names its parent`);
+      else remove.add(d.id);
+    }
+    // What hangs under a struck node moves up to the nearest kept node its own passage names, so one verdict on a line does
+    // not take its products with it; what no kept node can hold goes too. Drafts list parents before their children.
+    const moved: string[] = [];
+    for (const d of drafts) {
+      if (remove.has(d.id) || !d.parentId || !remove.has(d.parentId)) continue;
+      let target: string | null = d.parentId;
+      while (target !== null && remove.has(target)) target = drafts.find(x => x.id === target)!.parentId;
+      const source = d.anchor?.sourceIds[0];
+      const issuer = source && library.get(source)?.own ? issuerNames(ctx.companyName) : [];
+      const siblings = drafts.filter(x => x !== d && x.parentId === target && !remove.has(x.id));
+      if (d.anchor && namesAncestor(d.name, ancestorsOf(target), d.anchor.text, issuer) && siblings.length < TREE_LIMITS.children && !siblings.some(x => compactName(x.name) === compactName(d.name))) {
+        d.parentId = target;
+        moved.push(`${d.id} ${d.name} → ${target ?? "root"}`);
+      } else remove.add(d.id);
+    }
+    const verdictStep = (round: string, verdict: Verdict, extra: string[] = []): TreeStep => {
+      const name = (id: string) => id === "root" ? "root" : `${id} ${drafts.find(d => d.id === id)?.name ?? ""}`.trim();
+      const lines = verdict.answered ? verdict.issues.map(i => `${name(i.id)} · ${i.field}: ${i.problem}`) : ["No usable answer; the harness checks stand alone."];
+      return { thought: "", action: round, input: "", observation: [lines.length ? lines.join("\n") : "No issues.", ...extra].join("\n").slice(0, 3_000) };
+    };
+    const reviewStep = verdictStep("review", reviewed, [...(placed.length ? [`Placed: ${placed.join("; ")}`] : []), ...(moved.length ? [`Moved up: ${moved.join("; ")}`] : [])]);
+    const strike = (fields: Set<string>) => {
+      if (fields.has("root:summary")) st.rootSummary = null;
+      for (const d of drafts) if (fields.has(`${d.id}:summary`)) d.summary = null;
+    };
+    strike(reviewed.fields);
+    // Descriptions the loop never wrote, or wrote beyond what it read and the review struck, are written from the passages
+    // naming each node; a second review judges only those.
+    const described = await describe(remove);
+    const second = described.written.length ? await review(ctx, prefix, "describe-review", label, described.written.includes("root") ? st.rootSummary : null, drafts, new Set(described.written)) : null;
+    if (second) strike(second.fields);
+    const build = (parentId: string | null): TreeNode[] => drafts.filter(d => d.parentId === parentId && !remove.has(d.id)).map(d => ({
+      id: d.id, name: d.name, kind: d.kind, flowNodeId: d.flowNodeId, anchor: d.anchor,
+      gloss: reviewed.fields.has(`${d.id}:gloss`) ? null : d.gloss,
+      summary: d.summary,
+      revenue: d.revenue.filter((_, i) => !reviewed.fields.has(`${d.id}:revenue`) && !reviewed.fields.has(`${d.id}:revenue:${i}`)),
+      children: build(d.id),
+    }));
+    return {
+      branch: { flowNodeId: business.flowNodeId, name: business.name, summary: st.rootSummary, children: build(null) },
+      steps: [...steps.slice(0, second ? 56 : 57), reviewStep, described.step, ...(second ? [verdictStep("describe-review", second)] : [])],
+    };
+  }
+  return { perform, conclude };
+
 }
 
 /**

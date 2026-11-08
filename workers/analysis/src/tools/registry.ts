@@ -14,6 +14,8 @@ export type ToolDefinition<A, R, S> = {
   nativeSearch?: { remaining(state: S): number; excluded?: string[] };
   description: string;
   parameters: z.ZodType<A>;
+  /** A schema written by hand, sent as it is instead of one derived from `parameters`. */
+  schema?: AgentClientTool;
   /** Strict schemas close every object; a tool taking a whole document leaves it open and the harness checks it. */
   strict?: boolean;
   execute(args: A, ctx: ToolContext<S>): Promise<R> | R;
@@ -49,6 +51,7 @@ export type ToolOutcome = { observation: string; error?: boolean; value?: unknow
 
 /** The model-facing schema of a tool, from its zod parameters. */
 export function toolSchema<S>(tool: AnyTool<S>): AgentClientTool {
+  if (tool.schema) return tool.schema;
   const json = z.toJSONSchema(tool.parameters, { target: "draft-7", io: "input" }) as Record<string, unknown>;
   const rest = omit(json, "$schema");
   const input_schema = { type: "object", properties: {}, required: [], ...(tool.strict === false ? rest : closed(rest)) } as AgentSchema;
