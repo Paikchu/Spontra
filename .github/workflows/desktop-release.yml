@@ -1,0 +1,55 @@
+name: Desktop release
+
+# The desktop installers cannot be built by Cloudflare. A tag `desktop-v*` is their only way out; never upload a local build.
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos-latest, target: aarch64-apple-darwin, gate: true }
+          - { platform: macos-latest, target: x86_64-apple-darwin, gate: false }
+          - { platform: windows-latest, target: x86_64-pc-windows-msvc, gate: false }
+    runs-on: ${{ matrix.platform }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_PATH: ${{ github.workspace }}/apple-api-key.p8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 24, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: apps/desktop/src-tauri }
+      - run: npm ci
+      - run: npm run desktop:test
+      - name: Write the App Store Connect key
+        if: runner.os == 'macOS'
+        shell: bash
+        run: printf '%s' "${{ secrets.APPLE_API_KEY_CONTENT }}" > apple-api-key.p8
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: apps/desktop
+          tauriScript: npx tauri
+          args: --target ${{ matrix.target }}
+          tagName: desktop-v__VERSION__
+          releaseName: Spontra Desktop __VERSION__
+          releaseBody: See the commit history for what changed.
+          releaseDraft: false
+      - name: Hold the release to its budgets
+        if: matrix.gate
+        run: npm run desktop:perf -- --app apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Spontra.app --runs 7 --gate --budget-scale 2

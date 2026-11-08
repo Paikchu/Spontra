@@ -358,6 +358,8 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
 
 /** The reader's signed id lives in an HttpOnly cookie scoped to the stage, so page scripts never hold it and sockets carry it. */
 const READER_COOKIE="spontra_reader";
+/** The desktop app's webviews. No browser page can claim these origins, and a socket from one names its reader in the address because it carries no cookie for this site. */
+const DESKTOP_ORIGINS=new Set(["tauri://localhost","http://tauri.localhost"]);
 const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
 const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
 /** The home digest lists newly added companies, so the edge keeps it half a minute and browsers revalidate it by ETag every time. */
@@ -381,10 +383,12 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
  const origin=request.headers.get("origin");
  const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
- if((upgrade||request.method!=="GET")&&origin!==url.origin)return plain({error:"forbidden"},403);
+ const desktopSocket=upgrade&&origin!==null&&DESKTOP_ORIGINS.has(origin);
+ if((upgrade||request.method!=="GET")&&origin!==url.origin&&!desktopSocket)return plain({error:"forbidden"},403);
  const ip=request.headers.get("cf-connecting-ip")??"unknown";
  if(request.method!=="GET"||upgrade){try{if(env.AGENT_LIMIT&&!(await env.AGENT_LIMIT.limit({key:ip})).success)return plain({error:"rate"},429);}catch(error){console.error(JSON.stringify({event:"stage-limit-failed",message:error instanceof Error?error.message:String(error)}));return plain({error:"unavailable"},503);}}
- const token=request.headers.get("cookie")?.split(";").map(v=>v.trim()).find(v=>v.startsWith(`${READER_COOKIE}=`))?.slice(READER_COOKIE.length+1)??null;
+ const token=request.headers.get("cookie")?.split(";").map(v=>v.trim()).find(v=>v.startsWith(`${READER_COOKIE}=`))?.slice(READER_COOKIE.length+1)??(desktopSocket?url.searchParams.get("reader"):null);
+ if(desktopSocket)url.searchParams.delete("reader");
  const headers=new Headers(request.headers);
  headers.delete("cookie");headers.delete("x-spontra-token");headers.delete("x-spontra-address");headers.delete("x-spontra-reader");
  if(token)headers.set("x-spontra-token",token);

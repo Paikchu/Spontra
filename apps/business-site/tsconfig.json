@@ -12,7 +12,8 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "worker/**/*.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "desktop-shell.vite.ts"
   ],
   "exclude": [
     "dist",

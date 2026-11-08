@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Spontra",
+  "version": "0.1.0",
+  "identifier": "com.spontra.desktop",
+  "build": {
+    "frontendDist": "../../business-site/dist-desktop",
+    "devUrl": "http://127.0.0.1:4188",
+    "beforeBuildCommand": "npm --prefix ../.. run business-site:build:desktop",
+    "beforeDevCommand": "npm --prefix ../.. run dev -- --mode desktop"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Spontra",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 18 },
+        "backgroundColor": "#09090b"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": { "minimumSystemVersion": "14.0" },
+    "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI2MDJEQUVDNTVFMURFOTcKUldTWDN1RlY3Tm9DSnFZNi9UeXBZSUNLckNNQXgrdGJhV1lQM05aNUx6enhNbmh5UGt1MUlOWXIK",
+      "endpoints": ["https://github.com/Paikchu/Spontra/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    },
+    "deep-link": { "desktop": { "schemes": ["spontra"] } }
+  }
+}

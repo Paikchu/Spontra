@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, useEffect } from "react";
 import { peekChartBox } from "./chart-box";
 import { estimateTextWidth } from "@/packages/web/src/model/business-flow-layout";
 import type { Pool, PoolItem, PoolTone } from "./capital-model";
 import { messages } from "@/packages/web/src/i18n";
+import { markContent } from "./vitals";
 
 const m = messages({
   folded: (n: number) => `${n} other items`, amount: "Amount",
@@ -76,6 +77,7 @@ function band(x0: number, y0: number, x1: number, y1: number, h0: number, h1: nu
 export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool; money: (v: number) => string; label: string;
   /** Item keys a finding is about; they stay lit while the pointer is elsewhere. */
   spotlight?: Set<string> | null }) {
+  useEffect(() => { markContent("company"); }, []);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
   useLayoutEffect(() => {

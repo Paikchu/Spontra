@@ -711,10 +711,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
   const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
-      {valuationShown && <ToggleGroupItem value="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
-      <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
-      {cash && <ToggleGroupItem value="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
-      {funding?.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
+      {valuationShown && <ToggleGroupItem value="valuation" data-view-choice="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
+      <ToggleGroupItem value="profit" data-view-choice="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
+      {cash && <ToggleGroupItem value="cash" data-view-choice="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
+      {funding?.balanceSheet && <ToggleGroupItem value="balance" data-view-choice="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
     </span>
   </ToggleGroup>;
   // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tabs stand at its top right.

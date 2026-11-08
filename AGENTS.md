@@ -30,4 +30,6 @@
 - 业务地图 `spontra-business-map` 与运维后台 `spontra-admin`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。该构建挂在 `spontra-business-map` Worker 的 Builds 设置下（原 `spontra-app` Worker 已删除）。
 - Spontra Analysis：构建 `npm run check:analysis:boundary && npm run analysis:typecheck && npm run analysis:check`，CI 执行 `npm run analysis:deploy`。
 
+桌面端 `apps/desktop`（Tauri 2）不在这两个目标内：安装包由 GitHub Actions 在 tag `desktop-v*` 上构建发布（`.github/workflows/desktop-release.yml`），同样禁止本地出包后手动上传；推送 `main` 不会发布桌面端。见 `apps/desktop/README.md`。
+
 涉及两个目标的修改须分别核验结果。地图与后台的自动发布不涉及数据库迁移；Spontra Analysis 自动发布先应用（`analysis:migrate:ci`）并核对分析数据库迁移，再发布 Worker。
