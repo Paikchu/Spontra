@@ -47,8 +47,11 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
     /** The failed run that switched the feature off (messages.ts); null once it is switched on again. */
     failure: { at: string; detail: string | null } | null }>;
 };
-/** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
-export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };
+/**
+ * `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags).
+ * `scheduledAnalysis`: whether new filings and new task versions start analysis on their own; manual runs ignore it.
+ */
+export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; scheduledAnalysis: boolean; generation: Record<Feature, boolean> };
 /** One issuer of EDGAR's exchange directory on the companies page: its first-listed class, the others, and its five layer switches. */
 export type DirectoryCompany = { ticker: string; name: string; exchange: string; cik: string; classes: string[]; layers: Record<Layer, boolean> };
 /** One page of the companies page's directory (50 issuers). */

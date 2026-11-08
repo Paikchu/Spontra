@@ -8,6 +8,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
 import { outboxStatement } from "./outbox.ts";
 import { scopeTickers } from "./router.ts";
+import { scheduledAnalysisOn } from "./scheduled-analysis.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
 export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
@@ -55,12 +56,16 @@ export function annualForm(payload: unknown): string | null {
  * the new state. A company seen for the first time only records its baseline; one the pipeline has never collected
  * also has its first collection requested (`company.added`, `collection.requested`). Writes a heartbeat when done, and
  * fails the invocation when no company could be read, so an outage raises the Worker's error notification.
+ * While scheduled analysis is off the listings stay current for manual runs, but no event is written and the accessions
+ * seen stay as they were, so the first sweep after it is on again announces what was filed meanwhile; a company without
+ * a baseline waits for that sweep too.
  */
 export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch) {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const listings = edgarListings(env, { fetcher });
-  const result = { checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
+  const announcing = await scheduledAnalysisOn(db);
+  const result = { paused: !announcing, checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
   // The two reference directories (catalog/issuer-directory.ts) are read here at most once a day; every other reader
   // uses the stored copies. EDGAR's names the CIK of a company the pipeline has not collected yet.
   let directory: Promise<Record<string, string>> | null = null;
@@ -83,19 +88,20 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const filings = recentFilings(submissions);
       if (!filings.length) throw new Error("EMPTY_SUBMISSIONS");
       const previous = (await repository.getCache<DiscoveryState>(discoveryStateKey(ticker)))?.payload;
+      if (!previous && !announcing) { result.checked++; continue; }
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
       // The bounded memory (REMEMBERED) is for the diff; the lists below are read from the whole recent block, as
       // the SEC report reads its own window of filings, so a run of other forms never pushes a filing out of them.
       const remembered = filings.slice(0, REMEMBERED);
-      const fresh = previous ? remembered.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
+      const fresh = previous && announcing ? remembered.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
         url: secArchiveDocumentUrl(secArchiveRoot(Number(cik), f.accession), f.primaryDocument) }));
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: remembered.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
+          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: announcing || !previous ? remembered.map(f => f.accession) : previous.accessions, checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
             name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions),
             // The report's own window of filings (its discovery reads the newest 40 business filings) and, apart from
@@ -106,7 +112,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
         // A baseline announces no filing, so the current reports it lists are asked to be archived here; so are those of
         // a state saved before `current` existed, whose archive task ran on its version change with nothing to list.
-        ...((!previous || !previous.current) && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
+        ...(announcing && (!previous || !previous.current) && filings.some(CURRENT) ? [outboxStatement(db, { type: "archive.requested", ticker, cik }, at)] : []),
       ]);
       if (bootstrap) result.bootstrapped.push(ticker);
       if (!previous) result.baseline.push(ticker);

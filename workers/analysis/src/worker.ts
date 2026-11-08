@@ -75,7 +75,7 @@ const worker = {
   /**
    * The schedule discovers new SEC filings and refreshes reference closes independently of valuation research. Everything a
    * filing leads to runs on the events and tasks queues. A failed discovery fails the invocation, which is what
-   * Cloudflare's error notification watches.
+   * Cloudflare's error notification watches. The admin's scheduled-analysis switch is applied inside discovery.
    */
   async scheduled(_controller: ScheduledController, env: AnalysisEnv) {
     env = await companyPolicyEnvironment(env);
