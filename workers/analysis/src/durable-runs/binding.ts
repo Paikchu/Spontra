@@ -13,6 +13,7 @@ export type RunStub = {
   start(kind: RunKind, id: string, params: unknown, createdAt: number): Promise<void>;
   status(): Promise<RunState>;
   terminate(): Promise<void>;
+  report(): Promise<unknown>;
 };
 type RunNamespace = { idFromName(name: string): unknown; get(id: never): unknown };
 
@@ -35,7 +36,7 @@ export function runBinding(namespace: RunNamespace, kind: RunKind) {
     },
     async get(id: string) {
       const run = await stub(id);
-      return { id, status: () => run.status(), terminate: () => run.terminate() };
+      return { id, status: () => run.status(), terminate: () => run.terminate(), report: () => run.report() };
     },
   };
 }

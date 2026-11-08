@@ -1,3 +1,4 @@
+import { fitResult } from "../../src/recipe.ts";
 /**
  * A scripted driver for recipe tests: the loop the recipes ran on before Pi, with the model replaced by the test's
  * replies. Production runs every recipe as a Pi session (src/pi/host.ts); this exercises a recipe's tools, policy and
@@ -71,7 +72,7 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
         : outcomes[i]!.asked ? { observation: "Waiting for the reader to confirm.", error: false } : outcomes[i]!;
       if (outcomes[i]?.asked && !asked) asked = outcomes[i]!.asked!;
       host.record({ turn, thought: i ? "" : said, action: call.name.slice(0, 40), input: JSON.stringify(call.input ?? {}).slice(0, 4000), observation: outcome.observation.slice(0, 4000) });
-      results.push(resultBlock(call, { ...outcome, observation: outcome.observation.slice(0, 12_000) }, budgetLine));
+      results.push(resultBlock(call, { ...outcome, observation: fitResult(outcome.observation, recipe.resultChars) }, budgetLine));
     });
     messages.push({ role: "user", content: [...results, ...webNotes] });
     if (asked) return finish("finished", asked);

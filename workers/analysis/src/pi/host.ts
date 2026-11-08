@@ -1,6 +1,7 @@
-import { createRegistry, GenerationTask, Harness, hook, type ToolRegistration } from "@earendil-works/pi-durable";
+import { PiTurnTraces } from "./tracing.ts";
+import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ToolRegistration } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
-import { defaultBudgetLine, type Recipe, type TurnRecord } from "../recipe.ts";
+import { defaultBudgetLine, fitResult, type Recipe, type TurnRecord } from "../recipe.ts";
 import { CALLS_PER_TURN } from "../tool-loop.ts";
 import { runTool, toolSchema, type AnyTool, type ToolOutcome } from "../tools/registry.ts";
 import { NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
@@ -58,11 +59,11 @@ type Binding = {
   startedAt: number; turns: number; quiet: number; said: string;
   lastRound: boolean; capped: boolean; finished: boolean; asked: string | null;
   /** The calls of the round in progress, from the reply that made them; when the request went out. */
-  round: RoundCall[]; requestAt: number;
+  round: RoundCall[]; requestAt: number; spent: number;
 };
 type RoundCall = { id: string; name: string; args: unknown };
 type Row = { conversation: string; session: string; operation_id: string; kind: string; spec: string; state: string; started_at: number;
-  turns: number; quiet: number; last_round: number; capped: number; finished: number; asked: string | null; round: string | null };
+  turns: number; quiet: number; last_round: number; capped: number; finished: number; asked: string | null; round: string | null; spent: number | null };
 
 const text = (value: string) => [{ type: "text" as const, text: value }];
 const parseArgs = (args: unknown): unknown => {
@@ -71,6 +72,8 @@ const parseArgs = (args: unknown): unknown => {
   try { return JSON.parse(args); } catch { return args; }
 };
 const WEB_SEARCH = "web_search";
+/** How long a check waits for an ended run to resolve before it looks again on a later wake. */
+const POLL_WAIT_MS = 20_000;
 
 export class PiHost {
   readonly registry = createRegistry();
@@ -78,6 +81,8 @@ export class PiHost {
   private readonly bindings = new Map<string, Binding>();
   private restored = false;
   private tables = false;
+
+  private readonly traces = new PiTurnTraces();
 
   constructor(private readonly agent: HostAgent, private readonly loaders: Record<string, PiLoader>,
     private readonly options: { models: () => string[]; onSettled?: (operationId: string) => void }) {
@@ -106,6 +111,8 @@ export class PiHost {
       sql.exec("CREATE TABLE IF NOT EXISTS pi_trail (conversation TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT NOT NULL, PRIMARY KEY (conversation, seq))");
       // The outcome of each call of the round in progress, so a call Pi replays after an eviction is not run twice.
       sql.exec("CREATE TABLE IF NOT EXISTS pi_calls (conversation TEXT NOT NULL, call_id TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (conversation, call_id))");
+      // Sessions created before the token budget have no such column; adding it twice is the only failure and is harmless.
+      try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN spent INTEGER NOT NULL DEFAULT 0"); } catch { /* present */ }
       this.tables = true;
     }
     return sql;
@@ -135,7 +142,7 @@ export class PiHost {
     this.db().exec("DELETE FROM pi_trail WHERE conversation = ?", conversation);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
     this.bind({ conversation, session: session.id, operationId: options.operationId, kind, spec, loaded, state, startedAt: Date.now(),
-      turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0 });
+      turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0 });
     await session.setModel({ provider: PI_PROVIDER, id: loaded.model });
     await session.submit(opening, { operationId: options.operationId });
     return { operationId: options.operationId, session: session.id };
@@ -157,7 +164,20 @@ export class PiHost {
     if (session === "") return this.finish<O>(operationId);
     const pending = await this.harness.pending({ session }).catch(() => []);
     if (pending.some((p) => p.operationId === operationId)) return null;
-    return this.finish<O>(operationId);
+    // The check must return: a run that is not pending yet has not resolved its wait is looked at again on the next wake.
+    const settled = new AbortController();
+    const timer = setTimeout(() => settled.abort(), POLL_WAIT_MS);
+    try { return await this.finish<O>(operationId, settled.signal); }
+    catch (error) { if (settled.signal.aborted) return null; throw error; }
+    finally { clearTimeout(timer); }
+  }
+
+  /** What each session of this Agent did, turn by turn, for the admin. */
+  sessionsReport(): Array<{ operationId: string; kind: string; turns: number; spent: number; active: boolean; trail: TurnRecord[] }> {
+    return this.db().exec<Row & { active: number }>("SELECT * FROM pi_bindings ORDER BY started_at").toArray().map((row) => ({
+      operationId: row.operation_id, kind: row.kind, turns: row.turns, spent: row.spent ?? 0, active: !!row.active,
+      trail: this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", row.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord),
+    }));
   }
 
   async abort(operationId: string): Promise<void> {
@@ -181,6 +201,7 @@ export class PiHost {
     if (result.status === "unanswered") this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: `run ended: ${result.reason ?? "unanswered"}` });
     const trail = this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", b.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord);
     const output = b.loaded.recipe.settle(b.state, reason) as O;
+    this.traces.endTurn(b.conversation);
     this.db().exec("UPDATE pi_bindings SET active = 0 WHERE conversation = ?", b.conversation);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", b.conversation);
     this.bindings.delete(b.conversation);
@@ -212,7 +233,7 @@ export class PiHost {
     loaded.hydrate?.(state);
     const b = this.bind({ conversation, session: row.session, operationId: row.operation_id, kind: row.kind, spec, loaded, state,
       startedAt: row.started_at, turns: row.turns, quiet: row.quiet, lastRound: !!row.last_round, capped: !!row.capped, finished: !!row.finished, asked: row.asked,
-      round: row.round ? JSON.parse(row.round) as RoundCall[] : [], requestAt: 0 });
+      round: row.round ? JSON.parse(row.round) as RoundCall[] : [], requestAt: 0, spent: row.spent ?? 0 });
     if (!anyState) this.install();
     return b;
   }
@@ -228,8 +249,8 @@ export class PiHost {
   }
 
   private persist(b: Binding) {
-    this.db().exec("UPDATE pi_bindings SET state = ?, turns = ?, quiet = ?, last_round = ?, capped = ?, finished = ?, asked = ?, round = ? WHERE conversation = ?",
-      packState(b.state), b.turns, b.quiet, b.lastRound ? 1 : 0, b.capped ? 1 : 0, b.finished ? 1 : 0, b.asked, JSON.stringify(b.round), b.conversation);
+    this.db().exec("UPDATE pi_bindings SET state = ?, turns = ?, quiet = ?, last_round = ?, capped = ?, finished = ?, asked = ?, round = ?, spent = ? WHERE conversation = ?",
+      packState(b.state), b.turns, b.quiet, b.lastRound ? 1 : 0, b.capped ? 1 : 0, b.finished ? 1 : 0, b.asked, JSON.stringify(b.round), b.spent, b.conversation);
   }
 
   private trail(b: Binding, entry: TurnRecord) {
@@ -271,6 +292,14 @@ export class PiHost {
           if (b) this.options.onSettled?.(b.operationId);
           return undefined;
         },
+      } as never), hook(CompactionTask, {
+        beforeCompact: async (compaction: { reason: string; entries: readonly unknown[] }, api: { conversationId: string }) => {
+          await this.guard(async () => {
+            const b = await this.bound(api.conversationId);
+            if (b) this.trail(b, { turn: b.turns, thought: "", action: "compaction", input: compaction.reason, observation: `${compaction.entries.length} entries summarised.` });
+          });
+          return undefined;
+        },
       } as never)],
     } as never);
   }
@@ -287,9 +316,10 @@ export class PiHost {
     b.loaded.recipe.onTurn?.(b.state, b.turns);
     b.round = [];
     b.requestAt = Date.now();
+    this.traces.beginTurn(b, b.loaded.model, b.turns);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
     const { budget } = b.loaded.recipe;
-    if (b.turns >= budget.turns || Date.now() - b.startedAt > budget.wallMs) b.lastRound = true;
+    if (b.turns >= budget.turns || Date.now() - b.startedAt > budget.wallMs || (budget.tokens !== undefined && b.spent >= budget.tokens)) b.lastRound = true;
     else if (b.loaded.reserve && !await b.loaded.reserve(b.state)) { b.lastRound = true; b.capped = true; }
     this.persist(b);
   }
@@ -300,9 +330,12 @@ export class PiHost {
     b.said = (message.content ?? []).flatMap((c) => c.type === "text" && typeof c.text === "string" ? [c.text] : []).join(" ").trim();
     b.round = (message.content ?? []).flatMap((c) => c.type === "toolCall" && typeof c.id === "string" && typeof c.name === "string" ? [{ id: c.id, name: c.name, args: parseArgs(c.arguments) }] : []);
     const durationMs = b.requestAt ? Date.now() - b.requestAt : 0;
-    this.persist(b);
     const u = message.usage ?? {};
+    b.spent += (u.input ?? 0) + (u.cacheWrite ?? 0) + (u.output ?? 0);
+    this.persist(b);
     const failed = message.stopReason === "error" || message.stopReason === "aborted";
+    this.traces.endChat(b.conversation, { inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ...(message.stopReason ? { finishReason: String(message.stopReason) } : {}), error: failed });
+    if (!b.round.length) this.traces.endTurn(b.conversation);
     if (failed) this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: String(message.errorMessage ?? message.stopReason).slice(0, 1000) });
     await recordAiUsage(this.env, aiUsageFromMetrics({
       stage: `${b.loaded.ledger.kind}-t${b.turns}`, model: b.loaded.model, mode: "pi-turn", finishReason: message.stopReason,
@@ -338,7 +371,7 @@ export class PiHost {
     const terminate = b.finished || b.lastRound;
     const left = b.loaded.recipe.budget.turns - b.turns;
     const budgetLine = terminate ? "" : `\n\n${b.loaded.recipe.budgetLine?.(b.state, left) ?? defaultBudgetLine(left)}`;
-    return { output: text(`${outcome.observation.slice(0, 12_000)}${budgetLine}`), ...(outcome.error ? { isError: true } : {}), ...(terminate ? { control: { terminate: true } } : {}) };
+    return { output: text(`${fitResult(outcome.observation, b.loaded.recipe.resultChars)}${budgetLine}`), ...(outcome.error ? { isError: true } : {}), ...(terminate ? { control: { terminate: true } } : {}) };
   }
 
   private async runRound(b: Binding, signal: AbortSignal, own?: { id: string; args: unknown }): Promise<Map<string, ToolOutcome>> {
@@ -352,17 +385,18 @@ export class PiHost {
       else if (index >= CALLS_PER_TURN) outcome = { observation: `Not run: at most ${CALLS_PER_TURN} calls run per turn; call it again.`, error: true };
       else {
         b.loaded.onToolStart?.(call.name, args);
-        outcome = call.name === WEB_SEARCH ? await this.search(b, args, signal)
-          : await runTool(b.tools, b.loaded.recipe.policy, { name: call.name, input: args }, { state: b.state, signal, recipe: b.loaded.recipe.id, stage: (_n, work) => work() });
+        outcome = await this.traces.tool(b, call.name, call.id, () => call.name === WEB_SEARCH ? this.search(b, args, signal)
+          : runTool(b.tools, b.loaded.recipe.policy, { name: call.name, input: args }, { state: b.state, signal, recipe: b.loaded.recipe.id, stage: (_n, work) => work() }));
       }
       if (outcome.asked) { b.asked = outcome.asked; outcome = { observation: "Waiting for the reader to confirm." }; }
       if (b.asked || b.loaded.recipe.settled(b.state)) b.finished = true;
       b.quiet = 0;
-      this.trail(b, { turn: b.turns, thought: index === 0 ? b.said : "", action: call.name.slice(0, 40), input: JSON.stringify(args ?? {}).slice(0, 4000), observation: outcome.observation.slice(0, 4000) });
+      this.trail(b, { turn: b.turns, thought: index === 0 ? b.said : "", action: call.name.slice(0, 40), input: JSON.stringify(args ?? {}).slice(0, 4000), observation: outcome.observation.slice(0, outcome.error ? 12_000 : 4000), ...(outcome.error ? { failed: true } : {}) });
       this.db().exec("INSERT OR REPLACE INTO pi_calls (conversation, call_id, outcome) VALUES (?, ?, ?)", b.conversation, call.id, JSON.stringify(outcome));
       this.persist(b);
       stored.set(call.id, outcome);
     }
+    this.traces.endTurn(b.conversation);
     return stored;
   }
 

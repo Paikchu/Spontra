@@ -1,4 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
+import * as cloudflareWorkers from "cloudflare:workers";
+import { installPiTracer, type PiTracer } from "./pi/tracing.ts";
 import { handleMapRead } from "./read-api/router.ts";
 import { readHomeDigest } from "./read-api/home-digest.ts";
 import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
@@ -47,6 +49,8 @@ export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
     }
   }
 }
+
+installPiTracer((cloudflareWorkers as unknown as { tracing?: PiTracer }).tracing);
 
 /**
  * The admin site reaches the admin routes over its Service Binding to this named entrypoint. As with MapReads, the

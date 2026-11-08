@@ -37,7 +37,11 @@ const STEP_RETRY = {
 /** The analysis steps: large results go to R2, and a provider's refusal of the request itself is final. */
 function durableSteps(step: RunStep, env: AnalysisEnv, runId: string): WorkflowStepLike {
   return {
-    waitFor: (name, check, recheck) => step.waitFor(name, check, recheck),
+    // A session's outcome carries its whole trail and state, which can pass what one journal row holds.
+    waitFor: async <T>(name: string, check: () => Promise<T | null>, recheck: Parameters<RunStep["waitFor"]>[2]) => loadWorkflowResult<T>(env.SEC_FILINGS, await step.waitFor(name, async () => {
+      const value = await check();
+      return value === null ? null : await storeWorkflowResult(env.SEC_FILINGS, runId, name, value);
+    }, recheck) as never),
     async do<T>(name: string, callback: (context?: { attempt: number }) => Promise<T>): Promise<T> {
       const stored = await step.do(name, STEP_RETRY, async (context) => {
         try { return await storeWorkflowResult(env.SEC_FILINGS, runId, name, await callback(context)); }

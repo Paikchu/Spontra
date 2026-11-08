@@ -8,7 +8,9 @@ import type { AnyTool, ToolOutcome, ToolPolicy } from "./tools/registry.ts";
  */
 export type Recipe<I, O, S> = {
   id: string;
-  budget: { turns: number; wallMs: number };
+  budget: { turns: number; wallMs: number; /** Uncached input plus output a session may spend before its last round. */ tokens?: number };
+  /** The longest tool result the model reads, in characters; a longer one is cut with a notice. */
+  resultChars?: number;
   system(input: I): string;
   open(input: I): S;
   tools(state: S): AnyTool<S>[];
@@ -26,7 +28,14 @@ export type Recipe<I, O, S> = {
 
 export const defaultBudgetLine = (left: number) => `Budget left: ${left} turn${left === 1 ? "" : "s"}.${left <= 1 ? " Finish now with what you have." : ""}`;
 
-export type TurnRecord = { turn: number; thought: string; action: string; input: string; observation: string };
+export const DEFAULT_RESULT_CHARS = 12_000;
+/** A tool result as the model reads it. A cut is always stated, so a partial result cannot pass for a whole one. */
+export function fitResult(observation: string, limit = DEFAULT_RESULT_CHARS): string {
+  if (observation.length <= limit) return observation;
+  return `${observation.slice(0, limit)}\n\n[Result cut: ${observation.length - limit} of ${observation.length} characters not shown. Ask for a narrower part.]`;
+}
+
+export type TurnRecord = { turn: number; thought: string; action: string; input: string; observation: string; failed?: boolean };
 
 /** Where the loop's effects go: the per-turn allowance, the trail, and how calls run. */
 export type LoopHost = {
