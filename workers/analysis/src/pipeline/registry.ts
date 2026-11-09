@@ -10,7 +10,7 @@ import { archivedForm, reportedForm } from "./filing-forms.ts";
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
-  "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
+  "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
@@ -25,7 +25,7 @@ export type EventType = typeof EVENT_TYPES[number];
 export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
-  "fundamentals", "guidance", "events", "extract",
+  "fundamentals", "events", "extract",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "filing-analysis",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
@@ -76,12 +76,10 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Re-reads Company Facts when new statements are published, so the SEC fundamentals keep up with the page; retried
   // while Company Facts is still behind the filing. No model.
   "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
-  // Extracts management guidance from earnings releases and the calls the transcript library stored (Workflow).
-  "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Current reports and Form 4 filings for the map's event rail, and every company's filings list; no model.
   "events": { emits: ["events.published", "filings.indexed"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
   // Layer 2's per-period extract: the eight quarters, the ledger every finding's figures come from and the checkup's
-  // flags, cut from layer 1's publication and the guidance so the layers above never read layer 1; no model.
+  // flags, cut from layer 1's publication so the layers above never read layer 1; no model.
   "extract": { emits: ["extract.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
   "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
@@ -91,7 +89,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // The ReAct business mind map (Workflow).
   "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
-  // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
+  // Report findings written from the map snapshot, SEC fundamentals and the company analysis (Workflow).
   "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
   "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
@@ -121,7 +119,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // arithmetic decides), then collects the issuer again through a maintenance task.
   "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "map" },
   // The valuation assessment: five researched dimensions and a calculated model,
-  // rewritten when the figures, filings, guidance or calls it reads from change (Workflow; model at the reasoning tier).
+  // rewritten when the figures, filings or calls it reads from change (Workflow; model at the reasoning tier).
   "valuation": { emits: ["valuation.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
 };
 
@@ -149,7 +147,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
-  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "map-derive" },
+  "filing.archived": [{ task: "map-derive" },
     { task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
@@ -162,9 +160,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "business.tags.published": [{ task: "peers" }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
-  "filings.indexed": [{ task: "guidance" }],
-  // A stored call is guidance material for the company's earnings event; only where layer 2 is on.
-  "transcript.stored": [{ task: "guidance" }, { task: "valuation" }],
+  "transcript.stored": [{ task: "valuation" }],
   "report.published": [
     { task: "translate" },
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
@@ -173,7 +169,6 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   ],
   // Findings read layer 2 only: the per-period extract, the filing analyses and the company analysis.
   "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
-  "guidance.published": [{ task: "extract" }, { task: "translate" }, { task: "valuation" }],
   "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
   "extract.published": [{ task: "findings" }],
   "analysis.published": [{ task: "findings" }],
@@ -187,11 +182,10 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   // New rows on the rail are filings to analyse.
   "events.published": [{ task: "translate" }],
   "presentation.unresolved": [{ task: "presentation" }],
-  // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the SEC
-  // reports lead on to guidance; the findings chain starts from the company analysis already published); the map's
+  // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the findings chain starts from the company analysis already published); the map's
   // revisions move so shown or hidden content reaches readers at once.
   "feature.settings": [
-    // Layer 2: the archived filings are split into the library, the summaries and guidance written, each filing analysed.
+    // Layer 2: the archived filings are split into the library, the summaries written, each filing analysed.
     { task: "library", when: e => e.detail?.feature === "filings" },
     { task: "extract", when: e => e.detail?.feature === "filings" },
     { task: "filing-analysis", when: e => e.detail?.feature === "filings" },

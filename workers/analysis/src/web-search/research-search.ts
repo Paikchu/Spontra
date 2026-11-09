@@ -10,7 +10,7 @@ export function researchSearchConfigured(env: Pick<AnalysisEnv, "DB" | "DEEPSEEK
   return !!env.DB && !!env.DEEPSEEK_API_KEY;
 }
 
-/** Cached web search for the explainer, tree, guidance, analyst and company-analysis agents; results persist in D1 and R2. */
+/** Cached web search for the explainer, tree, analyst and company-analysis agents; results persist in D1 and R2. */
 export function researchSearch(env: AnalysisEnv) {
   if (!env.DB || !env.DEEPSEEK_API_KEY) throw new Error("research_search_not_configured");
   const api = new DeepSeekWebProvider({

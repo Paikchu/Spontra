@@ -24,7 +24,7 @@ A named entrypoint is unreachable from the public internet, so the binding is th
 | `src/pipeline/`, `src/events/` | Event routing and task registry; SEC events (8-K, Form 4) |
 | `src/findings/`, `lens/`, `analyst/`, `checkup/`, `items/` | Findings, their lens documents, analyst dossiers, three-statement checks, per-filing analysis |
 | `src/business-explainer/`, `business-tree/`, `business-tags/`, `peers/` | Business dossiers, the mind map, two-level tags and peers |
-| `src/guidance/`, `transcripts/`, `valuation/`, `fundamentals/`, `translation/` | Guidance, the transcript library, valuation, fundamentals, Chinese translations |
+| `transcripts/`, `valuation/`, `fundamentals/`, `translation/` | The transcript library, valuation, fundamentals, Chinese translations |
 | `src/stage/` | The stage agent and reader reports |
 | `src/web-search/` | Cached web search and page reads ([docs/web-search.md](../../docs/web-search.md)) |
 | `src/read-api/`, `src/admin/` | Read routes and admin routes |

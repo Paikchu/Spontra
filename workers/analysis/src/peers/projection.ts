@@ -34,7 +34,7 @@ async function readCompanyData(env: AnalysisEnv, ticker: string): Promise<Findin
   const quarters = [...new Map([...(snapshot?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
   const fundamentals = await getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" })))
     .then(r => readFindingFundamentals(r, ticker));
-  return { quarters, history: publication?.history ?? null, capital: snapshot?.capital ?? null, fundamentals, guidance: null };
+  return { quarters, history: publication?.history ?? null, capital: snapshot?.capital ?? null, fundamentals };
 }
 
 /** The categories a company's verified or confirmed business links name, each once, sorted. */

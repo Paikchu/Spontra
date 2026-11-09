@@ -169,7 +169,7 @@ export function peerQuartersFrom(data: FindingData): PeerQuarter[] {
       const ref = REF_OF[figure];
       if (!ref) continue;
       const resolved = resolveRef(data, ref, periodEnd, "quarter");
-      if (!resolved || resolved.unit !== "USD" || resolved.currency !== "USD" || resolved.range) continue;
+      if (!resolved || resolved.unit !== "USD" || resolved.currency !== "USD") continue;
       figures[figure] = asDecimal(resolved.value);
       for (const a of resolved.accessions) accessions.add(a);
     }

@@ -16,12 +16,9 @@ interface __BaseEnv_Env {
 	SEC_USER_AGENT: "earning-report-analysis/1.0 max.zhangyuchen@gmail.com";
 	SEC_ANALYSIS_MODEL: "deepseek-flash";
 	SEC_REASONING_MODEL: "deepseek-flash";
-	GUIDANCE_ENABLED: "true";
 	FINDINGS_ENABLED: "true";
 	ANALYST_ENABLED: "true";
-	GUIDANCE_DECK_SEARCH: "true";
-	GUIDANCE_DAILY_MODEL_CALLS: "40";
-	GUIDANCE_DAILY_TRANSCRIPT_CALLS: "25";
+	TRANSCRIPT_DAILY_CALLS: "25";
 	TRANSCRIPTS_ENABLED: "true";
 	TRANSLATION_ENABLED: "true";
 	DEEPSEEK_API_KEY: string;
@@ -40,5 +37,5 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "GUIDANCE_ENABLED" | "FINDINGS_ENABLED" | "ANALYST_ENABLED" | "GUIDANCE_DECK_SEARCH" | "GUIDANCE_DAILY_MODEL_CALLS" | "GUIDANCE_DAILY_TRANSCRIPT_CALLS" | "TRANSCRIPTS_ENABLED" | "TRANSLATION_ENABLED" | "DEEPSEEK_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "FINDINGS_ENABLED" | "ANALYST_ENABLED" | "TRANSCRIPT_DAILY_CALLS" | "TRANSCRIPTS_ENABLED" | "TRANSLATION_ENABLED" | "DEEPSEEK_API_KEY">> {}
 }

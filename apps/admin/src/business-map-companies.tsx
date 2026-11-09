@@ -21,7 +21,7 @@ const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'�
 /** The financial map's preparation in order (financial-maintenance-runner.ts); waiting for the issuer comes before all of it. */
 const TASK_PHASES = ['identify','collect','history','audit'] as const;
 /** Which run a feature's progress line belongs to, when the feature has more than one kind of run. */
-const RUN_LABEL: Record<string,string> = {report:'文件摘要',guidance:'业绩指引',items:'逐文件分析',findings:'要点',analyst:'分析师卷宗',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
+const RUN_LABEL: Record<string,string> = {report:'文件摘要',items:'逐文件分析',findings:'要点',analyst:'分析师卷宗',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
 const errors: Record<string,string> = {
   SEC_ISSUER_NOT_FOUND:'SEC 目录无此代码',
   SEC_ACCESS_PAUSED:'SEC 访问受限 · 退避重试',

@@ -50,7 +50,6 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** The Pi sessions of the durable run executing this task (durable-runs/runner.ts); absent elsewhere. */
   PI?: import("./pi/runs.ts").PiRuns;
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
@@ -108,16 +107,12 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   FINDINGS_ENABLED?: string;
   /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */
   EVENTS_ENABLED?: string;
-  /** "true" starts guidance extraction for AI-enabled companies; anything else leaves it off. */
-  GUIDANCE_ENABLED?: string;
   /** "false" turns off the IR-site deck search fallback. */
-  GUIDANCE_DECK_SEARCH?: string;
-  GUIDANCE_DAILY_MODEL_CALLS?: string;
   /** Alpha Vantage key for earnings-call transcripts; optional. */
   ALPHA_VANTAGE_API_KEY?: string;
   TRANSCRIPTS_ENABLED?: string;
   /** Shared daily transcript request budget; defaults to the free tier's 25 requests. */
-  GUIDANCE_DAILY_TRANSCRIPT_CALLS?: string;
+  TRANSCRIPT_DAILY_CALLS?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
   /** Every model call and web search goes to DeepSeek's Anthropic-format API with this key. */
@@ -175,7 +170,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       }) : null;
       // An issuer's DEI can repeat last year's fiscal year (Oracle's 2026-08-31 10-Q says FY2026 Q1); the stored label is the one in sequence.
       const periods = facts ? fiscalPeriodsInSequence(fiscalPeriodsFromCompanyFacts(facts, normalizedFeed.filings)) : [];
-      // The indexed list, the fiscal periods guidance dates its items by, and their event commit together.
+      // The indexed list, the fiscal periods and their event commit together.
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
           .bind(`sec:filings:${ticker}`, JSON.stringify(normalizedFeed), indexedAt),

@@ -3,7 +3,6 @@ import type { CapitalMetric, FindingPassage, FindingsPublication } from "@/share
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import { verifyFindings, type FindingData, type FindingFundamentals, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
 import { getLocale, type Locale } from "@/packages/web/src/i18n";
@@ -12,8 +11,8 @@ export type { VerifiedFinding };
 
 export { KIND_LABEL, VIEW_LABEL } from "./findings-labels";
 
-export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null, events: EventsPublication | null = null): FindingData {
-  return { quarters: flow.quarters, history, capital, fundamentals, guidance, peers, passages, events };
+export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null, events: EventsPublication | null = null): FindingData {
+  return { quarters: flow.quarters, history, capital, fundamentals, peers, passages, events };
 }
 
 /** Findings the page can stand behind, most severe first; their figures named in the reader's language. */

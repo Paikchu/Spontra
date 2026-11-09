@@ -160,8 +160,6 @@ const OTHER_LANGUAGE = new Set(["Sidebar.tsx switchTo", "Sidebar.tsx other"]);
 /** Entries the glossary rule should not apply to, with the reason. */
 const GLOSSARY_EXEMPT: Record<string, string> = {
   "SecReaderContent.tsx cashAndCapex": "资本开支 is present; 现金流 covers 'cash flow' in the title",
-  "trend-model.ts segment_revenue": "segment revenue guidance reads 营收 after the segment name",
-  "TrendPanel.tsx guidanceDerived": "业绩指引 contains 指引",
 };
 
 function checkTables(tables: Table[]): { problems: string[]; variants: string[] } {

@@ -12,13 +12,13 @@ import type { EventType } from '../pipeline/registry.ts';
 const RETENTION_MS = 30 * 24 * 60 * 60_000, LIST_LIMIT = 100;
 
 /** Which feature each AI run kind and pipeline task writes. */
-export const KIND_FEATURE: Record<string, Feature> = { guidance: 'filings', findings: 'findings', analyst: 'findings', explainer: 'tree', tree: 'tree', valuation: 'valuation' };
-export const TASK_FEATURE: Record<string, Feature> = { guidance: 'filings', memory: 'filings', 'filing-analysis': 'filings', 'company-analysis': 'findings', findings: 'findings', analyst: 'findings', explainer: 'tree', tree: 'tree', valuation: 'valuation' };
+export const KIND_FEATURE: Record<string, Feature> = { findings: 'findings', analyst: 'findings', explainer: 'tree', tree: 'tree', valuation: 'valuation' };
+export const TASK_FEATURE: Record<string, Feature> = { memory: 'filings', 'filing-analysis': 'filings', 'company-analysis': 'findings', findings: 'findings', analyst: 'findings', explainer: 'tree', tree: 'tree', valuation: 'valuation' };
 /** The tasks whose failed-input state holds a feature back: cleared when the feature is switched on again. */
 export const FEATURE_TASKS = (feature: Feature) => Object.entries(TASK_FEATURE).filter(([, f]) => f === feature).map(([task]) => task);
 /** The events that mean a feature published something for a company. */
 const PUBLISHED: Partial<Record<EventType, Feature>> = {
-  'report.published': 'filings', 'guidance.published': 'filings', 'findings.published': 'findings', 'dossier.published': 'findings',
+  'report.published': 'filings', 'findings.published': 'findings', 'dossier.published': 'findings',
   'explainer.published': 'tree', 'tree.published': 'tree', 'items.published': 'filings', 'valuation.published': 'valuation',
 };
 

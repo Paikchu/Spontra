@@ -13,8 +13,6 @@ import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explaine
 import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
 import {readBusinessTree} from "@/shared/analysis-runtime/business-tree";
 import type {BusinessTree} from "@/shared/analysis-contract/business-tree";
-import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
-import type {GuidancePublication} from "@/shared/analysis-contract/guidance";
 import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
 import type {FindingPassage,FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readPeersPublication} from "@/shared/analysis-runtime/peers";
@@ -116,16 +114,6 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
   const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown;peers?:unknown};
   const capital=body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
   return capital?{capital,peers:readPeersPublication(body.peers)}:null;
- }catch{return null;}
-}
-
-/** Supplementary, like the explainer: unavailable or invalid guidance reads as null. */
-export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<GuidancePublication|null>{
- try{
-  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/guidance`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;guidance?:unknown};
-  return body.schemaVersion==="guidance-response.v1"&&body.status==="ready"?readGuidancePublication(body.guidance,ticker):null;
  }catch{return null;}
 }
 
@@ -520,7 +508,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
-  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,guidance,tree});
+  try{const [flow,explainer,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours (public, max-age=14400).
    const cacheable=flow.status==="ready"&&!readFailureStatus;
    if(!cacheable)response.headers.set("cache-control","no-store");

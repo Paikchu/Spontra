@@ -13,8 +13,8 @@ import "./ai-runs.css";
 import { useOnReturn, usePageActive } from "./admin-page";
 import { PLANS } from "./run-progress";
 
-/** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
-export type ViewKind = Exclude<AiRunKind, "guidance">;
+/** The BusinessView outputs this admin shows. */
+export type ViewKind = AiRunKind;
 const KINDS: Array<[ViewKind, string]> = [["findings", "要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
@@ -32,7 +32,7 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   [/^tree-input$/, () => "读取业务列表"],
   ...PLANS.tree.step,
   [/^tree-publish$/, () => "发布"],
-  [/^findings-input$/, () => "读取财报、指引与公司综述"],
+  [/^findings-input$/, () => "读取财报与公司综述"],
   [/^findings-write$/, () => "撰写要点"],
   [/^findings-repair$/, () => "修正未通过项"],
   [/^findings-publish$/, () => "核对并发布"],
@@ -230,7 +230,7 @@ function ValuationView({ report }: { report: ValuationPublication }) {
 /** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and what the review took out. */
 type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
   analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };
-const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", guidance_delivery: "指引兑现", margin_mix: "利润率与结构", peers: "同业" };
+const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", margin_mix: "利润率与结构", peers: "同业" };
 const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
 /** The checkup notes record as stored: each flagged metric's analysis, its quotes, and the writer's turns. */
 type CheckupRecordView = { periodEnd: string; model: string; notes: Array<{ metricId: string; ruleIds: string[]; paragraphs: Array<{ text: string; sourceIds: string[] }>; quotes: Array<{ materialId: string; text: string }> }>;

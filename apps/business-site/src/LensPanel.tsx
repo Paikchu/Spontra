@@ -8,7 +8,7 @@ import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/a
 import type { LensBlock, LensDocument as LensDocumentShape } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
-import { multiple, normalizeDisplayText, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { multiple, normalizeDisplayText, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
 import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
@@ -29,7 +29,6 @@ const m = messages({
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
   metric: "指标", current: "本期", compared: "对比", change: "变化", value: "数值", traded: (date: string) => `交易日 ${date}`,
 });
-const VERDICT = labels({ above: "Above guidance", within: "Within guidance", below: "Below guidance" }, { above: "高于指引", within: "处于指引区间", below: "低于指引" });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
 
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
@@ -111,7 +110,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   // The figures block lists every figure of the evidence: a document that places it twice draws it once.
   const figures = lens.document.rows.flatMap(r => r.cells.flat()).find(b => b.kind === "figures");
   // A figure with nothing to compare (a Form 4's trade) leaves the comparison columns out rather than filling them with dashes.
-  const compared = finding.resolved.some(r => r.compare != null || r.guidance != null);
+  const compared = finding.resolved.some(r => r.compare != null);
   const block = (b: LensBlock, key: number): ReactNode => {
     switch (b.kind) {
       case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{normalizeDisplayText(compact ? firstSentence(finding.judgment.text) : finding.judgment.text)}{cites(finding.judgment.sourceIds)}</p>;
@@ -162,22 +161,20 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   </div>;
 }
 
-/** The watched figure as it came in: value, comparison and, against guidance, whether it landed inside. */
+/** The watched figure as it came in: value and comparison. */
 function Outcome({ r }: { r: ResolvedEvidence }) {
   return <span className="lens-outcome-body">
     <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b></span>
-    {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `${yoyLabel(getLocale())} ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare, r.evidence.ref)}` : ""}</em>
-      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare, r.evidence.ref)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null}
+    {r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare, r.evidence.ref)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null}
   </span>;
 }
 
 /**
  * One figure as a table row: the value for its period (a trade's own date for a Form 4 figure), what it is compared
- * with, and the change or the verdict against guidance; `compared` false leaves those two cells out.
+ * with, and the change; `compared` false leaves those two cells out.
  */
 function Evidence({ r, compared, lit }: { r: ResolvedEvidence; compared: boolean; lit: boolean }) {
-  const change = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}</em>
-    : r.compare ? <em data-trend={trend(r.delta)}>{r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
+  const change = r.compare ? <em data-trend={trend(r.delta)}>{r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
   return <TableRow data-lit={lit || undefined}>
     <TableHead scope="row">{r.label}<small>{"event" in r.evidence.ref ? m.traded(r.current.periodEnd) : spanLabel(r.current, getLocale())}</small></TableHead>
     <TableCell><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b></TableCell>

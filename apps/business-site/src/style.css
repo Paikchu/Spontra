@@ -365,26 +365,6 @@ button { cursor: pointer; }
 /* A cost that shrank is not a loss: its shortfall stays neutral, as its change label does. */
 .fc-node[data-tone="expense"] .fc-prior-short { stroke: var(--muted-foreground); }
 .fc-prior-label { fill: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
-/* Guidance on the bars: a bracket is the range guided for this quarter, coloured by where the bar landed; a card is next quarter's. */
-.fc-guide path { fill: none; stroke: var(--foreground); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .85; }
-.fc-guide[data-derived] path { stroke-dasharray: 4 3; }
-.fc-guide[data-verdict="above"] path { stroke: var(--up); }
-.fc-guide[data-verdict="below"] path { stroke: var(--loss); }
-.fc-guide-hit { fill: transparent; }
-.fc-guide:hover path { opacity: 1; stroke-width: 3; }
-.fc-guide-next { cursor: pointer; }
-.fc-guide-box { fill: var(--surface-raised); stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .08)); }
-.fc-guide-lead { fill: none; stroke: var(--c); stroke-width: 1.5; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
-.fc-guide-accent { fill: var(--c); }
-.fc-guide-head { fill: var(--muted-foreground); font-weight: 500; }
-.fc-guide-value { fill: var(--foreground); font-weight: 700; font-variant-numeric: tabular-nums; }
-.fc-guide-implied { fill: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
-.fc-guide-next[data-action="raised"] .fc-guide-glyph { fill: var(--up); }
-.fc-guide-next[data-action="lowered"] .fc-guide-glyph { fill: var(--loss); }
-.fc-guide-next:hover .fc-guide-box, .fc-guide-next:focus-visible .fc-guide-box { stroke: var(--foreground); }
-.fc-guide-next:focus { outline: none; }
-.fc-tip-note { margin: 8px 0 0; max-width: 260px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); font-style: italic; }
-.fc-tip-link { margin: 6px 0 0; font-size: 12px; color: var(--muted-foreground); }
 .fc-node { opacity: 1; transition: opacity 150ms ease; }
 .fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .35; }
 .fc-node[data-active] .fc-bar { filter: drop-shadow(0 0 8px var(--c)); }
@@ -741,22 +721,7 @@ button { cursor: pointer; }
   .trend { height: 178px; }
 }
 
-/* ---------- Management guidance on the trend ---------- */
-/* Guided range as an I-bar over the reported bar; dashed when converted from a growth rate. */
-.trend-guide { position: absolute; left: 0; right: 0; z-index: 3; width: min(70%, 34px); min-height: 2px; margin: 0 auto; box-sizing: border-box; border-top: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); pointer-events: none; opacity: .7; }
-.trend-guide::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1.5px solid var(--foreground); }
-.trend-guide[data-derived] { border-top-style: dashed; border-bottom-style: dashed; }
-.trend-guide[data-derived]::before { border-left-style: dashed; }
-.trend-col:hover .trend-guide { opacity: 1; }
-.trend-col--guide { outline: none; }
-.trend-col--guide:focus-visible { box-shadow: 0 0 0 2px var(--foreground); border-radius: 6px; }
-.trend-guide-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1px dashed var(--border); border-top: 0; border-radius: 0 0 3px 3px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); }
-.trend-guide-band { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1.5px dashed var(--foreground); border-radius: 3px; background: color-mix(in srgb, var(--foreground) 12%, transparent); opacity: .8; }
-.trend-col--guide:hover .trend-guide-band, .trend-col--guide:focus-visible .trend-guide-band { opacity: 1; }
-.trend-col--guide .trend-value { color: var(--muted-foreground); }
-.trend-period .trend-period-guide { color: var(--muted-foreground); background: transparent; border: 1px dashed var(--border); font-weight: 560; }
-.trend-legend-guide i { width: 10px !important; height: 8px !important; box-sizing: border-box; border: 1.5px dashed var(--foreground); border-radius: 2px; background: transparent; }
-/* Stack dates and badges so all eight quarters (and the next guidance) stay readable. */
+/* Stack dates and badges so all eight quarters stay readable. */
 @media (max-width: 620px) {
   .trend[data-view="trend"] { grid-template-rows: auto 256px; }
   .trend-plot { padding-bottom: 60px; }
@@ -837,7 +802,6 @@ button { cursor: pointer; }
 .biz-total:hover .biz-total-value { color: var(--foreground); }
 .biz-total-delta { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total-delta em { font-style: normal; }
-.biz-guide { display: block; padding: 0 6px; overflow-wrap: anywhere; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 /* The mix as one bar: each business its hue, as wide as its share; the business under the pointer or picked stands out. */
 .biz-fold { flex: none; align-self: center; width: 24px; height: 24px; margin: -4px -4px -4px 0; color: var(--faint); }
 .biz-fold:hover { color: var(--foreground); }
@@ -946,14 +910,12 @@ button { cursor: pointer; }
 .lens-watch { margin: 0 0 10px; font-size: 12.5px; color: var(--muted-foreground); }
 .lens-watch p { margin: 0 0 4px; }
 .lens-watch b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
-/* The outcome, once the watched period is published: the figure, its comparison, and whether it landed inside guidance. */
+/* The outcome, once the watched period is published: the figure and its comparison. */
 .lens-outcome { padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--kind) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--kind) 22%, transparent); }
 .lens-outcome--pending { color: var(--faint); background: transparent; border-style: dashed; border-color: var(--hairline); }
 .lens-outcome-body { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .lens-outcome-body b { font-weight: 620; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .lens-outcome-body em { font-size: 12px; font-style: normal; color: var(--faint); font-variant-numeric: tabular-nums; }
-.lens-outcome-body em[data-verdict="within"] { color: var(--up); font-weight: 600; }
-.lens-outcome-body em[data-verdict="above"], .lens-outcome-body em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
 .finding-settled { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: -2px; border-radius: 50%; font-size: 12px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 .finding-settled[data-verdict="pass"] { color: var(--background); background: var(--up); }
 .finding-settled[data-verdict="fail"] { color: var(--background); background: var(--loss); }
@@ -1024,8 +986,6 @@ button { cursor: pointer; }
 .lens-table td b { font-weight: 620; }
 .lens-table td em { font-style: normal; color: var(--muted-foreground); }
 .lens-table td em[data-trend="up"] { color: var(--up); } .lens-table td em[data-trend="down"] { color: var(--loss); }
-.lens-table td em[data-verdict="above"], .lens-table td em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
-.lens-table td em[data-verdict="within"] { color: var(--up); font-weight: 600; }
 .lens-table tr[data-lit] th, .lens-table tr[data-lit] td b { color: var(--foreground); }
 .lens-table tr[data-lit] th { font-weight: 600; }
 .lens-table th, .lens-table td b { transition: color .2s; }

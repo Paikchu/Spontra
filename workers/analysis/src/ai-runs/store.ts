@@ -3,7 +3,7 @@ import { sha256 } from "../sha256.ts";
 import { KIND_FEATURE, recordFeatureFailure } from "../admin/messages.ts";
 
 /**
- * Run records and published versions of the findings, explainer, business-tree and guidance workflows, kept in
+ * Run records and published versions of the findings, explainer and business-tree workflows, kept in
  * `sec_cache` under ordered keys so each company and kind reads as one key range. The current
  * publication stays under its own key; this is the audit trail beside it.
  */
@@ -46,8 +46,8 @@ export class AiRunStore {
   constructor(db: D1Database) { this.db = db; }
 
   /** A new record for a run about to start; a retried request keeps the first record. */
-  async start(run: { kind: AiRunKind; ticker: string; runId: string; trigger: AiRunTrigger; accession?: string | null }, now: string): Promise<void> {
-    const record: AiRun = { ...run, accession: run.accession ?? null, status: "queued", stage: null, log: [], startedAt: now, updatedAt: now, finishedAt: null, result: null, error: null };
+  async start(run: { kind: AiRunKind; ticker: string; runId: string; trigger: AiRunTrigger }, now: string): Promise<void> {
+    const record: AiRun = { ...run, status: "queued", stage: null, log: [], startedAt: now, updatedAt: now, finishedAt: null, result: null, error: null };
     await this.db.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO NOTHING")
       .bind(runPrefix(run.kind, run.ticker) + run.runId, JSON.stringify(record), now).run();
     await this.prune(runPrefix(run.kind, run.ticker), "$.startedAt", KEEP_RUNS);
@@ -55,7 +55,7 @@ export class AiRunStore {
 
   /** Applies a change to a run, creating the record for runs started before records existed. */
   async update(kind: AiRunKind, ticker: string, runId: string, patch: Partial<Pick<AiRun, "status" | "stage" | "finishedAt" | "result" | "error">>, now: string): Promise<void> {
-    const base: AiRun = { runId, kind, ticker, trigger: "schedule", status: "running", stage: null, log: [], startedAt: now, updatedAt: now, finishedAt: null, accession: null, result: null, error: null };
+    const base: AiRun = { runId, kind, ticker, trigger: "schedule", status: "running", stage: null, log: [], startedAt: now, updatedAt: now, finishedAt: null, result: null, error: null };
     const change = JSON.stringify({ ...patch, updatedAt: now });
     // json_patch treats null as "remove", so nulls are written by json_set instead.
     await this.db.prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?1,json_patch(?2,?3),?4)

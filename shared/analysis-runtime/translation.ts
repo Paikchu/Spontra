@@ -11,7 +11,7 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing" | "item" | "valuation";
+export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "item" | "valuation";
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -46,8 +46,6 @@ const RULES: Record<TranslatedResource, Rule> = {
     keys: set("rationale", "narrative", "summary", "thesis", "expectationsGap", "modelNotes", "nextCheck", "catalysts", "counterEvidence", "nextChecks", "triggers", "invalidation", "gaps", "message", "note", "limitations", "explanation", "reason"),
     skip: set("evidence", "facts", "sourceRefs", "supportingEvidenceIds", "counterEvidenceIds", "excerpt", "distributions", "sensitivities", "yearly", "versionId", "baseInputFingerprint", "evidenceSetHash", "quote", "notes", "label", "sources", "source", "basis", "detail", "anchors", "verification"),
   },
-  // Guidance: the one-sentence statement and the metric label; the quote is the release's own words.
-  guidance: { keys: set("text", "label"), skip: set("sources", "quote", "coverage", "segment") },
   // Events: the 8-K summary only; Form 4 footnotes, EDGAR descriptions and exhibits are filing text.
   events: { keys: set("headline", "label", "detail", "analystView"), skip: set("insider", "exhibits", "description", "items") },
   // The filing list: each filing's summary (with its short report) and the analysis' changes, risks and guidance statements.

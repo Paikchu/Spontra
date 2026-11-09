@@ -48,7 +48,7 @@ function measureAt(data: FindingData, def: StatementMetricDef, end: string): { v
     // A ratio over a loss, a deficit or a negative base reads backwards (cash over a net loss, net debt over negative EBITDA): no value.
     if ("ratio" in def.ref) { const base = resolveRef(data, def.ref.ratio.denominator, end, def.span); if (!base || base.value <= 0) return null; }
     const r = resolveRef(data, def.ref, end, def.span);
-    return r && !r.range ? { value: display(def.form, r), resolved: r } : null;
+    return r ? { value: display(def.form, r), resolved: r } : null;
   }
   // A growth measure is the comparison's delta: percent for an amount, points for a rate; a spread subtracts two such growths.
   const growth = (ref: FindingRef) => { const r = resolveEvidence(data, { ref, periodEnd: end, span: def.span, compare: def.measure === "qoq" ? "qoq" : "yoy" }); const value = r ? displayDelta(def.form, r) : null; return r && value != null ? { value, resolved: r.current } : null; };
@@ -373,7 +373,7 @@ export function peerRanks(data: FindingData, assessment: StatementAssessment, ti
     for (const peer of peers) {
       const ref = atPeer(metric.ref, peer);
       const r = ref ? resolveRef(data, ref, assessment.periodEnd, metric.span) : null;
-      if (r && !r.range && Number.isFinite(r.value)) rows.push({ ticker: peer, value: display(metric.form, r), periodEnd: r.periodEnd, own: false });
+      if (r && Number.isFinite(r.value)) rows.push({ ticker: peer, value: display(metric.form, r), periodEnd: r.periodEnd, own: false });
     }
     if (rows.length < 3) continue;
     rows.sort((a, b) => metric.better === "high" ? b.value - a.value : a.value - b.value);

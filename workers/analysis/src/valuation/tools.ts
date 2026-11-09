@@ -487,8 +487,6 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         }
         return out.join("\n\n") + (read.omitted ? `\n(${read.omitted} passages omitted; narrow with focus)` : "");
       }, observe: (_a, v) => v }),
-    tool({ name: "read_guidance", description: "Management guidance as extracted from the company's releases and calls.", parameters: z.object({}), concurrencySafe: true,
-      execute: (_a, ctx) => { const g = ctx.state.input.guidance; return g?.items.length ? g.items.slice(0, 30).map(i => `${i.id} · ${i.label} · ${i.horizon}${i.fiscalYear ? ` FY${i.fiscalYear}` : ""}${i.fiscalQuarter ? ` Q${i.fiscalQuarter}` : ""} · ${i.basis} · ${i.low ?? "?"}–${i.high ?? "?"} ${i.unit ?? ""} · ${i.text.slice(0, 200)}`).join("\n") : "No extracted guidance."; }, observe: (_a, v) => v }),
     tool({ name: "read_transcript", description: "Read an earnings call around focus terms. The excerpt becomes evidence.", parameters: z.object({ transcriptId: z.string().max(80), focus: z.array(z.string().max(60)).min(1).max(8) }),
       execute: async (args, ctx) => {
         if (ctx.state.used.transcripts >= RESEARCH_BUDGET.transcripts) throw new Error("no transcript reads left");
@@ -640,8 +638,8 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "find_filing_sections", "read_filing_section", "read_guidance", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
-export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "read_guidance", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "find_filing_sections", "read_filing_section", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 
 export const excerptOf = (e: ValuationEvidence) => e.excerpt.replace(/\s+/g, " ").slice(0, EXCERPT_CHARS);

@@ -26,17 +26,16 @@ const translated = {
   findings: localize("findings", findings, ZH_TABLES.findings),
   explainer: localize("explainer", company.explainer, ZH_TABLES.explainer),
   tree: localize("tree", company.tree, ZH_TABLES.tree),
-  guidance: localize("guidance", company.guidance, ZH_TABLES.guidance),
   events: localize("events", events, ZH_TABLES.events),
   filings: filingsZh,
   valuation: { ...valuation, report: localize("valuation", valuationReport, ZH_TABLES.valuation) },
 };
-const english = { flow, findings, explainer: company.explainer, tree: company.tree, guidance: company.guidance, events, filings, valuation };
+const english = { flow, findings, explainer: company.explainer, tree: company.tree, events, filings, valuation };
 type Payload = typeof english;
 
 /** Each finding's lens charts as the frame paints them: compiled on the host in Chinese, then drawn to SVG. */
 function lensCharts(): Array<[string, string]> {
-  const data: FindingData = { quarters: flow.quarters, history: company.history ?? null, capital, fundamentals: null, guidance: company.guidance };
+  const data: FindingData = { quarters: flow.quarters, history: company.history ?? null, capital, fundamentals: null };
   return verifyFindings(findings, data, "zh-CN").verified.flatMap(f => {
     const compiled = compileDocument(lensDocumentOf(f, data, f.periodEnd, "zh-CN"), data, f.periodEnd, { locale: "zh-CN" });
     return [...compiled].flatMap(([id, r]) => r.chart ? [[`lens ${f.id}/${id}`, renderChartSvg(r.chart, { width: 640, height: 280 }, { locale: "zh-CN" })] as [string, string]] : []);
@@ -84,7 +83,7 @@ function readable(html: string): string[] {
 function CompanyPage({ payload }: { payload: Payload }) {
   return <SidebarProvider asChild open keyboardShortcut={null} persistState={false}><main>
     <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow}
-      revenueHistory={company.history ?? null} explainer={payload.explainer} tree={payload.tree} guidance={payload.guidance}
+      revenueHistory={company.history ?? null} explainer={payload.explainer} tree={payload.tree}
       capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} valuation={payload.valuation} />
   </main></SidebarProvider>;
 }
@@ -136,7 +135,7 @@ export async function checkPages(unexpectedLatin: (text: string) => string[], ty
     }
   }
   // The fixture's tables are what the translator would have to produce: complete, and each one passing its checks.
-  for (const resource of ["flow", "findings", "explainer", "tree", "guidance", "events", "valuation"] as const satisfies readonly TranslatedResource[]) {
+  for (const resource of ["flow", "findings", "explainer", "tree", "events", "valuation"] as const satisfies readonly TranslatedResource[]) {
     const table: Record<string, string> = ZH_TABLES[resource];
     for (const text of collectProse(resource, resource === "valuation" ? valuationReport : english[resource])) {
       const zh = table[text];
@@ -145,7 +144,7 @@ export async function checkPages(unexpectedLatin: (text: string) => string[], ty
     }
   }
   // Translated pages: no generated English left anywhere, the findings still verified in Chinese, and a 英文原文 tag only beside English.
-  const generated = new Set([...(["flow", "findings", "explainer", "tree", "guidance", "events"] as const).flatMap(r => collectProse(r, english[r])), ...collectProse("valuation", valuationReport)]);
+  const generated = new Set([...(["flow", "findings", "explainer", "tree", "events"] as const).flatMap(r => collectProse(r, english[r])), ...collectProse("valuation", valuationReport)]);
   const translatedMap = () => <CompanyPage payload={translated} />;
   for (const [name, search] of scenarios.filter(([n]) => !["home", "search", "rail"].includes(n))) {
     browser(search);

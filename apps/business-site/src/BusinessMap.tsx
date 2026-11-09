@@ -9,15 +9,13 @@ import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/w
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
 import { adjustmentName, formatFlowValue, formatReconciliation, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
-import { FlowChart, layoutFor, type CompareBasis, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
-import { ACTION_GLYPH, actionName, guidanceMarks, markSentence, pillQualifier } from "./guidance-marks";
+import { FlowChart, layoutFor, type CompareBasis, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
 import { treeNodeFor } from "@/shared/analysis-runtime/business-tree";
 import { MindLens, mindNodeItem, namedNodes, type MindMapInput } from "./MindMap";
 import type { MindItem } from "./mindmap-layout";
-import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { TrendPanel } from "./TrendPanel";
 import { MetricPicker, MetricTrendPanel, PROFIT_PAIR, ProfitToggle } from "./MetricTrend";
 import { REVENUE_METRIC, metricOptions, metricTrend } from "./metric-model";
@@ -59,7 +57,7 @@ import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
-import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
 import { useMedia, useSideScroll } from "./side-scroll";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
@@ -70,7 +68,7 @@ import { checkupSources, figureLevel, LEVEL_LABEL, LevelMark, MetricLens, PanelS
 
 const m = messages({
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
-  companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue", nextQuarter: "Next quarter", composition: "Revenue mix", foldBusinesses: "Collapse businesses", unfoldBusinesses: "Expand businesses",
+  companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue", composition: "Revenue mix", foldBusinesses: "Collapse businesses", unfoldBusinesses: "Expand businesses",
   topLevelCount: (n: number) => `Total revenue · ${n} top-level ${n === 1 ? "business" : "businesses"}`,
   shareBeforeEliminations: "Share of segment revenue before adjustments", share: "Share of revenue",
   reconciliation: "Revenue reconciliation", reconciliationUnit: (currency: string) => `${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
@@ -85,9 +83,6 @@ const m = messages({
   comparisonBase: "Comparison base", financialView: "Financial view", noFinancials: "No quarterly financials disclosed",
   chart: (ticker: string, period: string, currency: string) => `${ticker} ${period} revenue to net income, ${currency}`,
   thisQuarter: "This quarter", marginLabel: "Margin", offset: "Offset", remaining: "Remaining after offset", asReported: (currency: string) => `As reported (${currency} millions)`,
-  above: "Above range", within: "Within range", below: "Below range", thisGuidance: (text: string) => `This quarter’s guidance · ${text}`,
-  derivedGuidance: "Guidance (from growth rate)", guidanceRange: "Guidance range", result: "Result", issued: "Issued", source: (title: string) => `Source: ${title}`,
-  nextGuidance: (text: string) => `Next quarter’s guidance · ${text}`, vsPrevious: "vs. previous", previously: (range: string) => ` (previously ${range})`,
   totalAssets: "Total assets", asOf: (date: string) => `As of ${date}`, debt: "Debt", leverage: (value: string) => `Debt and leases ${value} of assets`,
   customer: "Customer prepayments", ofAssets: (value: string) => `${value} of assets`, cash: "Cash and short-term investments", equity: "Stockholders’ equity",
   paidIn: (paid: string, deficit: string) => `Paid-in ${paid} · Accumulated deficit ${deficit}`,
@@ -103,7 +98,7 @@ const m = messages({
   swipe: "Swipe horizontally to see full flow",
 }, {
   lastYear: "上年同期", lastQuarter: "上季度", yearAgo: "上年同期", lastQuarterPeriod: "上季度",
-  companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收", nextQuarter: "下季度", composition: "营收构成", foldBusinesses: "收起业务", unfoldBusinesses: "展开业务",
+  companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收", composition: "营收构成", foldBusinesses: "收起业务", unfoldBusinesses: "展开业务",
   topLevelCount: (n: number) => `总营收 · ${n} 个一级业务`,
   shareBeforeEliminations: "占调节前分部营收", share: "占营收",
   reconciliation: "营收调节（分部合计与合并营收的差）", reconciliationUnit: () => "", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
@@ -118,9 +113,6 @@ const m = messages({
   comparisonBase: "比较基准", financialView: "报表视图", noFinancials: "未披露季度财务数据",
   chart: (ticker: string, period: string, currency: string) => `${ticker} ${period} 营收至净利润，${currency}`,
   thisQuarter: "本季度", marginLabel: "利润率", offset: "抵减", remaining: "抵减后余额", asReported: () => "披露值",
-  above: "高于指引区间", within: "处于指引区间", below: "低于指引区间", thisGuidance: (text: string) => `本季度指引 · ${text}`,
-  derivedGuidance: "业绩指引（按增长率推算）", guidanceRange: "指引区间", result: "结果", issued: "发布日期", source: (title: string) => `来源：${title}`,
-  nextGuidance: (text: string) => `下季度指引 · ${text}`, vsPrevious: "较前次", previously: (range: string) => `（前次 ${range}）`,
   totalAssets: "总资产", asOf: (date: string) => `截至 ${date}`, debt: "债务", leverage: (value: string) => `债务及租赁占资产 ${value}`,
   customer: "客户预付款", ofAssets: (value: string) => `占资产 ${value}`, cash: "现金及短期投资", equity: "股东权益",
   paidIn: (paid: string, deficit: string) => `实收资本 ${paid} · 累计亏损 ${deficit}`,
@@ -299,7 +291,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -333,7 +325,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
   // Findings are verified against the same data the stage draws; a finding in focus reshapes the stage around its figures.
-  const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, guidance, peers, passages, events), [flow, revenueHistory, capital, fundamentals, guidance, peers, passages, events]);
+  const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, peers, passages, events), [flow, revenueHistory, capital, fundamentals, peers, passages, events]);
   const verified = useMemo(() => verifiedFindings(findings, data, locale), [findings, data, locale]);
   // Scored watches: pass or fail once the watched period reported, from the same data the stage draws.
   const verdicts = useMemo(() => Object.fromEntries(verified.flatMap(f => { const v = f.watch?.test ? watchVerdict(data, f.watch, f.periodEnd) : null; return v ? [[f.id, v.verdict]] : []; })) as Record<string, "pass" | "fail">, [verified, data]);
@@ -535,24 +527,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     return { title: n.label, color: colorOf(n.name), rows };
   }, [quarter, previous, word, revenue, money, amountOf, colorOf, changeOf, priorOf, graph, segmentRevenue]);
 
-  // Guidance on the bars: this quarter's guided range as a bracket with its verdict, next quarter's as a card, both at the chart's units.
-  const guideMarks = useMemo((): { brackets: GuideBracketMark[]; pills: GuidePillMark[] } => {
-    if (!quarter || !graph || !guidance) return { brackets: [], pills: [] };
-    const dollars = (v: number | null) => v == null ? "—" : compactFlowValue(v / quarter.scale, quarter);
-    const amountOfNode = (name: string) => { const n = graph.nodes.find(n => n.name === name); return n ? (n.amount ? numeric(n.amount) : n.metric ? numeric(quarter.figures[n.metric]) : n.value) : null; };
-    const marks = guidanceMarks(quarter, graph.nodes.map(n => n.name), guidance, { amountOf: amountOfNode, businessIdOf: name => itemByNode.get(name)?.id ?? null, money: v => dollars(v) });
-    const VERDICT = { above: m.above, within: m.within, below: m.below };
-    return {
-      brackets: marks.brackets.map(b => ({ node: b.node, low: b.low / quarter.scale, high: b.high / quarter.scale, derived: b.derived, verdict: b.verdict, url: b.source?.url ?? null,
-        tip: { title: m.thisGuidance(markSentence(b.item, dollars)), color: colorOf(b.node), note: b.item.quote,
-          rows: [[b.derived ? m.derivedGuidance : m.guidanceRange, `${dollars(b.low)}–${dollars(b.high)}`], [m.thisQuarter, money(amountOfNode(b.node))], [m.result, VERDICT[b.verdict]], [m.issued, b.item.issuedAt.slice(0, 10)]],
-          link: b.source ? m.source(b.source.title) : undefined } })),
-      pills: marks.pills.map(p => ({ node: p.node, qualifier: pillQualifier(p.item), text: p.text, implied: p.item.derived ? `≈ ${range(dollars(p.item.derived.low), dollars(p.item.derived.high), locale)}` : null, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
-        tip: { title: m.nextGuidance(markSentence(p.item, dollars)), color: colorOf(p.node), note: p.item.quote,
-          rows: [...(p.action && p.action !== "initiated" ? [[m.vsPrevious, actionName(p.action) + (p.item.previous && p.item.previous.low != null ? m.previously(p.item.measure === "growth" || p.item.unit === "percent" ? `${p.item.previous.low}%–${p.item.previous.high}%` : `${dollars(p.item.previous.low)}–${dollars(p.item.previous.high)}`) : "")] as [string, string]] : []), [m.issued, p.item.issuedAt.slice(0, 10)]],
-          link: p.source ? m.source(p.source.title) : undefined } })),
-    };
-  }, [quarter, graph, guidance, itemByNode, colorOf, money, locale]);
   // With nothing in focus, the quarter's first finding about this view leads: the chart lights what it names.
   const [leadHidden, setLeadHidden] = useState(false);
   const lead = useMemo(() => focused || current || leadHidden || !quarter ? null : verified.find(f => f.periodEnd === quarter.periodEnd && f.anchors.view === view) ?? null, [focused, current, leadHidden, quarter, verified, view]);
@@ -624,8 +598,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const focusItem = (item: RailItem | null) => { if (!item) { setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
   // The businesses the chart draws at its left edge, each with its share of segment revenue, for the composition bar.
   const composition = items.filter(i => !i.parent).flatMap(i => i.value != null && segmentRevenue ? [{ key: i.key, name: i.name, slot: i.slot, share: Math.max(0, i.value / segmentRevenue * 100) }] : []);
-  // What the latest report guides for next quarter's revenue, beside this quarter's figure.
-  const revenueGuide = guideMarks.pills.find(p => p.node === "revenue") ?? null;
   const active = hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
 
@@ -721,7 +693,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const lensUp = !!stageOverride || !!(focusedCheck && assessment) || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
-      {/* The businesses, open from the start: the company's revenue and change, next quarter's guidance on its own line, the mix as one bar, then one line per business. */}
+      {/* The businesses, open from the start: the company's revenue and change, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
           <Button variant="unstyled" type="button" className="biz-total" aria-pressed={!current} title={quantified ? m.topLevelCount(topLevel) : m.totalRevenue} onClick={() => { if (current) pickBusiness(null); }}>
@@ -733,7 +705,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
           </Button>
         </div>
-        {revenueGuide && <span className="biz-guide" title={`${revenueGuide.tip.title}${revenueGuide.qualifier ? ` · ${revenueGuide.qualifier}` : ""}`}>{m.nextQuarter} {revenueGuide.glyph}{revenueGuide.text}</span>}
         {composition.length > 1 && <div className="biz-bar" role="img" aria-label={[m.composition, ...composition.map(c => `${c.name} ${percent(c.share)}`)].join(" · ")}>
           {composition.map(c => <i key={c.key} data-hover={hovered === c.key || preview === c.key || undefined} data-picked={current?.key === c.key || undefined} style={{ flexBasis: `${c.share}%`, background: hue(c.slot) }} />)}
         </div>}
@@ -855,7 +826,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
                 </MindLens>
                 : <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} links={nodeLinks} section={openSection} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
@@ -871,7 +842,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
         onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{profitToggle}{shownMetrics.length > 0 && switcher}</>} />
       : hasRevenueTrend && <TrendPanel ticker={ticker} history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
-        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
+        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue}
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{metricsUnavailable}{shownMetrics.length > 0 && switcher}</>} />}
 
       {view === "cash" && returns && <ShareholderReturns returns={returns} />}

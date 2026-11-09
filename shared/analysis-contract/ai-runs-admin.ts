@@ -1,5 +1,5 @@
 /** Admin view of the model-written business-map outputs: who ran them, how far a run got, and every version published. */
-export const AI_RUN_KINDS = ["findings", "analyst", "checkup", "explainer", "tree", "guidance", "valuation"] as const;
+export const AI_RUN_KINDS = ["findings", "analyst", "checkup", "explainer", "tree", "valuation"] as const;
 export type AiRunKind = typeof AI_RUN_KINDS[number];
 export type AiRunStatus = "queued" | "running" | "waiting" | "succeeded" | "empty" | "superseded" | "cancelled" | "failed";
 export type AiRunTrigger = "manual" | "schedule";
@@ -17,8 +17,6 @@ export type AiRun = {
   startedAt: string;
   updatedAt: string;
   finishedAt: string | null;
-  /** Guidance runs name the earnings filing they read. */
-  accession: string | null;
   /** The workflow's own summary, e.g. findings published and withheld with reasons. */
   result: unknown;
   error: string | null;
@@ -42,7 +40,6 @@ export type AiCompanies = { companies: Array<{ ticker: string; name: string; kin
 
 /** One day of the model-call ledger for a company and kind, tokens as the provider reported them. */
 export type AiUsageDay = { day: string; calls: number; inputTokens: number; cachedTokens: number; outputTokens: number; searchCalls: number };
-export type AiEarningsEvent = { accession: string; eventDate: string; status: string | null; transcriptStatus: string | null };
 export type AiCompanyDetail = {
   ticker: string;
   name: string;
@@ -50,8 +47,6 @@ export type AiCompanyDetail = {
   state: AiKindState;
   runs: AiRun[];
   versions: AiVersion[];
-  /** Guidance only: earnings releases a run can read, newest first. */
-  events: AiEarningsEvent[];
   /** The last 30 days of model calls, newest day first; absent when the ledger cannot be read. */
   usage?: AiUsageDay[];
 };

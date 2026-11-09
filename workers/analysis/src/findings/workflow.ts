@@ -40,7 +40,7 @@ const FILING_NOTES = 16;
 
 /**
  * Everything the writer sees, from layer 2's products only (docs/spontra-architecture-upgrade.md): the per-period
- * extract (statements, capital, fundamentals, guidance and the ledger, cut once by layer 2), the analysis of each
+ * extract (statements, capital, fundamentals and the ledger, cut once by layer 2), the analysis of each
  * filing, and the company analysis built on the report memory. No SEC fetch, no model call, no layer-1 read; until
  * layer 2 has cut the extract there is nothing to write from.
  */
@@ -97,7 +97,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const modelVersion = modelFor(env, "findings");
   const now = await step.do("findings-time", async () => new Date().toISOString());
   const input = await step.do("findings-input", () => findingsInput(env, params.ticker));
-  // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
+  // The report or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
   const companyName = issuerNames(await listedName(requireDb(env), params.ticker) ?? params.ticker)[0]!;

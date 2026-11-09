@@ -22,7 +22,6 @@ export const AI_TOOLS = {
   "sec-analysis": { label: "财报摘要", reasoning: "high", model: "analysis" },
   memory: { label: "公司记忆", reasoning: "high", model: "analysis" },
   "company-analysis": { label: "公司分析", reasoning: "high", model: "reasoning" },
-  guidance: { label: "业绩指引", reasoning: "high", model: "analysis" },
   explainer: { label: "业务解读", reasoning: "high", model: "reasoning" },
   tree: { label: "业务脑图", reasoning: "high", model: "reasoning" },
   findings: { label: "公司要点", reasoning: "high", model: "reasoning" },

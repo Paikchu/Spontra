@@ -3,7 +3,7 @@
  * layer reads only the products of the layers below it:
  *  1. `map`       the financial map: every past report's statements from EDGAR, nothing else. Its switch is the
  *                 whitelist (`financial_company_settings`).
- *  2. `filings`   SEC filing analysis: the filing library, each filing's summary, guidance, memory and item analysis —
+ *  2. `filings`   SEC filing analysis: the filing library, each filing's summary, memory and item analysis —
  *                 the only layer that reads filing text.
  *  3. `findings`  company-level synthesis across filings: company analysis, findings, analyst dossiers, checkup notes.
  *  4. `tree`      the business breakdown: the mind map and the written explanation of each business, with web research.

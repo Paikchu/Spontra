@@ -2,13 +2,12 @@ import type { TranscriptItem, TranscriptDetail, TranscriptList } from '../../../
 import type { SecFiscalPeriod } from '../../../../shared/analysis-contract/report.ts';
 import { dataTickersFor } from '../core.ts';
 import { companyPolicyEnvironment, featureTickersFor } from '../financial-data/company-policy.ts';
-import { AlphaVantageTranscriptProvider, TranscriptAccessError, TranscriptQuotaError } from '../guidance/sources.ts';
-import { GuidanceStore } from '../guidance/store.ts';
 import type { AnalysisEnv } from '../operations.ts';
 import { parseFiscalPeriod } from '../sec/fiscal-period.ts';
 import { inFiscalSequence, quarterAfterYearEnd, type FiscalLabel } from '../sec/fiscal-sequence.ts';
 import { quarterNumber } from '../../../../shared/analysis-runtime/fiscal-label.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
+import { AlphaVantageTranscriptProvider, TranscriptAccessError, TranscriptQuotaError } from './alpha-vantage.ts';
 
 const columns = `id,ticker,period_end periodEnd,accession,filing_url filingUrl,filed_at filedAt,
  fiscal_year fiscalYear,fiscal_quarter fiscalQuarter,status,title,source_url sourceUrl,characters,
@@ -112,7 +111,7 @@ async function relabelTranscripts(db: D1Database, stamp: string): Promise<number
 
 /**
  * The library rows ready for one company whose label is still the sequence's, newest first: a row the sequence corrects
- * holds another quarter's call until it is fetched again. Guidance reads these; it never calls the provider itself.
+ * holds another quarter's call until it is fetched again. Readers use these; they never call the provider themselves.
  */
 export async function readyTranscripts(db: D1Database, ticker: string, sincePeriodEnd: string): Promise<Array<{
   id: string; periodEnd: string; accession: string; form: string; filedAt: string; title: string; sourceUrl: string; content: string; fiscalYear: number; fiscalQuarter: 1 | 2 | 3 | 4;
@@ -181,16 +180,15 @@ async function labelRow(env: AnalysisEnv, row: QueueRow): Promise<FiscalLabel | 
 export async function syncTranscript(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch, causeId: string | null = null) {
   if (env.TRANSCRIPTS_ENABLED !== 'true' || !env.DB || !env.ALPHA_VANTAGE_API_KEY) return { status: 'disabled' };
   const policy = await companyPolicyEnvironment(env);
-  // Calls are layer-2 material (guidance, valuation): only companies with filing analysis on are fetched.
+  // Calls are layer-2 material (valuation): only companies with filing analysis on are fetched.
   const tickers = featureTickersFor(policy, 'filings'), stamp = now.toISOString();
   await seedTranscripts(env, now, tickers);
   await relabelTranscripts(env.DB, stamp);
-  const budget = new GuidanceStore(env.DB,env.SEC_FILINGS);
-  const cap = Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) : 25;
-  const spent = await env.DB.prepare("SELECT units FROM feature_budget WHERE day=? AND feature='guidance-transcript'").bind(stamp.slice(0,10)).first<{units:number}>();
+  const cap = Number(env.TRANSCRIPT_DAILY_CALLS) > 0 ? Number(env.TRANSCRIPT_DAILY_CALLS) : 25;
+  const spent = await env.DB.prepare("SELECT units FROM feature_budget WHERE day=? AND feature='transcript'").bind(stamp.slice(0,10)).first<{units:number}>();
   if ((spent?.units ?? 0) >= cap) return { status: 'daily_budget' };
   const lease = new Date(now.getTime()+120_000).toISOString();
-  // Companies whose guidance reads the calls go first; then the newest periods.
+  // Companies with an earlier place in the list go first; then the newest periods.
   const row = await env.DB.prepare(`UPDATE company_transcripts SET status='fetching',lease_until=?,updated_at=? WHERE id=(
     SELECT id FROM company_transcripts WHERE ticker IN (SELECT value FROM json_each(?)) AND
       ((status IN ('queued','retry') AND next_attempt_at<=?) OR (status='fetching' AND lease_until<=?))
@@ -208,7 +206,8 @@ export async function syncTranscript(env: AnalysisEnv, now = new Date(), fetcher
     if (!label) return await finish('needs_period', /^6-K/.test(row.form) ? 'FISCAL_YEAR_UNKNOWN' : 'FISCAL_PERIOD_UNKNOWN');
     await env.DB.prepare('UPDATE company_transcripts SET fiscal_year=?,fiscal_quarter=? WHERE id=? AND lease_until=?')
       .bind(label.fiscalYear,label.quarter,row.id,lease).run();
-    if (!await budget.reserve('guidance-transcript',stamp.slice(0,10),cap)) return await finish('retry','DAILY_BUDGET',tomorrow.toISOString());
+    const reserved = await env.DB.prepare("INSERT INTO feature_budget(day,feature,units) VALUES(?,'transcript',1) ON CONFLICT(day,feature) DO UPDATE SET units=units+1 WHERE units<? RETURNING units").bind(stamp.slice(0,10),cap).first();
+    if (!reserved) return await finish('retry','DAILY_BUDGET',tomorrow.toISOString());
     await env.DB.prepare('UPDATE company_transcripts SET attempts=attempts+1 WHERE id=? AND lease_until=?').bind(row.id,lease).run();
     const material = await new AlphaVantageTranscriptProvider(env.ALPHA_VANTAGE_API_KEY,fetcher).fetch(row.ticker,{fiscalYear:label.fiscalYear,quarter:label.quarter,date:row.filedAt});
     // The provider often has the call a day or two after the filing: try again tomorrow, three tries in all.
@@ -231,7 +230,7 @@ export async function syncTranscript(env: AnalysisEnv, now = new Date(), fetcher
     }
     if(error instanceof TranscriptQuotaError) {
       // The key's allowance for the day is spent, whoever spent it: stop the whole library until the next UTC day.
-      await env.DB.prepare("INSERT INTO feature_budget(day,feature,units) VALUES(?,'guidance-transcript',?) ON CONFLICT(day,feature) DO UPDATE SET units=MAX(units,excluded.units)").bind(stamp.slice(0,10),cap).run();
+      await env.DB.prepare("INSERT INTO feature_budget(day,feature,units) VALUES(?,'transcript',?) ON CONFLICT(day,feature) DO UPDATE SET units=MAX(units,excluded.units)").bind(stamp.slice(0,10),cap).run();
       return finish('retry','PROVIDER_DAILY_LIMIT',tomorrow.toISOString(),true);
     }
     if(error instanceof TranscriptAccessError) return finish(row.attempts>=2?'unavailable':'retry','PROVIDER_ACCESS',tomorrow.toISOString());

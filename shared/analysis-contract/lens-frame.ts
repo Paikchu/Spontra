@@ -19,8 +19,6 @@ export type CompiledSeries = {
   values: Array<number | null>;
   /** Each value formatted the way the page writes it, aligned with `values`. */
   text: Array<string | null>;
-  /** A guided range per period, when the figure is a range. */
-  ranges?: Array<{ low: number; high: number } | null>;
 };
 export type CompiledAxis = { unit: ValueUnit; currency: string | null; min: number; max: number; ticks: Array<{ value: number; label: string }>; zero: boolean };
 export type CompiledMark = { type: LensMarkType; series: string[] };

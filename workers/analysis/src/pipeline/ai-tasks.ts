@@ -20,8 +20,6 @@ import { readValuationCompanyInputs } from "../valuation/curated.ts";
 import { ValuationStore } from "../valuation/store.ts";
 
 const MINUTE = 60_000;
-/** Earnings releases this recent may still have guidance on the way; a run silent this long is not waited for. */
-const GUIDANCE_WAIT_WINDOW_MS = 45 * 24 * 60 * MINUTE, GUIDANCE_SILENT_MS = 2 * 24 * 60 * MINUTE;
 const until = (at: string, now: Date) => Math.max(MINUTE, Date.parse(at) - now.getTime());
 const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
 
@@ -55,7 +53,7 @@ const storedFingerprint = (env: AnalysisEnv, key: string) => async () =>
  */
 const LAYER_TASKS = {
   map: ["collect", "archive", "history", "map-derive", "fundamentals", "events", "presentation"],
-  filings: ["library", "library-cards", "library-links", "business-tags", "filing-analysis", "guidance", "memory", "extract"],
+  filings: ["library", "library-cards", "library-links", "business-tags", "filing-analysis", "memory", "extract"],
   findings: ["company-analysis", "findings", "analyst", "checkup"],
 } as const;
 /** A run waiting in a lower layer longer than this is stuck, not settling, and no longer holds the layers above. */
@@ -71,10 +69,7 @@ const settling = (waiting: string[]): TaskOutcome => ({ status: "later", afterMs
 
 export const AI_TASKS = {
   /**
-   * Findings for the newest report, written from the map snapshot, guidance, SEC fundamentals and the company analysis.
-   * While a recent earnings release's guidance is still queued or being extracted, it waits for that guidance: a
-   * guidance run can take more than a day (the daily model budget), and writing first without it would write twice.
-   * A run silent for two days is not waited for; a published guidance (`extracted`, `complete`) is not pending.
+   * Findings for the newest report, written from the map snapshot, SEC fundamentals and the company analysis.
    */
   findings: {
     // The lens agent runs inside the findings workflow: a new lens version rewrites every company's findings once.
@@ -82,12 +77,6 @@ export const AI_TASKS = {
     async run(env, ticker, context): Promise<TaskOutcome> {
       const { now } = context;
       if (env.FINDINGS_ENABLED !== "true") return { status: "done", detail: { skipped: "findings disabled" } };
-      if (env.GUIDANCE_ENABLED === "true") {
-        const since = new Date(now.getTime() - GUIDANCE_WAIT_WINDOW_MS).toISOString().slice(0, 10), silent = new Date(now.getTime() - GUIDANCE_SILENT_MS).toISOString();
-        const pending = await env.DB!.prepare("SELECT accession, status FROM earnings_events WHERE ticker = ? AND event_date >= ? AND (status = 'queued' OR (status = 'started' AND updated_at >= ?)) LIMIT 1")
-          .bind(ticker, since, silent).first<{ accession: string; status: string }>();
-        if (pending) return { status: "later", afterMs: 30 * MINUTE, detail: { waiting: "guidance", accession: pending.accession, guidance: pending.status } };
-      }
       const below = await unsettledBelow(env, ticker, ["map", "filings"], now, ["company-analysis"]);
       // The report memory and the company analysis it starts run as Workflows of their own, outside the due table.
       const since = new Date(now.getTime() - SETTLING_MS).toISOString();
@@ -150,7 +139,7 @@ export const AI_TASKS = {
   },
 
   /**
-   * The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change
+   * The valuation assessment, rewritten when the figures, filings or calls it reads from change
    *. A method change alone (prompt, calculator or input version) reassesses only
    * the companies the admin marked to reassess (valuation/reassess.ts); the others keep their report until new
    * material arrives or an admin starts a run.

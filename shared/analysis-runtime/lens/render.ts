@@ -183,8 +183,6 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
       const s = bySeries.get(id)!, sc = scaleOf(s);
       const i = n - 1 - [...chart.periods].reverse().findIndex((_, k) => s.values[n - 1 - k] != null);
       if (i >= n || s.values[i] == null) continue;
-      const r = s.ranges?.[i];
-      if (r) out.push(`<rect class="rule-band" x="${n2(x0)}" y="${n2(Math.min(sc.y(r.low), sc.y(r.high)))}" width="${n2(x1 - x0)}" height="${n2(Math.max(1, Math.abs(sc.y(r.low) - sc.y(r.high))))}" fill="${s.color}"/>`);
       const y = sc.y(s.values[i]!);
       out.push(`<line class="rule" x1="${n2(x0)}" x2="${n2(x1)}" y1="${n2(y)}" y2="${n2(y)}" stroke="${s.color}"/>`);
       text(x1 - 4, y - 5, `${s.label} ${s.text[i]}`, "rule-label", "end");

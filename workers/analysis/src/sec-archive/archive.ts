@@ -2,10 +2,8 @@ import { archiveFilingDisclosures, disclosureAuditPrefix, readArchivedDocument, 
 import { withFilingStructure } from "../financial-data/presentation.ts";
 import type { DocumentSource } from "../financial-data/parser.ts";
 import { canonicalSecHtml, exhibitLinks, type SecReader } from "../financial-data/provider.ts";
-import { classifyExhibit, exhibitTitle, type FoundMaterial } from "../guidance/sources.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { htmlToSecText } from "../sec/sec.ts";
 import { edgarDocumentReader, type GatewayOptions } from "./gateway.ts";
 
 /** Written by the archive task once a filing's documents are all stored, or when the filing is recorded as one that cannot be. */
@@ -36,7 +34,6 @@ export type ArchivedDocument = {
  */
 type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; complete: boolean; documents: ArchivedDocument[] };
 
-const MIN_EXHIBIT_TEXT = 400;
 const fileOf = (url: string) => decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
 const exhibitLike = (file: string) => /ex[-_]?\d|exhibit|\b99\b/i.test(file);
 /** A filing body opens with its cover: the form named, then the commission file number or an item. Exhibits do not. */
@@ -62,7 +59,7 @@ async function pointers(env: ArchiveEnv, ticker: string, accession: string): Pro
 /**
  * True when the archive holds the whole filing: its body and the exhibits the body names (`exhibitLinks`). A body stored
  * before its exhibits (the collector and the archive task commit one document at a time) does not count yet, so the
- * report and guidance that follow `filing.archived` read the filing only once it is all there.
+ * report that follows `filing.archived` read the filing only once it is all there.
  */
 export async function archiveHolds(env: ArchiveEnv, ticker: string, accession: string, primaryUrl?: string): Promise<boolean> {
   return (await archivedFiling(env, ticker, accession, primaryUrl))?.complete ?? false;
@@ -97,22 +94,6 @@ export async function archivedFiling(env: ArchiveEnv, ticker: string, accession:
   const held = new Set(documents.map(d => d.url));
   const complete = exhibitLinks(documents[0]!.html, documents[0]!.url).every(url => held.has(url));
   return { ticker, accession, form: bodyRecord.source.form, filedAt: bodyRecord.source.filedAt ?? "", reportDate: bodyRecord.source.reportDate ?? "", complete, documents };
-}
-
-/**
- * An earnings filing's Exhibit 99 documents as archived, in the shape guidance reads: text, or why there is none.
- * Null when the archive holds nothing for the accession.
- */
-export async function archivedExhibits(env: ArchiveEnv, ticker: string, accession: string, filingDate: string, primaryUrl?: string): Promise<FoundMaterial[] | null> {
-  const filing = await archivedFiling(env, ticker, accession, primaryUrl);
-  // A body whose exhibits are not all stored yet reads as not archived: the release is in those exhibits.
-  if (!filing?.complete) return null;
-  return filing.documents.filter(d => d.role === "exhibit").slice(0, 4).map((d): FoundMaterial => {
-    const base = { sourceKind: "sec" as const, url: d.url, publishedAt: filingDate };
-    const text = htmlToSecText(d.html);
-    if (text.length < MIN_EXHIBIT_TEXT) return { ...base, kind: "press_release", title: `${d.type} ${d.filename}`, unsupported: "no readable text" };
-    return { ...base, kind: classifyExhibit(text), title: exhibitTitle(text, `${d.type} ${d.filename}`), text };
-  });
 }
 
 export { readArchivedDocument };

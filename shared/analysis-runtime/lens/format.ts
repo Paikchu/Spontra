@@ -1,7 +1,7 @@
 import type { FindingRef, FindingSpan } from "../../analysis-contract/findings.ts";
 import type { ResolvedValue, ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { compactMoney, fiscalYearTo, multiple, perShare, shortPeriod, type Locale, range } from "../locale.ts";
+import { compactMoney, fiscalYearTo, multiple, perShare, shortPeriod, type Locale } from "../locale.ts";
 
 /**
  * Every figure a lens chart writes. `locale` picks the reader's number forms; left out, the English forms
@@ -24,7 +24,6 @@ function formatFigure(value: number, unit: ValueUnit, currency: string | null, r
 }
 
 export function formatResolved(v: ResolvedValue, ref?: FindingRef, locale: Locale = "en"): string {
-  if (v.range && v.range.low !== v.range.high) return v.unit === "USD" ? range(compactMoney(v.range.low, v.currency, locale), compactMoney(v.range.high, v.currency, locale), locale) : `${v.range.low}–${v.range.high}%`;
   return formatFigure(v.value, v.unit, v.currency, ref, locale);
 }
 

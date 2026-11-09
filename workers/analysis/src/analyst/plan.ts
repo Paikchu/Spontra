@@ -8,7 +8,7 @@ import type { Flag } from "../../../../shared/analysis-contract/statement-analys
  * fires on a rule of the three-statement checkup the report trips (a capital-intensity step, a cash/earnings
  * divergence, a funding gap) or on the finding's own anchors and citations. Severity only caps the budget. Nothing here names a company or a case.
  */
-export type LineKey = "capital_intensity" | "cash_earnings" | "funding_commitments" | "demand_conversion" | "guidance_delivery" | "margin_mix" | "peers" | "event";
+export type LineKey = "capital_intensity" | "cash_earnings" | "funding_commitments" | "demand_conversion" | "margin_mix" | "peers" | "event";
 export type PlannedLine = { key: LineKey; why: string; questions: string[]; evidence: string };
 export type Tier = "deep" | "standard" | "light";
 export type Plan = { tier: Tier; lines: PlannedLine[]; budget: { turns: number; reads: number; finds: number; searches: number; webReads: number } };
@@ -39,10 +39,6 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
     "Does the anchored revenue keep up with the asset base built for it?",
     "Who are the customers and contracts behind it, in the filing's words, and what concentration do they carry?",
   ], evidence: "node revenue yoy/qoq, rpo, rpoBucket rungs, node / capex and productive / revenue ratios; the revenue and segment notes; customer concentration passages" },
-  guidance_delivery: { key: "guidance_delivery", questions: [
-    "Did the actual land above, within or below the range, and was the range moved before the print?",
-    "What did management name as the swing factor?",
-  ], evidence: "evidence compared with {guidanceId}; the guidance items' own quotes" },
   margin_mix: { key: "margin_mix", questions: [
     "Which expense lines moved relative to revenue, and is it mix or price?",
     "Does the new mix carry a structurally different margin?",
@@ -98,8 +94,6 @@ export function planFinding(f: VerifiedFinding, data: FindingData, peers: string
   const nodeGrowth = f.anchors.nodeIds.some(id => (yoy(data, { nodeId: id }, end, span) ?? 0) > 25);
   byRule("demand_conversion", nodeGrowth || cites(f, r => "capital" in r && (r.capital === "rpo" || r.capital === "rpoNext12MonthsShare")) || !!f.pairWith,
     nodeGrowth ? "an anchored business grows more than 25% on the year" : "backlog or a paired growth finding");
-  // Guidance: any evidence compared against a guided range.
-  if (f.evidence.some(e => typeof e.compare === "object")) fire("guidance_delivery", "the evidence is measured against guidance");
   // Peers: the finding matters enough and the company has tracked peers in its category; placed before margins so the cap keeps it.
   if (peers.length >= 2 && (f.severity === 3 || f.anchors.view !== "profit")) fire("peers", `${peers.length} comparable tracked peers`);
   byRule("margin_mix", cites(f, r => "ratio" in r && "metric" in r.ratio.denominator && r.ratio.denominator.metric === "revenue"), "a margin or expense ratio is in the evidence");

@@ -35,7 +35,7 @@ const m = messages({ queued: "Report queued", running: "Writing report", report:
  */
 export default function SceneView({ ticker, scene, data, onOpenFinding }: { ticker: string; scene: StageState; data: CompanyData; onOpenFinding: (id: string) => void }) {
   const locale = useLocale();
-  const facts = useMemo(() => data.flow ? findingData(data.flow, data.publication?.history ?? null, data.capital, data.fundamentals, data.publication?.guidance ?? null, data.findings?.peers ?? null, data.findings?.passages ?? null, data.events) : null, [data]);
+  const facts = useMemo(() => data.flow ? findingData(data.flow, data.publication?.history ?? null, data.capital, data.fundamentals, data.findings?.peers ?? null, data.findings?.passages ?? null, data.events) : null, [data]);
   const findings = useMemo(() => facts ? verifiedFindings(data.findings?.findings ?? null, facts, locale) : [], [facts, data.findings, locale]);
   const verified = useMemo(() => facts ? verifyScene(scene.scene, { ticker, data: facts, findings, candidates: null, materials: data.findings?.findings.materials, options: { locale } }) : null, [facts, findings, scene.revision, scene.scene, ticker, data.findings, locale]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!verified || !facts) return null;

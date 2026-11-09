@@ -53,9 +53,9 @@ export function noteFigures(data: FindingData, metric: AssessedMetric, flags: Fl
     const name = refLabel(data, ref);
     lines.push(`${name} (${spanLabel(now.current)}): ${formatResolved(now.current, ref)}${now.compare ? `; a year earlier ${formatResolved(now.compare, ref)}${now.delta != null ? ` (${formatDelta(now.delta, now.current.unit, ref)})` : ""}` : ""}`);
     candidates.push(...evidenceCandidates(now));
-    const history = ends.flatMap(end => { const v = at(end, metric.span); return v && !v.range ? [{ end, v }] : []; });
+    const history = ends.flatMap(end => { const v = at(end, metric.span); return v ? [{ end, v }] : []; });
     if (history.length > 1) lines.push(`${name} by quarter: ${history.map(h => `${h.end.slice(0, 7)} ${formatResolved(h.v, ref)}`).join(" · ")}`);
-    for (const h of history) candidates.push(...evidenceCandidates({ evidence: { ref, periodEnd: h.end, span: metric.span }, label: name, current: h.v, compare: null, compareLabel: null, delta: null, ratio: null, guidance: null }));
+    for (const h of history) candidates.push(...evidenceCandidates({ evidence: { ref, periodEnd: h.end, span: metric.span }, label: name, current: h.v, compare: null, compareLabel: null, delta: null, ratio: null }));
   }
   return { lines, candidates };
 }

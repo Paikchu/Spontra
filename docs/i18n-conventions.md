@@ -68,7 +68,6 @@
 | Intangibles / Receivables / Inventory | 无形资产 / 应收账款 / 存货 |
 | Guidance | 业绩指引 |
 | Raised / Lowered / Reaffirmed / Narrowed / Widened / Initiated | 上调 / 下调 / 重申 / 收窄 / 放宽 / 首次给出 |
-| Above / Within / Below (guidance) | 高于 / 处于 / 低于 指引 |
 | Constant currency | 固定汇率 |
 | GAAP / Non-GAAP | GAAP / Non-GAAP |
 | YoY / QoQ | 同比 / 环比 |

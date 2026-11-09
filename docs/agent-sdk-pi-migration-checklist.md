@@ -15,7 +15,7 @@
   - [ ] 公司业务研究
 - [ ] 3. 在 Cloudflare Agents 页确认能看到 trace。采样率 5%，单次运行只会显示部分轮次。
 - [ ] 4. 把 read-note（`pipeline/financial-tasks.ts`）和报表判定（`pipeline/presentation-task.ts`）移进 `TaskRunner`。
-- [ ] 5. 决定约 14 个模块的单次模型调用是否也走 Pi（业绩指引、要点、翻译、业务标签、业务解读、公司记忆、文件库卡片和关联、各 Agent 的事后审查等）。
+- [ ] 5. 决定约 13 个模块的单次模型调用是否也走 Pi（要点、翻译、业务标签、业务解读、公司记忆、文件库卡片和关联、各 Agent 的事后审查等）。
 - [ ] 6. 把压缩调用的 token 记入 `ai_usage`。目前 SDK 没有直接暴露，只记录了压缩次数。
 - [ ] 7. 工具结果超限改成明确报错，上限按上下文窗口比例计算，并用真实大小的数据测试每个工具。
 - [x] 8. 运行卡住：调用被平台取消后 `finally` 不执行，`busySince` 留下，唯一待触发的唤醒被提前消耗后再无唤醒。已修复（`durable-runs/wakes.ts`、`pi/within.ts`、`status()` 自愈），待线上验证。

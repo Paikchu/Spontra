@@ -14,11 +14,8 @@ import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
 import { checkupFingerprint } from "../checkup/workflow.ts";
 import { readCheckupRecord } from "../checkup/read.ts";
 import { findingsCacheKey, readFindingsResponse } from "../findings/read.ts";
-import { GuidanceStore } from "../guidance/store.ts";
-import { earningsEvents, readGuidanceResponse } from "../guidance/workflow.ts";
 import type { AiWorkflowBinding, AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import type { SecFilingFeed } from "../sec/sec.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { researchSearchConfigured } from "../web-search/research-search.ts";
 import { json } from "./http.ts";
@@ -29,10 +26,10 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
+  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.VALUATION_WORKFLOW) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for. */
-const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "filings" : kind === "analyst" || kind === "checkup" ? "findings" : kind === "explainer" ? "tree" : kind;
+const featureOf = (kind: AiRunKind): Feature => kind === "analyst" || kind === "checkup" ? "findings" : kind === "explainer" ? "tree" : kind;
 function enabled(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
   return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }
@@ -50,8 +47,7 @@ function automatic(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
     : kind === "checkup" ? env.ANALYST_ENABLED === "true" && !!env.CHECKUP_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
     : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && researchSearchConfigured(env)
-    : kind === "valuation" ? !!env.VALUATION_WORKFLOW && env.VALUATION_ENABLED !== "false"
-    : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
+    : !!env.VALUATION_WORKFLOW && env.VALUATION_ENABLED !== "false";
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
@@ -65,8 +61,7 @@ async function currentPublication(db: D1Database, kind: AiRunKind, ticker: strin
   }
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
-  if (kind === "valuation") return (await readValuationResponse(db, ticker)).report;
-  return (await readGuidanceResponse(db, ticker)).guidance;
+  return (await readValuationResponse(db, ticker)).report;
 }
 function currentVersion(kind: AiRunKind, publication: unknown): AiVersion | null {
   const id = publication ? publishedAt(publication) : null;
@@ -102,15 +97,8 @@ async function settle(env: AnalysisEnv, store: AiRunStore, runs: AiRun[], now: n
   }));
 }
 
-async function guidanceEvents(db: D1Database, env: AnalysisEnv, ticker: string, now: number): Promise<AiCompanyDetail["events"]> {
-  const feed = (await new D1SecRepository(db).getCache<SecFilingFeed>(`sec:filings:${ticker}`))?.payload ?? null;
-  const known = new Map((await new GuidanceStore(db, env.SEC_FILINGS).events(ticker)).map(e => [e.accession, e]));
-  return earningsEvents(feed, now).sort((a, b) => b.eventDate.localeCompare(a.eventDate))
-    .map(e => ({ ...e, status: known.get(e.accession)?.status ?? null, transcriptStatus: known.get(e.accession)?.transcript_status ?? null }));
-}
-
 /** The ledger kinds one admin kind spends: the lens agent's calls belong to the findings run. */
-const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], checkup: ["checkup"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"], valuation: ["valuation", "valuation-research"] };
+const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], checkup: ["checkup"], explainer: ["explainer"], tree: ["tree"], valuation: ["valuation", "valuation-research"] };
 /** The last 30 days of the `ai_usage` ledger (migration 0023) by day; undefined when the table cannot be read. */
 async function usage(db: D1Database, kind: AiRunKind, ticker: string, now: number): Promise<AiUsageDay[] | undefined> {
   const kinds = USAGE_KINDS[kind], since = new Date(now - 30 * 86_400_000).toISOString();
@@ -128,7 +116,7 @@ async function state(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   return { enabled: enabled(env, kind, ticker), blocked: blocked(env, kind, ticker), automatic: automatic(env, kind, ticker), current: currentVersion(kind, await currentPublication(db, kind, ticker).catch(() => null)), latestRun };
 }
 
-async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: string, body: { requestId?: unknown; accession?: unknown }, now: number): Promise<Response> {
+async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: string, body: { requestId?: unknown }, now: number): Promise<Response> {
   if (typeof body.requestId !== "string" || !UUID.test(body.requestId)) return json({ error: "操作参数无效。" }, 400);
   const reason = blocked(env, kind, ticker);
   if (reason) return json({ error: reason }, enabled(env, kind, ticker) ? 503 : 404);
@@ -136,23 +124,14 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   const runId = `${kind}-manual-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${body.requestId}`;
   if (await store.get(kind, ticker, runId)) return json({ runId, reused: true } satisfies AiRunStarted, 202);
 
-  let params: Record<string, unknown>, accession: string | null = null;
-  if (kind === "guidance") {
-    const events = await guidanceEvents(db, env, ticker, now);
-    const event = typeof body.accession === "string" && body.accession ? events.find(e => e.accession === body.accession) : events[0];
-    if (!event) return json({ error: typeof body.accession === "string" && body.accession ? "该业绩发布不在已缓存的 SEC 文件中。" : "尚未找到可读取的业绩发布 8-K。" }, 409);
-    accession = event.accession;
-    params = { ticker, accession: event.accession, eventDate: event.eventDate, manual: true };
-  } else {
-    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "checkup" ? await checkupFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : kind === "valuation" ? await valuationFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
-    if (!fingerprint) return json({ error: kind === "analyst" ? "该公司尚无已发布的要点，分析师无从写起。" : "业务地图尚无完整财报，暂时无法生成。" }, 409);
-    params = { ticker, fingerprint };
-  }
+  const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "checkup" ? await checkupFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : kind === "valuation" ? await valuationFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
+  if (!fingerprint) return json({ error: kind === "analyst" ? "该公司尚无已发布的要点，分析师无从写起。" : "业务地图尚无完整财报，暂时无法生成。" }, 409);
+  const params: Record<string, unknown> = { ticker, fingerprint };
   const runs = await settle(env, store, await store.runs(kind, ticker), now);
-  if (runs.some(r => !TERMINAL.has(r.status) && (kind !== "guidance" || r.accession === accession))) return json({ error: "该公司已有进行中的任务，请等待完成后再触发。" }, 409);
+  if (runs.some(r => !TERMINAL.has(r.status))) return json({ error: "该公司已有进行中的任务，请等待完成后再触发。" }, 409);
 
   const at = new Date(now).toISOString();
-  await store.start({ kind, ticker, runId, trigger: "manual", accession }, at);
+  await store.start({ kind, ticker, runId, trigger: "manual" }, at);
   try {
     await binding(env, kind)!.create({ id: runId, params });
   } catch (error) {
@@ -184,7 +163,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|checkup|explainer|tree|guidance|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|checkup|explainer|tree|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;
@@ -210,7 +189,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
     return json({
       ticker: ticker!, name: (await securities(db))(ticker!)?.name ?? ticker!, kind,
       state: { enabled: enabled(env, kind, ticker!), blocked: blocked(env, kind, ticker!), automatic: automatic(env, kind, ticker!), current: head, latestRun },
-      runs, versions, events: kind === "guidance" ? await guidanceEvents(db, env, ticker!, now) : [],
+      runs, versions,
       ...(spent ? { usage: spent } : {}),
     } satisfies AiCompanyDetail);
   } catch (error) {

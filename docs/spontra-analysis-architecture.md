@@ -16,7 +16,7 @@ Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worke
 |---|---|---|---|---|---|
 | 1.1 | `map` 表格数据拆解 | 历期三表、分部、资本结构快照、事件轨 | EDGAR 文件的表格与 XBRL | 只在读笔记与利润表判定，按算术校验 | 只访问 EDGAR |
 | 1.2 | 文本拆解入库 | 文件库（section/passage）、索引卡、业务主线、业务标签 | 已归档原文 | 切分不用；卡片、主线、标签用（低推理） | 否 |
-| 2 | `filings` 文件分析 | 每份文件的报告与摘要、指引、记忆、每份文件的分析、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析；指引的 IR 幻灯片） |
+| 2 | `filings` 文件分析 | 每份文件的报告与摘要、记忆、每份文件的分析、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析） |
 | 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗、三表体检笔记 | 第 2 层产物 | 是 | 按需（公司分析、分析师） |
 | 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 1.2 层文件库 + 第 1.1 层分部 + 网页 | 是 | 是（脑图的主要来源之一） |
 | 5 | `valuation` 估值 | 五维评分 + 计算模型 + 报告 | 第 2、3、4 层产物 | 是 | 按需（研究阶段） |
@@ -61,7 +61,7 @@ flowchart LR
 
 ### 2.2 执行与存储
 
-- **任务与 Workflow。** 无模型的任务在 Worker 里直接跑；用模型的任务（sec-report、guidance、items、company-analysis、findings、analyst、checkup、explainer、tree、valuation、translate 等）各自是一个 Cloudflare Workflow，步骤可重放，模型调用按步骤缓存。
+- **任务与 Workflow。** 无模型的任务在 Worker 里直接跑；用模型的任务（sec-report、items、company-analysis、findings、analyst、checkup、explainer、tree、valuation、translate 等）各自是一个 Cloudflare Workflow，步骤可重放，模型调用按步骤缓存。
 - **存储。** D1 是真相：`sec_cache`（按 key 存 JSON 产物）、`sec_documents`/`sec_sections`/`sec_passages`（文件库）、`filing_read_notes`、`valuation_*`、`ai_usage`（每次模型调用的账）。R2 存归档原文与网页缓存。Vectorize 存业务标签向量。
 - **模型。** 全部经 `api.deepseek.com/anthropic`，deepseek-flash；按任务分推理档位。
 
@@ -138,18 +138,17 @@ flowchart LR
 
 ### 3.3 第 2 层 `filings`：文件分析
 
-**职责。** 解读。把每份文件变成上层可直接引用的报告、摘要、指引、记忆与分析，并把本期关键数字确定性地提取出来。读的是第 1.1 层的数字、第 1.2 层的段落，以及（sec-report 与 guidance）整份归档原文。
+**职责。** 解读。把每份文件变成上层可直接引用的报告、摘要、记忆与分析，并把本期关键数字确定性地提取出来。读的是第 1.1 层的数字、第 1.2 层的段落，以及（sec-report）整份归档原文。
 
 **任务链。**
 
 ```mermaid
 flowchart TB
   arch["filing.archived"] --> rep["sec-report<br/>整份文件 → 报告正文、摘要、8-K 摘要"]
-  arch -->|8-K| guid["guidance<br/>管理层指引"]
   rep -->|report.published 定期报告| mem["memory<br/>记忆条目"]
   rep --> items["items<br/>每份文件一篇分析"]
   ev["events.published"] --> items
-  m1["map.derived / guidance.published / fundamentals.updated"] --> ext["extract<br/>每期提取（无模型）"]
+  m1["map.derived / fundamentals.updated"] --> ext["extract<br/>每期提取（无模型）"]
   ext -->|extract.published| up3["第 3 层"]
   items -->|items.published| up3
 ```
@@ -159,7 +158,6 @@ flowchart TB
 | 产物 | 存放 | 说明 |
 |---|---|---|
 | 报告正文与摘要、8-K 摘要 | `sec_published_reports`、`sec_filing_summaries` | 见下；`verificationStatus` verified / partial / failed |
-| 指引 | guidance 产物 | 来自财报 8-K、IR 幻灯片、已存通话记录 |
 | 记忆 | `d1-memory` | 每份定期报告的记忆条目，公司分析的输入 |
 | **每份文件的分析** | `item-analysis:v1:<ticker>:<id>`，索引 `items:v1:<ticker>` | 由共享 agent loop 写、`compose` 核验；`items/library.ts` 的 `listFilingAnalyses`/`readFilingAnalysis` 是上层读它的唯一接口 |
 | **每期提取** | `period-extract:v1:<ticker>`（`period-extract.v1`） | 见下 |
@@ -175,7 +173,7 @@ flowchart TB
 
 这与第 1.1 层读笔记的算术校验是同一个思路：模型负责"在哪、怎么读、说明什么"，数字由代码从来源取并勾稽。
 
-**每期提取（`extract/period-extract.ts`）。** 无模型，从第 1.1 层的完整发布、派生快照、SEC 基本面和第 2 层的指引确定性地切出：八个季度的 `FindingData`（三表、资本、基本面、指引）与账本 `Ledger`（上层可陈述的每一个数字，带 yoy/qoq 与来源）、三表体检的标记。指纹按内容（覆盖的期、最新积压、指引内容、基本面哈希）而非重建时间，所以只有内容变了才发 `extract.published`。它的存在就是为了让第 3 层不再回头读第 1.1 层。
+**每期提取（`extract/period-extract.ts`）。** 无模型，从第 1.1 层的完整发布、派生快照、和 SEC 基本面确定性地切出：八个季度的 `FindingData`（三表、资本、基本面）与账本 `Ledger`（上层可陈述的每一个数字，带 yoy/qoq 与来源）、三表体检的标记。指纹按内容（覆盖的期、最新积压、基本面哈希）而非重建时间，所以只有内容变了才发 `extract.published`。它的存在就是为了让第 3 层不再回头读第 1.1 层。
 
 **items 的工具策略。** `ITEM_POLICY = company_overview / read_series / find_sections / read_section / search / read_web / compose / finish`：这里允许读第 1.2 层的段落，是整个系统里模型读原文的最后一处（连同 sec-report 与 guidance）。网页预算每次运行 2 次搜索、2 次读页，只给文件点名却没解释的东西。
 
@@ -184,10 +182,9 @@ flowchart TB
 | 步骤 | 读的是 | 从哪读 |
 |---|---|---|
 | `sec-report` | 整份归档文件（含附件）、本期 XBRL 事实、历史序列 | R2（sec-archive 的 `archivedFiling`）+ Company Facts |
-| `guidance` | 财报 8-K 正文、IR 幻灯片、已存通话记录 | R2 + 指引存储 |
 | `memory` | sec-report 自己写出的报告产物 | R2（`sec_memory_jobs.source_r2_key`） |
 | `items` | 第 1.2 层的文件库段落、第 1.1 层的序列 | D1；只有尚未入库的现行报告回退读 R2 的预处理文本 |
-| `extract` | 第 1.1 层发布与派生、Company Facts、指引 | D1 / KV，无模型 |
+| `extract` | 第 1.1 层发布与派生、Company Facts | D1 / KV，无模型 |
 
 第 1 层的意义在于数字与定位：第 2 层每一处模型读文字的地方，都拿第 1.1 层核过的数字去约束它（sec-report 的指标对证、每期提取的账本），引用则落到第 1.2 层的段落 id，而不是让模型自己从文字里抄数、凭记忆引文。
 
@@ -240,13 +237,13 @@ flowchart LR
 
 **职责。** 读前四层，给出五个维度的评分、一个可计算的模型与一份带脚注的报告。
 
-**输入（`valuation/input.ts`，无模型）。** 每期提取给财务事实；指引；通话记录；可读文件清单；后台维护的公司输入（`valuation_company_inputs`：管理层目标、可比集）。指纹额外含 `below`：`findings:v2`、`business-tree:v1`、`items:v1` 三者的指纹——下层任一重新发布，估值就是新输入。订阅 `findings.published`、`tree.published`、`items.published`。
+**输入（`valuation/input.ts`，无模型）。** 每期提取给财务事实；通话记录；可读文件清单；后台维护的公司输入（`valuation_company_inputs`：管理层目标、可比集）。指纹额外含 `below`：`findings:v2`、`business-tree:v1`、`items:v1` 三者的指纹——下层任一重新发布，估值就是新输入。订阅 `findings.published`、`tree.published`、`items.published`。
 
 **三个阶段（`valuation/workflow.ts`，`valuation.v10`）。**
 
 | 阶段 | 工具（`RESEARCH_TOOLS` 等） | 产出 |
 |---|---|---|
-| research | `read_financials`、`read_filing_analyses`/`read_filing_analysis`、`read_findings`、`read_business_tree`、`list_filings`/`find_filing_sections`/`read_filing_section`、`read_guidance`、`read_transcript`、`search_evidence`/`read_web_evidence`（3 搜 4 读）、`submit_dimension`、`finish_research` | businessQuality、growthExecution、financialResilience、mispricingCatalysts 四维评分，每条引用登记过的证据 |
+| research | `read_financials`、`read_filing_analyses`/`read_filing_analysis`、`read_findings`、`read_business_tree`、`list_filings`/`find_filing_sections`/`read_filing_section`、`read_transcript`、`search_evidence`/`read_web_evidence`（3 搜 4 读）、`submit_dimension`、`finish_research` | businessQuality、growthExecution、financialResilience、mispricingCatalysts 四维评分，每条引用登记过的证据 |
 | assumptions | `configure_valuation`、各 `set_*_case`、`calculate_prepared_valuation`、`declare_model_insufficient`、`submit_dimension`（valuationSafety） | 一个模型、三个情景共享一个有来源的折现率、方法权重与情景概率；计算器是代码，失败的门不记录 |
 | compose | `compose_valuation`、`finish_valuation` | 报告与脚注 |
 
@@ -280,7 +277,7 @@ flowchart LR
 
 - 升级方案与实施记录：[spontra-architecture-upgrade](spontra-architecture-upgrade.md)
 - 第 1.1 层：[revenue-flow](revenue-flow.md)、[sec-archive](sec-archive.md)
-- 第 2 层：[sec-reader-report](sec-reader-report.md)、[sec-report-continuity](sec-report-continuity.md)、[sec-business-report](sec-business-report.md)、[guidance](guidance.md)、[transcripts](transcripts.md)
+- 第 2 层：[sec-reader-report](sec-reader-report.md)、[sec-report-continuity](sec-report-continuity.md)、[sec-business-report](sec-business-report.md)、[transcripts](transcripts.md)
 - 第 4 层：[web-search](web-search.md)
 - 第 5 层：[valuation-price-guide](valuation-price-guide.md)
 - 可靠性：[sec-generation-reliability](sec-generation-reliability.md)

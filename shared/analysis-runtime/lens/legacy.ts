@@ -61,6 +61,6 @@ export function lensDocumentOf(finding: AnalysisFinding, data: FindingData | nul
 /** The last resort when a stored document verifies nothing: bars of the evidence's own references. */
 export function documentFromEvidence(finding: AnalysisFinding): LensDocument {
   const span = finding.evidence[0]?.span ?? "quarter";
-  const refs = dedupe(finding.evidence.filter(e => e.span === span && !("guidanceId" in e.ref)).map(e => e.ref)).slice(0, 4);
+  const refs = dedupe(finding.evidence.filter(e => e.span === span).map(e => e.ref)).slice(0, 4);
   return layout(finding, refs.length ? legacyCharts({ type: "compare_bars", refs, span }, null, finding.evidence[0]!.periodEnd) : []);
 }

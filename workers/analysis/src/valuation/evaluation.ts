@@ -35,7 +35,7 @@ function historicalResearchInput(history: HistoryInput, inputSha256: string, pro
   const diagnostics: DiagnosticMetric[] = [{ key: "capexToDa", label: "Capex / depreciation and amortization", value: capex != null && da != null && da > 0 ? Math.abs(capex) / da : null, unit: "x", periodEnd: history.financialPeriodEnd, note: null }];
   const input: ValuationInput = {
     ticker: history.ticker, cik: null, companyName: history.ticker, currency: history.currency, financialPeriodEnd: history.financialPeriodEnd, incomeModel: "operating",
-    facts: history.facts, distributions: [], diagnostics, documents: [], guidance: null, transcripts: [], missing: history.missing, fingerprint: inputSha256,
+    facts: history.facts, distributions: [], diagnostics, documents: [], transcripts: [], missing: history.missing, fingerprint: inputSha256,
     rpo: null, lifecycle: lifecycleOf({ facts: history.facts, diagnostics }),
     peers: history.peers.map(peer => ({ ticker: peer.ticker, periodEnd: peer.periodEnd, ebitda: peer.ebitda, coreEarnings: peer.coreEarnings, netDebt: peer.netDebt, shares: peer.shares, weight: 1 })), peerBasis: "curated", peerNotes: history.limitations,
     management: history.management, managementNotes: history.management ? [] : ["No eligible management target set in this frozen snapshot."], trailingQuarters: [],

@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | `spontra-business-map` | 公开业务地图页面与只读 API（`/api/business/v1/*`） | [`apps/business-site/wrangler.jsonc`](apps/business-site/wrangler.jsonc) |
 | `spontra-admin` | 财报与业务地图运维后台 | [`apps/admin/wrangler.jsonc`](apps/admin/wrangler.jsonc) |
-| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、指引、估值、舞台等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
+| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、估值、舞台等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
 
 数据边界：
 
@@ -90,4 +90,3 @@ Spontra Analysis 部署先应用并核对分析 D1 迁移，再发布 Worker。�
 - [业务地图](apps/business-site/README.md)
 - [BusinessView 后台](docs/businessview-admin.md)
 - [SEC 归档](docs/sec-archive.md)
-- [业绩指引](docs/guidance.md)

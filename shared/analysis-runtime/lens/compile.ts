@@ -45,13 +45,13 @@ export function chartPeriods(periodEnd: string, span: FindingSpan, count: number
 const STACKED = new Set(["stacked_bar", "stacked_area"]);
 const FROM_ZERO = new Set(["bar", "area", "stacked_bar", "stacked_area", "waterfall"]);
 
-type Resolved = { value: number | null; text: string | null; range: { low: number; high: number } | null; unit: ValueUnit | null; currency: string | null };
+type Resolved = { value: number | null; text: string | null; unit: ValueUnit | null; currency: string | null };
 
 function resolveSeries(data: FindingData, s: LensSeries, end: string, span: FindingSpan, locale: Locale): Resolved {
-  const none: Resolved = { value: null, text: null, range: null, unit: null, currency: null };
+  const none: Resolved = { value: null, text: null, unit: null, currency: null };
   if (!s.transform || s.transform === "value") {
     const v = resolveRef(data, s.ref, end, span);
-    return v ? { value: v.value, text: formatResolved(v, s.ref, locale), range: v.range && v.range.low !== v.range.high ? v.range : null, unit: v.unit, currency: v.currency } : none;
+    return v ? { value: v.value, text: formatResolved(v, s.ref, locale), unit: v.unit, currency: v.currency } : none;
   }
   // A change is the evidence comparison the verifier makes: percent for amounts, points for rates, turns for multiples.
   const r = resolveEvidence(data, { ref: s.ref, periodEnd: end, span, compare: s.transform });
@@ -59,7 +59,7 @@ function resolveSeries(data: FindingData, s: LensSeries, end: string, span: Find
   // An amount changes in percent, a rate in points (a margin written as a percentage scales by a hundred to match its text), a multiple in turns.
   const percentForm = r.current.unit === "ratio" && ratioForm(s.ref) === "percent";
   const unit: ValueUnit = r.current.unit === "USD" || r.current.unit === "per_share" || r.current.unit === "shares" ? "percent" : r.current.unit === "ratio" && !percentForm ? "ratio" : "points";
-  return { value: percentForm ? r.delta * 100 : r.delta, text: formatDelta(r.delta, r.current.unit, s.ref, locale), range: null, unit, currency: null };
+  return { value: percentForm ? r.delta * 100 : r.delta, text: formatDelta(r.delta, r.current.unit, s.ref, locale), unit, currency: null };
 }
 
 /** Three round ticks spanning the domain, zero among them when the domain crosses it. */
@@ -89,8 +89,7 @@ function axisFor(series: CompiledSeries[], marks: LensMark[], refs: Map<string, 
       }
     } else for (const s of mine) for (const [i, v] of s.values.entries()) {
       if (v == null) continue;
-      const r = s.ranges?.[i];
-      min = Math.min(min, r ? r.low : v); max = Math.max(max, r ? r.high : v);
+      min = Math.min(min, v); max = Math.max(max, v);
     }
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { axis: null, error: null };
@@ -146,7 +145,7 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     return {
       id: s.id, label: named + suffix, unit, currency: rows.find(r => r.currency)?.currency ?? null,
       color: mark.color ? colorVar(mark.color) : options.colorOf?.(s.ref, i) ?? defaultColor(s.ref, i), axis: mark.axis ?? "left",
-      values: rows.map(r => r.value), text: rows.map(r => r.text), ...(rows.some(r => r.range) ? { ranges: rows.map(r => r.range) } : {}),
+      values: rows.map(r => r.value), text: rows.map(r => r.text),
     };
   });
   if (errors.length) return { chart: null, errors, notes };

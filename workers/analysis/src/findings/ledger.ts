@@ -24,7 +24,6 @@ export type Ledger = {
   rows: LedgerRow[];
   /** Disclosed businesses of the report, as `nodeId` references and anchors. */
   nodes: Array<{ nodeId: string; name: string; parentId: string | null }>;
-  guidance: Array<{ guidanceId: string; text: string; periodEnd: string | null; horizon: string }>;
   sources: ExplainerSource[];
   /** The checkup's flags at the report, alerts first. */
   flags: LedgerFlag[];
@@ -91,7 +90,6 @@ function money(value: number, currency: string | null): string {
 }
 const signed = (text: string, value: number) => `${value > 0 ? "+" : ""}${text}`;
 function formatValue(r: ResolvedEvidence["current"], form: RatioForm = "multiple"): string {
-  if (r.range && r.range.low !== r.range.high) return r.unit === "USD" ? `${money(r.range.low, r.currency)} to ${money(r.range.high, r.currency)}` : `${r.range.low}% to ${r.range.high}%`;
   if (r.unit === "USD") return money(r.value, r.currency);
   if (r.unit === "percent") return `${Number(r.value.toFixed(1))}%`;
   if (r.unit === "per_share") return `$${r.value.toFixed(2)}`;
@@ -154,14 +152,12 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   if (rows.some(r => "nodeId" in r.ref && r.ref.nodeId === nodes[0]?.nodeId) && rows.some(r => "capital" in r.ref && r.ref.capital === "capex")) {
     for (const node of nodes.filter(n => !n.parentId).slice(0, 4)) push({ ratio: { numerator: { nodeId: node.nodeId }, denominator: { capital: "capex" } } }, periodEnd, "fiscal_year");
   }
-  const guidance = (data.guidance?.items ?? []).filter(i => !i.periodEnd || i.periodEnd >= shiftPeriod(periodEnd, -12)).slice(0, 40)
-    .map(i => ({ guidanceId: i.id, text: i.text, periodEnd: i.periodEnd, horizon: i.horizon }));
   const assessment = assessStatements(data, periodEnd);
   const flags: LedgerFlag[] = assessment.flags.map(f => {
     const def = METRIC_DEFS.get(f.metricId)!;
     return { rule: f.ruleId, level: f.level, metric: def.label[0], value: formatMetric(f.value, def.form), threshold: f.threshold, since: f.since, ref: def.ref, span: def.span };
   });
-  return { periodEnd, rows: rows.slice(0, 760), nodes, guidance, sources, flags };
+  return { periodEnd, rows: rows.slice(0, 760), nodes, sources, flags };
 }
 
 /**

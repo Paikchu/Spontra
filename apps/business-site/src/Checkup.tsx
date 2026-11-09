@@ -264,7 +264,7 @@ function partsOf(data: FindingData, metric: AssessedMetric): { series: Series[];
   const def = METRIC_DEFS.get(metric.id);
   const ends = metric.series.map(p => p.periodEnd);
   if (!def || !ends.length) return null;
-  const read = (ref: FindingRef, span: FindingSpan) => ends.flatMap(end => { const r = resolveRef(data, ref, end, span); return r && !r.range ? [{ periodEnd: end, value: r.value }] : []; });
+  const read = (ref: FindingRef, span: FindingSpan) => ends.flatMap(end => { const r = resolveRef(data, ref, end, span); return r ? [{ periodEnd: end, value: r.value }] : []; });
   const growth = (ref: FindingRef) => ends.flatMap(end => { const r = resolveEvidence(data, { ref, periodEnd: end, span: def.span, compare: "yoy" }); return r?.delta != null ? [{ periodEnd: end, value: r.current.unit === "ratio" ? r.delta * 100 : r.delta }] : []; });
   if (def.measure === "spread" && def.against) {
     const series = [def.ref, def.against].map((ref, i) => ({ id: String(i), label: `${refLabel(data, ref, getLocale())} · ${yoyLabel(getLocale())}`, color: BASE_COLORS[i]!, points: growth(ref) }));

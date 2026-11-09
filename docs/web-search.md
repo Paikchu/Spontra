@@ -18,7 +18,7 @@ Spontra Analysis 的网页搜索不再运行独立的中间模型，也不再有
 
 ## 程序检索与网页读取
 
-业务解读的预先资料收集、业绩指引的演示文稿发现等固定程序检索，通过 `DeepSeekWebProvider` 直接访问 `POST /v1/tools/search`。这是不带 model 或 messages 的原始 API，不启动搜索代理。查询遵守该接口的 128 字符限制，返回结果仍按域名和日期过滤。
+业务解读的预先资料收集等固定程序检索，通过 `DeepSeekWebProvider` 直接访问 `POST /v1/tools/search`。这是不带 model 或 messages 的原始 API，不启动搜索代理。查询遵守该接口的 128 字符限制，返回结果仍按域名和日期过滤。
 
 网页正文优先由 Worker 直接下载并转换；不能直接读取时，调用 `POST /v1/tools/fetch`，不调用模型的 `web_fetch`。SEC 地址和跳转到 SEC 的请求继续拒绝。
 

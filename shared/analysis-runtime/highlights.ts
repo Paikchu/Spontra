@@ -22,9 +22,9 @@ const DERIVED_VIEW: Record<DerivedMetric, FindingView> = {
   netDebt: "balance", investedCapital: "balance", averageEquity: "balance", averageAssets: "balance", averageInvestedCapital: "balance", incrementalReturn: "balance", debtDueCoverage: "balance",
 };
 
-/** The statement a figure belongs to; a ratio belongs to its numerator's. Guidance belongs to none. */
+/** The statement a figure belongs to; a ratio belongs to its numerator's. */
 export function refView(ref: FindingRef): FindingView | null {
-  if ("ratio" in ref) return "guidanceId" in ref.ratio.denominator ? null : refView(ref.ratio.numerator);
+  if ("ratio" in ref) return refView(ref.ratio.numerator);
   if ("metric" in ref || "nodeId" in ref) return "profit";
   if ("capital" in ref) return CASH_FLOWS.includes(ref.capital) ? "cash" : "balance";
   if ("fundamental" in ref) return FUNDAMENTAL_VIEW[(FUNDAMENTAL_METRIC_CATALOG as Record<string, { category: string }>)[ref.fundamental]?.category ?? ""] ?? null;

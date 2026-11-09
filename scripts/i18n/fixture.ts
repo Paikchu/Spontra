@@ -12,13 +12,11 @@ import type { CompleteFlowPublication } from "../../shared/analysis-contract/com
 import type { CompanyEvent, EventsPublication } from "../../shared/analysis-contract/events.ts";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "../../shared/analysis-contract/filings.ts";
 import type { AnalysisFinding, FindingsPublication } from "../../shared/analysis-contract/findings.ts";
-import type { GuidanceItem, GuidancePublication } from "../../shared/analysis-contract/guidance.ts";
 import type { RevenueHistory } from "../../shared/analysis-contract/revenue-history.ts";
 
 export const TICKER = "ACME";
 const ENDS = ["2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"];
 export const PERIOD = ENDS.at(-1)!;
-const NEXT = "2026-09-30";
 const SRC = "https://www.sec.gov/Archives/edgar/data/1/0001.htm";
 
 const amount = (v: number, basis: FlowAmount["basis"] = "reported"): FlowAmount => ({ value: String(Math.round(v * 10) / 10), basis, definition: "", comparabilityKey: null, sourceIds: ["s1"] });
@@ -99,27 +97,6 @@ function capitalQuarter(end: string, i: number): CapitalQuarter {
 }
 export const capital: PublicCapitalStructure = { schemaVersion: "capital-structure.v1", ticker: TICKER, quarters: ENDS.map(capitalQuarter) };
 
-const guide = (over: Partial<GuidanceItem> & Pick<GuidanceItem, "id" | "metric" | "measure">): GuidanceItem => ({
-  segment: null, label: "Total revenue", basis: "gaap", horizon: "quarter", form: "range", fiscalYear: 2027, fiscalQuarter: 1, periodEnd: PERIOD,
-  unit: "USD", low: null, high: null, direction: null, derived: null, actual: null, text: "Revenue is expected to grow 12% to 14%.", quote: "We expect revenue to grow 12% to 14%.",
-  sourceIds: ["g1"], issuedAt: "2026-03-12", action: "raised", previous: { low: 7.0e9, high: 7.3e9, issuedAt: "2025-12-10" }, ...over,
-});
-export const guidance: GuidancePublication = {
-  schemaVersion: "guidance.v1", ticker: TICKER, updatedAt: "2026-07-01T00:00:00Z",
-  items: [
-    guide({ id: "g-rev-q", metric: "revenue", measure: "amount", low: 7.6e9, high: 7.8e9 }),
-    guide({ id: "g-rev-growth", metric: "revenue", measure: "growth", unit: "percent", low: 12, high: 14, derived: { low: 7.5e9, high: 7.7e9, basePeriodEnd: "2025-06-30", base: 6.7e9 }, previous: null, action: "reaffirmed" }),
-    guide({ id: "g-gm", metric: "gross_margin", measure: "margin", unit: "percent", low: 65, high: 66, label: "Gross margin", action: "initiated", previous: null }),
-    guide({ id: "g-next", metric: "revenue", measure: "amount", periodEnd: NEXT, fiscalQuarter: 2, low: 8.0e9, high: 8.3e9, issuedAt: "2026-07-30", action: "raised" }),
-    guide({ id: "g-eps-next", metric: "eps", measure: "per_share", unit: "USD_per_share", periodEnd: NEXT, fiscalQuarter: 2, low: 1.42, high: 1.46, label: "Diluted EPS", basis: "non_gaap", issuedAt: "2026-07-30", action: "narrowed" }),
-    guide({ id: "g-cloud-next", metric: "segment_revenue", measure: "growth", segment: "Cloud Services", unit: "percent", periodEnd: NEXT, fiscalQuarter: 2, low: 30, high: 34, label: "Cloud Services revenue", issuedAt: "2026-07-30", action: "updated" }),
-    guide({ id: "g-capex-fy", metric: "capex", measure: "amount", horizon: "annual", periodEnd: "2027-05-31", fiscalQuarter: null, low: 15e9, high: 15e9, form: "point", label: "Capital expenditures", issuedAt: "2026-07-30", action: "raised" }),
-    guide({ id: "g-op-qual", metric: "operating_margin", measure: "margin", unit: null, form: "qualitative", direction: "up", periodEnd: NEXT, fiscalQuarter: 2, label: "Operating margin", issuedAt: "2026-07-30", action: null, previous: null }),
-  ],
-  sources: [{ id: "g1", kind: "press_release", sourceKind: "sec", title: "Q4 FY2026 earnings release", url: SRC, publishedAt: "2026-07-30" }],
-  coverage: [],
-};
-
 const finding = (f: Partial<AnalysisFinding> & Pick<AnalysisFinding, "id" | "kind" | "title" | "anchors" | "evidence" | "lens">): AnalysisFinding => ({
   severity: 3, judgment: { text: "Generated judgment that stays in English this phase.", sourceIds: ["s1"] }, ...f,
 });
@@ -132,7 +109,7 @@ export const findings: FindingsPublication = {
       lens: { type: "compare_bars", refs: [{ capital: "operatingCashFlow" }, { capital: "capex" }, { capital: "freeCashFlow" }], span: "quarter" },
       watch: { ref: { capital: "capex" }, condition: "Capex below operating cash flow next quarter.", horizon: "next_quarter", compare: "yoy" } }),
     finding({ id: "cloud", kind: "strength", severity: 2, title: "Cloud carries growth",
-      evidence: [{ ref: { nodeId: "cloud" }, periodEnd: PERIOD, span: "quarter", compare: "yoy" }, { ref: { metric: "revenue" }, periodEnd: PERIOD, span: "quarter", compare: { guidanceId: "g-rev-q" } }],
+      evidence: [{ ref: { nodeId: "cloud" }, periodEnd: PERIOD, span: "quarter", compare: "yoy" }, { ref: { metric: "revenue" }, periodEnd: PERIOD, span: "quarter" }],
       anchors: { view: "profit", nodeIds: ["cloud"], metrics: ["revenue"] },
       lens: { type: "document", document: { rows: [
         { cells: [[{ kind: "chart", chart: { id: "c1", aspect: "wide", span: "quarter", periods: 8, series: [{ id: "cloud", ref: { nodeId: "cloud" } }, { id: "rate", ref: { nodeId: "cloud" }, transform: "yoy" }], marks: [{ type: "bar", series: ["cloud"] }, { type: "line", series: ["rate"], axis: "right" }], annotations: [{ series: "cloud", period: "latest", text: "{value}" }] } }], [{ kind: "judgment" }, { kind: "figures" }]] },
@@ -185,8 +162,8 @@ export const explainer: BusinessExplainer = {
   sources: [{ id: "e1", title: "10-K", url: SRC, kind: "sec", publishedAt: null }],
 };
 
-export const company: CompleteFlowPublication & { explainer: BusinessExplainer; guidance: GuidancePublication; tree: BusinessTree } = {
-  schemaVersion: "complete-business-flow.v1", status: "ready", flow, reasons: [], outdated: false, lastAttemptAt: null, history, reports: null, explainer, guidance, tree,
+export const company: CompleteFlowPublication & { explainer: BusinessExplainer; tree: BusinessTree } = {
+  schemaVersion: "complete-business-flow.v1", status: "ready", flow, reasons: [], outdated: false, lastAttemptAt: null, history, reports: null, explainer, tree,
   // A fiscal year that ends in May, so the header's fiscal-year explanation renders in both languages.
   issuer: { name: "Acme Corp", fiscalYearEndMonth: 5 },
 };
@@ -299,7 +276,6 @@ export const ZH_TABLES = {
   },
   explainer: { "Generated summary of the business.": "生成的业务概述。", "Generated offering.": "生成的产品说明。", "Generated charging.": "生成的收费说明。", "Who buys": "客户是谁", "Enterprises": "企业", "Generated.": "生成内容。" },
   tree: { "Generated branch summary.": "生成的分支概述。", "Compute and storage": "计算与存储", "Generated line summary.": "生成的产品线概述。", "Pay per use": "按用量付费", "Generated revenue text.": "生成的收入说明。", "Annual commit": "年度承诺", "Generated.": "生成内容。", "Hourly": "按小时" },
-  guidance: { "Total revenue": "总营收", "Revenue is expected to grow 12% to 14%.": "营收预计增长 12% 至 14%。", "Gross margin": "毛利率", "Diluted EPS": "稀释每股收益", "Cloud Services revenue": "Cloud Services 营收", "Capital expenditures": "资本开支", "Operating margin": "营业利润率" },
   events: { "Generated event headline.": "生成的事件标题。", "Revenue": "营收", "Generated detail.": "生成的细节。", "Generated analyst view.": "生成的分析观点。" },
   valuation: {
     "Generated rationale on business quality [e0123456789].": "生成的生意质量判断 [e0123456789]。", "Generated next check on retention.": "生成的下一验证点：客户留存。",

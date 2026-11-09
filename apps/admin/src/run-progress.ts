@@ -30,11 +30,6 @@ export const PLANS: Record<FeatureRunProgress['kind'], Plan> = {
       [/^presentation/, () => '排版'],
     ],
   },
-  guidance: {
-    phases: ['收集材料', '提取指引', '发布'],
-    rules: [[/^guidance-(extract|event-extracted|budget-wait)/, 1], [/^guidance-(publish|event-complete)/, 2], [/^guidance-/, 0]],
-    step: [[/^guidance-budget-wait/, () => '等待模型额度'], [/^guidance-extract/, () => '从材料提取指引']],
-  },
   findings: {
     phases: ['读取资料', '撰写要点', '绘制图表', '要点数字', '发布'],
     rules: [[/^findings-(time|input)$/, 0], [/^findings-(write|repair)$/, 1], [/^findings-lens-/, 2], [/^findings-highlights$/, 3], [/^findings-publish$/, 4]],

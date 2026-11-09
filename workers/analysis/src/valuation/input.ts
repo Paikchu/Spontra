@@ -26,11 +26,10 @@ import type { HistoricalObservation, SecHistorySnapshot } from "../sec/analysis.
 import { D1SecRepository } from "../sec/d1.ts";
 import { readyTranscripts } from "../transcripts/library.ts";
 import type { LibraryDocumentSummary } from "../../../../shared/analysis-contract/filing-library.ts";
-import type { GuidancePublication } from "../../../../shared/analysis-contract/guidance.ts";
 
 /**
  * The material pack a valuation run starts from: typed facts resolved from the same stored projections the findings verify against, the company's own history
- * of each driver, the diagnostics every dimension must answer, and the catalogue of filings, guidance and calls the agent
+ * of each driver, the diagnostics every dimension must answer, and the catalogue of filings and calls the agent
  * may read. No model call, no SEC fetch. Everything here is deterministic, so the fingerprint says what a run would write from.
  */
 export const VALUATION_INPUT_VERSION = "valuation.input.v5";
@@ -54,7 +53,6 @@ export type ValuationInput = {
   distributions: FactorDistribution[];
   diagnostics: DiagnosticMetric[];
   documents: ValuationDocument[];
-  guidance: GuidancePublication | null;
   transcripts: ValuationTranscript[];
   /** Why a figure the models need is missing, by fact id. */
   missing: string[];
@@ -77,7 +75,7 @@ export type ValuationInput = {
 const num = (value: string | number | null | undefined): number | null => { if (value == null || value === "") return null; const n = typeof value === "number" ? value : Number(value); return Number.isFinite(n) ? n : null; };
 
 /**
- * The company's data as layer 2's per-period extract holds it (the statements, capital, fundamentals and guidance the
+ * The company's data as layer 2's per-period extract holds it (the statements, capital and fundamentals the
  * findings read too), with the share-count history its facts are cut from; null until layer 2 has cut the extract.
  */
 export async function readValuationData(env: AnalysisEnv, ticker: string): Promise<{ data: FindingData; snapshot: SecHistorySnapshot | null } | null> {
@@ -176,7 +174,7 @@ function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, peri
   const missing: string[] = [];
   for (const spec of FACT_SPECS) {
     const resolved = resolveRef(data, spec.ref, periodEnd, spec.span);
-    if (!resolved || resolved.range) { if (spec.required) missing.push(spec.id); continue; }
+    if (!resolved) { if (spec.required) missing.push(spec.id); continue; }
     // A percent resolves in percent points; facts carry ratios.
     const percent = resolved.unit === "percent";
     facts.push({ id: spec.id, label: spec.label, value: percent ? resolved.value / 100 : resolved.value, unit: resolved.unit === "USD" ? (resolved.currency ?? currency) : percent ? "ratio" : resolved.unit, currency: resolved.unit === "USD" ? resolved.currency ?? currency : null,
@@ -307,8 +305,8 @@ const CORE_TAX = 0.21;
 async function peerInterestExpense(db: D1Database, ticker: string, periodEnd: string): Promise<number | null> {
   const response = await getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ metrics: "nonoperating_interest_expense", periodCount: "12" })));
   const fundamentals = readFindingFundamentals(response, ticker);
-  const value = resolveRef({ quarters: [], history: null, capital: null, fundamentals, guidance: null }, { fundamental: "nonoperating_interest_expense" }, periodEnd, "fiscal_year");
-  return value?.currency === "USD" && !value.range ? value.value : null;
+  const value = resolveRef({ quarters: [], history: null, capital: null, fundamentals }, { fundamental: "nonoperating_interest_expense" }, periodEnd, "fiscal_year");
+  return value?.currency === "USD" ? value.value : null;
 }
 
 /**
@@ -370,7 +368,7 @@ export function buildTrailingQuarters(data: FindingData, disclosedLeases: Readon
     const ebitda = resolveRef(data, { derived: "ebitda" }, end, "fiscal_year");
     const currency = data.quarters.find(q => q.periodEnd === end)?.currency ?? "USD";
     const netDebt = operatingExpenseNetDebt(buildFacts(data, null, end, currency, disclosedLeases.get(end)).facts);
-    return ebitda && !ebitda.range && netDebt != null ? [{ periodEnd: end, ebitdaTtm: ebitda.value, netDebt }] : [];
+    return ebitda && netDebt != null ? [{ periodEnd: end, ebitdaTtm: ebitda.value, netDebt }] : [];
   });
 }
 
@@ -402,18 +400,17 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const documents = selectDocuments(library, researchAsOf);
   const transcripts: ValuationTranscript[] = calls.filter(c => c.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).slice(0, 4)
     .map(c => ({ id: c.id, periodEnd: c.periodEnd, title: c.title, filedAt: c.filedAt, sourceUrl: c.sourceUrl, characters: c.content.length, fiscalYear: c.fiscalYear, fiscalQuarter: c.fiscalQuarter }));
-  const guidanceHash = data.guidance ? await sha256(JSON.stringify([data.guidance.items, data.guidance.sources])) : null;
   const fingerprint = await sha256(JSON.stringify({
     version: VALUATION_INPUT_VERSION, ticker, periodEnd: newest.periodEnd, currency,
     facts: facts.map(f => [f.id, f.value, f.periodEnd]), quarters: data.quarters.map(q => q.periodEnd).sort(),
-    documents: documents.map(d => d.documentId).sort(), guidance: guidanceHash, transcripts: transcripts.map(t => [t.id, t.characters]).sort(),
+    documents: documents.map(d => d.documentId).sort(), transcripts: transcripts.map(t => [t.id, t.characters]).sort(),
     management: management ? [management.asOf, management.targets.map(t => [t.metric, t.segment ?? "", t.fiscalYear, t.value])] : null,
     // The layers below it (docs/spontra-architecture-upgrade.md): a new findings set, business breakdown or filing analysis is new input.
     below: await belowFingerprints(db, ticker),
   }));
   return {
     ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
-    facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint,
+    facts, distributions, diagnostics, documents, transcripts, missing, fingerprint,
     rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data, new Map([[newest.periodEnd, leases.facts]])),
   };
 }

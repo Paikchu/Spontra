@@ -17,7 +17,7 @@
 
 旧路径 `/admin/business-map`、`/admin/library`、`/admin/ai`（`kind=findings` 进入公司要点，其余进入公司业务板块）打开对应的新页面并改写地址；其他路径进入白名单管理。业务板块、要点页面的 URL 保留 `?ticker=`，从业务板块打开的原文小节以 `/admin/filings?ticker=&document=&section=` 定位。
 
-报告管理、生成任务、Transcript、业绩指引不属于 BusinessView，事件流水线（运行状态）由 Cloudflare 控制台替代，后台已移除这些页面，Admin 代理也不再转发 `reports`、`transcripts`、`guidance` 与 `pipeline` 接口；Spontra Analysis 自身的这些接口和数据未改动。
+报告管理、生成任务、Transcript 不属于 BusinessView，事件流水线（运行状态）由 Cloudflare 控制台替代，后台已移除这些页面，Admin 代理也不再转发 `reports`、`transcripts` 与 `pipeline` 接口；Spontra Analysis 自身的这些接口和数据未改动。
 
 运行状况在 Cloudflare 控制台查看：Cron 在 `spontra-analysis` 的 Settings → Trigger Events；队列积压与重试在 Queues 的三条 `spontra-pipeline-*` 队列；Workflow 实例在 Workflows；报错与重试在 `spontra-analysis` 的 Workers Logs（按 `pipeline-task`、`pipeline-route`、`pipeline-dead` 筛选）。死信仍写入 D1 `pipeline_dead`，后台不再提供重放、关闭和手动发送事件的入口。
 
@@ -89,7 +89,7 @@ Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认
 
 「公司要点」显示要点；「公司业务板块」的「业务脑图」「业务解读」显示另外两类。公司要点与业务解读的范围是 `SEC_AI_TICKERS`，业务脑图是 `BUSINESS_TREE_TICKERS`；不在范围内的公司显示「该公司不在 AI 分析范围内」。
 
-- **手动触发**：按公司、按类型提交一次运行，不要求修改 `FINDINGS_VERSION` 等版本号，也不要求财报、指引或综述变化。以当前数据指纹启动，发布后事件任务视其为最新，不会重复生成。
+- **手动触发**：按公司、按类型提交一次运行，不要求修改 `FINDINGS_VERSION` 等版本号，也不要求财报或综述变化。以当前数据指纹启动，发布后事件任务视其为最新，不会重复生成。
 - 手动触发不受 `FINDINGS_ENABLED` 等自动开关限制，但需要对应 Workflow 绑定和模型密钥；业务解读还需要 `TAVILY_API_KEY`。同一公司同一类型有进行中的运行时拒绝重复提交；请求标识保证网络重试不重复启动。
 - **进度**：每次运行（含定时任务启动的）记录触发方式、状态、当前步骤和逐步时间线，步骤在 Workflow 的持久化步骤内写入，重放不会回退。运行结束时记录结果摘要；要点会列出未通过核对的条目及原因。运行异常终止而未写入结果时，查看详情会向 Workflow 引擎核对并标记失败。
 - **结果与历史版本**：每次发布在 `sec_cache` 中另存一份版本（`ai-version:v1:<kind>:<ticker>:<时间>`），内容与上一版相同则不重复保存，每类每家公司保留最近 30 版；运行记录（`ai-run:v1:…`）保留最近 20 次。页面默认显示当前线上版本，可切换查看历史版本并展开原始 JSON。历史从本功能上线后开始积累，此前只保留当前版本。
@@ -101,7 +101,7 @@ Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认
 
 ## 功能开关（2026-10-17）
 
-白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每家公司每个功能一个开关：开 = 生成并展示，关 = 不再生成且对读者隐藏（已生成的内容保留在库里）。表头每列旁是该功能的全局生成开关，只暂停生成，不影响展示。生成进度不放在行里：展开一行，顶部四块显示各功能的状态（正在生成、排队中、上次生成失败、已生成及时间、等待生成、已关闭、已全局暂停），状态取自 SEC 报告任务、AI 运行记录与 `pipeline_due` 中的待办。
+白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每家公司每个功能一个开关：开 = 生成并展示，关 = 不再生成且对读者隐藏（已生成的内容保留在库里）。表头每列旁是该功能的全局生成开关，只暂停生成，不影响展示。生成进度不放在行里：展开一行，顶部四块显示各功能的状态（正在生成、排队中、上次生成失败、已生成及时间、等待生成、已关闭、已全局暂停），状态取自 SEC 报告任务、AI 运行记录与 `pipeline_due` 中的待办。
 
 选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），是各功能唯一的公司名单：没有记录的公司就是关闭；部署变量只保留全局开关（`SEC_AI_ENABLED`、`BUSINESS_TREE_ENABLED`、`VALUATION_ENABLED`），不列公司（2026-11-02 起，migration 0043 把原 `SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS` 默认名单写成显式记录；线上若残留这些变量也会被忽略）。白名单同理，`financial_company_settings` 取代 `SEC_DATA_TICKERS`。Spontra Analysis 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS`、`SEC_DATA_TICKERS` 只在进程内承载解析结果。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
 

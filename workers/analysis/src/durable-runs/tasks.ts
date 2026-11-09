@@ -11,7 +11,6 @@ import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "../business-tree/workflow.ts";
 import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valuation/workflow.ts";
 import { executeValuationEvaluation, type ValuationEvaluationParams } from "../valuation/evaluation.ts";
-import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "../guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
 import { executeCheckupWorkflow, type CheckupWorkflowParams } from "../checkup/workflow.ts";
@@ -114,14 +113,6 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     const env = await companyPolicyEnvironment(raw);
     const run = { env, kind: "findings" as const, ticker: params.ticker, runId: id };
     return trackRun(run, () => executeFindingsWorkflow(params, trackSteps(durableSteps(step, env, id), run), env));
-  },
-  async GUIDANCE_WORKFLOW(params: GuidanceWorkflowParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    const run = { env, kind: "guidance" as const, ticker: params.ticker, runId: id };
-    const durable = trackSteps(durableSteps(step, env, id), run);
-    // Waiting for the daily model budget makes the run wait; a waiting run holds no CPU.
-    const sleep = trackSleep(sleeper(step), run);
-    return trackRun(run, () => executeGuidanceWorkflow(params, { do: durable.do, sleep }, env, { runId: id }));
   },
   async SEC_MEMORY_WORKFLOW(params: SecMemoryWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);

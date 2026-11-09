@@ -149,7 +149,7 @@ export function lensCatalogue(ledger: Ledger, data: FindingData, periodEnd: stri
 export function lensEvidence(resolved: ResolvedEvidence[]): LensEvidenceRow[] {
   return resolved.map(r => ({
     ref: r.evidence.ref, label: r.label, period: spanLabel(r.current), value: formatResolved(r.current, r.evidence.ref),
-    compare: r.compare ? `${r.compareLabel} ${formatResolved(r.compare, r.evidence.ref)}` : r.guidance ? `${r.guidance.verdict} guidance` : null,
+    compare: r.compare ? `${r.compareLabel} ${formatResolved(r.compare, r.evidence.ref)}` : null,
     change: r.delta != null ? formatDelta(r.delta, r.current.unit, r.evidence.ref) : null,
   }));
 }

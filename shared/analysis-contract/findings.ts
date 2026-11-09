@@ -8,8 +8,8 @@ import type { PeersPublication } from "./peers.ts";
 /**
  * What an analyst (a model, or a person until the model runs) says deserves attention in a
  * company's statements, bound to the figures that show it. A finding never carries an amount:
- * every number the page shows is resolved from the published flow, capital, fundamentals and
- * guidance at read time, and a finding whose text states a number those data do not support is
+ * every number the page shows is resolved from the published flow, capital and fundamentals
+ * at read time, and a finding whose text states a number those data do not support is
  * withheld rather than displayed.
  */
 
@@ -33,7 +33,6 @@ export type FindingBaseRef =
   | { capital: CapitalMetric }
   | { fundamental: FundamentalMetricKey }
   | { nodeId: string }
-  | { guidanceId: string }
   /** One rung of the RPO conversion schedule the filing tags, by position from the nearest (0); the amount expected in that stretch. */
   | { rpoBucket: number }
   /** The same figure at a tracked peer, from the peers projection, aligned to the period asked for. */
@@ -63,7 +62,7 @@ export const DERIVED_METRICS = [
 export type DerivedMetric = (typeof DERIVED_METRICS)[number];
 export type EventField = "sharesSold" | "proceeds" | "averagePrice" | "sharesBought" | "cost" | "exercised" | "heldAfter";
 export const EVENT_FIELDS = ["sharesSold", "proceeds", "averagePrice", "sharesBought", "cost", "exercised", "heldAfter"] as const;
-/** What a peer reference may point at: a capital figure or a fundamental series; never another peer, a node or guidance. */
+/** What a peer reference may point at: a capital figure or a fundamental series; never another peer or a node. */
 export type PeerBaseRef = { capital: CapitalMetric } | { fundamental: FundamentalMetricKey } | { metric: FlowMetric };
 /** A base figure, or one figure over another at the same period and span (cloud revenue per dollar of capex). */
 export type FindingRef = FindingBaseRef | { ratio: { numerator: FindingBaseRef; denominator: FindingBaseRef } };
@@ -71,7 +70,7 @@ export type FindingRef = FindingBaseRef | { ratio: { numerator: FindingBaseRef; 
 /** A quarter, or the four quarters ending at the evidence's period (a fiscal year when the period is a fiscal year end). */
 export type FindingSpan = "quarter" | "fiscal_year";
 /** Compared with the same span a year earlier, the previous quarter, or a guided range. */
-export type FindingCompare = "yoy" | "qoq" | { guidanceId: string };
+export type FindingCompare = "yoy" | "qoq";
 
 export type FindingEvidence = {
   ref: FindingRef;
@@ -106,7 +105,7 @@ export type FindingLens =
  * comparison (a year earlier, the prior period, a guided range, or another figure), `tolerance` being the percent
  * band for "within" against a single figure. Pass or fail is computed by the shared runtime, never written.
  */
-export type FindingWatchTest = { expect: "above" | "below" | "within"; against: "yoy" | "qoq" | { guidanceId: string } | { ref: FindingRef }; tolerance?: number };
+export type FindingWatchTest = { expect: "above" | "below" | "within"; against: "yoy" | "qoq" | { ref: FindingRef }; tolerance?: number };
 export type FindingWatch = { ref: FindingRef; /** One sentence, at most 400 characters. */ condition: string; horizon: "next_quarter" | "fiscal_year"; compare?: FindingCompare; test?: FindingWatchTest };
 /** A watch from an earlier publication, kept so the page can score it against the data as it stands now. */
 export type FindingRecordEntry = { findingId: string; title: string; kind: FindingKind; /** The report the watch was written from. */ periodEnd: string; publishedAt: string; watch: FindingWatch };
@@ -187,7 +186,7 @@ export type FindingsPublication = {
   generatedAt: string;
   /** Model name, or "authored" for a human-written set. */
   model: string;
-  /** Hash of the report, guidance and narrative the set was written from; the sweep regenerates when it changes. */
+  /** Hash of the report and narrative the set was written from; the sweep regenerates when it changes. */
   fingerprint?: string;
   findings: AnalysisFinding[];
   sources: ExplainerSource[];

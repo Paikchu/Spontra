@@ -50,7 +50,7 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...TRANSLATION_TASKS,
   ...PRESENTATION_TASKS,
 
-  // Layer 2's per-period extract: cut from the publication, fundamentals and guidance; published only when it changed.
+  // Layer 2's per-period extract: cut from the publication and fundamentals; published only when it changed.
   "extract": {
     version: EXTRACT_VERSION,
     async run(env, ticker, { now }) {

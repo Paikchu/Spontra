@@ -8,7 +8,6 @@ import { readCompletePublicationForTicker } from "../financial-data/publication.
 import { buildLedger, type Ledger } from "../findings/ledger.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
-import { readGuidanceResponse } from "../guidance/workflow.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { sha256 } from "../sha256.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -19,9 +18,9 @@ export const periodExtractKey = (ticker: string) => `period-extract:v1:${ticker}
 
 /**
  * Layer 2's per-period extract (docs/spontra-architecture-upgrade.md, U2): the company's eight reported quarters as the
- * layers above read them — the statements, capital, fundamentals and guidance, and the ledger every figure a finding
- * may state comes from, with the three-statement checkup's flags. Cut deterministically from layer 1's publication and
- * layer 2's guidance, so no key figure can be left out; the layers above read this and never layer 1.
+ * layers above read them — the statements, capital and fundamentals, and the ledger every figure a finding
+ * may state comes from, with the three-statement checkup's flags. Cut deterministically from layer 1's publication,
+ * so no key figure can be left out; the layers above read this and never layer 1.
  */
 export type PeriodExtract = { schemaVersion: "period-extract.v1"; ticker: string; periodEnd: string; generatedAt: string; data: FindingData; ledger: Ledger; fingerprint: string };
 
@@ -36,18 +35,13 @@ export async function buildPeriodExtract(env: AnalysisEnv, ticker: string, now =
   if (!snapshot) return null;
   const quarters = [...new Map([...(snapshot.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
   const capital = snapshot.capital;
-  const [fundamentals, guidance] = await Promise.all([
-    getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null),
-    readGuidanceResponse(db, ticker).then(r => r.guidance).catch(() => null),
-  ]);
-  const data: FindingData = { quarters, history: publication.history ?? null, capital, fundamentals, guidance };
+  const fundamentals = await getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null);
+  const data: FindingData = { quarters, history: publication.history ?? null, capital, fundamentals };
   const sources = new Map<string, ExplainerSource>();
   for (const q of quarters) for (const s of q.sources) if (isSecUrl(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
-  for (const s of guidance?.sources ?? []) if (!sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: s.sourceKind === "sec" ? "sec" : "web", publishedAt: s.publishedAt });
   const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
-  // By what it says: the periods covered, the newest backlog and the guidance's content, not when anything was rebuilt.
-  const guidanceContent = guidance ? await sha256(JSON.stringify([guidance.items, guidance.sources])) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: EXTRACT_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidanceContent,
+  // By what it says: the periods covered, and the newest backlog, not when anything was rebuilt.
+  const fingerprint = await sha256(JSON.stringify({ version: EXTRACT_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: newest.periodEnd,
     quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null,
     fundamentals: fundamentals ? await sha256(JSON.stringify(fundamentals)) : null }));
   return { schemaVersion: EXTRACT_VERSION, ticker, periodEnd: newest.periodEnd, generatedAt: now.toISOString(), data, ledger, fingerprint };

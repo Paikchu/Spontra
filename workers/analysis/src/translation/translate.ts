@@ -10,7 +10,6 @@ import { readEventsResponse } from "../events/read.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { itemsIndexKey, readItemAnalysisResponse, type ItemsIndex } from "../items/read.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
@@ -43,9 +42,9 @@ const quiet = async <T>(work: () => Promise<T>): Promise<T | null> => { try { re
 /** Every English string the read API serves for the company, per resource, read the way the routes read them. */
 export async function readSources(db: D1Database, ticker: string): Promise<TranslationSource[]> {
   const repository = new D1SecRepository(db);
-  const [findings, explainer, tree, guidance, events, page] = await Promise.all([
+  const [findings, explainer, tree, events, page] = await Promise.all([
     quiet(() => readFindingsResponse(db, ticker)), quiet(() => readBusinessExplainerResponse(db, ticker)), quiet(() => readBusinessTreeResponse(db, ticker)),
-    quiet(() => readGuidanceResponse(db, ticker)), quiet(() => readEventsResponse(db, ticker)), quiet(() => getPublicFilingPage(repository, ticker, null, "50")),
+    quiet(() => readEventsResponse(db, ticker)), quiet(() => getPublicFilingPage(repository, ticker, null, "50")),
   ]);
   // The statement as the business-flow route serves it: the published pair and the older quarters assembled beside it.
   const publication = await quiet(() => readCompletePublicationForTicker(db, ticker));
@@ -55,7 +54,6 @@ export async function readSources(db: D1Database, ticker: string): Promise<Trans
     { resource: "findings", scope: "", strings: collectProse("findings", findings?.findings ?? null) },
     { resource: "explainer", scope: "", strings: collectProse("explainer", explainer?.explainer ?? null) },
     { resource: "tree", scope: "", strings: collectProse("tree", tree?.tree ?? null) },
-    { resource: "guidance", scope: "", strings: collectProse("guidance", guidance?.guidance ?? null) },
     { resource: "events", scope: "", strings: collectProse("events", events?.events ?? null) },
     { resource: "filings", scope: "", strings: collectProse("filings", (page as PublicFilingPage | null)?.filings ?? null) },
   ];

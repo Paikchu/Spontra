@@ -4,7 +4,6 @@ import type { CompleteFlowPublication } from "@/shared/analysis-contract/complet
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
-import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
@@ -18,7 +17,7 @@ import { companyPath as pathForLocale } from "./company-opening";
 
 export { fetchRevisions } from "./company-opening";
 
-export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
+export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; tree?: BusinessTree | null };
 
 /**
  * In Chinese the API serves the generated prose translated where Spontra Analysis has translated it; the rest stays English.

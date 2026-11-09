@@ -6,13 +6,13 @@ Spontra Analysis 的 `/admin/transcripts` 接口提供公司筛选、财报期�
 
 财期：SEC 财报记录的财期（`sec:fiscal-period:v1:*`），否则原始文档的 DEI；年度报告对应 Q4。6-K 没有 DEI，从最近一份 20-F 的财年往后数季度。所有标签按期末排序必须递增：发行人沿用上一年的年份（Oracle 2026-08-31 的 10-Q 仍写 FY2026 Q1）时，从前一个标签按相隔季度数推出年份，只改年份（`sec/fiscal-sequence.ts`）。已存文字稿的标签被纠正时，该期清空并按新季度重新请求。无法确认财期时保留 `needs_period`，不猜测自然季度。供应商为 Alpha Vantage `EARNINGS_CALL_TRANSCRIPT`；接口未提供真实会议日期，列表显示关联财报期末。
 
-本库是唯一调用 Alpha Vantage 的地方。存入一份文字稿发出 `transcript.stored`，指引任务把它挂到对应业绩事件，见 [前瞻指引](guidance.md)。
+本库是唯一调用 Alpha Vantage 的地方。存入一份文字稿发出 `transcript.stored`，估值任务据此重新检查输入。
 
-`company_transcripts` 在 D1 存储全文、来源链接、SEC 财报关联、财期、请求次数和采集状态。后台采集独立于 `GUIDANCE_ENABLED`，不调用模型。指引把文字稿复制为业绩事件的材料，存入私有 R2。
+`company_transcripts` 在 D1 存储全文、来源链接、SEC 财报关联、财期、请求次数和采集状态。后台采集不调用模型。
 
 - `TRANSCRIPTS_ENABLED=true` 开启发现和采集。
 - `ALPHA_VANTAGE_API_KEY` 使用 Worker secret 配置，不提交 Git，不进入引用链接。
-- `GUIDANCE_DAILY_TRANSCRIPT_CALLS=25` 控制每日请求预算（`feature_budget` 的 `guidance-transcript`）；失败请求也计入。
+- `TRANSCRIPT_DAILY_CALLS=25` 控制每日请求预算（`feature_budget` 的 `transcript`）；失败请求也计入。
 - 达到每日额度时队列保留，下一 UTC 日自动继续。
 - 供应商限流分两种：每日额度（`PROVIDER_DAILY_LIMIT`）当天停止请求，下一 UTC 日继续；突发限流（每秒 1 次，`PROVIDER_THROTTLED`）该期 65 秒后重试，不占当天，也不计入该期的尝试次数。日志 `transcript-library-error` 的 `provider` 字段保留供应商原话（已去掉密钥和链接）。
 - 请求失败次日重试，三次失败后显示不可用；供应商明确没有文字稿或拒绝访问时保留相应状态。
