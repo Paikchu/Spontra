@@ -11,6 +11,8 @@ export type Recipe<I, O, S> = {
   budget: { turns: number; wallMs: number; /** Uncached input plus output a session may spend before its last round. */ tokens?: number };
   /** The longest tool result the model reads, in characters; a longer one is cut with a notice. */
   resultChars?: number;
+  /** Tool calls one reply may make; the default when unset is `CALLS_PER_TURN`. */
+  callsPerTurn?: number;
   system(input: I): string;
   open(input: I): S;
   tools(state: S): AnyTool<S>[];

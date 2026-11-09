@@ -5,25 +5,6 @@ import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analys
 /** 8: English summaries with English-sized limits (7 was the last Chinese one). */
 export const SEC_SUMMARY_VERSION = 8;
 
-/**
- * Event-summary field limits, sized for English (about 2.5x the Chinese characters). They stay within
- * the events publication schema (shared/analysis-runtime/events.ts: headline 400, label 120, detail 1200,
- * analystView 1200), which copies these summaries onto the event rail.
- */
-const SEC_SUMMARY_LIMITS = { label: 60, detail: 800, headline: 400, analystView: 650, report: 15_000, error: 240 } as const;
-
-/**
- * Shortens text to at most `max` characters on a word boundary, ending with an ellipsis. Text with no
- * usable space before the limit (CJK, long tokens) is cut at the limit instead.
- */
-function clipText(value: string, max: number): string {
-  if (value.length <= max) return value;
-  const room = value.slice(0, Math.max(0, max - 1));
-  const boundary = room.search(/\s\S*$/);
-  const cut = boundary >= max * 0.6 ? room.slice(0, boundary) : room;
-  return `${cut.replace(/[\s,;:.\-–—(]+$/, "")}…`;
-}
-
 const BUSINESS_FILING_FORMS = new Set([
   "10-K",
   "10-Q",
@@ -42,14 +23,7 @@ type SecSummaryImportance = "high" | "medium" | "low";
 /** What kind of event an 8-K/6-K discloses, used for differentiated presentation. */
 type SecEventCategory = "earnings_update" | "guidance" | "m&a" | "executive" | "legal" | "other";
 
-const SEC_EVENT_CATEGORIES: readonly SecEventCategory[] = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"];
-
-function normalizeSecEventCategory(value: unknown): SecEventCategory | undefined {
-  const candidate = String(value ?? "").trim().toLowerCase();
-  return (SEC_EVENT_CATEGORIES as readonly string[]).includes(candidate) ? candidate as SecEventCategory : undefined;
-}
-
-type SecSummaryBullet = {
+export type SecSummaryBullet = {
   label: string;
   detail: string;
   importance: SecSummaryImportance;
@@ -150,8 +124,6 @@ export type SecCompany = {
   name: string;
 };
 
-type SummaryFilingIdentity = Pick<SecFiling, "ticker" | "form" | "filingDate" | "accessionNumber">;
-
 /** A ticker as the request wrote it, canonical (a second share class is the class the data is kept under), with stray characters dropped. */
 export function cleanSecTicker(value: string): string {
   return canonicalTicker(String(value ?? "")).replace(/[^A-Z0-9.-]/g, "");
@@ -195,53 +167,6 @@ function flattenSecHtml(html: string): string {
     .replace(/\n\s+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim());
-}
-
-export function normalizeSecSummary(
-  value: unknown,
-  filing: SummaryFilingIdentity,
-  now = new Date(),
-): SecFilingSummary {
-  const input = asRecord(value) ?? {};
-  const blocked = [/^.*did not contain readable text[.!]?$/i, /^(?:not found|could not (?:locate|find|read)) (?:the )?(?:source|filing|document|text)[.!]?$/i,
-    /^(?:needs?|requires?|awaiting|pending) (?:further |manual |follow-up )?review[.!]?$/i,
-    /^(未找到|未定位到|无法读取)(原文|正文|文件)[。！]?$/, /^(需要|需|等待)(后续|人工)?复核[。！]?$/];
-  const clean = (item: unknown, max: number) => clipText(String(item ?? "").replace(/\s+/g, " ").trim(), max);
-  const useful = (item: string) => Boolean(item) && !blocked.some((pattern) => pattern.test(item));
-  const rawBullets = Array.isArray(input.bullets) ? input.bullets : [];
-  const bullets = rawBullets.flatMap((item): SecSummaryBullet[] => {
-    const bullet = asRecord(item);
-    const label = clean(bullet?.label, SEC_SUMMARY_LIMITS.label);
-    const detail = clean(bullet?.detail, SEC_SUMMARY_LIMITS.detail);
-    if (!label || !useful(detail)) return [];
-    const importance = bullet?.importance === "high" || bullet?.importance === "low" ? bullet.importance : "medium";
-    return [{ label, detail, importance }];
-  }).slice(0, 5);
-  const headline = clean(input.headline, SEC_SUMMARY_LIMITS.headline);
-  const analystView = clean(input.analystView, SEC_SUMMARY_LIMITS.analystView);
-  const eventCategory = normalizeSecEventCategory(input.eventCategory);
-  const report = clipText(String(input.report ?? "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t\f\v]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim(), SEC_SUMMARY_LIMITS.report);
-
-  return {
-    ticker: cleanSecTicker(filing.ticker),
-    form: String(filing.form ?? ""),
-    filingDate: String(filing.filingDate ?? ""),
-    accessionNumber: cleanSecAccession(filing.accessionNumber),
-    headline: useful(headline) ? headline : "",
-    bullets,
-    analystView: useful(analystView) ? analystView : "",
-    ...(eventCategory ? { eventCategory } : {}),
-    ...(useful(report) ? { report } : {}),
-    ...(Number.isInteger(input.version) ? { version: Number(input.version) } : {}),
-    source: input.source === "error" ? "error" : input.source === "deepseek" ? "deepseek" : input.source === "filing" ? "filing" : "claude",
-    generatedAt: typeof input.generatedAt === "string" ? input.generatedAt : now.toISOString(),
-    ...(typeof input.error === "string" && input.error ? { error: clean(input.error, SEC_SUMMARY_LIMITS.error) } : {}),
-  };
 }
 
 export function parseSecSubmissions(payload: unknown, company: SecCompany, limit = 5): SecFiling[] {

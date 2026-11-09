@@ -220,12 +220,16 @@ export class PiHost {
     if (result.status === "unanswered") this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: `run ended: ${result.reason ?? "unanswered"}` });
     const trail = this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", b.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord);
     const output = b.loaded.recipe.settle(b.state, reason) as O;
+    this.close(b);
+    return { output, reason, turns: b.turns, asked: b.asked, capped: b.capped, trail, spent: b.spent, state: b.state };
+  }
+
+  private close(b: Binding) {
     this.traces.endTurn(b.conversation);
     this.db().exec("UPDATE pi_bindings SET active = 0 WHERE conversation = ?", b.conversation);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", b.conversation);
     this.bindings.delete(b.conversation);
     this.install();
-    return { output, reason, turns: b.turns, asked: b.asked, capped: b.capped, trail, spent: b.spent, state: b.state };
   }
 
   /** Rebuilds the sessions still running after a wake, before Pi resumes them. */
@@ -308,7 +312,11 @@ export class PiHost {
         onYield: async (answer: PiAssistant, api: { conversationId: string }) => this.onYield(api.conversationId, answer),
         afterRun: async (_run: unknown, api: { conversationId: string }) => {
           const b = this.bindings.get(api.conversationId);
-          if (b) { await this.guard(async () => { await b.loaded.recipe.afterRun?.(b.state); }); this.options.onSettled?.(b.operationId); }
+          if (b) {
+            // A recipe with its own ending has nobody coming to settle it, so its session closes here.
+            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.close(b); }
+            this.options.onSettled?.(b.operationId);
+          }
           return undefined;
         },
       } as never), hook(CompactionTask, {
@@ -401,7 +409,7 @@ export class PiHost {
       const args = own?.id === call.id ? own.args : call.args;
       let outcome: ToolOutcome;
       if (b.finished) outcome = { observation: "Not run: the analysis is already settled." };
-      else if (index >= CALLS_PER_TURN) outcome = { observation: `Not run: at most ${CALLS_PER_TURN} calls run per turn; call it again.`, error: true };
+      else if (index >= (b.loaded.recipe.callsPerTurn ?? CALLS_PER_TURN)) outcome = { observation: `Not run: at most ${b.loaded.recipe.callsPerTurn ?? CALLS_PER_TURN} calls run per turn; call it again.`, error: true };
       else {
         b.loaded.onToolStart?.(call.name, args);
         outcome = await this.traces.tool(b, call.name, call.id, () => call.name === WEB_SEARCH ? this.search(b, args, signal)

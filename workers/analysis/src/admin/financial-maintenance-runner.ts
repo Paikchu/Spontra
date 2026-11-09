@@ -138,7 +138,8 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
         const active = await env.DB.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker=? AND status IN ('queued','running') AND updated_at>=? LIMIT 1")
           .bind(row.ticker, new Date(Date.now()-2*3600_000).toISOString()).first();
         if (active) { await finish("analysis_dispatch", { delayMs: 120_000 }); return outcome(); }
-        await startFilingRuns(env, row.ticker, { requestedBy: "manual", runId: state.workflowId!, ...(row.accession_number ? { accession: row.accession_number } : {}) });
+        // The maintenance task runs for this one company, on the reports list or not.
+        await startFilingRuns({ ...env, SEC_AI_TICKERS: row.ticker, SEC_DATA_TICKERS: row.ticker }, row.ticker, { requestedBy: "manual", runId: state.workflowId!, ...(row.accession_number ? { accession: row.accession_number } : {}) });
         await finish("analysis_wait");
       }
     } else if (row.stage === "analysis_wait") {
@@ -146,7 +147,7 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
       const rows = (await env.DB!.prepare("SELECT status FROM filing_analyses WHERE run_id = ?").bind(state.workflowId).all<{ status: string }>()).results;
       if (rows.some(r => r.status === "running")) await finish("analysis_wait", { delayMs: 120_000 });
       else {
-        if (rows.some(r => r.status === "failed" || r.status === "withheld")) issues.push("ANALYSIS_INCOMPLETE");
+        if (rows.some(r => r.status === "failed")) issues.push("ANALYSIS_INCOMPLETE");
         await finish("complete", { ...taskStatus(issues), completedSteps: 5, issues: [...new Set(issues)] });
       }
     } else await finish(row.stage, { status: "failed", errorCode: "UNKNOWN_STAGE" });
@@ -185,13 +186,3 @@ async function backupMaintenanceTarget(env: AnalysisEnv, row: MaintenanceRow, st
 }
 
 /** Only a persisted authenticated task grants a one-off ticker scope; global AI-off still wins. */
-export async function maintenanceAnalysisEnvironment(env: AnalysisEnv, params: SecWorkflowParams, instanceId: string): Promise<AnalysisEnv> {
-  if (!params.maintenanceTaskId) return env;
-  if (!env.DB || !aiIsEnabled(env)) throw new Error("ADMIN_ANALYSIS_DENIED");
-  const task = await new FinancialMaintenanceStore(env.DB).get(params.maintenanceTaskId);
-  const state = task ? JSON.parse(task.state_json) as MaintenanceState : null;
-  if (!task || task.action !== "analyze" || task.ticker !== params.ticker || params.requestedBy !== "manual" || state?.workflowId !== instanceId
-    || !["analysis_dispatch","analysis_wait"].includes(task.stage) || !["queued","running"].includes(task.status)
-    || task.accession_number !== (params.accessionNumber ?? null)) throw new Error("ADMIN_ANALYSIS_DENIED");
-  return { ...env, SEC_AI_TICKERS: params.ticker, SEC_DATA_TICKERS: params.ticker };
-}

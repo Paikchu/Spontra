@@ -74,7 +74,6 @@ test("the SEC report follows the archive: it starts on filing.archived, and curr
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true);
   assert.equal(report.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "4" } }), false);
   assert.ok(TASKS.archive.emits.includes("filing.archived"));
-  assert.ok(SUBSCRIPTIONS["archive.unsupported"]!.some(s => s.task === "filing-analysis" && s.when!({ type: "archive.unsupported", ticker: "ORCL", detail: { form: "10-Q" } })), "a filing the archive gave up on sends the report back to regroup");
   const guidance = SUBSCRIPTIONS["filing.archived"]!.find(s => s.task === "guidance")!;
   assert.equal(guidance.when!({ type: "filing.archived", ticker: "ORCL", detail: { form: "8-K" } }), true, "a release that waited for the archive restarts its guidance");
 });

@@ -4,8 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { PROFILES, profileFor } from "../src/filing-analysis/profiles.ts";
 import { filingRecipe, type FilingSpec, type FilingState } from "../src/filing-analysis/recipe.ts";
-import { knownFilings, startFilingRuns } from "../src/filing-analysis/start.ts";
-import { dueFilings, failedFilings } from "../src/filing-analysis/store.ts";
+import { startFilingRuns } from "../src/filing-analysis/start.ts";
+import { dueFilings } from "../src/filing-analysis/store.ts";
 import { SUBSCRIPTIONS, TASK_NAMES } from "../src/pipeline/registry.ts";
 import type { HandResult } from "../src/pi/hand-tools.ts";
 
@@ -25,7 +25,7 @@ function database() {
 const sec = (accessionNumber: string, form: string, filingDate: string) => ({ ticker: "FOO", cik: "1", cikNumber: 1, companyName: "Foo", accessionNumber, form, filingDate, reportDate: "2026-09-30", items: "", primaryDocument: "a.htm", description: "", documentUrl: "https://example.test/a.htm", indexUrl: "https://example.test/" });
 const operations = (filings: unknown[]) => ({ discover: async () => ({ feed: {}, filings: filings as never }), publishFeed: async () => undefined });
 const sessions = () => { const started: Array<{ id: string; opening: string }> = []; return { started, start: async (id: string, _kind: string, _spec: unknown, opening: string) => { started.push({ id, opening }); } }; };
-const row = (db: D1Database, accession: string) => db.prepare("SELECT status, reason, attempts, tokens FROM filing_analyses WHERE accession_number = ?").bind(accession).first<{ status: string; reason: string | null; attempts: number; tokens: number }>();
+const row = (db: D1Database, accession: string) => db.prepare("SELECT status, reason, tokens FROM filing_analyses WHERE accession_number = ?").bind(accession).first<{ status: string; reason: string | null; tokens: number }>();
 const env = (db: D1Database) => ({ DB: db }) as never;
 
 async function seedLibrary(db: D1Database, accession: string, form: string) {
@@ -34,9 +34,9 @@ async function seedLibrary(db: D1Database, accession: string, form: string) {
   await db.prepare("INSERT INTO sec_passages (passage_id, document_id, section_id, ordinal, kind, text, table_json, fact_refs, chars, text_sha256, change) VALUES ('p2', 'd2', 'now', 1, 'paragraph', 'Revenue grew 30%.', NULL, '[]', 17, 'h', 'changed'), ('p1', 'd1', 'old', 1, 'paragraph', 'Revenue grew 20%.', NULL, '[]', 17, 'g', 'unchanged')").run();
 }
 
-test("every form gets one profile, and only periodic and current reports start a session", () => {
-  for (const [form, id] of [["10-Q", "periodic"], ["10-K/A", "periodic"], ["20-F", "periodic"], ["8-K", "current"], ["6-K", "current"], ["424B5", "record-only"], ["4", "record-only"], ["DEF 14A", "record-only"]] as const) assert.equal(profileFor({ form }).id, id, form);
-  assert.equal(PROFILES.find(p => p.id === "record-only")!.model, "off");
+test("only periodic and current reports have a profile", () => {
+  for (const [form, id] of [["10-Q", "periodic"], ["10-K/A", "periodic"], ["20-F", "periodic"], ["8-K", "current"], ["6-K", "current"]] as const) assert.equal(profileFor(form)?.id, id, form);
+  for (const form of ["424B5", "4", "DEF 14A"]) assert.equal(profileFor(form), undefined, form);
 });
 
 test("all filings reach the path through its own events; the old tasks are gone", () => {
@@ -47,37 +47,36 @@ test("all filings reach the path through its own events; the old tasks are gone"
   assert.ok(SUBSCRIPTIONS["library.prepared"]!.some(s => s.task === "filing-analysis"));
 });
 
-test("known filings take the filing list first and the events publication for the rest", () => {
-  const known = knownFilings([sec("q", "10-Q", "2026-11-10")] as never, { events: [{ id: "f", form: "424B5", filedAt: "2026-11-11" }] } as never);
-  assert.deepEqual(known.map(k => [k.accession, k.form]), [["q", "10-Q"], ["f", "424B5"]]);
-});
-
 test("a run starts a session for a filing whose text is ready and leaves without waiting on it", async () => {
   const db = database();
   await seedLibrary(db, "q", "10-Q");
   const s = sessions();
   const result = await startFilingRuns(env(db), "FOO", { requestedBy: "scheduled" }, { operations: operations([sec("c", "8-K", "2026-11-11"), sec("q", "10-Q", "2026-11-10"), sec("x", "ABS-15G", "2026-11-11"), sec("old", "10-Q", "2026-01-01")]), sessions: s });
-  assert.deepEqual(result, { started: ["q"], waiting: ["c"], recorded: ["x"] });
+  assert.deepEqual(result, { started: ["q"], waiting: ["c"] });
   assert.equal(s.started.length, 1);
   assert.deepEqual(JSON.parse(s.started[0]!.opening).sections, [{ id: "now", path: "MD&A", change: "changed", chars: 20 }]);
   assert.equal((await row(db, "q"))!.status, "running");
-  assert.equal(await row(db, "old"), null, "a filing from before the path went live is not taken up");
+  assert.equal(await row(db, "old"), null, "only the latest periodic report is taken up");
+  assert.equal(await row(db, "x"), null, "a form with no profile is not registered");
   assert.deepEqual((await dueFilings(db, "FOO", null)).map(r => r.accession), ["c"]);
 });
 
-test("a filing whose session cannot start is marked failed, and the next run tries it again up to the limit", async () => {
+test("a filing that fails stays failed until a manual run, which analyses it again", async () => {
   const db = database();
   await seedLibrary(db, "q", "10-Q");
-  const broken = { start: async () => { throw new Error("no agent"); } };
-  for (const n of [1, 2, 3]) {
-    await startFilingRuns(env(db), "FOO", { requestedBy: "scheduled", runId: `filings-${n}` }, { operations: operations([sec("q", "10-Q", "2026-11-10")]), sessions: broken });
-    assert.equal((await row(db, "q"))!.attempts, n);
-  }
+  const filings = [sec("q", "10-Q", "2026-11-10")];
+  await startFilingRuns(env(db), "FOO", { requestedBy: "scheduled" }, { operations: operations(filings), sessions: { start: async () => { throw new Error("no agent"); } } });
+  assert.equal((await row(db, "q"))!.status, "failed");
   assert.deepEqual(await dueFilings(db, "FOO", null), []);
-  assert.equal(await failedFilings(db, "filings-3"), null);
+  const s = sessions();
+  assert.deepEqual((await startFilingRuns(env(db), "FOO", { requestedBy: "scheduled" }, { operations: operations(filings), sessions: s })).started, []);
+  const started = await startFilingRuns(env(db), "FOO", { requestedBy: "manual", accession: "q", runId: "filing-1" }, { operations: { ...operations(filings), loadFiling: async () => filings[0] as never }, sessions: s });
+  assert.deepEqual(started.started, ["q"]);
+  assert.equal(s.started[0]!.id, "filing-1");
+  assert.equal((await row(db, "q"))!.status, "running");
 });
 
-const spec: FilingSpec = { ticker: "FOO", profile: "periodic", filing: sec("q", "10-Q", "2026-11-10") as never, runId: "r", sessionId: "r-q", jobId: "j", jobVersion: "v", requestedBy: "scheduled" };
+const spec: FilingSpec = { ticker: "FOO", profile: "periodic", filing: sec("q", "10-Q", "2026-11-10") as never, sessionId: "r-q", jobId: "j", jobVersion: "v", requestedBy: "scheduled" };
 async function session(db: D1Database) {
   await seedLibrary(db, "q", "10-Q");
   await startFilingRuns(env(db), "FOO", { requestedBy: "scheduled" }, { operations: operations([sec("q", "10-Q", "2026-11-10")]), sessions: sessions() });
@@ -95,7 +94,7 @@ test("the session reads this filing and the earlier one, and publishing the repo
   assert.equal((await call("publish_report", { headline: "", report: "" })).error, true);
   assert.equal(recipe.settled(state), false);
   const report = `# Report\n\n${"Long text. ".repeat(4000)}`;
-  await call("publish_report", { headline: "Growth sped up", analystView: "Good.", bullets: JSON.stringify([{ label: "Growth", detail: "Revenue grew 30%." }]), report });
+  await call("publish_report", { headline: "Growth sped up", analystView: "Good.", bullets: JSON.stringify(Array.from({ length: 7 }, (_, i) => ({ label: `L${i}`, detail: "needs review" }))), report });
   assert.equal(recipe.settled(state), true);
   assert.equal((await row(db, "q"))!.status, "published");
   const stored = await db.prepare("SELECT payload FROM sec_filing_summaries WHERE accession_number = 'q'").first<{ payload: string }>();
@@ -103,6 +102,7 @@ test("the session reads this filing and the earlier one, and publishing the repo
   assert.equal(summary.report, report.trim(), "the report is stored whole");
   assert.equal(summary.generatedBy, "pi");
   assert.equal(summary.headline, "Growth sped up");
+  assert.equal(summary.bullets.length, 7, "what the model wrote is stored as it wrote it");
   const job = await db.prepare("SELECT status FROM sec_analysis_jobs WHERE job_id = 'j'").first<{ status: string }>();
   assert.equal(job!.status, "complete");
   await recipe.afterRun!(state);
@@ -114,6 +114,6 @@ test("a session that ends without a report records the failure itself", async ()
   const { recipe, state } = await session(db);
   await recipe.afterRun!(state);
   const failed = await row(db, "q");
-  assert.deepEqual([failed!.status, failed!.attempts], ["failed", 1]);
+  assert.equal(failed!.status, "failed");
   assert.match(failed!.reason!, /without a report/);
 });
