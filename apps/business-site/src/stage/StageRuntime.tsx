@@ -144,7 +144,7 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel }: {
   const last = entries[entries.length - 1];
   const notice = last && last.role === "assistant" && last.kind === "notice" && last.code !== "retention" ? NOTICE[last.code] : null;
   return <>
-    <div className="ask-veil" data-away={away || undefined} aria-hidden="true" onClick={() => send({ type: "stage-click" })} />
+    <div className="ask-veil" data-away={away || undefined} aria-hidden="true" />
     <div className="ask" data-state={state} role="dialog" aria-label={m.stage} aria-hidden={away || undefined} inert={away} onKeyDown={onKey}>
       {notice && <p className="ask-note" role="status">{notice}</p>}
       <form className="ask-bar" onSubmit={submit}>

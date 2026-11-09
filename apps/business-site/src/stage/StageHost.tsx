@@ -1,18 +1,45 @@
 import "./stage.css";
-import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { Component, lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { messages } from "@/packages/web/src/i18n";
 import type { CompanyView } from "../BusinessMap";
 import type { CompanyData } from "../live-company";
 import type { StageActivity } from "./StageRuntime";
-import { isDefaultScene, overlay, shown, stageResult, type OverlayEvent, type StageResult, type StageState } from "./stage-model";
+import { recoverable, reopening } from "./chunk-recovery";
+import { isDefaultScene, overlay, shown, stageResult, type OverlayEvent, type OverlayState, type StageResult, type StageState } from "./stage-model";
 
-const StageRuntime = lazy(() => import("./StageRuntime"));
-const loadBoard = () => import("./StageBoard");
-const StageBoard = lazy(loadBoard);
+const loadRuntime = recoverable(() => import("./StageRuntime"));
+const loadBoard = recoverable(() => import("./StageBoard"));
+const freshRuntime = () => lazy(loadRuntime);
+const freshBoard = () => lazy(loadBoard);
 
-const m = messages({ ask: "Ask", map: "Map", stage: "Stage" }, { ask: "提问", map: "地图", stage: "舞台" });
+const m = messages(
+  { ask: "Ask", map: "Map", stage: "Stage", unavailable: "Conversation unavailable", retry: "Retry" },
+  { ask: "提问", map: "地图", stage: "舞台", unavailable: "对话不可用", retry: "重试" },
+);
 const NO_ACTIVITY: StageActivity = { entries: [], turn: null, answer: () => {} };
+
+/** Keeps a failure of the console or the stage inside it, so the company page stays. */
+class StageBoundary extends Component<{ fallback: (retry: () => void) => ReactNode; onRetry: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  retry = () => { this.props.onRetry(); this.setState({ failed: false }); };
+  render() {
+    return this.state.failed ? this.props.fallback(this.retry) : this.props.children;
+  }
+}
+
+function ConsoleFailure({ state, retry }: { state: OverlayState; retry: () => void }) {
+  const away = state === "away";
+  return <>
+    <div className="ask-veil" data-away={away || undefined} aria-hidden="true" />
+    <div className="ask" data-state={state} role="dialog" aria-label={m.stage} aria-hidden={away || undefined} inert={away}>
+      <div className="ask-bar ask-failed"><p role="alert">{m.unavailable}</p><Button variant="unstyled" type="button" className="ask-send" onClick={retry}>{m.retry}</Button></div>
+    </div>
+  </>;
+}
 
 /** What the company page takes from the stage: the console at the rail's foot (closed and open), and the scene when it holds the stage. */
 export type StageHost = {
@@ -32,7 +59,9 @@ export type StageHost = {
  */
 export function useStageHost(ticker: string, data: CompanyData): StageHost {
   const [open, setOpen] = useState<{ open: boolean; reader: boolean } | null>(null);
-  const [state, dispatch] = useReducer(overlay, new URLSearchParams(location.search).has("c") ? "open" : "closed");
+  const [state, dispatch] = useReducer(overlay, new URLSearchParams(location.search).has("c") || reopening() ? "open" : "closed");
+  const [StageRuntime, reloadRuntime] = useReducer(freshRuntime, undefined, freshRuntime);
+  const [StageBoard, reloadBoard] = useReducer(freshBoard, undefined, freshBoard);
   const [scene, setScene] = useState<StageState | null>(null);
   const [onStage, setOnStage] = useState(false);
   const [view, setView] = useState<CompanyView | null>(null);
@@ -69,7 +98,14 @@ export function useStageHost(ticker: string, data: CompanyData): StageHost {
     dispatch({ type: "sent" });
   }, [activity.entries]);
   // The renderer loads with the overlay, so the stage is ready by the time the reader has asked.
-  useEffect(() => { if (state !== "closed") void loadBoard(); }, [state]);
+  useEffect(() => { if (state !== "closed") void import("./StageBoard").catch(() => {}); }, [state]);
+  // Anywhere outside the console sends it away, in whatever state it is; the page under the click still gets it.
+  useEffect(() => {
+    if (state !== "open" && state !== "busy" && state !== "disconnected") return;
+    const outside = (e: PointerEvent) => { if (!(e.target instanceof Element && e.target.closest(".ask, .ask-entry"))) dispatch({ type: "stage-click" }); };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [state]);
   const openFinding = useCallback((finding: string) => { setOnStage(false); setFocusRequest({ finding, nonce: Date.now() }); }, []);
   if (!open?.open) return { railFoot: null, stageOverride: null, onNavigate, onView, focusRequest };
   const asked = activity.entries.filter(e => e.role === "user").length;
@@ -82,13 +118,15 @@ export function useStageHost(ticker: string, data: CompanyData): StageHost {
       <div className="ask-entry"><Button variant="unstyled" type="button" className="ask-open" aria-label={m.ask} title={m.ask} aria-keyshortcuts="Meta+J Control+J" aria-expanded={state === "open" || state === "busy" || state === "disconnected"} onClick={() => dispatch({ type: "toggle" })}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 4v-4h0A2 2 0 0 1 4 14Z" /></svg><span>{m.ask}</span></Button>
         {!showBoard && (result != null || hasScene) && <Button variant="unstyled" type="button" className="ask-back" onClick={() => setOnStage(true)}>{m.stage}</Button>}</div>
-      {state !== "closed" && <Suspense fallback={null}><StageRuntime ticker={ticker} reader={open.reader} state={state} send={send} view={view} onScene={onScene} onSay={onSay} onActivity={onActivity} /></Suspense>}
+      {state !== "closed" && <StageBoundary onRetry={reloadRuntime} fallback={retry => <ConsoleFailure state={state} retry={retry} />}><Suspense fallback={null}><StageRuntime ticker={ticker} reader={open.reader} state={state} send={send} view={view} onScene={onScene} onSay={onSay} onActivity={onActivity} /></Suspense></StageBoundary>}
     </>,
     stageOverride: showBoard ? <div className="scene-stage" data-result={result?.kind ?? "scene"}>
       <header className="scene-head"><span className="scene-mark">{m.stage}</span><Button variant="unstyled" type="button" className="scene-back" onClick={() => setOnStage(false)}>{m.map}</Button></header>
-      <Suspense fallback={<div className="board board-loading" aria-busy="true" />}>
-        <StageBoard ticker={ticker} data={data} scene={scene} result={result} onOpenFinding={openFinding} onAnswer={activity.answer} />
-      </Suspense>
+      <StageBoundary onRetry={reloadBoard} fallback={retry => <section className="board board-notice"><p className="board-notice-text" role="alert">{m.unavailable}</p><div className="board-actions"><Button variant="unstyled" type="button" onClick={retry}>{m.retry}</Button></div></section>}>
+        <Suspense fallback={<div className="board board-loading" aria-busy="true" />}>
+          <StageBoard ticker={ticker} data={data} scene={scene} result={result} onOpenFinding={openFinding} onAnswer={activity.answer} />
+        </Suspense>
+      </StageBoundary>
     </div> : null,
     onNavigate, onView, focusRequest,
   };

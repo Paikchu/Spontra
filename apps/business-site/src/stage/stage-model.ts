@@ -52,9 +52,10 @@ export type OverlayEvent =
 
 export function overlay(state: OverlayState, event: OverlayEvent): OverlayState {
   switch (event.type) {
-    case "toggle": return state === "closed" || state === "away" ? "open" : state === "disconnected" ? state : "away";
+    case "toggle": return state === "closed" || state === "away" ? "open" : "away";
     case "focus": return state === "closed" || state === "away" ? "open" : state;
-    case "escape": case "stage-click": case "sent": case "result": return state === "open" || state === "busy" ? "away" : state;
+    case "escape": case "stage-click": return state === "closed" ? state : "away";
+    case "sent": case "result": return state === "open" || state === "busy" ? "away" : state;
     case "turn-start": return state === "open" ? "busy" : state;
     case "turn-end": return state === "busy" ? "open" : state;
     case "disconnect": return state === "open" || state === "busy" ? "disconnected" : state;
