@@ -6,8 +6,6 @@
     ".": {
       "entry": [
         "workers/analysis/src/index.ts",          // workers/analysis/wrangler.jsonc "main"
-        "workers/analysis/test/*.test.ts",        // npm run test:analysis
-        "packages/web/test/*.test.ts",            // npm run test:web
         // Hand-run ops scripts with documented usage:
         "scripts/sec-report-reliability.ts",      // docs/sec-generation-reliability.md
         "workers/analysis/scripts/*.ts"           // workers/analysis/scripts/README.md
@@ -16,11 +14,11 @@
     },
     "apps/business-site": {
       // worker/index.ts (wrangler "main") and src/main.tsx are detected; the HTML inputs come from vite.config.ts.
-      "entry": ["index.html", "lens-frame.html", "test/*.test.ts", "src/desktop/boot.ts", "src/desktop/stage-socket.ts"],
+      "entry": ["index.html", "lens-frame.html", "src/desktop/boot.ts", "src/desktop/stage-socket.ts"],
       "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
     },
     "apps/admin": {
-      "entry": ["index.html", "test/*.test.ts"],
+      "entry": ["index.html"],
       "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
     }
   }

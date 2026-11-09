@@ -65,6 +65,4 @@ npm run analysis:typecheck && npm run check:analysis:boundary && npm run analysi
 npm run business-site:typecheck
 ```
 
-测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/网页检索响应与模型，不消耗配额。
-
 接口参考：[Alpha Vantage Earnings Call Transcript](https://www.alphavantage.co/documentation/#earnings-call-transcript)。

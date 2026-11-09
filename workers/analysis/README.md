@@ -31,7 +31,6 @@ A named entrypoint is unreachable from the public internet, so the binding is th
 | `src/agent-loop.ts`, `tool-loop.ts`, `tools/`, `compose/`, `model-*.ts`, `ai-config.ts` | The shared model, tool and agent loop layer; `ai-config.ts` lists every model use and its reasoning level |
 | `migrations/` | The full D1 migration history |
 | `scripts/` | Hand-run ops scripts ([scripts/README.md](scripts/README.md)) |
-| `test/` | Node test runner suites (`npm run test:analysis`) |
 
 Workflows (16) are declared in `wrangler.jsonc` and exported from `src/index.ts`. Companies come only from the admin whitelist and feature switches in D1; no Wrangler variable lists companies. All model calls go to DeepSeek through its Anthropic-compatible endpoint with `DEEPSEEK_API_KEY`.
 
@@ -51,7 +50,7 @@ From the repository root:
 
 ```bash
 npm run check:analysis:boundary
-npm run analysis:typecheck     # type check plus test:analysis
+npm run analysis:typecheck     # type check
 npm run analysis:check         # deploy dry run
 ```
 

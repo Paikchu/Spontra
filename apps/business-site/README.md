@@ -38,7 +38,6 @@ npm run dev    # 127.0.0.1:4188; /api proxies to BUSINESS_SITE_API or 127.0.0.1:
 
 ```bash
 npm run business-site:typecheck
-npm run test:business-site
 npm run business-site:build
 npm run business-site:check   # deploy dry run
 ```

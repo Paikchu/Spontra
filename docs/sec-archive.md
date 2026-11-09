@@ -42,4 +42,3 @@ sec-archive/
 
 - 归档的附件范围沿用采集器：正文加最多两个 EX-99。SEC 财报以前通过 submission 流读到的其他文本附件（EX-10 等）现在不在材料内；需要时扩大采集器的归档范围，而不是另开下载路径。
 - 事件任务读取的 Form 4 XML 与申报索引页属于清单层，不归档。
-- 测试用的 `SecReader` 假对象需要实现 `submissions` 与 `issuerDirectory`。

@@ -18,7 +18,6 @@ A Tauri 2 app around `apps/business-site`, built in its `desktop` Vite mode. It 
 
 ```bash
 npm run desktop:dev     # the app against the Vite dev server
-npm run desktop:test    # the shell's unit tests
 npm run desktop:build   # needs TAURI_SIGNING_PRIVATE_KEY for the update artifacts
 ```
 

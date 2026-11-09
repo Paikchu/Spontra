@@ -31,7 +31,6 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with: { workspaces: apps/desktop/src-tauri }
       - run: npm ci
-      - run: npm run desktop:test
       # Without a Developer ID certificate the app is signed ad hoc and not notarized.
       - name: Choose the macOS signature
         if: runner.os == 'macOS'

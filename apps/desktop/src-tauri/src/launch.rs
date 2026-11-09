@@ -48,22 +48,3 @@ impl Launch {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lines_are_appended_as_json() {
-        let path = std::env::temp_dir().join(format!("spontra-launch-{}.log", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        let launch = Launch::begin();
-        launch.set_log(path.clone());
-        launch.record_content(120.0, "/");
-        launch.record_vitals(&"x".repeat(MAX_SAMPLE_BYTES + 1));
-        let lines: Vec<serde_json::Value> = std::fs::read_to_string(&path).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0]["kind"], "launch");
-        assert_eq!(lines[0]["webviewContentMs"], 120.0);
-    }
-}

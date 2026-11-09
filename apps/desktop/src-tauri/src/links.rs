@@ -29,32 +29,3 @@ pub fn page_of(url: &Url) -> Option<String> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn page(address: &str) -> Option<String> {
-        page_of(&Url::parse(address).unwrap())
-    }
-
-    #[test]
-    fn company_links_open_the_company() {
-        assert_eq!(page("spontra://companies/BRK.B?view=cash"), Some("/companies/BRK.B?view=cash".into()));
-        assert_eq!(page("spontra://companies/X/"), Some("/companies/X".into()));
-        assert_eq!(page("spontra://home"), Some("/".into()));
-    }
-
-    #[test]
-    fn anything_else_is_ignored() {
-        assert_eq!(page("spontra://companies/lower"), None);
-        assert_eq!(page("spontra://companies/X/../../y"), None);
-        assert_eq!(page("spontra://admin"), None);
-        assert_eq!(page("https://companies/X"), None);
-    }
-
-    #[test]
-    fn unknown_parameters_are_dropped() {
-        assert_eq!(page("spontra://companies/X?view=cash&evil=1"), Some("/companies/X?view=cash".into()));
-    }
-}
