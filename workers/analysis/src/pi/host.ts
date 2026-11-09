@@ -66,7 +66,9 @@ type Binding = {
 };
 type RoundCall = { id: string; name: string; args: unknown };
 type Row = { conversation: string; session: string; operation_id: string; kind: string; spec: string; state: string; started_at: number;
-  turns: number; quiet: number; last_round: number; capped: number; finished: number; asked: string | null; round: string | null; spent: number | null };
+  turns: number; quiet: number; last_round: number; capped: number; finished: number; asked: string | null; round: string | null; spent: number | null;
+  startup: string | null };
+type Startup = { phase: "prepared" | "model-set"; opening: string };
 
 const text = (value: string) => [{ type: "text" as const, text: value }];
 const parseArgs = (args: unknown): unknown => {
@@ -84,6 +86,7 @@ export class PiHost {
   private readonly bindings = new Map<string, Binding>();
   private restored = false;
   private tables = false;
+  private readonly starting = new Map<string, Promise<void>>();
 
   private readonly traces = new PiTurnTraces((turn) => this.recordTurn(turn));
   private traceFlushPending = false;
@@ -118,6 +121,8 @@ export class PiHost {
       sql.exec("CREATE TABLE IF NOT EXISTS pi_trace_queue (seq INTEGER PRIMARY KEY AUTOINCREMENT, turn TEXT NOT NULL)");
       // Sessions created before the token budget have no such column; adding it twice is the only failure and is harmless.
       try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN spent INTEGER NOT NULL DEFAULT 0"); } catch { /* present */ }
+      // NULL means submitted (including bindings created before startup checkpoints existed).
+      try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN startup TEXT"); } catch { /* present */ }
       this.tables = true;
     }
     return sql;
@@ -126,7 +131,10 @@ export class PiHost {
   /** Starts one session on the stored spec; the same operation id joins the run already started. */
   async start(kind: string, spec: unknown, opening: string, options: { operationId: string; session?: string }): Promise<{ operationId: string; session: string; refused?: "capped" }> {
     const existing = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", options.operationId).toArray()[0];
-    if (existing) return { operationId: existing.operation_id, session: existing.session };
+    if (existing) {
+      await this.ensureStarted(existing.operation_id);
+      return { operationId: existing.operation_id, session: existing.session, ...(existing.capped && !existing.session ? { refused: "capped" as const } : {}) };
+    }
     const loaded = await this.loaders[kind]!(spec);
     const state = loaded.recipe.open(loaded.input);
     loaded.hydrate?.(state);
@@ -142,19 +150,44 @@ export class PiHost {
     // One run per session at a time: a second would take over the first one's recipe and state.
     const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
     if (running) throw new Error(`pi: session ${session.id} is still running ${running.operation_id}`);
-    this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now());
+    this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, startup) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now(), JSON.stringify({ phase: "prepared", opening } satisfies Startup));
     this.db().exec("DELETE FROM pi_trail WHERE conversation = ?", conversation);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
     this.bind({ conversation, session: session.id, operationId: options.operationId, kind, spec, loaded, state, startedAt: Date.now(),
       turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0 });
-    await session.setModel({ provider: PI_PROVIDER, id: loaded.model });
-    await session.submit(opening, { operationId: options.operationId });
+    await this.ensureStarted(options.operationId);
     return { operationId: options.operationId, session: session.id };
+  }
+
+  private async ensureStarted(operationId: string): Promise<void> {
+    const pending = this.starting.get(operationId);
+    if (pending) return pending;
+    const work = this.resumeStart(operationId);
+    this.starting.set(operationId, work);
+    try { await work; } finally { this.starting.delete(operationId); }
+  }
+
+  /** A binding is only a prepared start; Pi must durably accept its input before callers can join it. */
+  private async resumeStart(operationId: string): Promise<void> {
+    const row = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
+    if (!row?.startup) return;
+    const startup = JSON.parse(row.startup) as Startup;
+    const session = this.harness.sessions.get(row.session);
+    if (startup.phase === "prepared") {
+      const b = await this.bound(row.conversation);
+      if (!b) throw new Error(`pi: session ${row.conversation} cannot be rebuilt`);
+      await session.setModel({ provider: PI_PROVIDER, id: b.loaded.model });
+      this.db().exec("UPDATE pi_bindings SET startup = ? WHERE operation_id = ?", JSON.stringify({ phase: "model-set", opening: startup.opening } satisfies Startup), operationId);
+    }
+    // The operation id is Pi's idempotency key: replay is safe if submit succeeded but its acknowledgement was lost.
+    await session.submit(startup.opening, { operationId });
+    this.db().exec("UPDATE pi_bindings SET startup = NULL WHERE operation_id = ?", operationId);
   }
 
   /** Waits for the session's run and settles the recipe. */
   async finish<O>(operationId: string, signal?: AbortSignal): Promise<PiOutcome<O>> {
+    await this.ensureStarted(operationId);
     const session = this.sessionOf(operationId);
     if (session === undefined) throw new Error(`pi: no session for operation ${operationId}`);
     // A refused start has no session; it settles on its budget at once.
@@ -169,6 +202,7 @@ export class PiHost {
     if (session === "") return this.finish<O>(operationId);
     // The check must return, whatever Pi's promises do: on time it means "look again on the next wake".
     return within(POLL_WAIT_MS, async (signal) => {
+      await this.ensureStarted(operationId);
       const pending = await this.harness.pending({ session }).catch(() => []);
       if (pending.some((p) => p.operationId === operationId)) return null;
       return this.finish<O>(operationId, signal);
