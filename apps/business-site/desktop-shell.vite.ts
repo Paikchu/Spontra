@@ -75,8 +75,7 @@ export function desktopShell(siteOrigin: string): Plugin {
         return building ? afterCharset(booted, meta(desktopPolicy(policyOf("/*"), siteOrigin))) : booted;
       },
     },
-    closeBundle() {
-      if (!building) return;
+    writeBundle() {
       const file = join(outDir, "html-frame.html");
       writeFileSync(file, afterCharset(readFileSync(file, "utf8"), meta(pictureFramePolicy(policyOf("/html-frame")))));
     },
