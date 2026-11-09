@@ -371,6 +371,11 @@
 .earning-report .rich-text-list { margin: 0 0 1.15em; padding-left: 1.2em; color: var(--ink-soft); font: 500 16px/1.72 var(--serif); }
 .earning-report .rich-text-list li { margin-bottom: 0.35em; }
 .earning-report .rich-text-list li::marker { color: var(--ink-muted); }
+.earning-report .rich-text-table { margin: 0 0 1.4em; overflow-x: auto; }
+.earning-report .rich-text-table table { width: 100%; border-collapse: collapse; font: 400 13.5px/1.55 var(--sans); font-variant-numeric: tabular-nums; }
+.earning-report .rich-text-table th, .earning-report .rich-text-table td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+.earning-report .rich-text-table th { color: var(--muted-foreground); font-weight: 560; white-space: nowrap; }
+.earning-report .rich-text-table td { color: var(--foreground); }
 .earning-report .rich-text-code { padding: 1px 5px; border-radius: 3px; background: var(--paper-deep); font-size: 0.92em; }
 
 /* Composed reports: a variable list of blocks, so spacing lives on the block, not on the section. */

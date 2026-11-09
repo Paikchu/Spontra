@@ -81,8 +81,9 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     depth: 1,
     parentTitle: nodeSectionTitle,
   }));
+  const hasConclusions = !embedded && Boolean(summary?.bullets.length || summary?.analystView);
   const reportSections: ReportSectionDefinition[] = reportReady ? [
-    {
+    ...(hasConclusions ? [{
       id: "sec-report-conclusions",
       title: m.keyTakeaways,
       className: "sec-report-conclusions",
@@ -93,7 +94,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
           {summary?.analystView && <InvestmentView text={summary.analystView} />}
         </>
       ),
-    },
+    }] : []),
     {
       id: "sec-report-metrics",
       title: m.keyMetrics,
@@ -177,6 +178,9 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       qualitySection,
     );
   }
+  // A report with nothing but its text is one document on the stage: no numbered sections around it.
+  const plainReport = embedded && !report && Boolean(summary?.report);
+  const shownSections = plainReport ? reportSections.filter((section) => section.id === "sec-report-body") : reportSections;
   const navigationSections: ReportSectionLink[] = reportSections.flatMap((section, index) => {
     const sectionLink = { id: section.id, index: String(index + 1).padStart(2, "0"), title: section.title, description: section.description, depth: 0 as const };
     return section.id === "sec-report-nodes" && !reader ? [sectionLink, ...nodeLinks] : [sectionLink];
@@ -213,7 +217,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
         <>
           {!embedded && <SecReportNavigator initialSections={navigationSections} />}
           <div data-report-sections>
-            {reportSections.map((section, index) => (
+            {shownSections.map((section, index) => (
               <section
                 key={section.id}
                 id={section.id}
@@ -226,9 +230,9 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
                 data-report-depth="0"
                 className={`sec-report-section scroll-mt-24 ${section.className ?? ""}`}
                 lang={section.lang}
-                aria-labelledby={`${section.id}-title`}
+                aria-labelledby={plainReport ? undefined : `${section.id}-title`}
               >
-                <SectionHeading index={String(index + 1).padStart(2, "0")} title={section.title} id={`${section.id}-title`} sourceLanguage={embedded && index === 0 ? section.sourceTexts ?? [] : undefined} lang={section.titleLang} />
+                {!plainReport && <SectionHeading index={String(index + 1).padStart(2, "0")} title={section.title} id={`${section.id}-title`} sourceLanguage={embedded && index === 0 ? section.sourceTexts ?? [] : undefined} lang={section.titleLang} />}
                 {section.content}
               </section>
             ))}

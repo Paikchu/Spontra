@@ -11,7 +11,7 @@ import { filingQuarterLabel, reportTitle, reportTitleLang } from "./reports-mode
 const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly verified", failed: "Verification failed" }, { verified: "数据已核验", partial: "部分核验", failed: "核验未通过" });
 const m = messages({
   report: (title: string) => `Report: ${title}`,
-  filed: (form: string, date: string) => `${form} · Filed ${date}`, readFull: "Read full report", close: "Close report",
+  filed: (form: string, date: string) => `${form} · Filed ${date}`, close: "Close report",
   keyFinancials: "Key financials", metric: "Metric", value: "Value", yoy: "YoY", qoq: "QoQ", changes: "Narrative changes", processing: "Analysis in progress", noFigures: "No verified key figures",
   showLess: "Show less", more: (n: number) => `${n} more`, noAnalysis: "No analysis", analystView: "Analyst view",
   guidance: "Guidance", risk: "Risk", generated: (date: string) => `AI analysis · ${date}`, filing: (form: string) => `${form} filing`,
@@ -19,7 +19,7 @@ const m = messages({
   derived: "Derived", notComparable: "Not comparable",
 }, {
   report: (title: string) => `财报：${title}`,
-  filed: (form: string, date: string) => `${form} · 提交于 ${date}`, readFull: "阅读完整财报", close: "关闭财报",
+  filed: (form: string, date: string) => `${form} · 提交于 ${date}`, close: "关闭财报",
   keyFinancials: "关键财务数据", metric: "指标", value: "数值", yoy: "同比", qoq: "环比", changes: "表述变化", processing: "分析中", noFigures: "无已核验的关键数据",
   showLess: "收起", more: (n: number) => `另有 ${n} 条`, noAnalysis: "暂无分析", analystView: "分析观点",
   guidance: "业绩指引", risk: "风险", generated: (date: string) => `AI 分析 · ${date}`, filing: (form: string) => `${form} 文件`,
@@ -34,18 +34,17 @@ const trend = (v: string | null) => !v ? undefined
   : /\b(?:down|decrease[ds]?|lower|declin\w*|fell|contract\w*|narrow\w*)\b|降|减|缩|收窄/i.test(v) ? "down" as const : undefined;
 
 /**
- * A report in focus, holding the whole stage the way a finding does: its analysis, written by the agent every analysis
- * is written by and verified here as a finding is, with the full report one click away. Until the report has one, the
+ * A filing with no report, holding the whole stage the way a finding does: its analysis, written by the agent every
+ * analysis is written by and verified here as a finding is. Without one, the
  * filing digest stands in — the verified key figures beside the conclusions, investment view and sources.
  */
-export function ReportLens({ report, ticker, data, updates, nodeColor, onClose, onOpenReport }: {
+export function ReportLens({ report, ticker, data, updates, nodeColor, onClose }: {
   report: PublicFilingDigest;
   ticker: string;
   data: FindingData;
   updates: number;
   nodeColor: (id: string) => string;
   onClose: () => void;
-  onOpenReport: () => void;
 }) {
   const [more, setMore] = useState(false);
   const analysis = useItemAnalysis(ticker, report.accessionNumber, updates);
@@ -59,7 +58,6 @@ export function ReportLens({ report, ticker, data, updates, nodeColor, onClose, 
         <span className="lens-basis">{m.filed(report.form, report.filingDate)}{!verified && report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={verified ? [verified.finding.title, verified.finding.judgment.text] : [report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
       </div>
       <div className="lens-nav">
-        {report.hasReport && <Button variant="unstyled" type="button" className="lens-pair report-open" onClick={onOpenReport}>{m.readFull}</Button>}
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>

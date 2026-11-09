@@ -19,9 +19,14 @@ export type InlineNode =
 export type BlockNode =
   | { type: "paragraph"; inline: InlineNode[] }
   | { type: "heading"; level: 3 | 4; inline: InlineNode[] }
-  | { type: "list"; ordered: boolean; items: InlineNode[][] };
+  | { type: "list"; ordered: boolean; items: InlineNode[][] }
+  | { type: "table"; head: InlineNode[][]; rows: InlineNode[][][] };
 
-const HEADING = /^(#{3,4})\s+(.+)$/;
+const HEADING = /^(#{1,4})\s+(.+)$/;
+const RULE = /^([-*_])\1{2,}$/;
+const TABLE_ROW = /^\|.*\|$/;
+const TABLE_DIVIDER = /^\|(?:\s*:?-+:?\s*\|)+$/;
+const tableCells = (line: string) => line.slice(1, -1).split("|").map(cell => cell.trim());
 const BULLET = /^[-*•]\s+(.+)$/;
 /** Two digits at most, so a line opening with a year ("2026. Full-year guidance…") stays a paragraph. */
 const ORDERED = /^\d{1,2}[.)]\s+(.+)$/;
@@ -38,13 +43,24 @@ export function parseRichText(source: string): BlockNode[] {
     blocks.push({ type: "list", ordered: list.ordered, items: list.items.map(parseInline) });
     list = null;
   };
-  for (const raw of String(source ?? "").replace(/\r\n?/g, "\n").split("\n")) {
-    const line = raw.trim();
+  const lines = String(source ?? "").replace(/\r\n?/g, "\n").split("\n").map(raw => raw.trim());
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
     if (!line) { flushList(); continue; }
+    if (RULE.test(line)) { flushList(); continue; }
+    if (TABLE_ROW.test(line) && TABLE_DIVIDER.test(lines[index + 1] ?? "")) {
+      flushList();
+      const rows: InlineNode[][][] = [];
+      let next = index + 2;
+      for (; next < lines.length && TABLE_ROW.test(lines[next]!); next++) rows.push(tableCells(lines[next]!).map(parseInline));
+      blocks.push({ type: "table", head: tableCells(line).map(parseInline), rows });
+      index = next - 1;
+      continue;
+    }
     const heading = HEADING.exec(line);
     if (heading) {
       flushList();
-      blocks.push({ type: "heading", level: heading[1]!.length === 3 ? 3 : 4, inline: parseInline(heading[2]!) });
+      blocks.push({ type: "heading", level: heading[1]!.length === 4 ? 4 : 3, inline: parseInline(heading[2]!) });
       continue;
     }
     const bullet = BULLET.exec(line);

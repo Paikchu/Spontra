@@ -21,6 +21,12 @@ function Block({ block }: { block: BlockNode }) {
     const Heading = block.level === 3 ? "h3" : "h4";
     return <Heading className="rich-text-heading"><Inline nodes={block.inline} /></Heading>;
   }
+  if (block.type === "table") {
+    return <div className="rich-text-table"><table>
+      <thead><tr>{block.head.map((cell, index) => <th key={index} scope="col"><Inline nodes={cell} /></th>)}</tr></thead>
+      <tbody>{block.rows.map((row, r) => <tr key={r}>{row.map((cell, index) => <td key={index}><Inline nodes={cell} /></td>)}</tr>)}</tbody>
+    </table></div>;
+  }
   if (block.type === "list") {
     const items = block.items.map((item, index) => <li key={index}><Inline nodes={item} /></li>);
     return block.ordered

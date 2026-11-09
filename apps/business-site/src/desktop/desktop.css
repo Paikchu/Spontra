@@ -1,7 +1,7 @@
 /* WKWebView composites each backdrop filter separately, so full-width bars and dialog veils stay opaque. */
-.home-nav[data-stuck], .search-dialog::backdrop, .report-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.home-nav[data-stuck], .search-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
 .home-nav[data-stuck] { background: var(--background); }
-.search-dialog::backdrop, .report-dialog::backdrop { background: color-mix(in srgb, var(--background) 78%, transparent); }
+.search-dialog::backdrop { background: color-mix(in srgb, var(--background) 78%, transparent); }
 
 /* The site's page turn runs about half a second and holds the chart until it ends; opening a company here takes 40 ms. */
 :root[data-desktop]::view-transition-group(*),

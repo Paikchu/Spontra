@@ -10,7 +10,7 @@
 
 合并后：
 
-- 一份文件只产生一份分析。文件摘要、完整财报、逐文件分析都是这一份分析的不同视图。
+- 一份文件只产生一份报告。文件流用它的一行标题，舞台直接显示报告本身，不再分摘要、完整财报和逐文件分析。
 - 定期报告按章节滚动分析：代码遍历每一节，没变的沿用上期结果，变了的才交给模型。模型不选章节。
 - 所有文件都读文件库，不再使用整份纯文本。
 - 每份文件有自己的状态行，失败可见、可重试。
@@ -122,7 +122,7 @@ type SessionLimits = { turns: number; wallMs: number; resultChars?: number };
 
 | 配置 | 匹配 | 模型 | 逐节 | 对比对象 | 产出 |
 |---|---|---|---|---|---|
-| `periodic` | 10-Q、10-K、20-F、40-F 及 /A | 是 | 是 | 同类上一份 | 面板、完整财报、公司记忆材料 |
+| `periodic` | 10-Q、10-K、20-F、40-F 及 /A | 是 | 是 | 同类上一份 | 舞台报告、公司记忆材料 |
 | `current` | 8-K、6-K | 是 | 否 | 早先提到同一事项的文件 | 面板 |
 | `offering` | 424B | 是 | 否 | 上一次发行、最新报表 | 面板 |
 | `insider` | 规则标记需关注的 Form 4 | 是 | 否 | 同一人的历史交易 | 面板 |
@@ -253,7 +253,7 @@ type FilingAnalysis = ComposedAnalysis & {
 | 单份分析 | `item-analysis:v1:{ticker}:{id}`，`itemKind` 对应配置 | 文件面板、`findings`、`analyst`、`checkup` |
 | 索引 | `items:v1:{ticker}` | 前端、`items/library.ts` |
 | 文件摘要 | `sec_filing_summaries` | 文件流、首页、公开接口 |
-| 完整财报 | 现有报告存储，`hasReport` 为真 | `ReportDialog` |
+| 完整财报 | 现有报告存储，`hasReport` 为真 | `FilingReport` |
 | 公司记忆材料 | 报告 artifact 的 `brief.memoryItems`、`report.changes`、`validEvidenceIds` | `memory` |
 
 `keyMetrics` 仍由代码从 XBRL 校验和计算。
@@ -380,7 +380,7 @@ CREATE INDEX filing_section_notes_document ON filing_section_notes(document_id);
 
 ### 验收标准
 
-- 一份文件只有一份当前分析，面板和“阅读完整财报”来自同一次运行。
+- 一份文件只有一份当前报告，舞台显示的就是这次运行写的报告。
 - 每个收到的文件在 `filing_analyses` 都有一行，后台能看到状态和原因。
 - 定期报告的每个章节都是 `written` 或 `carried`。
 - NET 2026 Q3 完整跑完，产出通过全部校验，并记录总 Token。估算见下。
@@ -439,7 +439,7 @@ NET 2026 Q3，假设上期结果已存在：
 - **运行方式**：`filing-analysis` 任务只登记文件并启动会话，随即结束。每份文件一个 Pi 会话（`filing-analysis/start.ts`），外层不再轮询或等待。
 - **结束方式**：会话调用 `publish_report` 自己发布，并写入 `filing_analyses`；没发布就结束时，由 `afterRun` 记录失败。
 - **读取方式**：开场给全部章节的目录和变化情况，Agent 用 `read_sections`、`read_previous` 自己决定读什么。
-- **产物**：摘要和完整 Markdown 报告都写入 `sec_filing_summaries`（`generatedBy: "pi"`），会覆盖该文件旧的分析。
+- **产物**：一行标题和一份 Markdown 报告写入 `sec_filing_summaries`（`generatedBy: "pi"`），模型不再单独写要点和分析观点，会覆盖该文件旧的分析。
 - **去掉的校验**：报告结构、数字、引用、覆盖度、编辑审查全部去掉，只要求 `headline` 和 `report` 不为空；模型写的字段原样保存。
 - **失败**：不自动重试，文件保持 `failed`，由后台手动重跑。崩溃恢复交给 Pi。
 - **选文件**：只看公司最新的定期报告和最近的当前报告中还没有摘要的；触发事件只有 `filing.archived`、`library.prepared` 和功能开关。

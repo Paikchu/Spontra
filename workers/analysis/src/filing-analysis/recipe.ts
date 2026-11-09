@@ -7,7 +7,7 @@ import { handPolicy, handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { PiLoaded } from "../pi/host.ts";
 import type { Recipe } from "../recipe.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { SEC_SUMMARY_VERSION, type SecFiling, type SecFilingSummary, type SecSummaryBullet } from "../sec/sec.ts";
+import { SEC_SUMMARY_VERSION, type SecFiling, type SecFilingSummary } from "../sec/sec.ts";
 import { loadStageData, type StageData } from "../stage/data.ts";
 import { stageTools } from "../stage/recipe.ts";
 import type { AnyTool } from "../tools/registry.ts";
@@ -38,9 +38,7 @@ function job(spec: FilingSpec, status: "complete" | "failed", at: string, errorD
 
 /** The report as the model wrote it, in the shape the filings list stores. */
 export function filingSummary(filing: SecFiling, args: Record<string, unknown>, at: string): SecFilingSummary {
-  const bullets = (Array.isArray(parsed(args.bullets)) ? parsed(args.bullets) as Array<Record<string, unknown>> : []).map((b): SecSummaryBullet => ({
-    label: text(b?.label), detail: text(b?.detail), importance: b?.importance === "high" || b?.importance === "low" ? b.importance : "medium" }));
-  return { ticker: filing.ticker, form: filing.form, filingDate: filing.filingDate, accessionNumber: filing.accessionNumber, headline: text(args.headline), bullets, analystView: text(args.analystView), report: text(args.report),
+  return { ticker: filing.ticker, form: filing.form, filingDate: filing.filingDate, accessionNumber: filing.accessionNumber, headline: text(args.headline), bullets: [], analystView: "", report: text(args.report),
     ...(text(args.eventCategory) ? { eventCategory: text(args.eventCategory) as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: "claude", generatedBy: "pi", generatedAt: at };
 }
 
@@ -65,8 +63,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
         const earlier = (await Promise.all(idsOf(args.sectionIds).map(id => previousSectionOf(db, id)))).flatMap(s => s ? [s.sectionId] : []);
         return ok(earlier.length ? await read(earlier) : "The earlier filing has no such section.");
       }),
-    handTool<FilingState>({ name: "publish_report", description: "Publish the report and end the session: headline, bullets [{label, detail, importance}], analystView, report (the full report in Markdown), and eventCategory for an 8-K or 6-K (earnings_update, guidance, m&a, executive, legal or other).",
-      input_schema: { type: "object", properties: { headline: { type: "string" }, bullets: { type: "array", items: { type: "object" } }, analystView: { type: "string" }, report: { type: "string" }, eventCategory: { type: "string" } }, required: ["headline", "report"] } },
+    handTool<FilingState>({ name: "publish_report", description: "Publish the report and end the session: headline (one line), report (the report in Markdown), and eventCategory for an 8-K or 6-K (earnings_update, guidance, m&a, executive, legal or other).",
+      input_schema: { type: "object", properties: { headline: { type: "string" }, report: { type: "string" }, eventCategory: { type: "string" } }, required: ["headline", "report"] } },
       async (args, state) => {
         const now = new Date().toISOString();
         const summary = filingSummary(filing, args, now);

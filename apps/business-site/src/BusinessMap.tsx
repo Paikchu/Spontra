@@ -39,9 +39,9 @@ import { RailStream } from "./RailStream";
 import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import { eventTitle, timelinePoints } from "./events-model";
+import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, timelinePoints } from "./events-model";
 import { defaultEventFilter, readRailTabs, tabTimelineIds, withRailTabs, type RailTab } from "./event-noise";
-import { railItems, reportTitle, timelineFromFilings, type RailItem } from "./reports-model";
+import { filingQuarterLabel, railItems, reportTitle, reportTitleLang, timelineFromFilings, type RailItem } from "./reports-model";
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
@@ -118,7 +118,8 @@ const m = messages({
   swipe: "左右滑动查看完整流向",
 });
 
-const ReportDialog = lazy(() => import("./ReportDialog"));
+const FilingReport = lazy(() => import("./FilingReport"));
+const LensLoading = () => <div className="lens-doc" aria-busy="true"><i className="lens-loading" aria-hidden="true" /></div>;
 
 /** What the reader has on the map: its own URL-held view, read by the stage agent. */
 export type CompanyView = { periodEnd: string | null; view: "profit" | "cash" | "balance" | "valuation"; business: string | null; finding: string | null; event: string | null; report: string | null; metric: string | null };
@@ -322,7 +323,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(location.search).get("event"));
   const [initialEventSearch] = useState(() => location.search);
   const [reportId, setReportId] = useState<string | null>(() => new URLSearchParams(location.search).get("report"));
-  const [reader, setReader] = useState(false);
   const [now] = useState(() => new Date());
   const rail = useMemo(() => railItems(filings, events, now), [filings, events, now]);
   const railList = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
@@ -496,7 +496,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // The valuation is the company's own mode: a finding, flag, report or event takes the stage back to the statements.
   const leaveValuation = () => { if (chosenView === "valuation") setView("profit"); };
   const pickView = (next: View) => {
-    if (next === "valuation") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); setReader(false); }
+    if (next === "valuation") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); }
     crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
   };
   const showFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setSplit(false); } };
@@ -537,7 +537,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   useEffect(() => { if (focusRequest) { onNavigate?.(); if (focusRequest.finding) track("finding_expand", { ticker }); } }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
-    onNavigate?.(); setReportId(id); setReader(false);
+    onNavigate?.(); setReportId(id);
     if (!id) return;
     leaveValuation();
     setSelected(null); setFocusId(null); setEventId(null); setSplit(false);
@@ -704,13 +704,13 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
-      // A report or filed event holds the stage the same way: its analysis, or its digest until it has one.
-      : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} onOpenReport={() => setReader(true)} />
-        {reader && <Suspense fallback={null}><ReportDialog ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber}
-          snapshot={focusedReport.snapshot ? { reportDate: focusedReport.snapshot.reportDate, reportVersion: focusedReport.snapshot.reportVersion } : null} onClose={() => setReader(false)} /></Suspense>}</div>
-      : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)}
-        onOpenReport={filings?.filings.some(f => f.accessionNumber === focusedEvent.id && f.hasReport) ? () => setReader(true) : undefined} />
-        {reader && <Suspense fallback={null}><ReportDialog ticker={ticker} accession={focusedEvent.id} snapshot={null} onClose={() => setReader(false)} /></Suspense>}</div>
+      // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
+      : focusedReport?.hasReport ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot}
+        head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
+      : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
+      : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} fallback={lens}
+        head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
+        <EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary">
