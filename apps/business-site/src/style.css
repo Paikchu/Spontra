@@ -261,13 +261,13 @@ button { cursor: pointer; }
    a second row rather than cut the titles ("Operating income" must never read "Operating..."). Flags take a row of their own. */
 .stage-head--summary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
 .stage-head--summary > * { flex: 1 0 100%; min-width: 0; }
-.stage-head--summary > .stats { flex: 1 1 0; min-width: min(100%, calc(var(--n) * 120px + (var(--n) - 1) * clamp(20px, 2.6vw, 44px))); }
+.stage-head--summary > .stats { flex: 1 1 auto; min-width: 0; }
 .stage-head--summary > .stage-controls { flex: none; margin-left: auto; flex-wrap: nowrap; }
 /* Too narrow for four figures at 120px in a row (the 1280 desktop, where the view tabs share the stage's first row): two by two. */
 @media (min-width: 641px) {
   .stage-head--summary { container: stage-head / inline-size; }
   @container stage-head (max-width: 600px) {
-    .stats:has(> .stat:nth-child(4)):not(:has(> [data-missing])) { --n: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
+    .stats:has(> .stat:nth-child(4)):not(:has(> [data-missing])) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
   }
 }
 /* Every part of the stage spans its width; only the figures' header shares the first row, with the view tabs at its right. */
@@ -285,19 +285,15 @@ button { cursor: pointer; }
 .periods button[aria-checked="true"] { color: var(--foreground); font-weight: 600; text-decoration-color: var(--foreground); }
 
 .stats {
-  --n: 3; container-type: inline-size; display: flex; flex-wrap: nowrap; column-gap: clamp(20px, 2.6vw, 44px);
+  display: flex; flex-wrap: nowrap; justify-content: flex-start; column-gap: 48px;
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .stats::-webkit-scrollbar { display: none; }
-.stats:not(:has(> :nth-child(3))) { --n: 2; }
-.stats:has(> :nth-child(4)) { --n: 4; }
-.stats:has(> :nth-child(5)) { --n: 5; }
-/* Figures share the row; a title wraps to a second line before it is cut. */
-.stat { flex: 1 1 0; min-width: 120px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+/* Figures sit at the row's left at a fixed gap, whatever the page's width; a long title wraps before it is cut. */
+.stat { flex: 0 0 auto; max-width: 260px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
 .stat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted-foreground); }
 .stat-label-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; }
-/* The value's size follows each figure's share of the row: about 6.5 glyphs to a figure, between 16px and the cap. */
-.stat-value { font-size: clamp(16px, calc(100cqi / var(--n) / 6.5), var(--stat-max, 26px)); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+.stat-value { font-size: 26px; font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
 /* A headline number reads as news: good in the gain colour, bad in the loss colour, by the figure's own direction. */
 .stat-value[data-tone="good"] { color: var(--up); }
 .stat-value[data-tone="bad"] { color: var(--loss); }
@@ -712,7 +708,6 @@ button { cursor: pointer; }
 }
 @media (min-width: 961px) and (max-height: 820px) {
   .stage { padding-top: 8px; }
-  .stat-value { --stat-max: 22px; }
   .trend { height: 178px; }
 }
 
@@ -879,8 +874,8 @@ button { cursor: pointer; }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-name { fill: var(--foreground); }
 /* The finding the chart opens on, above the statement it lights. */
-.lead-finding { position: absolute; z-index: 2; top: 0; left: 0; max-width: min(560px, 100%); display: flex; align-items: flex-start; gap: 4px; padding: 6px 6px 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--background) 82%, transparent); border: 1px solid color-mix(in srgb, var(--kind) 35%, var(--hairline)); backdrop-filter: blur(6px); }
-.lead-finding-open { display: flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 14px; font-weight: 520; line-height: 1.45; color: var(--foreground); }
+.lead-finding { position: absolute; z-index: 2; top: 0; left: 0; max-width: min(560px, 100%); display: flex; align-items: flex-start; gap: 6px; padding: 8px 8px 8px 12px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--hairline); }
+.lead-finding-open { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 0; border: 0; border-radius: 6px; background: none; appearance: none; font-family: inherit; text-align: left; font-size: 14px; font-weight: 520; line-height: 1.45; color: var(--foreground); cursor: pointer; }
 .lead-finding-open > span[aria-hidden] { color: var(--kind); transition: transform .2s var(--ease); }
 .lead-finding-open:hover > span[aria-hidden] { transform: translateX(3px); }
 .lead-finding-hide { flex: none; width: 22px; height: 22px; }
@@ -1437,8 +1432,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 /* A headline figure the statement does not carry keeps its cell only where the grid needs four (narrow screens). */
 @media (min-width: 641px) {
   .stats > div[data-missing="true"] { display: none; }
-  .stats:has(> :nth-child(4)):has(> [data-missing]) { --n: 3; }
-  .stats:has(> :nth-child(4)):has(> [data-missing] ~ [data-missing]) { --n: 2; }
 }
 
 /* ---------- Phone company page (U21/U22): figures first, chart next, the rail's sections after ---------- */
