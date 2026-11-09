@@ -1,6 +1,4 @@
 import { parseSecReaderReport } from "../../../../shared/analysis-runtime/sec-reader-schema.ts";
-import { earningsKey } from "./earnings.ts";
-import type { SecEarningsGroup } from "../../../../shared/analysis-contract/report.ts";
 import { SecAnalysisJobRepository } from "./d1-jobs.ts";
 import { loadReportContinuity } from "./continuity.ts";
 import { inReportingCurrency } from "./history.ts";
@@ -137,32 +135,6 @@ export class D1SecRepository implements SecRepository {
     await this.database.prepare(sql).bind(...values).run();
   }
 
-  /** Durable membership in the existing JSON store; no new database migration. */
-  async saveEarningsGroups(filings: SecFiling[]): Promise<void> {
-    for (const filing of filings) await this.upsertFilingIndex(filing);
-    const statements = filings.filter((filing) => filing.earningsGroup).map((filing) => {
-      const group = filing.earningsGroup!;
-      const payload = JSON.stringify(group);
-      // An older discovery must not regress any member to a smaller source set.
-      const anchor = [...group.sources].sort((a, b) => a.filingDate.localeCompare(b.filingDate) || a.accessionNumber.localeCompare(b.accessionNumber))[0];
-      return this.database.prepare(`
-        INSERT INTO sec_cache (cache_key, payload, fetched_at)
-        SELECT ?, ?, ? WHERE NOT EXISTS (
-          SELECT 1 FROM sec_cache previous, json_each(previous.payload, '$.sources') old_source
-          WHERE previous.cache_key = ? AND NOT EXISTS (
-            SELECT 1 FROM json_each(?, '$.sources') new_source
-            WHERE json_extract(new_source.value, '$.accessionNumber') = json_extract(old_source.value, '$.accessionNumber')
-          )
-        )
-        ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at
-      `).bind(earningsKey(filing.ticker, filing.accessionNumber), payload, new Date().toISOString(), earningsKey(filing.ticker, anchor.accessionNumber), payload);
-    });
-    if (statements.length) {
-      if (!this.database.batch) throw new Error("Earnings grouping requires atomic D1 batch");
-      await this.database.batch(statements);
-    }
-  }
-
   upsertAnalysisJob(...args: Parameters<SecAnalysisJobRepository["upsertAnalysisJob"]>) {
     return this.jobs.upsertAnalysisJob(...args);
   }
@@ -217,22 +189,17 @@ export class D1SecRepository implements SecRepository {
     const limit = Math.min(50, Math.max(1, Math.trunc(rawLimit) || 20));
     const cursor = decodePageCursor(rawCursor);
     const where = cursor
-      ? "WHERE ticker = ? AND (sort_date < ? OR (sort_date = ? AND accession_number < ?))"
+      ? "WHERE ticker = ? AND (filing_date < ? OR (filing_date = ? AND accession_number < ?))"
       : "WHERE ticker = ?";
     const values = cursor
       ? [ticker, cursor.filingDate, cursor.filingDate, cursor.accessionNumber, limit + 1]
       : [ticker, limit + 1];
     const rows = await this.database.prepare(`
-      WITH grouped AS (
-        SELECT f.*, COALESCE(json_extract(g.payload, '$.earningsDate'), f.filing_date) AS sort_date
-        FROM sec_filings f LEFT JOIN sec_cache g ON g.cache_key = 'sec:earnings:' || f.ticker || ':' || f.accession_number
-        WHERE g.cache_key IS NULL OR json_extract(g.payload, '$.canonicalAccession') = f.accession_number
-      )
       SELECT filing_id AS filingId, ticker, accession_number AS accessionNumber, cik, form,
         filing_date AS filingDate, report_date AS reportDate, document_url AS documentUrl,
-        index_url AS indexUrl, sort_date AS sortDate
-      FROM grouped ${where}
-      ORDER BY sort_date DESC, accession_number DESC LIMIT ?
+        index_url AS indexUrl, filing_date AS sortDate
+      FROM sec_filings ${where}
+      ORDER BY filing_date DESC, accession_number DESC LIMIT ?
     `).bind(...values).all<PublicFilingRow>();
     const hasMore = rows.results.length > limit;
     const pageRows = rows.results.slice(0, limit);
@@ -246,16 +213,12 @@ export class D1SecRepository implements SecRepository {
 
   /** Counted on its own so paging pays for it once, on the first page, instead of on every page. */
   async countPublicFilings(rawTicker: string): Promise<number> {
-    const row = await this.database.prepare(`SELECT COUNT(*) AS count FROM sec_filings f
-      LEFT JOIN sec_cache g ON g.cache_key = 'sec:earnings:' || f.ticker || ':' || f.accession_number
-      WHERE f.ticker = ? AND (g.cache_key IS NULL OR json_extract(g.payload, '$.canonicalAccession') = f.accession_number)`)
+    const row = await this.database.prepare("SELECT COUNT(*) AS count FROM sec_filings WHERE ticker = ?")
       .bind(rawTicker.trim().toUpperCase()).first<{ count: number }>();
     return Number(row?.count ?? 0);
   }
 
   async getPublicFiling(rawTicker: string, rawAccession: string): Promise<SecFilingWithSummary | null> {
-    const group = await this.getCache<SecEarningsGroup>(earningsKey(rawTicker.trim().toUpperCase(), rawAccession));
-    const accession = group?.payload.canonicalAccession ?? rawAccession;
     const row = await this.database.prepare(`
       SELECT filing_id AS filingId, ticker, accession_number AS accessionNumber, cik, form,
         filing_date AS filingDate, report_date AS reportDate, document_url AS documentUrl,
@@ -263,7 +226,7 @@ export class D1SecRepository implements SecRepository {
       FROM sec_filings
       WHERE ticker = ? AND accession_number = ?
       LIMIT 1
-    `).bind(rawTicker.trim().toUpperCase(), accession).first<PublicFilingRow>();
+    `).bind(rawTicker.trim().toUpperCase(), rawAccession).first<PublicFilingRow>();
     return row ? this.hydratePublicFiling(row) : null;
   }
 
@@ -283,20 +246,13 @@ export class D1SecRepository implements SecRepository {
       documentUrl: row.documentUrl,
       indexUrl: row.indexUrl,
     };
-    const group = await this.getCache<SecEarningsGroup>(earningsKey(row.ticker, row.accessionNumber));
-    if (group) filing.earningsGroup = group.payload;
-    let summary = await this.getSummary(row.ticker, row.accessionNumber);
-    if (!summary && group) {
-      for (const source of group.payload.sources) {
-        summary = await this.getSummary(row.ticker, source.accessionNumber);
-        if (summary) break;
-      }
-    }
+    const summary = await this.getSummary(row.ticker, row.accessionNumber);
     const period = await this.database.prepare(`
       SELECT period_id AS periodId FROM sec_filing_periods WHERE filing_id = ? ORDER BY role = 'primary' DESC LIMIT 1
     `).bind(row.filingId).first<{ periodId: string }>();
-    const reportPeriodId = period?.periodId ?? (group && /^(10-K|10-Q|20-F)/.test(row.form)
-      ? buildPeriodIdentity(row.ticker, row.form, group.payload.periodEnd).periodId : null);
+    // A published report belongs to the periodic filing; a current report is read on its own.
+    const reportPeriodId = /^(10-K|10-Q|20-F|40-F)/.test(row.form) && row.reportDate
+      ? period?.periodId ?? buildPeriodIdentity(row.ticker, row.form, row.reportDate).periodId : null;
     const analysis = reportPeriodId ? await this.getPublishedReport(row.ticker, reportPeriodId) : null;
     return { ...filing, summary, analysis };
   }

@@ -155,7 +155,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return { ticker: saved.ticker, cik: saved.cik, cikNumber: saved.cikNumber, companyName: saved.companyName,
         form: saved.form, filingDate: saved.filingDate, reportDate: saved.reportDate, accessionNumber: saved.accessionNumber,
         primaryDocument: saved.primaryDocument, description: saved.description, items: saved.items,
-        documentUrl: saved.documentUrl, indexUrl: saved.indexUrl, ...(saved.earningsGroup ? { earningsGroup: saved.earningsGroup } : {}) };
+        documentUrl: saved.documentUrl, indexUrl: saved.indexUrl };
     },
     discover: (ticker) => discoverSecTicker(ticker, { listings: listings() }),
     publishFeed: async (feed) => {
@@ -217,7 +217,6 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
 
 function toStoredFiling(filing: SecFilingFeed["filings"][number]): SecFiling {
   return {
-    ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     ticker: filing.ticker,
     cik: filing.cik,
     cikNumber: filing.cikNumber,

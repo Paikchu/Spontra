@@ -94,11 +94,7 @@ export function fiscalPeriodsFromCompanyFacts(payload: unknown, filings: SecFili
 }
 
 export async function readFiscalPeriod(repository: Pick<SecRepository, 'getCache'>, filing: SecFiling): Promise<SecFiscalPeriod | null> {
-  const end = filing.earningsGroup?.periodEnd || filing.reportDate;
-  const sources = [filing, ...(filing.earningsGroup?.sources ?? [])].filter(source => periodic(source.form) && source.reportDate === end);
-  for (const source of sources) {
-    const cached = await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(source));
-    if (cached?.payload?.periodEnd === end && cached.payload.sourceAccession === source.accessionNumber) return cached.payload;
-  }
-  return null;
+  if (!periodic(filing.form)) return null;
+  const cached = await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(filing));
+  return cached?.payload?.periodEnd === filing.reportDate && cached.payload.sourceAccession === filing.accessionNumber ? cached.payload : null;
 }

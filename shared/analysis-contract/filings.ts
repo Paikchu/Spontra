@@ -38,7 +38,6 @@ export type PublicSecFiling = {
   fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   /** The month the issuer's fiscal year ends in, from its submissions or its latest annual report; null when neither says. */
   fiscalYearEndMonth?: number | null;
-  earningsGroup?: import("./report.ts").SecEarningsGroup;
   accessionNumber: string;
   ticker: string;
   companyName: string;
@@ -106,15 +105,11 @@ export type PublicFilingDigest = {
   fiscalQuarter?: 1 | 2 | 3 | 4 | null;
   fiscalYearEndMonth?: number | null;
   labelSource?: "xbrl" | "derived" | "unknown";
-  /** The earnings release date for a group, else the filing date. */
   date: string;
-  /** Every filing an earnings group merged, each with its EDGAR index. */
-  sources: Array<{ form: string; filingDate: string; accessionNumber: string; indexUrl: string }>;
   headline: string;
   bullets: Array<{ label: string; detail: string; importance: "high" | "medium" | "low" }>;
   analystView: string;
   /** The short supplementary analysis, when the summary carries one. */
-  report: string | null;
   warnings: string[];
   generatedAt: string | null;
   keyMetrics: Array<{ key: string; label: string; value: string; yoy: string | null; qoq: string | null; status: "verified" | "derived" | "not_comparable" | "not_disclosed" }>;

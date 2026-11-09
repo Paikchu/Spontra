@@ -338,3 +338,15 @@ test("default Key falls back for routine events, but preserves explicit filters 
     assert.deepEqual(defaultEventFilter("", items, new Date("2030-01-01")), { filter: "key", fallback: false });
   }
 });
+
+test("a long analyst view does not cost the company its list of filings", () => {
+  const release = event({ id: "e-8k", form: "8-K", class: "earnings", filedAt: "2026-11-05", summary: { headline: "Quarter", bullets: [], analystView: "x".repeat(1843), eventCategory: "earnings_update", generatedAt: "2026-11-09T11:39:29Z" } });
+  const publication = readEventsPublication({ schemaVersion: "events.v1", ticker: "TEST", checkedAt: NOW.toISOString(), pendingInsider: 0, events: [release] }, "TEST");
+  assert.equal(publication?.events.length, 1);
+});
+
+test("a report and the earnings release filed with it are two rows", () => {
+  const release = event({ id: "e-8k", form: "8-K", class: "earnings", filedAt: "2026-11-05" });
+  const filings = { filings: [{ accessionNumber: "q3-10q", periodEnd: "2026-09-30", date: "2026-11-05" }] } as unknown as PublicFilingDigestPage;
+  assert.deepEqual(railEntries(filings, { schemaVersion: "events.v1", ticker: "TEST", checkedAt: NOW.toISOString(), pendingInsider: 0, events: [release] }).map(row => row.id), ["q3-10q", "e-8k"]);
+});

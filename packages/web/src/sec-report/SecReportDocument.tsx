@@ -14,8 +14,8 @@ import { langOf, SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 const m = messages({
   sourcesAndBasis: "Sources and analysis basis", keyTakeaways: "Key takeaways", investmentView: "Investment view", keyMetrics: "Key metrics",
   overview: "Report overview", dataQuality: "Data quality", changes: "Changes this period", watchList: "Watch list",
-  workpapers: "Research basis and filing text", earningsReport: "Earnings period report", filingAnalysis: (form: string) => `${form} · SEC filing analysis`,
-  inProgress: "Analysis in progress", ticker: "Ticker", periodEnd: "Period end", earningsDate: "Earnings date", filed: "Filed", generated: "Generated",
+  workpapers: "Research basis and filing text", filingAnalysis: (form: string) => `${form} · SEC filing analysis`,
+  inProgress: "Analysis in progress", ticker: "Ticker", periodEnd: "Period end", filed: "Filed", generated: "Generated",
   someUnavailable: "Some content unavailable", noReport: "No report", reportInProgress: "Report in progress",
   sourceMaterials: "Source materials", textRead: "Text read", notParsed: "Not parsed", secFiling: "SEC filing",
   viewOnEdgar: "View filing on EDGAR ↗", notAdvice: "Not investment advice", noAnalysis: "No analysis", excerpts: "Filing excerpts",
@@ -31,8 +31,8 @@ const m = messages({
 }, {
   sourcesAndBasis: "来源与分析依据", keyTakeaways: "核心结论", investmentView: "投资观点", keyMetrics: "关键指标",
   overview: "报告概览", dataQuality: "数据质量", changes: "本期变化", watchList: "跟踪清单",
-  workpapers: "研究依据与文件原文", earningsReport: "业绩期报告", filingAnalysis: (form: string) => `${form} · SEC 文件分析`,
-  inProgress: "分析中", ticker: "股票代码", periodEnd: "期末日", earningsDate: "业绩发布日", filed: "提交日", generated: "生成日",
+  workpapers: "研究依据与文件原文", filingAnalysis: (form: string) => `${form} · SEC 文件分析`,
+  inProgress: "分析中", ticker: "股票代码", periodEnd: "期末日", filed: "提交日", generated: "生成日",
   someUnavailable: "部分内容不可用", noReport: "无报告", reportInProgress: "报告生成中",
   sourceMaterials: "来源材料", textRead: "已读取文本", notParsed: "未解析", secFiling: "SEC 文件",
   viewOnEdgar: "在 EDGAR 查看文件 ↗", notAdvice: "不构成投资建议", noAnalysis: "暂无分析", excerpts: "文件摘录",
@@ -63,7 +63,6 @@ const presentationText = (block: NonNullable<PublishedSecReport["presentation"]>
 
 export function SecReportDocument({ companyName, filing, embedded = false }: { companyName: string; filing: SecFilingWithSummary; embedded?: boolean }) {
   const summary = filing.summary;
-  const group = filing.earningsGroup;
   // The page can receive snapshots from an older backend as well as current D1 reads.
   const parsed = filing.analysis?.reader ? parseSecReaderReport(filing.analysis.reader) : undefined;
   const renderWarnings = [...new Set([...(parsed?.reader?.presentationWarnings ?? []), ...(parsed?.warnings ?? [])])];
@@ -191,14 +190,14 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       {!embedded && <ReportBackLink ticker={filing.ticker} />}
       {!embedded && <header className="sec-report-header">
         <div>
-          <span className="sec-report-kicker">{group ? m.earningsReport : m.filingAnalysis(filing.form)} <SourceLanguage of={[generatedHeadline, summary?.analystView]} /></span>
+          <span className="sec-report-kicker">{m.filingAnalysis(filing.form)} <SourceLanguage of={[generatedHeadline, summary?.analystView]} /></span>
           <h1>{companyName}</h1>
           {headline ? <p lang={langOf(headline)}>{headline}</p> : <p>{m.inProgress}</p>}
         </div>
         <dl className="sec-report-meta">
           <div><dt>{m.ticker}</dt><dd>{filing.ticker}</dd></div>
-          <div><dt>{m.periodEnd}</dt><dd>{formatDate(group?.periodEnd ?? filing.reportDate)}</dd></div>
-          <div><dt>{group ? m.earningsDate : m.filed}</dt><dd>{formatDate(group?.earningsDate ?? filing.filingDate)}</dd></div>
+          <div><dt>{m.periodEnd}</dt><dd>{formatDate(filing.reportDate)}</dd></div>
+          <div><dt>{m.filed}</dt><dd>{formatDate(filing.filingDate)}</dd></div>
           <div><dt>{m.generated}</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
       </header>}

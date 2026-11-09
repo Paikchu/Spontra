@@ -206,7 +206,7 @@ export async function loadInsiderTransactions(ticker:string,personKey:string,sea
 const ACCESSION=/^\d{10}-\d{2}-\d{6}$/;
 /** One filing as the map lists it: labels instead of metric keys, text instead of evidence ids, and never the analysis envelope. */
 export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFilingDigest{
- const group=filing.earningsGroup,summary=filing.summary,analysis=filing.analysis;
+ const summary=filing.summary,analysis=filing.analysis;
  const fields=filingFiscalFields(filing);
  const published=analysis?.publication;
  const text=(v:unknown)=>typeof v==="string"?v:"";
@@ -214,11 +214,10 @@ export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFi
   accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
   periodEnd:fields?.periodEnd??null,periodLabel:fields?formatFilingPeriodLabel(filing,locale):null,
   fiscalYear:fields?.fiscalYear??null,fiscalQuarter:fields?.fiscalQuarter??null,fiscalYearEndMonth:fields?.fiscalYearEndMonth??null,labelSource:fields?.labelSource,
-  date:group?.earningsDate??filing.filingDate,
-  sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
+  date:filing.filingDate,
   headline:text(summary?.headline)||text(analysis?.headline),
   bullets:(summary?.bullets??[]).map(b=>({label:text(b.label),detail:text(b.detail),importance:b.importance})).slice(0,12),
-  analystView:text(summary?.analystView),report:text(summary?.report)||null,
+  analystView:text(summary?.analystView),
   warnings:[...(summary?.discovery?.warnings??[]),...(analysis?.dataQuality.warnings??[])].filter(w=>typeof w==="string").slice(0,8),
   generatedAt:summary?.generatedAt??null,
   keyMetrics:(analysis?.keyMetrics??[]).slice(0,8).map(m=>({key:m.metricKey,label:formatSecMetricLabel(m.metricKey,locale),value:formatSecMetricValue(m.metricKey,m.currentValue,m.unit,m.currency,locale),yoy:m.yoy??null,qoq:m.qoq??null,status:m.status})),

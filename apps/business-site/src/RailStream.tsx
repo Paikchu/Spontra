@@ -260,9 +260,8 @@ function NoiseBlock({ row, ticker, open, focus, arrive, motion, onToggle, onFocu
 
 const Chevron = () => <svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>;
 function ReportRow({ report, ticker, checked, onClick, arrive, motion, tip }: RowProps & { report: PublicFilingDigest; ticker: string }) {
-  const forms = report.sources.length ? report.sources.map(s => s.form).join(" + ") : report.form;
   const title = reportTitle(report, ticker);
-  const meta = join([shortDate(report.date), m.report, filingQuarterLabel(ticker, report), forms]);
+  const meta = join([shortDate(report.date), m.report, filingQuarterLabel(ticker, report), report.form]);
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row report-row" data-class="report" onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
     {...tip(title, reportTitleLang(report), meta)} aria-label={`${m.report} ${shortDate(report.date)} ${title}`}>

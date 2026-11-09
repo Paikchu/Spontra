@@ -4,7 +4,7 @@ export function filingPresentation(result: PublicFilingDetail, ticker: string, p
   const filing = result.filing;
   const companyName = preferredName ?? result.company?.name ?? ticker;
   return { companyName, filing: {
-    earningsGroup: filing.earningsGroup, ticker, cik: result.company?.cik ?? "",
+    ticker, cik: result.company?.cik ?? "",
     cikNumber: Number(result.company?.cik ?? 0), companyName,
     form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate,
     accessionNumber: filing.accessionNumber, primaryDocument: "", description: filing.description,

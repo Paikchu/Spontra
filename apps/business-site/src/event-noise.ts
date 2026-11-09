@@ -45,17 +45,15 @@ const DAY_MS = 86_400_000;
 
 /**
  * A periodic report belongs in Key when it has something to read, or when it is the only earnings row for that filing.
- * A 10-Q that only says the analysis is still running, filed within three days of an earnings release already in the
+ * A 10-Q with nothing to read yet, filed within three days of an earnings release already in the
  * list, is the same news twice: it stays under Earnings and All, and Key keeps the release.
  */
 function reportInKey(item: RailItem & { kind: "report" }, items: readonly RailItem[]): boolean {
   const report = item.report;
   if (report.headline.trim()) return true;
-  const covered = new Set([report.accessionNumber, ...report.sources.map(source => source.accessionNumber)]);
   const day = Date.parse(report.date);
   const besideRelease = items.some(other => other.kind === "event"
     && (other.event.class === "earnings" || other.event.class === "guidance")
-    && !covered.has(other.id)
     && Math.abs(Date.parse(other.date) - day) <= 3 * DAY_MS);
   return !besideRelease;
 }
