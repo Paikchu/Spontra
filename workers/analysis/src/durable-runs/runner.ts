@@ -38,6 +38,7 @@ export class TaskRunner extends Agent<Env, RunView> {
   /** The run's agent sessions: each recipe run (an item, a report, a valuation loop, a lens) is a Pi session here. */
   private readonly pi = new PiHost({ sql: this.ctx.storage.sql, env: this.env }, this.loaders(), {
     models: () => piModelIds(this.env as unknown as AnalysisEnv),
+    isStopped: () => this.row()?.status === "terminated",
     // A session that ended wakes the run, which is waiting on it, without waiting for its next check.
     onSettled: () => { void this.wake(Date.now()); },
     scheduleTraceFlush: () => this.schedule(new Date(Date.now() + 1000), "flushPiTraces"),
@@ -123,9 +124,13 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   async terminate(): Promise<void> {
     const row = this.row();
-    if (!row || FINAL.has(row.status)) return;
+    if (!row || (FINAL.has(row.status) && row.status !== "terminated")) return;
     this.setStatus("terminated", { error: JSON.stringify({ name: "Terminated", message: "terminated" }) });
-    for (const schedule of this.getSchedules()) await this.cancelSchedule(schedule.id);
+    try { await this.pi.abortActive(); }
+    finally {
+      for (const schedule of this.getSchedules()) await this.cancelSchedule(schedule.id);
+      this.db().exec("UPDATE run SET wake_id = NULL, wake_at = NULL WHERE k = 1");
+    }
   }
 
   /**
@@ -133,11 +138,15 @@ export class TaskRunner extends Agent<Env, RunView> {
    * so a session that settles early brings the wake forward instead of starting a second chain of wakes.
    */
   private async wake(at: number): Promise<void> {
+    const row = this.row();
+    if (row && FINAL.has(row.status)) return;
     const pending = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0];
     if (!pending) return;
     if (pending.wake_id && pending.wake_at !== null && pending.wake_at <= at) return;
     if (pending.wake_id) await this.cancelSchedule(pending.wake_id).catch(() => false);
     const schedule = await this.schedule(new Date(at), "advance");
+    const current = this.row();
+    if (current && FINAL.has(current.status)) { await this.cancelSchedule(schedule.id); return; }
     this.db().exec("UPDATE run SET wake_id = ?, wake_at = ? WHERE k = 1", schedule.id, at);
   }
 
