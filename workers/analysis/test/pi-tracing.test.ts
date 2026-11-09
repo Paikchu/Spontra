@@ -20,7 +20,7 @@ async function oneTurn() {
   const sent: TurnTrace[] = [];
   const traces = new PiTurnTraces((turn) => sent.push(turn));
   traces.beginTurn(who, "deepseek-flash", 3);
-  traces.endChat("c1", { inputTokens: 10, outputTokens: 2, finishReason: "toolUse" });
+  traces.endChat("c1", { inputTokens: 10, outputTokens: 2, cacheReadTokens: 7, cacheCreationTokens: 1, finishReason: "toolUse" });
   await traces.tool(who, "submit_report", "call-1", async () => ({ observation: "secret draft check", error: true }));
   traces.endTurn("c1");
   return sent;
@@ -48,6 +48,11 @@ test("a recorded turn becomes invoke_agent holding chat and its tools, each with
     assert.equal(s.attributes["gen_ai.conversation.id"], "c1");
   }
   assert.equal(spans[1]!.attributes["gen_ai.usage.output_tokens"], 2);
+  assert.equal(spans[1]!.attributes["gen_ai.usage.cache_read.input_tokens"], 7);
+  assert.equal(spans[1]!.attributes["gen_ai.usage.cache_creation.input_tokens"], 1);
+  assert.equal(spans[1]!.attributes["gen_ai.response.model"], "deepseek-flash");
+  for (const s of spans.slice(0, 2)) assert.equal(s.attributes["gen_ai.provider.name"], "deepseek");
+  assert.equal(spans[0]!.attributes["gen_ai.agent.version"], "1");
   assert.equal(spans[2]!.attributes["error.type"], "tool_error");
 });
 

@@ -361,7 +361,7 @@ export class PiHost {
     b.spent += (u.input ?? 0) + (u.cacheWrite ?? 0) + (u.output ?? 0);
     this.persist(b);
     const failed = message.stopReason === "error" || message.stopReason === "aborted";
-    this.traces.endChat(b.conversation, { inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ...(message.stopReason ? { finishReason: String(message.stopReason) } : {}), error: failed });
+    this.traces.endChat(b.conversation, { inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, cacheReadTokens: u.cacheRead ?? 0, cacheCreationTokens: u.cacheWrite ?? 0, ...(message.stopReason ? { finishReason: String(message.stopReason) } : {}), error: failed });
     if (!b.round.length) this.traces.endTurn(b.conversation);
     if (failed) this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: String(message.errorMessage ?? message.stopReason).slice(0, 1000) });
     await recordAiUsage(this.env, aiUsageFromMetrics({
