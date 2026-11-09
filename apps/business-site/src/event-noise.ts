@@ -176,11 +176,6 @@ const MANAGEMENT = new Set(["executive", "insider"]);
 export const itemTab = (item: RailItem): RailTab => item.kind === "event" && MANAGEMENT.has(item.event.class) ? "management" : "reports";
 const rowTab = (row: NoiseRow): RailTab => row.kind === "item" ? itemTab(row.item) : "reports";
 
-/** The ids the time axis draws for a reading and a set of tabs. */
-export function tabTimelineIds(items: readonly RailItem[], filter: EventFilter, tabs: ReadonlySet<RailTab>): Set<string> {
-  return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row)).filter(item => tabs.has(itemTab(item))).map(item => item.id));
-}
-
 export type StreamBlock =
   | { kind: "row"; id: string; row: NoiseRow }
   | { kind: "quarter"; id: string; periodEnd: string; rows: NoiseRow[] };

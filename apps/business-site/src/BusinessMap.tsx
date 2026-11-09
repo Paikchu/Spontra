@@ -39,12 +39,11 @@ import { RailStream } from "./RailStream";
 import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, timelinePoints } from "./events-model";
-import { defaultEventFilter, readRailTabs, tabTimelineIds, withRailTabs, type RailTab } from "./event-noise";
-import { filingQuarterLabel, railItems, reportTitle, reportTitleLang, timelineFromFilings, type RailItem } from "./reports-model";
+import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang } from "./events-model";
+import { defaultEventFilter, readRailTabs, withRailTabs, type RailTab } from "./event-noise";
+import { filingQuarterLabel, railItems, reportTitle, reportTitleLang, type RailItem } from "./reports-model";
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
-import { Timeline } from "./Timeline";
 import { fiscalPhrase } from "./PeriodMark";
 import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
@@ -330,13 +329,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const { filter: eventFilter, fallback: eventFallback } = defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now);
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
-  // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
-  const points = useMemo(() => {
-    const all = filings ? timelineFromFilings(filings, events, 24, now, quarters, ticker) : timelinePoints(quarters, events, 24, now);
-    const ids = tabTimelineIds(railList, eventFilter, railTabs);
-    const quartersOnAxis = railTabs.has("reports") && (eventFilter === "key" || eventFilter === "earnings" || eventFilter === "all");
-    return all.filter(point => point.id.startsWith("report:") ? quartersOnAxis : ids.has(point.id));
-  }, [filings, quarters, events, now, eventFilter, railList, ticker, railTabs]);
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -693,7 +685,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       </details>}
     </Rail>
 
-    <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind} data-timeline={view !== "valuation" && points.length ? "" : undefined}
+    <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind}
       aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
       {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
           switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
@@ -770,9 +762,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
               label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
-
-      {points.length > 0 && <Timeline points={points} ticker={ticker} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
-        onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {/* With the breakdown on the stage, the business panel beside it takes the room the trend would. */}
       {breakdownShown ? null

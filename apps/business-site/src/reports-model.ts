@@ -1,4 +1,3 @@
-import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
@@ -6,7 +5,7 @@ import { isReport, railEntries, type RailEntry } from "@/shared/analysis-runtime
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { periodLabel } from "@/shared/analysis-runtime/fiscal-label";
-import { eventTitle, isQuietInsider, periodReport, type TimelinePoint } from "./events-model";
+import { isQuietInsider } from "./events-model";
 
 const m = messages({
   pending: (period: string) => `${period} report · Analysis in progress`, unanalysed: (period: string) => `${period} report`,
@@ -63,25 +62,6 @@ export function filingQuarterLabel(ticker: string, filing: Pick<PublicFilingDige
 export function quarterHeading(ticker: string, source: { periodEnd: string; fiscalYear?: number | null; fiscalQuarter?: number | null; fiscalYearEndMonth?: number | null; labelSource?: PublicFilingDigest["labelSource"] | null }): { title: string; end: string | null } {
   const labels = periodLabel({ ticker, ...source }, getLocale());
   return labels.primary ? { title: labels.primary, end: labels.secondary } : { title: labels.unknown, end: null };
-}
-
-/** Everything on the time axis: reports from the filings, events from the publication. Oldest first. */
-export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date(), quarters: BusinessFlowQuarter[] = [], ticker = ""): TimelinePoint[] {
-  const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
-  const reports = (filings?.filings ?? []).filter(isReport);
-  const points: TimelinePoint[] = reports.filter(r => r.date >= floor)
-    .map(r => ({ id: r.accessionNumber, date: r.date, kind: "report" as const, periodEnd: r.periodEnd!, title: `${filingQuarterLabel(ticker, r) ?? r.form} · ${r.headline || r.form}`, weight: 3 as const }));
-  // The axis is the only quarter control, so a flow quarter the filing list does not cover still gets a tick that switches the stage.
-  const covered = new Set(points.map(p => p.periodEnd));
-  for (const q of quarters) {
-    const date = q.reportedAt ?? q.periodEnd;
-    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: filingQuarterLabel(ticker, q) ?? periodReport(q.periodEnd), weight: 3 }); }
-  }
-  for (const e of events?.events ?? []) {
-    if (e.filedAt < floor) continue;
-    points.push({ id: e.id, date: e.filedAt, kind: "event", cls: e.class, title: eventTitle(e), weight: e.class === "insider" ? (isQuietInsider(e) ? 0 : 1) : 2 });
-  }
-  return points.sort((a, b) => a.date.localeCompare(b.date) || b.weight - a.weight);
 }
 
 /** The rail's one-line title for a report: its headline, or its period and form until it has one. */

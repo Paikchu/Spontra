@@ -12,7 +12,7 @@ const m = messages({
   summary: "概要", detail: "明细", revenue: "营收", businessRevenue: "业务营收", profit: "利润",
 });
 
-/** Same boxes as the loaded map: closed rail digest, head, chart, timeline, trend and footer. Text is a shimmer in the real line metrics. */
+/** Same boxes as the loaded map: closed rail digest, head, chart, trend and footer. Text is a shimmer in the real line metrics. */
 export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
     <div className="map map--loading" role="status" aria-label={m.loading} aria-busy="true">
@@ -27,7 +27,7 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
         </section>
         <CompanyDetailsSkeleton />
       </Rail>
-      <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
+      <section className="stage" data-view="profit" data-trend="" aria-hidden="true">
         <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" role="radio" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
         <header className="stage-head stage-head--summary">
           <div className="stats">
@@ -39,7 +39,6 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
           </div>
         </header>
         <div className="chart"><div className="ghost-chart" /></div>
-        <div className="timeline"><div className="timeline-track" /></div>
         <div className="trend" data-view="trend">
           <div className="trend-head"><div className="trend-title"><h2 className="ghost-text">{m.revenue}</h2><div className="trend-legend"><span className="ghost-text">{m.businessRevenue}</span><span className="ghost-text">{m.profit}</span></div></div></div>
           <div className="trend-plot" />

@@ -1,8 +1,7 @@
 import { insiderCompactMoney } from "./insider-money";
-import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
-import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
+import type { CompanyEvent, EventClass } from "@/shared/analysis-contract/events";
 import type { InsiderTotals } from "@/shared/analysis-contract/insiders";
-import { isOpenMarketInsiderTrade, DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, isQuietInsider } from "@/shared/analysis-runtime/events";
+import { isOpenMarketInsiderTrade, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, isQuietInsider } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -13,14 +12,12 @@ const m = messages({
   exercise: (n: string) => `Exercise ${n}`,
   holdingChange: "Holding change",
   sold: "sold", bought: "bought", exercised: "exercised",
-  report: (period: string) => `${period} report`,
 }, {
   sale: (n: string) => `卖出 ${n}`,
   purchase: (n: string) => `买入 ${n}`,
   exercise: (n: string) => `行权 ${n}`,
   holdingChange: "持股变动",
   sold: "卖出", bought: "买入", exercised: "行权",
-  report: (period: string) => `${period} 财报`,
 });
 
 /** Event classes in the reader's language. */
@@ -45,7 +42,6 @@ export const insiderTotalDollars = (totals: InsiderTotals): string => partialDol
   : totals.pricedCount > 0 ? [totals.pricedValue, null] : [null]);
 
 /** "2026.08 report" / "2026.08 财报": a quarter's report by its period end. */
-export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEnd));
 
 export const shortDate = (d: string) => d.slice(5).replace("-", ".");
 
@@ -88,35 +84,3 @@ export function eventTitle(e: CompanyEvent): string {
 /** The language of the event's title when it is generated (translated once Spontra Analysis has) or EDGAR text (English); undefined when it is composed in the reader's language. */
 export const eventTitleLang = (e: CompanyEvent): ReturnType<typeof langOf> | undefined =>
   !e.insider && (!!e.summary?.headline || !!filingDocumentTitle(e)) ? langOf(eventTitle(e)) : undefined;
-
-export type TimelinePoint = {
-  id: string;
-  date: string;
-  kind: "report" | "event";
-  /** Report points carry the quarter period end they open; event points carry the class. */
-  periodEnd?: string;
-  cls?: EventClass;
-  title: string;
-  /** Marker size: a report, a current report, a traded Form 4, a quiet Form 4. */
-  weight: 3 | 2 | 1 | 0;
-};
-
-/** Everything on the time axis: report filings from the flow quarters, and every event. Oldest first. */
-export function timelinePoints(quarters: BusinessFlowQuarter[], publication: EventsPublication | null, months = 24, now = new Date()): TimelinePoint[] {
-  const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
-  const points: TimelinePoint[] = [];
-  for (const q of quarters) {
-    const date = q.reportedAt ?? q.periodEnd;
-    if (date >= floor) points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: periodReport(q.periodEnd), weight: 3 });
-  }
-  for (const e of publication?.events ?? []) {
-    if (e.filedAt < floor) continue;
-    points.push({ id: e.id, date: e.filedAt, kind: "event", cls: e.class, title: eventTitle(e), weight: e.class === "insider" ? (isQuietInsider(e) ? 0 : 1) : 2 });
-  }
-  return points.sort((a, b) => a.date.localeCompare(b.date) || b.weight - a.weight);
-}
-
-export const CLASS_TONE: Record<EventClass, string> = {
-  earnings: "var(--flow-profit)", guidance: "var(--biz-1)", executive: "var(--biz-3)", insider: "var(--flow-expense)", deal: "var(--biz-2)", financing: "var(--biz-4)",
-  capital_return: "var(--up)", vote: "var(--muted-foreground)", legal: "var(--loss)", other: "var(--muted-foreground)",
-};
