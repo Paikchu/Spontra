@@ -17,7 +17,7 @@ import { listFilingAnalyses, readFilingAnalysis, type FilingAnalysisEntry } from
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, readWebPage } from "./web.ts";
 import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
 import type { SearchHit } from "../web-search/types.ts";
-import { earlierMaterial } from "../../../../shared/analysis-runtime/checkup-notes.ts";
+import { earlierMaterial } from "../../../../shared/analysis-runtime/earlier-material.ts";
 import { lensCatalogue, lensEvidence, type LensCatalogueRow } from "../lens/agent.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { asObject, closedObject, type AgentClientTool } from "../tool-loop.ts";

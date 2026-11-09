@@ -19,9 +19,8 @@ const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "feature.settings": ["company", "filings", "findings", "events", "valuation"],
   "findings.published": ["findings"],
   "dossier.published": ["findings"],
-  "checkup.published": ["findings"],
-  // Cited peers ride with the findings; comparable peers ride with the capital structure for the checkup's ranks.
-  "peers.published": ["findings", "capital"],
+  // Cited peers ride with the findings.
+  "peers.published": ["findings"],
   "events.published": ["events"],
   // A row's analysis is read by the row's id at the events' and filings' revisions.
   "items.published": ["events", "filings"],

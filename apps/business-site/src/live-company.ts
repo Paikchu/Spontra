@@ -5,7 +5,6 @@ import { stageChartBox } from "./chart-box";
 import { crossfade } from "./page-turn";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
@@ -20,8 +19,6 @@ export type CompanyData = {
   publication: CompanyPublication | null;
   flow: PublicBusinessFlow | null;
   capital: PublicCapitalStructure | null;
-  /** The company and its comparable peers, read with the capital structure, for the checkup's ranks. */
-  peers: PeersPublication | null;
   findings: FindingsBundle | null;
   fundamentals: FindingFundamentals | null;
   events: EventsPublication | null;
@@ -29,7 +26,7 @@ export type CompanyData = {
   /** The valuation assessment with its availability; absent until read. */
   valuation: ValuationResponse | null;
 };
-const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null, valuation: null };
+const EMPTY: CompanyData = { publication: null, flow: null, capital: null, findings: null, fundamentals: null, events: null, filings: null, valuation: null };
 
 /** The main view becomes available once its own opening resources have settled. */
 export type { OpeningFace } from "./opening-face";
@@ -138,8 +135,8 @@ async function readResource(ticker: string, resource: MapResource, rev: string |
     return findings ? { findings } : null;
   }
   if (resource === "capital") {
-    const read = await fetchCapital(ticker, signal, rev, response);
-    return read ? { capital: read.capital, peers: read.peers } : null;
+    const capital = await fetchCapital(ticker, signal, rev, response);
+    return capital ? { capital } : null;
   }
   if (resource === "valuation") {
     const valuation = await fetchValuation(ticker, signal, rev, response);

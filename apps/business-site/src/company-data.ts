@@ -79,12 +79,11 @@ export async function fetchSupplement<T>(ticker: string, resource: "findings" | 
   return body.status === "ready" ? body[resource] as T : null;
 }
 
-/** The capital structure with the company's comparable peers, as the site serves them together. */
-export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<{ capital: PublicCapitalStructure; peers: PeersPublication | null } | null> {
+export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<PublicCapitalStructure | null> {
   const response = await companyRequest(companyPath(ticker, "/capital", rev), signal, openingResponse);
   if (!response.ok) throw new CompanyHttpError(response.status);
-  const body = await response.json() as { status?: string; capital?: PublicCapitalStructure | null; peers?: PeersPublication | null };
-  return body.status === "ready" && body.capital ? { capital: body.capital, peers: body.peers ?? null } : null;
+  const body = await response.json() as { status?: string; capital?: PublicCapitalStructure | null };
+  return body.status === "ready" && body.capital ? body.capital : null;
 }
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */

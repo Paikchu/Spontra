@@ -1,20 +1,15 @@
 import type { FlowMetric } from "../analysis-contract/business-flow.ts";
-import type { AnalysisFinding, CapitalMetric, DerivedMetric, FindingEvidence, FindingRef, FindingSpan } from "../analysis-contract/findings.ts";
+import type { AnalysisFinding, CapitalMetric, DerivedMetric, FindingEvidence, FindingRef } from "../analysis-contract/findings.ts";
 import {
   STATEMENT_ANALYSIS_VERSION, STATEMENT_DIMENSIONS, STATEMENT_METRICS, STATEMENT_RULES,
-  type AssessedDimension, type AssessedMetric, type CapitalChain, type CashBridge, type BridgeStep, type Flag, type FlagLevel, type IncomeModel, type PeerRank,
-  type MetricForm, type RuleCondition, type StatementAssessment, type StatementMetricDef, type StatementRuleDef,
+  type AssessedDimension, type AssessedMetric, type Flag, type FlagLevel, type IncomeModel, type MetricForm, type RuleCondition, type StatementAssessment, type StatementMetricDef, type StatementRuleDef,
 } from "../analysis-contract/statement-analysis.ts";
-import { cashFlowSpan, operatingGroup, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue } from "./findings.ts";
+import { resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue } from "./findings.ts";
 import { refView } from "./highlights.ts";
-import { comparablePeers } from "./peers.ts";
-import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { compactMoney, multiple, perShare, points, type Locale } from "./locale.ts";
 
 /**
- * The three-statement checkup over the data a page already holds. Pure:
- * the same call in Spontra Analysis and in the browser gives the same metrics, the same flags and the same bridge, so
- * what a model is told matches what the reader sees. Every figure is resolved through the findings runtime and
+ * The three-statement checkup over the findings data. Pure: the same call gives the same metrics and the same flags. Every figure is resolved through the findings runtime and
  * nothing is assumed zero; a metric the data cannot answer is left out and counted as uncovered.
  */
 
@@ -140,14 +135,6 @@ function ruleThreshold(rule: StatementRuleDef, locale: Locale = "en", defs: Read
   return ruleText(rule, locale, defs, op => `${op} `);
 }
 
-/**
- * The rule in words for the page, where no comparison sign is shown: "above 15 pp, and Revenue growth above 0%, 2 quarters
- * running" / "高于 15个百分点，且 营收同比 高于 0%，连续 2 季". The formula form above is what the model and the ledger read.
- */
-export function ruleCriteria(rule: StatementRuleDef, locale: Locale = "en", defs: ReadonlyMap<string, StatementMetricDef> = METRIC_BY_ID): string {
-  return ruleText(rule, locale, defs, op => zh(locale) ? (op === ">" ? "高于 " : "低于 ") : (op === ">" ? "above " : "below "), true);
-}
-
 function ruleText(rule: StatementRuleDef, locale: Locale, defs: ReadonlyMap<string, StatementMetricDef>, sign: (op: "<" | ">") => string, words = false): string {
   const parts = rule.all.map(c => {
     const def = defs.get(c.metric), name = c.metric === rule.metric || !def ? "" : `${def.label[zh(locale) ? 1 : 0]} `;
@@ -184,79 +171,6 @@ function evaluateRules(series: Map<string, Series>, periodEnd: string, locale: L
   return flags.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || excess(STATEMENT_RULES.find(r => r.id === b.ruleId)!, b.value) - excess(STATEMENT_RULES.find(r => r.id === a.ruleId)!, a.value));
 }
 
-/* ---------- Bridge and chain ---------- */
-
-const STEP_LABEL: Record<string, [string, string]> = {
-  netIncome: ["Net income", "净利润"], nonCash: ["Non-cash charges", "非现金项目"], workingCapital: ["Working-capital change", "营运资本变动"], otherOperating: ["Other operating items", "其他经营项目"],
-  operating: ["Operating cash flow", "经营现金流"], capex: ["Capital expenditures", "资本开支"], freeCashFlow: ["Free cash flow", "自由现金流"],
-  acquisitions: ["Acquisitions", "收购"], investments: ["Investments, net", "投资净额"], otherInvesting: ["Other investing", "其他投资活动"], investing: ["Investing cash flow", "投资现金流"],
-  debtIssued: ["Debt issued", "新增借款"], debtRepaid: ["Debt repaid", "偿还债务"], equityIssued: ["Stock issued", "股权融资"], buybacks: ["Share buybacks", "回购"], dividends: ["Dividends", "分红"],
-  leasePrincipal: ["Lease principal", "租赁本金"], otherFinancing: ["Other financing", "其他筹资活动"], financing: ["Financing cash flow", "筹资现金流"], fx: ["Exchange rate effect", "汇率影响"], netChange: ["Change in cash", "现金变动"],
-};
-const section = (lines: Array<{ group: string; value: string }> | null, group: string) => lines ? lines.filter(l => l.group === group).reduce((t, l) => t + Number(l.value), 0) : null;
-
-/**
- * Net income to the change in cash, one step per economic group of the cash-flow statement; a section whose lines
- * do not reconcile contributes its total as one step. Running totals (operating, free cash flow, net change) are
- * marked, and `closes` says whether the steps add up to the statement's own net change.
- */
-function cashBridge(data: FindingData, periodEnd: string, span: FindingSpan, locale: Locale = "en"): CashBridge | null {
-  const read = (pick: Parameters<typeof cashFlowSpan>[3]) => cashFlowSpan(data, periodEnd, span, pick);
-  const total = read(c => Number(c.operating.total));
-  if (!total) return null;
-  const name = (id: string) => STEP_LABEL[id]![zh(locale) ? 1 : 0];
-  const steps: BridgeStep[] = [];
-  const step = (id: string, value: number | null, ref: FindingRef | null = null) => { if (value != null && Number.isFinite(value) && value !== 0) steps.push({ id, label: name(id), value, ref }); };
-  const mark = (id: string, value: number, ref: FindingRef | null) => steps.push({ id, label: name(id), value, ref, total: true });
-  // Without reconciled operating lines in every quarter of the span, operating cash flow stands as one total from zero.
-  const operatingLines = read(c => operatingGroup(c, "netIncome"));
-  if (operatingLines) {
-    step("netIncome", operatingLines.value, { metric: "net" });
-    step("nonCash", read(c => operatingGroup(c, "nonCash"))?.value ?? null, { derived: "nonCashCharges" });
-    step("workingCapital", read(c => operatingGroup(c, "workingCapital"))?.value ?? null, { derived: "workingCapitalChange" });
-    step("otherOperating", read(c => operatingGroup(c, "other"))?.value ?? null);
-  }
-  mark("operating", total.value, { capital: "operatingCashFlow" });
-  const investingTotal = read(c => Number(c.investing.total)), capex = read(c => section(c.investing.lines, "capex"));
-  if (capex) {
-    step("capex", capex.value, { capital: "capex" });
-    mark("freeCashFlow", total.value + capex.value, { capital: "freeCashFlow" });
-    step("acquisitions", read(c => section(c.investing.lines, "acquisitions"))?.value ?? null, { capital: "acquisitions" });
-    step("investments", read(c => section(c.investing.lines, "investments"))?.value ?? null, { capital: "investmentsNet" });
-    step("otherInvesting", read(c => section(c.investing.lines, "other"))?.value ?? null);
-  } else step("investing", investingTotal?.value ?? null);
-  const financingTotal = read(c => Number(c.financing.total)), financingLines = read(c => c.financing.lines ? 1 : null);
-  if (financingLines) {
-    for (const [id, capital] of [["debtIssued", "debtIssued"], ["debtRepaid", "debtRepaid"], ["equityIssued", "equityIssued"], ["buybacks", "buybacks"], ["dividends", "dividends"], ["leasePrincipal", "leasePrincipal"]] as Array<[string, CapitalMetric]>) step(id, read(c => section(c.financing.lines, id))?.value ?? null, { capital });
-    step("otherFinancing", read(c => section(c.financing.lines, "other"))?.value ?? null);
-  } else step("financing", financingTotal?.value ?? null, { capital: "financing" });
-  step("fx", read(c => c.fxEffect == null ? null : Number(c.fxEffect))?.value ?? null);
-  const netChange = read(c => Number(c.netChange));
-  if (!netChange) return null;
-  mark("netChange", netChange.value, null);
-  // Movements after operating cash flow, added to it, must reach the net change; the operating lines themselves sum to it by contract.
-  const after = steps.slice(steps.findIndex(s => s.id === "operating") + 1).filter(s => !s.total);
-  const moved = total.value + after.reduce((t, s) => t + s.value, 0);
-  const tolerance = Math.max(2e6, 0.01 * Math.max(...steps.map(s => Math.abs(s.value))));
-  const cash = (end: string) => resolveRef(data, { capital: "cash" }, end, "quarter")?.value ?? null;
-  return { span, periodEnd: total.periodEnd, currency: total.currency ?? "USD", steps, openingCash: cash(shiftPeriod(periodEnd, span === "quarter" ? -3 : -12)), closingCash: cash(periodEnd), closes: Math.abs(moved - netChange.value) <= tolerance };
-}
-
-const CHAIN: Array<{ id: CapitalChain["series"][number]["id"]; label: [string, string]; ref: FindingRef; span: FindingSpan }> = [
-  { id: "capex", label: ["Capex, four quarters", "资本开支（近四季）"], ref: { capital: "capex" }, span: "fiscal_year" },
-  { id: "productive", label: ["Property and equipment", "固定资产"], ref: { capital: "productive" }, span: "quarter" },
-  { id: "revenue", label: ["Revenue, four quarters", "营收（近四季）"], ref: { metric: "revenue" }, span: "fiscal_year" },
-  { id: "operatingCashFlow", label: ["Operating cash flow, four quarters", "经营现金流（近四季）"], ref: { capital: "operatingCashFlow" }, span: "fiscal_year" },
-];
-/** Capex, the assets it became, and the revenue and cash that followed, each indexed to the oldest quarter all four answer. */
-function capitalChain(data: FindingData, periodEnd: string, locale: Locale = "en", quarters = 8): CapitalChain | null {
-  const ends = Array.from({ length: quarters }, (_, i) => shiftPeriod(periodEnd, -3 * (quarters - 1 - i)));
-  const raw = CHAIN.map(s => ({ ...s, values: ends.map(end => resolveRef(data, s.ref, end, s.span)?.value ?? null) }));
-  const base = ends.findIndex((_, i) => raw.every(s => (s.values[i] ?? 0) > 0));
-  if (base < 0 || ends.length - base < 2) return null;
-  return { base: ends[base]!, series: raw.map(({ values, label, ...s }) => ({ ...s, label: label[zh(locale) ? 1 : 0], points: ends.flatMap((end, i) => i >= base && values[i] != null ? [{ periodEnd: end, value: values[i]!, index: values[i]! / values[base]! * 100 }] : []) })) };
-}
-
 /* ---------- Assessment ---------- */
 
 export function assessStatements(data: FindingData, periodEnd: string, locale: Locale = "en"): StatementAssessment {
@@ -282,12 +196,10 @@ export function assessStatements(data: FindingData, periodEnd: string, locale: L
   const standard = model === "standard" || model === "direct_operating";
   return {
     version: STATEMENT_ANALYSIS_VERSION, periodEnd, model, dimensions, flags,
-    bridge: { quarter: cashBridge(data, periodEnd, "quarter", locale), year: cashBridge(data, periodEnd, "fiscal_year", locale) },
-    chain: standard ? capitalChain(data, periodEnd, locale) : null,
   };
 }
 
-/* ---------- Reading the checkup ---------- */
+/* ---------- Reading the metrics ---------- */
 
 export const METRIC_DEFS: ReadonlyMap<string, StatementMetricDef> = new Map(STATEMENT_METRICS.map(d => [d.id, d]));
 export const RULE_DEFS: ReadonlyMap<string, StatementRuleDef> = new Map(STATEMENT_RULES.map(r => [r.id, r]));
@@ -305,84 +217,3 @@ export function formatMetric(value: number, form: MetricForm, locale: Locale = "
     case "months": return zh(locale) ? `${Math.abs(value).toFixed(1)} 个月` : `${Math.abs(value).toFixed(1)} months`;
   }
 }
-/** A change of a metric in its own terms: points for a rate, turns for a multiple, percent for an amount or a count of months. */
-export function formatMetricChange(delta: number, form: MetricForm, locale: Locale = "en"): string {
-  if (!Number.isFinite(delta)) return "—";
-  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
-  if (form === "percent" || form === "points") return points(delta, locale);
-  if (form === "multiple") return multiple(`${sign}${Math.abs(delta).toFixed(2)}`, locale);
-  return `${sign}${Math.abs(delta).toFixed(1)}%`;
-}
-
-/** The levels a flagged metric is tested against, in its display units, for a chart's threshold lines. */
-export function thresholdsOf(flag: Pick<Flag, "ruleId" | "metricId">): number[] {
-  const rule = RULE_DEFS.get(flag.ruleId);
-  return rule ? rule.all.flatMap(c => c.metric === flag.metricId && "on" in c && c.on === "value" ? [c.value] : []) : [];
-}
-
-/**
- * The statement figures a flag is about, for marking the tiles that show them: a ratio's numerator, a spread's own
- * figure, a derived figure's leading input. The denominator is context, not the subject.
- */
-export function flagFigures(flag: Pick<Flag, "metricId">): { metrics: FlowMetric[]; capital: CapitalMetric[] } {
-  const def = METRIC_DEFS.get(flag.metricId);
-  const metrics = new Set<FlowMetric>(), capital = new Set<CapitalMetric>();
-  const lead = (ref: FindingRef) => {
-    if ("ratio" in ref) { lead(ref.ratio.numerator); return; }
-    if ("metric" in ref) metrics.add(ref.metric);
-    else if ("capital" in ref) capital.add(ref.capital);
-    else if ("derived" in ref) { const inputs = DERIVED_INPUTS[ref.derived]; if (inputs.capital?.[0]) capital.add(inputs.capital[0]); else if (inputs.metrics?.[0]) metrics.add(inputs.metrics[0]); }
-  };
-  if (def) lead(def.ref);
-  return { metrics: [...metrics], capital: [...capital] };
-}
-
-/** A reference read at a peer: the same figure or ratio through the peers projection; null when a side has no peer figure. */
-function atPeer(ref: FindingRef, ticker: string): FindingRef | null {
-  if ("ratio" in ref) {
-    const n = atPeer(ref.ratio.numerator, ticker), d = atPeer(ref.ratio.denominator, ticker);
-    return n && d && !("ratio" in n) && !("ratio" in d) ? { ratio: { numerator: n as never, denominator: d as never } } : null;
-  }
-  if ("metric" in ref) return { peer: { ticker, ref: { metric: ref.metric } } };
-  if ("capital" in ref) return { peer: { ticker, ref: { capital: ref.capital } } };
-  if ("fundamental" in ref) return { peer: { ticker, ref: { fundamental: ref.fundamental } } };
-  // The projection's own figures already fall back to the SEC series the same way.
-  if ("derived" in ref && ref.derived === "depreciationAmortization") return { peer: { ticker, ref: { capital: "depreciation" } } };
-  if ("derived" in ref && ref.derived === "stockCompensationExpense") return { peer: { ticker, ref: { capital: "stockCompensation" } } };
-  return null;
-}
-
-/**
- * The peers a company's whole-company ratios may be ranked against: business-tag pairs of basis company only. A shared
- * category alone (a bank beside a phone maker) or a pair comparable on one unit is not a basis for ranking.
- */
-export const rankingPeers = (peers: PeersPublication | null | undefined, ticker: string): string[] =>
-  (comparablePeers(peers, ticker) ?? []).filter(c => c.pair.basis === "company").map(c => c.ticker);
-
-/**
- * Where the company stands on each ratio its ranking peers can answer: only level metrics with a direction, each peer
- * at its aligned quarter, and only when at least two peers answer. Amounts and months are not ranked; size is not a ratio.
- */
-export function peerRanks(data: FindingData, assessment: StatementAssessment, ticker: string): Record<string, PeerRank> {
-  const peers = rankingPeers(data.peers, ticker);
-  const out: Record<string, PeerRank> = {};
-  if (peers.length < 2) return out;
-  for (const metric of assessment.dimensions.flatMap(d => d.metrics)) {
-    if (metric.measure !== "value" || metric.better === "none" || metric.form === "money" || metric.form === "months") continue;
-    const rows: PeerRank["rows"] = [{ ticker, value: metric.current.value, periodEnd: metric.current.resolved.periodEnd, own: true }];
-    for (const peer of peers) {
-      const ref = atPeer(metric.ref, peer);
-      const r = ref ? resolveRef(data, ref, assessment.periodEnd, metric.span) : null;
-      if (r && Number.isFinite(r.value)) rows.push({ ticker: peer, value: display(metric.form, r), periodEnd: r.periodEnd, own: false });
-    }
-    if (rows.length < 3) continue;
-    rows.sort((a, b) => metric.better === "high" ? b.value - a.value : a.value - b.value);
-    out[metric.id] = { rank: rows.findIndex(r => r.own) + 1, of: rows.length, rows };
-  }
-  return out;
-}
-
-/** The dimensions' names as Spontra Analysis writes them for a model. */
-export const DIMENSION_NAMES: Record<import("../analysis-contract/statement-analysis.ts").StatementDimension, string> = {
-  growth: "growth", profitability: "profitability", earningsQuality: "earnings quality", capitalEfficiency: "capital efficiency", safety: "financial safety", valuation: "valuation",
-};

@@ -12,7 +12,6 @@ import { BUSY_RECHECK_MS, isBusy, lostWake } from "./wakes.ts";
 import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
 import { lensLoader } from "../lens/pi.ts";
-import { checkupLoader } from "../checkup/workflow.ts";
 import { analystLoader } from "../analyst/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
 import { businessLoader } from "../company-analysis-workflow.ts";
@@ -51,7 +50,6 @@ export class TaskRunner extends Agent<Env, RunView> {
       filing: async spec => filingLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
       lens: async spec => lensLoader(spec, await env()),
-      checkup: async spec => checkupLoader(spec, await env()),
       analyst: async spec => analystLoader(spec, await env()),
       tree: async spec => treeLoader(spec, await env()),
       business: async spec => businessLoader(spec, await env()),

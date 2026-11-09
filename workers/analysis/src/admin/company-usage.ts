@@ -9,7 +9,7 @@ const USAGE_TASK: Record<string, TaskName> = {
   library: 'library', 'library-cards': 'library-cards', 'library-links': 'library-links',
   'library-links-review': 'library-links', 'business-tags': 'business-tags',
   business: 'company-analysis', 'company-analysis': 'company-analysis',
-  findings: 'findings', lens: 'findings', analyst: 'analyst', checkup: 'checkup',
+  findings: 'findings', lens: 'findings', analyst: 'analyst', checkup: 'findings',
   tree: 'tree', explainer: 'explainer', valuation: 'valuation', 'valuation-research': 'valuation',
 };
 

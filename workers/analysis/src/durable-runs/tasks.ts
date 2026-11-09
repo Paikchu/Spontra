@@ -13,7 +13,6 @@ import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valua
 import { executeValuationEvaluation, type ValuationEvaluationParams } from "../valuation/evaluation.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
-import { executeCheckupWorkflow, type CheckupWorkflowParams } from "../checkup/workflow.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "../filing-library/cards.ts";
 import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "../filing-library/links.ts";
 import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "../business-tags/workflow.ts";
@@ -103,11 +102,6 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     // A provider outage makes the run wait (analyst/workflow.ts); a waiting run holds no CPU.
     const sleep = trackSleep(sleeper(step), run);
     return trackRun(run, () => executeAnalystWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, { sleep, runId: id }));
-  },
-  async CHECKUP_WORKFLOW(params: CheckupWorkflowParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    const run = { env, kind: "checkup" as const, ticker: params.ticker, runId: id };
-    return trackRun(run, () => executeCheckupWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, { runId: id }));
   },
   async FINDINGS_WORKFLOW(params: FindingsWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);

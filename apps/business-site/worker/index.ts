@@ -105,15 +105,14 @@ export async function loadTree(ticker:string,fetcher:typeof fetch=fetch,locale:L
 
 /**
  * Supplementary and loaded on its own, so the map never waits for it; anything that fails re-validation reads as null.
- * The comparable peers ride along for the three-statement checkup's ranks; a malformed projection drops the peers alone.
  */
-export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<{capital:PublicCapitalStructure;peers:PeersPublication|null}|null>{
+export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicCapitalStructure|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/capital`,{signal:AbortSignal.timeout(25000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown;peers?:unknown};
+  const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown};
   const capital=body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
-  return capital?{capital,peers:readPeersPublication(body.peers)}:null;
+  return capital;
  }catch{return null;}
 }
 
@@ -491,7 +490,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
-   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));

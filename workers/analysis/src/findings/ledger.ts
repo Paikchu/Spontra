@@ -14,8 +14,7 @@ import type { DerivedMetric } from "../../../../shared/analysis-contract/finding
  */
 export type LedgerRow = { ref: FindingRef; periodEnd: string; span: FindingSpan; label: string; value: string; yoy: string | null; qoq: string | null };
 /**
- * A rule of the three-statement checkup the report trips, as the page shows it
- * beside the findings: the metric, its value written as the page writes it, the rule as a formula, and the quarter the
+ * A rule of the three-statement checkup the report trips: the metric, its value as written, the rule as a formula, and the quarter the
  * run began. `ref` is the metric's reference, whose ledger rows carry the numbers a finding may quote.
  */
 export type LedgerFlag = { rule: string; level: "alert" | "watch" | "note"; metric: string; value: string; threshold: string; since: string; ref: FindingRef; span: FindingSpan };

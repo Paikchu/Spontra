@@ -162,14 +162,6 @@ export type MetricPoint = { periodEnd: string; value: number };
 /** A figure as the findings runtime resolves it (the runtime's `ResolvedValue`, stated here so the contract stays declarative). */
 export type ResolvedFigure = { value: number; unit: "USD" | "percent" | "per_share" | "shares" | "ratio" | "points"; currency: string | null; periodStart: string | null; periodEnd: string; span: FindingSpan; accessions: string[] };
 
-/** Where the company's figure stands among its comparable peers at the same span, each peer at its aligned quarter. */
-export type PeerRank = {
-  /** 1 is best by the metric's direction. */
-  rank: number;
-  of: number;
-  rows: Array<{ ticker: string; value: number; periodEnd: string; own: boolean }>;
-};
-
 export type AssessedMetric = {
   id: string;
   dimension: StatementDimension;
@@ -215,30 +207,6 @@ export type AssessedDimension = {
   covered: number;
 };
 
-/**
- * One step of the profit-to-cash bridge, signed as it moves cash (capex negative), or a running total (operating cash
- * flow, free cash flow, the net change) marked `total`. A reference, when one exists, resolves the figure the statement
- * states for it, in the sign the findings runtime gives it.
- */
-export type BridgeStep = { id: string; label: string; value: number; ref: FindingRef | null; total?: true };
-export type CashBridge = {
-  span: FindingSpan;
-  periodEnd: string;
-  currency: string;
-  steps: BridgeStep[];
-  /** Cash at the start and end of the span, from the balance sheets, when both are held. */
-  openingCash: number | null;
-  closingCash: number | null;
-  /** The steps sum to the statement's net change within rounding. */
-  closes: boolean;
-};
-
-/** Four series indexed to the oldest quarter held (= 100), so the reader sees whether revenue and cash followed the capital put in. */
-export type CapitalChain = {
-  base: string;
-  series: Array<{ id: "capex" | "productive" | "revenue" | "operatingCashFlow"; label: string; ref: FindingRef; span: FindingSpan; points: Array<MetricPoint & { index: number }> }>;
-};
-
 export type StatementAssessment = {
   version: typeof STATEMENT_ANALYSIS_VERSION;
   periodEnd: string;
@@ -246,6 +214,4 @@ export type StatementAssessment = {
   dimensions: AssessedDimension[];
   /** Every flag, alerts first, then watches, then notes; within a level, the furthest past its threshold first. */
   flags: Flag[];
-  bridge: { quarter: CashBridge | null; year: CashBridge | null };
-  chain: CapitalChain | null;
 };

@@ -125,19 +125,6 @@ export const findings: FindingsPublication = {
       lens: { type: "trend", refs: [{ ratio: { numerator: { metric: "gross" }, denominator: { metric: "revenue" } } }], span: "quarter", rate: "qoq" } }),
   ],
   sources: [{ id: "s1", title: "10-Q", url: SRC, kind: "sec", publishedAt: null }],
-  // A checkup note: generated text, with quotes from this and an earlier report.
-  materials: [
-    { id: "c:cash-conversion:m1", kind: "sec", title: `${TICKER} 10-Q ${PERIOD}`, url: SRC, publishedAt: "2026-08-05", passageId: "pfixturenote01", documentId: "d1", form: "10-Q", path: ["MD&A", "Cash flows"] },
-    { id: "c:cash-conversion:m2", kind: "sec", title: `${TICKER} 10-K 2025-12-31`, url: SRC, publishedAt: "2026-02-20", passageId: "pfixturenote02", documentId: "d0", form: "10-K", path: ["MD&A", "Liquidity"] },
-  ],
-  checkup: { periodEnd: PERIOD, generatedAt: "2026-08-01T00:00:00Z", model: "fixture", notes: [{
-    metricId: "cash-conversion", ruleIds: ["cash-above-profit"],
-    paragraphs: [{ text: "Generated analysis that stays in English this phase: operating cash ran at 2.07x net income over the trailing four quarters, carried by non-cash charges that the earlier annual report already described as rising with the capacity build.", sourceIds: ["c:cash-conversion:m1", "c:cash-conversion:m2"] }],
-    quotes: [
-      { kind: "quote", materialId: "c:cash-conversion:m1", text: "Depreciation and amortization increased as new capacity was placed in service." },
-      { kind: "quote", materialId: "c:cash-conversion:m2", text: "We expect depreciation to rise as we place additional capacity in service." },
-    ],
-  }] },
   highlights: [{ periodEnd: PERIOD,
     profit: [{ title: "Revenue", ref: { metric: "revenue" }, compare: "yoy" }, { title: "Operating margin", ref: { ratio: { numerator: { metric: "operating" }, denominator: { metric: "revenue" } } }, compare: "yoy", show: "change" }],
     cash: [{ title: "Free cash flow", ref: { capital: "freeCashFlow" }, compare: "yoy" }],

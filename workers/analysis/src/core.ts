@@ -75,7 +75,7 @@ export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SE
 }
 
 /**
- * The same refusal for a run of another feature: the company analysis, memory, findings, analyst and checkup belong to the
+ * The same refusal for a run of another feature: the company analysis, memory, findings and analyst belong to the
  * findings switch and the explainer to its own, so a run is refused by the switch that scheduled it, not the reports list.
  */
 export function assertFeatureTicker(env: Parameters<typeof featureTickersFor>[0], feature: Feature, ticker: string): void {

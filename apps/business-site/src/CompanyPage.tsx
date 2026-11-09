@@ -42,7 +42,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   onSearch: () => void;
 }) {
   const { moduleErrors, retryModule, rateLimited, data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
-  const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
+  const { flow, publication, capital, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
@@ -71,7 +71,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
           capital={capital}
-          findings={findings?.findings ?? null} peers={findings?.peers ?? null} rankPeers={peers} passages={findings?.passages ?? null}
+          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null}
           fundamentals={fundamentals}
           events={events}
           filings={filings}

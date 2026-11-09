@@ -40,11 +40,6 @@ export const PLANS: Record<FeatureRunProgress['kind'], Plan> = {
     rules: [[/^analyst-(time|input)$/, 0], [/^analyst-(trace|publish)$/, 2], [/^analyst-/, 1]],
     step: [[/^analyst-model-wait/, () => '等待模型恢复'], [/-review$/, () => '审校'], [TURN, turnLabel]],
   },
-  checkup: {
-    phases: ['读取资料', '逐项分析', '发布'],
-    rules: [[/^checkup-(time|input)$/, 0], [/^checkup-(publish|empty)$/, 2], [/^checkup-/, 1]],
-    step: [[TURN, turnLabel]],
-  },
   explainer: {
     phases: ['读取业务', '检索资料', '撰写', '审校', '发布'],
     rules: [[/^explainer-(time|input)$/, 0], [/^explainer-(evidence|plan|follow-up)/, 1], [/^explainer-write/, 2], [/^explainer-review/, 3], [/^explainer-publish$/, 4]],

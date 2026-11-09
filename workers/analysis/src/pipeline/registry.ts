@@ -12,7 +12,7 @@ export const EVENT_TYPES = [
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
   "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated",
   "task.version_changed",
-  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
+  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "items.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
@@ -26,7 +26,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
   "fundamentals", "events", "extract",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "filing-analysis",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "filing-analysis",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
 ] as const;
@@ -93,8 +93,6 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
   "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
-  // A written analysis of each metric the three-statement checkup flags, read against the current and earlier filings (Workflow).
-  "checkup": { emits: ["checkup.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
   // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
   // Every filing's one path (docs/filing-analysis-design.md); the sessions it starts publish on their own.
@@ -150,8 +148,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "filing.archived": [{ task: "map-derive" },
     { task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
-  // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
-  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "filing-analysis" }, { task: "valuation" }],
+  "library.prepared": [{ task: "library-cards" }, { task: "filing-analysis" }, { task: "valuation" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -172,10 +169,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
   "extract.published": [{ task: "findings" }],
   "analysis.published": [{ task: "findings" }],
-  "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }, { task: "valuation" }],
+  "findings.published": [{ task: "analyst" }, { task: "translate" }, { task: "valuation" }],
   // Every publication with reader-facing prose is translated once it lands.
   "dossier.published": [{ task: "translate" }],
-  "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }, { task: "valuation" }],
   "valuation.published": [{ task: "translate" }],

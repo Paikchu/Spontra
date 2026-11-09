@@ -85,13 +85,6 @@ export const findingsPublicationSchema = z.object({
   highlights: z.array(reportHighlightsSchema).max(8).optional(),
   record: z.array(recordEntry).max(24).optional(),
   materials: z.array(findingsMaterialSchema).max(200).optional(),
-  checkup: z.object({
-    periodEnd: date, generatedAt: z.string().max(40), model: text(80),
-    notes: z.array(z.object({
-      metricId: text(60), ruleIds: z.array(text(60)).max(8), paragraphs: z.array(claim).min(1).max(3),
-      quotes: z.array(z.object({ kind: z.literal("quote"), materialId: text(40), text: text(600) })).max(6),
-    })).max(12),
-  }).optional(),
 });
 
 /**

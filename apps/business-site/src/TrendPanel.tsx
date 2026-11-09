@@ -8,8 +8,6 @@ import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout"
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { axisNumber, axisUnit, compactMoney, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
-import { MomentumTag } from "./MomentumTag";
-import { momentumOf } from "./momentum";
 import { SLOTS, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, layerOrder, niceTicks, onSameBasis, rateTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
 
 const m = messages({
@@ -124,8 +122,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
     </span>
   </ToggleGroup>;
   const subject = selected?.name ?? m.allBusinesses;
-  // How year-over-year growth of the revenue drawn is moving, at the quarter on the stage.
-  const momentum = useMemo(() => momentumOf(historyColumns.map(c => ({ periodEnd: c.slot.periodEnd, value: c.total })), currentPeriod), [historyColumns, currentPeriod]);
   const revenueName = selected ? m.revenueOf(selected.name) : m.totalRevenueLower;
   const lineColor = selected ? hue(selected.slot) : "var(--foreground)";
 
@@ -139,7 +135,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       <div className="trend-title">
         <div className="trend-heading">
           <h2 key={mode}>{subject}</h2>
-          <MomentumTag momentum={momentum} subject={selected ? m.revenueOf(selected.name) : m.totalRevenueLower} />
           {basisSince && <span className="basis-tag" tabIndex={0} title={m.basisWhy(shortPeriod(basisSince))} aria-label={`${m.basisChanged} · ${m.basisWhy(shortPeriod(basisSince))}`}>{m.basisChanged}</span>}
           {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>

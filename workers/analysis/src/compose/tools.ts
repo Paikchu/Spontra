@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { AnalysisFinding, ComposedAnalysis, FindingEvidence, FindingMaterial, FindingPassage, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { LensDocument } from "../../../../shared/analysis-contract/lens.ts";
-import { earlierMaterial } from "../../../../shared/analysis-runtime/checkup-notes.ts";
+import { earlierMaterial } from "../../../../shared/analysis-runtime/earlier-material.ts";
 import { findingRefSchema, lensDocumentIssues, readLensDocument, verifyFindings, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";
 import { compileDocument, verifyLensDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";

@@ -17,7 +17,7 @@ Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worke
 | 1.1 | `map` 表格数据拆解 | 历期三表、分部、资本结构快照、事件轨 | EDGAR 文件的表格与 XBRL | 只在读笔记与利润表判定，按算术校验 | 只访问 EDGAR |
 | 1.2 | 文本拆解入库 | 文件库（section/passage）、索引卡、业务主线、业务标签 | 已归档原文 | 切分不用；卡片、主线、标签用（低推理） | 否 |
 | 2 | `filings` 文件分析 | 每份文件的报告与摘要、记忆、每份文件的分析、**每期提取** | 第 1 层产物 + 已归档原文 | 是 | 按需（逐文件分析） |
-| 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗、三表体检笔记 | 第 2 层产物 | 是 | 按需（公司分析、分析师） |
+| 3 | `findings` 关键点 | 公司分析、要点、分析师卷宗 | 第 2 层产物 | 是 | 按需（公司分析、分析师） |
 | 4 | `tree` 业务拆解 | 业务脑图、各业务说明 | 第 1.2 层文件库 + 第 1.1 层分部 + 网页 | 是 | 是（脑图的主要来源之一） |
 | 5 | `valuation` 估值 | 五维评分 + 计算模型 + 报告 | 第 2、3、4 层产物 | 是 | 按需（研究阶段） |
 
@@ -61,7 +61,7 @@ flowchart LR
 
 ### 2.2 执行与存储
 
-- **任务与 Workflow。** 无模型的任务在 Worker 里直接跑；用模型的任务（sec-report、items、company-analysis、findings、analyst、checkup、explainer、tree、valuation、translate 等）各自是一个 Cloudflare Workflow，步骤可重放，模型调用按步骤缓存。
+- **任务与 Workflow。** 无模型的任务在 Worker 里直接跑；用模型的任务（sec-report、items、company-analysis、findings、analyst、explainer、tree、valuation、translate 等）各自是一个 Cloudflare Workflow，步骤可重放，模型调用按步骤缓存。
 - **存储。** D1 是真相：`sec_cache`（按 key 存 JSON 产物）、`sec_documents`/`sec_sections`/`sec_passages`（文件库）、`filing_read_notes`、`valuation_*`、`ai_usage`（每次模型调用的账）。R2 存归档原文与网页缓存。Vectorize 存业务标签向量。
 - **模型。** 全部经 `api.deepseek.com/anthropic`，deepseek-flash；按任务分推理档位。
 
@@ -81,7 +81,7 @@ flowchart LR
 | 任务 | 等待的层 | 额外等待 |
 |---|---|---|
 | findings | map, filings | company-analysis；在跑的记忆与公司分析 Workflow |
-| analyst, checkup | map, filings | findings |
+| analyst | map, filings | findings |
 | explainer, tree | map, filings | — |
 | valuation | map, filings, findings | tree, explainer |
 
@@ -197,7 +197,6 @@ flowchart TB
 | `company-analysis` | 已发布的 SEC 分析报告（`read_sec_report`） | 公司业务深度解读（`company_analysis_runs`） | `business-deep-dive-react.v2` |
 | `findings` | 每期提取 + 公司分析 + 最多 16 篇文件分析（`payload.filings`） | `findings:v2:<ticker>`：要点、每要点的 lens 文档、各报表视图的要闻贴片 | `findings.writer.v11`，lens `lens.agent.v6` |
 | `analyst` | 已核验要点 + 文件分析 + 同业 | `dossier:v1:<ticker>`：每条要点一份研究卷宗 | analyst v7 |
-| `checkup` | 体检标记 + 文件分析 | `checkup:v1:<ticker>`：每个被标记指标一篇笔记 | checkup notes v4 |
 
 **要点写作的校验路径。**
 
@@ -269,7 +268,7 @@ flowchart LR
 
 ### 4.4 读取与翻译
 
-前端经 `MapReads` 具名入口读产物，按资源的 `publication_revisions` 做缓存键，发布即刷新。每个带读者文字的发布（report、findings、dossier、checkup、explainer、tree、valuation、events、items）都触发 `translate`，逐字符串译成中文，前端按语言读。
+前端经 `MapReads` 具名入口读产物，按资源的 `publication_revisions` 做缓存键，发布即刷新。每个带读者文字的发布（report、findings、dossier、explainer、tree、valuation、events、items）都触发 `translate`，逐字符串译成中文，前端按语言读。
 
 ---
 

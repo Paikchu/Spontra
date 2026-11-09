@@ -5,9 +5,6 @@ import {readCompletePublicationForTicker} from '../financial-data/publication.ts
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
-import { readPeersResponse } from "../peers/read.ts";
-import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
-import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
@@ -202,13 +199,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       // Assembled on the schedule from the projections each filing received at ingestion; a read never parses.
       const publication = await readCompletePublicationForTicker(database, route.ticker);
       const capital = publication.flow ? (await readMapDerived(database, publication.flow))?.capital ?? null : null;
-      // The company and its comparable peers only, so another company's new quarter moves this answer only when it is a peer.
-      const ticker = route.ticker.trim().toUpperCase();
-      const peers = capital ? await readPeersResponse(database).then(r => {
-        const comparable = rankingPeers(r.peers, ticker);
-        return comparable.length ? peersFor(r.peers, new Set([ticker, ...comparable])) : null;
-      }).catch(() => null) : null;
-      const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital, peers };
+      const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital };
       return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
     case "business-explainer": {

@@ -3,7 +3,6 @@ import { basisOf } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { exposureOf, unitRevenues } from "../business-tags/input.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
-import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
 import { readServedFindings } from "../findings/read.ts";
@@ -92,7 +91,7 @@ export async function buildPeersPublication(env: AnalysisEnv, now: Date): Promis
 
 /**
  * Builds and stores the projection under its single key; the publication and its events commit together. One
- * `peers.published` per company whose own pairs moved, whose comparable peers' rows changed (its checkup ranks them), or whose findings cite a peer whose row changed; only those pages are told.
+ * `peers.published` per company whose own pairs moved or whose findings cite a peer whose row changed; only those pages are told.
  */
 export async function publishPeers(env: AnalysisEnv, now: Date): Promise<{ companies: number; quarters: number; linked: number; changed: string[]; revised: string[] }> {
   const db = requireDb(env);
@@ -106,7 +105,6 @@ export async function publishPeers(env: AnalysisEnv, now: Date): Promise<{ compa
   for (const ticker of await scopeTickers(env, "map")) {
     if (pairsOf(before, ticker) !== pairsOf(publication, ticker)) { revised.push(ticker); continue; }
     if (!changed.size) continue;
-    if (rankingPeers(publication, ticker).some(t => changed.has(t))) { revised.push(ticker); continue; }
     const findings = await readServedFindings(db, ticker);
     if ([...citedPeers(findings)].some(t => changed.has(t))) revised.push(ticker);
   }

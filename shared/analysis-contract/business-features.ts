@@ -5,7 +5,7 @@
  *                 whitelist (`financial_company_settings`).
  *  2. `filings`   SEC filing analysis: the filing library, each filing's summary, memory and item analysis —
  *                 the only layer that reads filing text.
- *  3. `findings`  company-level synthesis across filings: company analysis, findings, analyst dossiers, checkup notes.
+ *  3. `findings`  company-level synthesis across filings: company analysis, findings, analyst dossiers.
  *  4. `tree`      the business breakdown: the mind map and the written explanation of each business, with web research.
  *  5. `valuation` the valuation assessment over everything below.
  */
