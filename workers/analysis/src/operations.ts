@@ -73,6 +73,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ITEMS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  FILING_ANALYSIS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; requestedBy: "scheduled" | "manual"; accessionNumber?: string }>;
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
   ANALYST_DAILY_TURNS?: string;
@@ -185,6 +186,11 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
   const archive = () => ({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT });
   // A filing is prepared only once the archive holds it whole: half a filing (its body before its exhibits) would
   // classify and cache wrongly, and `shouldAnalyze` runs after the classification.
+  const loadPassedReport = async (reference: PreparedFilingReference, passed: { resultKey: string; reviewedAt: string; notes: string[] }) => {
+    const stored = await readJson<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }>(env.SEC_FILINGS, passed.resultKey);
+    stored.artifact.report.editorialReview = { status: "passed", reviewedAt: passed.reviewedAt, ...(passed.notes.length ? { notes: passed.notes } : {}) };
+    return { ...stored, artifact: { ...stored.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, passed.resultKey) } };
+  };
   const prepared_ = async (filing: SecFiling) => {
     const stored = await archivedFiling(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber, filing.documentUrl);
     return prepareSecFiling(filing, stored?.complete ? stored : null);
@@ -453,13 +459,10 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
           : `Synthesis did not finish: the report session ended (${outcome.reason}) without a passed report`);
       }
       const passed = written.passed;
-      const result = await step.do(`${operationId}:result`, async () => {
-        const stored = await readJson<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }>(env.SEC_FILINGS, passed.resultKey);
-        stored.artifact.report.editorialReview = { status: "passed", reviewedAt: passed.reviewedAt, ...(passed.notes.length ? { notes: passed.notes } : {}) };
-        return { ...stored, artifact: { ...stored.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, passed.resultKey) } };
-      });
+      const result = await step.do(`${operationId}:result`, () => loadPassedReport(reference, passed));
       return { plan: written.plan, nodes: written.nodes, managerReview: written.review, rounds: written.rounds, result };
     },
+    loadPassedReport,
     publish: async (artifact, summary) => {
       if (artifact.report.reader && artifact.report.editorialReview?.status !== "passed") throw new Error("Reader report has not passed editorial review");
       const reference = { key: preparedKey(artifact.filing.ticker, artifact.filing.accessionNumber), filing: artifact.filing };

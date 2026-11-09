@@ -8,6 +8,7 @@ import { PiHost, type PiLoader } from "../pi/host.ts";
 import { piModelIds } from "../pi/model.ts";
 import type { PiRuns } from "../pi/runs.ts";
 import { itemsLoader } from "../items/workflow.ts";
+import { filingLoader } from "../filing-analysis/recipe.ts";
 import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
 import { lensLoader } from "../lens/pi.ts";
@@ -48,6 +49,7 @@ export class TaskRunner extends Agent<Env, RunView> {
     const env = () => companyPolicyEnvironment(this.taskEnv());
     return {
       items: async spec => itemsLoader(spec, await env()),
+      filing: async spec => filingLoader(spec, await env()),
       "sec-report": async spec => secReportLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
       lens: async spec => lensLoader(spec, await env()),

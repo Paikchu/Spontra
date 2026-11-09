@@ -29,7 +29,7 @@ test("the findings read layer 2 only: map changes reach them through the per-per
     const tasks = SUBSCRIPTIONS[event]!.map(s => s.task);
     assert.ok(tasks.includes("extract") && !tasks.includes("findings"), event);
   }
-  assert.deepEqual(SUBSCRIPTIONS["extract.published"]!.map(s => s.task), ["findings", "items"]);
+  assert.deepEqual(SUBSCRIPTIONS["extract.published"]!.map(s => s.task), ["findings"]);
   assert.equal(TASKS.extract.scope, "filings");
   assert.equal(TASKS.items.scope, "filings");
   const { ITEM_POLICY } = await import("../src/items/recipe.ts");

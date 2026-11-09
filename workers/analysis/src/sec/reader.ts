@@ -101,7 +101,7 @@ export function normalizeReaderReport(value: unknown, args: {
   const usedCharts = new Set<string>();
   const usedFigures = new Set<string>();
   const nodeIds = new Set(args.nodes.filter((n) => n.status === "complete").map((n) => n.id));
-  const sections = list(root.sections).map((raw, index): SecReaderReport["sections"][number] => {
+  const buildSection = (raw: unknown, index: number): SecReaderReport["sections"][number] => {
     const row = object(raw);
     const role = string(row.role) as SecReaderReport["sections"][number]["role"];
     const sectionId = isV2 ? string(row.id, 160) : string(row.id, 160) || `sec-reader-${index + 1}`;
@@ -169,7 +169,14 @@ export function normalizeReaderReport(value: unknown, args: {
     return { id: sectionId, ...(content ? { content } : {}), title: string(row.title, 200), role, paragraphs,
       takeaway: string(row.takeaway, 900), nodeIds: sources, evidenceIds, ...(visual ? { visual } : {}),
       ...(args.chartKeys.has(string(row.chartMetricKey)) ? { chartMetricKey: string(row.chartMetricKey) } : {}) };
+  };
+  // Every section is checked before anything is reported, so a draft is corrected once rather than one error at a time.
+  const sectionFailures: string[] = [];
+  const sections = list(root.sections).flatMap((raw, index) => {
+    try { return [buildSection(raw, index)]; }
+    catch (error) { sectionFailures.push(error instanceof Error ? error.message : String(error)); return []; }
   });
+  if (sectionFailures.length) throw new Error(sectionFailures.join("\n"));
   if (sections.length < 3 || sections.length > SEC_READER_MAX_SECTIONS || !sections.some((s) => s.role === "bear_case") || !sections.some((s) => s.role === "valuation")) {
     throw new Error("Reader report requires a complete article, independent bear case and valuation boundary");
   }

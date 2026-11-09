@@ -49,6 +49,8 @@ export type PiOutcome<O = unknown> = {
   /** The allowance, not the turn budget, ended the run. */
   capped: boolean;
   trail: TurnRecord[];
+  /** Uncached input plus output the session spent. */
+  spent: number;
   /** The recipe state the run ended with. */
   state: unknown;
 };
@@ -206,7 +208,7 @@ export class PiHost {
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", b.conversation);
     this.bindings.delete(b.conversation);
     this.install();
-    return { output, reason, turns: b.turns, asked: b.asked, capped: b.capped, trail, state: b.state };
+    return { output, reason, turns: b.turns, asked: b.asked, capped: b.capped, trail, spent: b.spent, state: b.state };
   }
 
   /** Rebuilds the sessions still running after a wake, before Pi resumes them. */

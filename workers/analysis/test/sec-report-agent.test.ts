@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { reportRecipe, type ReportSpec, type ReportState } from "../src/sec/report-agent.ts";
 import type { HandResult } from "../src/pi/hand-tools.ts";
+import { fitResult } from "../src/recipe.ts";
 
 const text = "Revenue grew 30% on large customers. Customers with more than $100,000 of annualized revenue rose to 3,000. Remaining performance obligations were $2.0 billion.";
 const filing = { ticker: "NET", companyName: "Cloudflare", form: "10-Q", reportDate: "2026-09-30", filingDate: "2026-11-01", accessionNumber: "0001477333-26-000100" };
@@ -58,4 +59,46 @@ test("a repair request reopens the question, the second check is the last, and a
   assert.equal(draft.error, true);
   assert.match(draft.observation, /failed a check/);
   assert.equal(s.recipe.settled(s.state), false);
+});
+
+const restored = () => ({ plan: { nodes: [question as never], outlineSections: 1 }, nodes: [{ id: "customers", title: "Large customers", status: "complete" as const, findings: [], narrative: "Customers rose.", facts: [], evidence: [], evidenceIds: ["ev:b1"] }], review: { status: "complete" as const, questions: [], repairTasks: [], unresolvedQuestions: [], coverageScore: 1, stopReason: "complete" as const }, rounds: 0 });
+function resumed(judge: (stage: string) => unknown = () => ({})) {
+  const stages: string[] = [];
+  const restoredSpec: ReportSpec = { ...spec, restored: restored() as never };
+  const recipe = reportRecipe({ env: {} as never, spec: restoredSpec, prepared: prepared as never, brief: brief as never, context: {} as never,
+    judge: async (stage) => { stages.push(stage); return judge(stage) as Record<string, unknown>; } } as never);
+  const state = recipe.open(restoredSpec);
+  const tools = new Map(recipe.tools(state).map((t) => [t.name, t]));
+  return { recipe, state: state as ReportState, stages, call: async (name: string, args: Record<string, unknown> = {}) => await tools.get(name)!.execute(args as never, { state } as never) as HandResult };
+}
+
+test("a restored run keeps its analyses: nothing is rewritten, the settled coverage costs no review, and the analyses can be read", async () => {
+  const s = resumed();
+  assert.match((await s.call("write_node", { id: "customers", narrative: "again" })).observation, /read_nodes/);
+  assert.match((await s.call("plan_questions", { nodes: [question] })).observation, /read_nodes/);
+  assert.equal(JSON.parse((await s.call("check_coverage")).observation).status, "complete");
+  assert.deepEqual(s.stages, []);
+  assert.equal(JSON.parse((await s.call("read_nodes", { ids: ["customers"] })).observation)[0].narrative, "Customers rose.");
+});
+
+test("a failed draft is kept, corrected only by revise_report, readable after a compaction, and the session stops after repeated failures", async () => {
+  const s = resumed();
+  assert.match((await s.call("submit_report", { draft: { headline: "x", readerReport: { sections: [{ id: "a", title: "A" }] } } })).observation, /failed a check/);
+  assert.equal(s.state.draftFailures, 1);
+  assert.match((await s.call("submit_report", { draft: { headline: "y" } })).observation, /revise_report/);
+  assert.equal(s.state.draft?.headline, "x");
+  assert.deepEqual(JSON.parse((await s.call("read_draft")).observation).sections, [{ id: "a", title: "A" }]);
+  assert.equal(JSON.parse((await s.call("read_draft", { sectionIds: ["a"] })).observation)[0].id, "a");
+  await s.call("revise_report", { headline: "z" });
+  assert.equal(s.state.draft?.headline, "z");
+  await s.call("revise_report", { keyMetrics: [] });
+  assert.deepEqual(s.state.draft?.keyMetrics, []);
+  for (let i = 0; i < 5; i += 1) await s.call("revise_report", { headline: `h${i}` });
+  assert.equal(s.recipe.settled(s.state), true);
+  assert.equal(s.state.editorialRound, 0);
+});
+
+test("a tool result past the limit says it was cut, so a partial result cannot pass for a whole one", () => {
+  assert.equal(fitResult("short", 10), "short");
+  assert.match(fitResult("x".repeat(30), 10), /Result cut: 20 of 30 characters not shown/);
 });

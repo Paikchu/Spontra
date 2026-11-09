@@ -26,7 +26,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "fundamentals", "guidance", "events", "extract",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items", "filing-analysis",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
 ] as const;
@@ -101,6 +101,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
   // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
   "items": { emits: ["items.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "filings" },
+  // Every filing's one path (docs/filing-analysis-design.md); it took over from `sec-report` and `items`, which nothing starts any more.
+  "filing-analysis": { emits: ["filings.indexed", "report.published", "fundamentals.updated", "items.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "filings" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
@@ -138,6 +140,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "archive", when: e => archivedForm(form(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
+    // Every filing enters the analysis path as soon as it is known; what it needs arrives by the events below.
+    { task: "filing-analysis", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
@@ -145,17 +149,16 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   // A company's baseline lists current reports no `filing.discovered` announced.
   "archive.requested": [{ task: "archive" }],
   // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
-  "archive.unsupported": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }],
+  "archive.unsupported": [{ task: "filing-analysis", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
-  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" },
-    // With the library off, an item's eligibility follows the archive; with it on, the run finds its fingerprint unchanged.
-    { task: "items", when: e => archivedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "map-derive" },
+    { task: "filing-analysis", when: e => archivedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
-  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],
+  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "filing-analysis" }, { task: "valuation" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -172,13 +175,12 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
     { task: "memory", when: e => PERIODIC.test(form(e)) },
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
-    { task: "items", when: e => PERIODIC.test(form(e)) },
   ],
   // Findings read layer 2 only: the per-period extract, the filing analyses and the company analysis.
   "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
   "guidance.published": [{ task: "extract" }, { task: "translate" }, { task: "valuation" }],
   "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
-  "extract.published": [{ task: "findings" }, { task: "items" }],
+  "extract.published": [{ task: "findings" }],
   "analysis.published": [{ task: "findings" }],
   "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }, { task: "valuation" }],
   // Every publication with reader-facing prose is translated once it lands.
@@ -188,7 +190,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "tree.published": [{ task: "translate" }, { task: "valuation" }],
   "valuation.published": [{ task: "translate" }],
   // New rows on the rail are filings to analyse.
-  "events.published": [{ task: "translate" }, { task: "items" }],
+  "events.published": [{ task: "translate" }],
   "items.published": [{ task: "translate" }, { task: "findings" }, { task: "valuation" }],
   "presentation.unresolved": [{ task: "presentation" }],
   // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the SEC
@@ -198,8 +200,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     // Layer 2: the archived filings are split into the library, the summaries and guidance written, each filing analysed.
     { task: "library", when: e => e.detail?.feature === "filings" },
     { task: "extract", when: e => e.detail?.feature === "filings" },
-    { task: "sec-report", when: e => e.detail?.feature === "filings" },
-    { task: "items", when: e => e.detail?.feature === "filings" },
+    { task: "filing-analysis", when: e => e.detail?.feature === "filings" },
     { task: "memory", when: e => e.detail?.feature === "filings" },
     { task: "findings", when: e => e.detail?.feature === "findings" },
     { task: "company-analysis", when: e => e.detail?.feature === "findings" },

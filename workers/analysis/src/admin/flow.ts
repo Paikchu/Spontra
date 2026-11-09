@@ -9,7 +9,7 @@ import { AiRunStore } from '../ai-runs/store.ts';
  */
 export const FLOW_TASKS = [
   'maintenance', 'collect', 'history', 'map-derive', 'library', 'events', 'sec-report', 'guidance', 'company-analysis',
-  'findings', 'analyst', 'checkup', 'items', 'explainer', 'tree', 'valuation',
+  'findings', 'analyst', 'checkup', 'items', 'filing-analysis', 'explainer', 'tree', 'valuation',
 ] as const satisfies readonly TaskName[];
 const FLOW_SOURCES = ['sec-discovery', 'admin'] as const;
 /** The model Workflows whose steps the AI run store records. */

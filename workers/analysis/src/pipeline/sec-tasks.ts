@@ -8,6 +8,7 @@ import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
 import { earningsEvents, publishGuidance, RELEASE_ARCHIVE_WAIT_MS } from "../guidance/workflow.ts";
 import { scheduledAnalysisAllowed } from "../core.ts";
+import { eventsWaitOver, failedFilings } from "../filing-analysis/store.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { archiveHolds } from "../sec-archive/index.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
@@ -99,6 +100,25 @@ export const SEC_TASKS = {
       return result.status === "behind" && result.retryAfterMs ? { status: "later", afterMs: result.retryAfterMs, detail: result } : { status: "done", detail: result };
     },
   },
+  /**
+   * Takes the company's filings through the one analysis path (filing-analysis/). A run in progress finishes first; a run
+   * that failed on a filing is run again after 1, 6 and 24 hours, and the filing keeps its own count of attempts.
+   */
+  "filing-analysis": {
+    version: "filing-analysis.v1",
+    async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
+      const outcome = await driveWorkflow(env, `filing-analysis:${ticker}`, env.FILING_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
+        if (!scheduledAnalysisAllowed(env, { ticker, requestedBy: "scheduled" })) return { status: "done", detail: { skipped: "reports are off for this company" } };
+        const waiting = await pendingRetryOutcome(env, "filing-analysis", ticker, now);
+        if (waiting) return waiting;
+        return { id: `filings-${ticker}-${now.getTime()}`, params: { ticker, requestedBy: "scheduled" } };
+      }, { trigger, deadLetter: { task: "filing-analysis", ticker, causeId }, verify: id => failedFilings(env.DB!, id) });
+      // A run that left filings waiting for the events publication comes back for them, for two days at most.
+      if (outcome.status !== "done" || !await eventsWaitOver(env.DB!, ticker, new Date(now.getTime() - 2 * 24 * 60 * MINUTE).toISOString().slice(0, 10))) return outcome;
+      return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "events publication" } };
+    },
+  },
+
   /**
    * Runs the SEC report Workflow for an AI company with a new filing: it indexes the filing list (`filings.indexed`),
    * writes reports and 8-K summaries (`report.published`) and the SEC fundamentals (`fundamentals.updated`). A run

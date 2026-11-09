@@ -1,3 +1,4 @@
+import type { AnalysisEnv } from "../operations.ts";
 import type { ReportAdminDetail, ReportAdminItem, ReportAdminPage, ReportAdminJob } from "../../../../shared/analysis-contract/admin.ts";
 import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import type { PublishedSecReport, SecFilingSummary } from "../../../../shared/analysis-contract/report.ts";
@@ -10,7 +11,7 @@ import { jobAnalysisVersionFor } from "../workflow-core.ts";
 import { authenticateAdmin, createAdminSession, matchesAdminKey } from "./auth.ts";
 import { json } from "./http.ts";
 
-type AdminEnv = SecCronEnv & { REPORT_ADMIN_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> } };
+type AdminEnv = SecCronEnv & { REPORT_ADMIN_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> }; FILING_ANALYSIS_WORKFLOW?: AnalysisEnv["FILING_ANALYSIS_WORKFLOW"] };
 const reviewKey = (ticker: string, accession: string, version: string) => `admin:review:${ticker}:${accession}:${version}`;
 // Match report identity through its publication snapshot, with a fallback for older reports.
 const REPORT_IDENTITY = `(json_extract(r.payload, '$.publication.filing.accessionNumber') = f.accession_number OR
@@ -31,7 +32,7 @@ const REPORTS_CTE = `WITH entries AS (
     COALESCE(json_extract(r.payload, '$.publication.filing.companyName'),
       json_extract(c.payload, '$.company.name'), f.ticker) AS companyName,
     r.generated_at AS generatedAt, COALESCE(j.updated_at, r.generated_at, f.filing_date) AS updatedAt,
-    j.current_stage AS stage, j.error_code AS errorCode, v.fetched_at AS reviewedAt,
+    j.current_stage AS stage, j.error_code AS errorCode, j.workflow_instance_id AS workflowInstanceId, v.fetched_at AS reviewedAt,
     CASE WHEN j.status IN ('queued','running') AND j.updated_at >= ? THEN 'processing'
       WHEN j.status = 'failed' OR (j.status IN ('queued','running') AND j.updated_at < ?) OR r.verification_status = 'failed' THEN 'failed'
       WHEN v.cache_key IS NOT NULL THEN 'reviewed'
@@ -141,6 +142,18 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
     try { return json(await listAdminReports(env, url, now)); }
     catch (error) { return json({ error: String(error).includes("INVALID_QUERY") ? "筛选条件无效。" : "报告列表暂时不可用。" }, String(error).includes("INVALID_QUERY") ? 400 : 503); }
   }
+  const process = /^\/admin\/reports\/([A-Z][A-Z0-9.-]{0,11})\/(\d{10}-\d{2}-\d{6})\/runs\/([A-Za-z0-9_-]{1,160})$/.exec(url.pathname);
+  if (process && request.method === "GET") {
+    const [, ticker, accession, runId] = process as unknown as [string, string, string, string];
+    const owned = await env.DB.prepare("SELECT 1 AS ok FROM sec_analysis_jobs WHERE ticker = ? AND accession_number = ? AND workflow_instance_id = ? LIMIT 1").bind(ticker, accession, runId).first();
+    // Runs of the filing path carry their own prefix; older runs belong to the SEC report task.
+    const binding = /^filings?-/.test(runId) ? env.FILING_ANALYSIS_WORKFLOW : env.SEC_ANALYSIS_WORKFLOW;
+    if (!owned || !binding?.get) return json({ error: "运行记录不存在。" }, 404);
+    try {
+      const run = await binding.get(runId) as unknown as { report(): Promise<unknown> };
+      return json(await run.report());
+    } catch { return json({ error: "运行记录暂时不可读。" }, 503); }
+  }
   const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate))?$/.exec(url.pathname);
   if (!match) return json({ error: "Not found" }, 404);
   let ticker: string | null, accession: string;
@@ -169,10 +182,10 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       return json({ status: "reviewed", reviewedAt: new Date(now).toISOString() });
     }
     if (!trackedTickersFor(env).includes(ticker)) return json({ error: "该公司未启用 AI 财报分析。" }, 403);
-    if (!env.SEC_ANALYSIS_WORKFLOW) return json({ error: "生成服务尚未配置。" }, 503);
+    if (!env.FILING_ANALYSIS_WORKFLOW) return json({ error: "生成服务尚未配置。" }, 503);
     const requestId = request.headers.get("idempotency-key") ?? "";
     if (!/^[a-f0-9-]{36}$/.test(requestId)) return json({ error: "操作标识无效。" }, 400);
-    const workflowId = `admin-${ticker}-${canonical}-${requestId}`;
+    const workflowId = `filing-${ticker}-${canonical}-${requestId}`;
     const jobId = `${ticker}:${canonical}:${jobAnalysisVersionFor(filing.form)}:${workflowId}`;
     const existing = await env.DB.prepare("SELECT status FROM sec_analysis_jobs WHERE job_id = ?").bind(jobId).first<{ status: string }>();
     if (existing && existing.status !== "failed") return json({ status: existing.status, jobId: workflowId }, 202);
@@ -188,11 +201,11 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       status: "queued" as const, currentStage: "queued", attempt: 1, requestedBy: "manual" as const, workflowInstanceId: workflowId, updatedAt: new Date(now).toISOString() };
     await repository.upsertAnalysisJob(job);
     try {
-      await env.SEC_ANALYSIS_WORKFLOW.create({ id: workflowId, params: { ticker, requestedBy: "manual", accessionNumber: canonical, regenerateReport: true } });
+      await env.FILING_ANALYSIS_WORKFLOW!.create({ id: workflowId, params: { ticker, requestedBy: "manual", accessionNumber: canonical } });
     } catch {
       // A timeout after successful create is ambiguous. Inspect the same instance, never launch another.
       let created = false;
-      try { if (env.SEC_ANALYSIS_WORKFLOW.get) { await (await env.SEC_ANALYSIS_WORKFLOW.get(workflowId)).status(); created = true; } } catch { /* creation was not confirmed */ }
+      try { if (env.FILING_ANALYSIS_WORKFLOW?.get) { await (await env.FILING_ANALYSIS_WORKFLOW.get(workflowId)).status(); created = true; } } catch { /* creation was not confirmed */ }
       if (!created) { await repository.upsertAnalysisJob({ ...job, status: "failed", errorCode: "workflow_dispatch_failed", completedAt: new Date(now).toISOString() }); return json({ error: "生成任务未能提交，请稍后重试。" }, 503); }
     }
     return json({ status: "queued", jobId: workflowId, ticker, accessionNumber: canonical }, 202);

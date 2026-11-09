@@ -6,7 +6,7 @@ export type ReportAdminItem = {
   reportDate: string; filingDate: string; reportVersion: string | null;
   generatedAt: string | null; updatedAt: string; status: ReportAdminStatus;
   stage: string | null; errorCode: string | null; reviewedAt: string | null;
-  canRegenerate: boolean;
+  canRegenerate: boolean; workflowInstanceId: string | null;
 };
 export type ReportAdminPage = { reports: ReportAdminItem[]; nextCursor: string | null };
 export type ReportAdminJob = {
@@ -17,4 +17,9 @@ export type ReportAdminDetail = {
   filing: PublicSecFiling; reviewedAt: string | null; canRegenerate: boolean;
   versions: Array<{ reportVersion: string; generatedAt: string; verificationStatus: string; reviewedAt: string | null }>;
   jobs: ReportAdminJob[];
+};
+export type ReportRunTurn = { turn: number; thought: string; action: string; input: string; observation: string; failed?: boolean };
+export type ReportRunProcess = {
+  status: string | null; error: { message?: string } | null; step: string | null; updatedAt: string | null;
+  sessions: Array<{ operationId: string; kind: string; turns: number; spent: number; active: boolean; trail: ReportRunTurn[] }>;
 };

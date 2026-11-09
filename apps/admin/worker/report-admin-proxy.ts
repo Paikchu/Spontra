@@ -13,7 +13,7 @@ const json = (body: unknown, status: number) => Response.json(body, { status, he
 
 /** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(financials|business-map|ai|library|reports)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(financials|business-map|ai|library|reports)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" || path[0] === "reports" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
@@ -34,7 +34,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   }
   if (path[0] === "reports") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && route === "";
+    const read = request.method === "GET" && (route === "" || /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/runs\/[A-Za-z0-9_-]{1,160}$/.test(route));
     const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/regenerate$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }

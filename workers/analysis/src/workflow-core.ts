@@ -92,6 +92,7 @@ export type AnalysisOperations = {
   /** Publishes the filing's own amendment note. Absent, a cover amendment follows the full report path. */
   publishAmendment?(filing: SecFiling, note: CoverAmendment): Promise<void>;
 
+  loadPassedReport?(reference: PreparedFilingReference, passed: { resultKey: string; reviewedAt: string; notes: string[] }): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }>;
   publish(artifact: SecAnalysisArtifact, summary: SecFilingSummary | null): Promise<void | { memoryJobId?: string }>;
   enqueueMemory?(jobId: string, ticker: string): Promise<void>;
   publishEvent(summary: SecFilingSummary): Promise<void>;
@@ -120,12 +121,8 @@ function jobStageSteps(step: WorkflowStepLike, accession: string, jobId: string,
   };
 }
 
-export async function executeSecAnalysisWorkflow(
-  params: SecWorkflowParams,
-  workflowInstanceId: string,
-  step: WorkflowStepLike,
-  operations: AnalysisOperations,
-) {
+/** The company's filing list with earnings groups, published as the feed; or the one filing a manual run names. */
+export async function discoverFilings(params: Pick<SecWorkflowParams, "ticker" | "accessionNumber" | "requestedBy" | "regenerateReport">, step: WorkflowStepLike, operations: AnalysisOperations) {
   if (params.regenerateReport && (params.requestedBy !== "manual" || !params.accessionNumber)) throw new Error("Report regeneration requires a manual request and an explicit accession");
   const targeted = params.regenerateReport && operations.loadFiling
     ? await step.do("load-selected-filing", () => operations.loadFiling!(params.ticker, params.accessionNumber!)) : null;
@@ -141,6 +138,18 @@ export async function executeSecAnalysisWorkflow(
     discovery.feed = { ...(discovery.feed as Record<string, unknown>), filings: discovery.filings };
   }
   if (!targeted) await step.do("publish-feed", () => operations.publishFeed(discovery.feed));
+  return discovery;
+}
+
+export async function executeSecAnalysisWorkflow(
+  params: SecWorkflowParams,
+  workflowInstanceId: string,
+  step: WorkflowStepLike,
+  operations: AnalysisOperations,
+) {
+  if (params.regenerateReport && (params.requestedBy !== "manual" || !params.accessionNumber)) throw new Error("Report regeneration requires a manual request and an explicit accession");
+  const discovery = await discoverFilings(params, step, operations);
+  const targeted = params.regenerateReport && operations.loadFiling ? discovery.filings[0]! : null;
   const analyzed: string[] = [];
   const skipped: string[] = [];
   const failed: string[] = [];
@@ -299,7 +308,7 @@ export async function executeSecAnalysisWorkflow(
   return { analyzed, skipped, failed };
 }
 
-function selectLatestWorkflowFilings(filings: SecFiling[]): SecFiling[] {
+export function selectLatestWorkflowFilings(filings: SecFiling[]): SecFiling[] {
   const primary = filings.find((filing) => /^(10-K|10-Q|20-F)(\/A)?$/.test(filing.form));
   const events = filings.slice(0, 5).filter((filing) => /^(8-K|6-K)(\/A)?$/.test(filing.form));
   return [...(primary ? [primary] : []), ...events]
@@ -338,7 +347,7 @@ function assertBriefCanProceed(brief: SecAnalysisBrief, groundedDisclosures = fa
 }
 
 /** One period of a series in one basis has one unit; mixed units mean the history cannot be compared. */
-function assertHistoryUnits(brief: SecAnalysisBrief): void {
+export function assertHistoryUnits(brief: SecAnalysisBrief): void {
   const identities = new Map<string, string>();
   for (const series of brief.history.series) {
     for (const observation of [...series.quarters, ...series.annual]) {

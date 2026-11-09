@@ -60,7 +60,7 @@ test("routing a filing does not queue a report for a company whose reports are o
     PIPELINE_TASKS: { async sendBatch(messages: Array<{ body: { task: string; ticker: string } }>) { sent.push(...messages.map(message => message.body)); } },
   } as unknown as AnalysisEnv;
   await routeEvents(env, [archived("NBIS", "20-F/A"), archived("META", "10-Q")]);
-  assert.deepEqual(sent.filter(message => message.task === "sec-report").map(message => message.ticker).sort(), ["META"]);
+  assert.deepEqual(sent.filter(message => message.task === "filing-analysis").map(message => message.ticker).sort(), ["META"]);
   assert.ok(sent.some(message => message.ticker === "NBIS" && message.task === "map-derive"));
 });
 

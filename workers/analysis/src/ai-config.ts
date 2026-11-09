@@ -33,7 +33,9 @@ export const AI_TOOLS = {
   /** The lens agent chooses charts and layout from an already-computed observation. */
   lens: { label: "要点图表", reasoning: "low", model: "reasoning" },
   /** The analysis of one filing on the rail: reads the filing and composes a finding-shaped analysis the harness verifies. */
-  items: { label: "文件分析", reasoning: "high", model: "reasoning" },
+  items: { label: "逐文件分析（旧）", reasoning: "high", model: "reasoning" },
+  /** Every SEC filing's analysis on the one path (filing-analysis/). */
+  filing: { label: "文件分析", reasoning: "high", model: "reasoning" },
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */

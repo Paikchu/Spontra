@@ -4,7 +4,7 @@
 
 ## 迁移收尾
 
-- [ ] 1. 上线 Agent tracing 和 Pi 层通用修复：工具结果截断要告知模型、单次会话 token 上限、看门狗唤醒、检查会话不无限等待、大结果存 R2、每轮记录、压缩记录。
+- [x] 1. 上线 Agent tracing 和 Pi 层通用修复：工具结果截断要告知模型、单次会话 token 上限、看门狗唤醒、检查会话不无限等待、大结果存 R2、每轮记录、压缩记录。
 - [ ] 2. 用 CRWV 各跑一次，验证线上行为（截至 2026-11-08 只有 SEC 报告在线上跑过，而且失败）：
   - [ ] 地图问答
   - [ ] 逐文件分析
@@ -26,7 +26,7 @@
 
 - [ ] 11. 上线前先处理风险：线上 `sec/report-agent.ts` 没有 token 上限，可能空烧 token；可用后台“定时分析”开关先挡住定时运行。
 - [ ] 12. 接手 worktree `issue-194-migration-plan-a17234` 里未提交的 SEC 改动：`sec/report-agent.ts`、`sec/reader.ts`、对应测试，以及后台“过程”查看（`admin/reports.ts`、`report-admin-proxy.ts`、`company-reports.tsx`、`admin.ts`）。
-- [ ] 13. 数据来源改成文件库：章节树、段落、结构化表格分开读取。
-- [ ] 14. 改成代码逐节分析，AI 不选章节；按 `previous_section_id` 滚动结合上一期分析，未变化的章节沿用。
+- [x] 13. （代码完成，未上线，见 [filing-analysis-design](filing-analysis-design.md)）数据来源改成文件库：章节树、段落、结构化表格分开读取。
+- [x] 14. （代码完成，未上线）改成代码逐节分析，AI 不选章节；按 `previous_section_id` 滚动结合上一期分析，未变化的章节沿用。
 - [ ] 15. 补上读取过往财报原文和网络搜索的能力。
 - [ ] 16. 用 NET 2026 Q3 验证，并记录 token 总消耗。

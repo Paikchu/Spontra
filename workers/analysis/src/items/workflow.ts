@@ -84,7 +84,7 @@ function blockPassages(ticker: string, event: CompanyEvent, blocks: FilingBlock[
  * filing's own words when the library does not hold them — a current report's text as the SEC report step prepared it
  * (read again from EDGAR when it is gone), a Form 4's footnotes.
  */
-async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubject): Promise<Pick<ItemInput, "documents" | "earlierAvailable" | "seed">> {
+export async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubject): Promise<Pick<ItemInput, "documents" | "earlierAvailable" | "seed">> {
   const db = requireDb(env);
   const accessions = accessionsOf(subject);
   const [documents, rows] = await Promise.all([
@@ -121,7 +121,7 @@ type ItemOutcome = { id: string; kind: ItemKind; written: boolean; reason: strin
 type ItemSpec = { ticker: string; subject: ItemSubject; now: string; prepared: Awaited<ReturnType<typeof prepareItem>>; runId: string };
 
 /** The facts a row's analysis reads: the stage data with the events publication Form 4 refs resolve from. */
-async function itemFacts(env: AnalysisEnv, ticker: string): Promise<StageData | null> {
+export async function itemFacts(env: AnalysisEnv, ticker: string): Promise<StageData | null> {
   const data = await loadStageData(env, ticker, { findings: false });
   if (!data) return null;
   const events = await new D1SecRepository(requireDb(env)).getCache<unknown>(eventsCacheKey(ticker)).then(s => s ? readEventsPublication(s.payload, ticker) : null) as EventsPublication | null;

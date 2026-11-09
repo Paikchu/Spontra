@@ -15,6 +15,7 @@ import { executeValuationEvaluation, type ValuationEvaluationParams } from "../v
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "../guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
 import { executeItemsWorkflow, type ItemsParams } from "../items/workflow.ts";
+import { executeFilingAnalysisWorkflow, type FilingAnalysisParams } from "../filing-analysis/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
 import { executeCheckupWorkflow, type CheckupWorkflowParams } from "../checkup/workflow.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "../filing-library/cards.ts";
@@ -130,6 +131,12 @@ export const RUN_TASKS: Record<RunKind, Task> = {
   async ITEMS_WORKFLOW(params: ItemsParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
     return executeItemsWorkflow(params, durableSteps(step, env, id), env, id);
+  },
+  async FILING_ANALYSIS_WORKFLOW(params: FilingAnalysisParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    if (!scheduledAnalysisAllowed(env, params)) return { status: "off" };
+    assertTrackedTicker(env, params.ticker);
+    return executeFilingAnalysisWorkflow(params, id, durableSteps(step, env, id), env, createAnalysisOperations(env, fetch, id));
   },
   async GUIDANCE_WORKFLOW(params: GuidanceWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
