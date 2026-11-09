@@ -79,3 +79,8 @@ test("the app's policies come from the site's headers", () => {
   assert.match(frame, /connect-src 'none'/);
   assert.match(frame, /font-src https: data: tauri: http:\/\/tauri\.localhost/);
 });
+
+test("header policies are read from a file checked out with CRLF line endings", () => {
+  assert.deepEqual(readHeaderPolicies(HEADERS.replaceAll("\n", "\r\n")), readHeaderPolicies(HEADERS));
+  assert.ok(readHeaderPolicies(HEADERS.replaceAll("\n", "\r\n")).size > 0);
+});

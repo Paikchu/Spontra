@@ -13,7 +13,7 @@ const APP_ORIGINS = ["tauri:", "http://tauri.localhost"];
 export function readHeaderPolicies(headers: string): Map<string, string> {
   const policies = new Map<string, string>();
   let path = "";
-  for (const line of headers.split("\n")) {
+  for (const line of headers.split(/\r?\n/)) {
     if (line.startsWith("#") || !line.trim()) continue;
     if (!/^\s/.test(line)) { path = line.trim(); continue; }
     const value = /^\s+Content-Security-Policy:\s*(.+)$/.exec(line)?.[1];
