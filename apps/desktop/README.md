@@ -48,4 +48,6 @@ Push a tag `desktop-v<version>` matching `version` in `src-tauri/tauri.conf.json
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signing |
 | `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_CONTENT` | Notarization |
 
+The Apple secrets are optional. Without `APPLE_CERTIFICATE` the macOS app is signed ad hoc and not notarized, so Gatekeeper blocks its first launch until the user allows it in System Settings → Privacy & Security.
+
 A new version downloads in the background ten seconds after launch and is installed when the app quits.

@@ -21,12 +21,6 @@ jobs:
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_KEY_PATH: ${{ github.workspace }}/apple-api-key.p8
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -37,10 +31,31 @@ jobs:
         with: { workspaces: apps/desktop/src-tauri }
       - run: npm ci
       - run: npm run desktop:test
-      - name: Write the App Store Connect key
+      # Without a Developer ID certificate the app is signed ad hoc and not notarized.
+      - name: Choose the macOS signature
         if: runner.os == 'macOS'
         shell: bash
-        run: printf '%s' "${{ secrets.APPLE_API_KEY_CONTENT }}" > apple-api-key.p8
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          if [ -z "$CERTIFICATE" ]; then
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          printf '%s' "$API_KEY_CONTENT" > apple-api-key.p8
+          {
+            echo "APPLE_CERTIFICATE=$CERTIFICATE"
+            echo "APPLE_CERTIFICATE_PASSWORD=$CERTIFICATE_PASSWORD"
+            echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY"
+            echo "APPLE_API_ISSUER=$API_ISSUER"
+            echo "APPLE_API_KEY=$API_KEY"
+            echo "APPLE_API_KEY_PATH=$GITHUB_WORKSPACE/apple-api-key.p8"
+          } >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         with:
           projectPath: apps/desktop
