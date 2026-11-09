@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { nativeSearchTool } from "../web-search/native.ts";
-import { toolResult, type AgentBlock, type AgentSchema, type AgentTool, type AgentClientTool, type ToolCall } from "../tool-loop.ts";
+import type { AgentSchema, AgentClientTool } from "../tool-loop.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
@@ -78,14 +77,6 @@ function closed(node: unknown): Record<string, unknown> {
   return out;
 }
 
-export function schemasFor<S>(tools: AnyTool<S>[], policy: ToolPolicy, state?: S): AgentTool[] {
-  return tools.filter(t => policy.allow.includes(t.name)).flatMap((t): AgentTool[] => {
-    if (!t.nativeSearch) return [toolSchema(t)];
-    const remaining = state === undefined ? 0 : t.nativeSearch.remaining(state);
-    return remaining > 0 ? [nativeSearchTool(remaining, t.nativeSearch.excluded)] : [];
-  });
-}
-
 /**
  * Runs one call through the pipeline: allowed by the policy, parameters through the schema, the pre decision, the
  * call itself under its timeout, then the post decision. An ordinary failure is an observation, never a thrown error,
@@ -109,9 +100,6 @@ export async function runTool<S>(tools: AnyTool<S>[], policy: ToolPolicy, call: 
   if (post.kind === "block") return { observation: post.feedback, error: true, value };
   return { observation: tool.observe(parsed.data, value, ctx.state), value };
 }
-
-/** The call's tool_result block. */
-export const resultBlock = (call: ToolCall, outcome: ToolOutcome, budgetLine: string): AgentBlock => toolResult(call, `${outcome.observation}${budgetLine ? `\n\n${budgetLine}` : ""}`, outcome.error);
 
 function safeJson(text: string): unknown { try { return JSON.parse(text); } catch { return text; } }
 

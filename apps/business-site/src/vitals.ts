@@ -17,7 +17,7 @@ export type VitalsSample = {
 };
 
 /** At most six numbers; CLS travels in thousandths so every field is an integer. */
-export function vitalsProps(sample: VitalsSample): Record<string, number> {
+function vitalsProps(sample: VitalsSample): Record<string, number> {
   const out: Record<string, number> = {};
   const put = (key: keyof VitalsSample, scale = 1) => {
     const value = sample[key];
@@ -28,7 +28,7 @@ export function vitalsProps(sample: VitalsSample): Record<string, number> {
 }
 
 /** CLS: shifts closer than 1 s apart form a window of at most 5 s; the largest window counts. */
-export function largestShiftWindow(shifts: ReadonlyArray<{ startTime: number; value: number }>): number {
+function largestShiftWindow(shifts: ReadonlyArray<{ startTime: number; value: number }>): number {
   let best = 0, sum = 0, first = -Infinity, last = -Infinity;
   for (const shift of shifts) {
     if (shift.startTime - last >= 1000 || shift.startTime - first >= 5000) { sum = 0; first = shift.startTime; }
@@ -40,13 +40,13 @@ export function largestShiftWindow(shifts: ReadonlyArray<{ startTime: number; va
 }
 
 /** INP: the slowest interaction, skipping one for every 50 so a rare outlier on a long visit does not decide it. */
-export function interactionLatency(durations: ReadonlyMap<number, number>): number | undefined {
+function interactionLatency(durations: ReadonlyMap<number, number>): number | undefined {
   if (durations.size === 0) return undefined;
   const sorted = [...durations.values()].sort((a, b) => b - a);
   return sorted[Math.min(sorted.length - 1, Math.floor(durations.size / 50))];
 }
 
-export function routeOf(path: string): VitalsRoute | null {
+function routeOf(path: string): VitalsRoute | null {
   if (path === "/" || path === "") return "home";
   return /^\/companies\/[^/]+\/?$/.test(path) ? "company" : null;
 }

@@ -11,7 +11,7 @@ import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{ flowNodeId: string; name: string }> };
 /** A filing the published flow itself was read from. */
 export type TreeFiling = { url: string; title: string; publishedAt: string | null };
-export type TreeSearch = Pick<WebSearchService, "fetchContent">;
+type TreeSearch = Pick<WebSearchService, "fetchContent">;
 /**
  * The filing library: the company's SEC documents already split into verbatim passages.
  * Reading an SEC source through it is a D1 lookup; null means the library does not hold the document.
@@ -25,14 +25,10 @@ export type TreeLibrary = {
   businessSection(names: string[], maxChars: number): Promise<{ url: string; title: string; text: string } | null>;
 };
 /** A content block as the Messages API writes it (`text`, `thinking`, `tool_use`, `tool_result`, …). */
-export type TreeBlock = { type: string } & Record<string, unknown>;
-/** One turn of the exchange: the model's replies, exactly as returned, as assistant turns; what the harness answered as user turns. */
-export type TreeMessage = { role: "user" | "assistant"; content: string | TreeBlock[] };
+type TreeBlock = { type: string } & Record<string, unknown>;
 type Schema = { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties: false };
 export type TreeTool = { name: string; description: string; strict: true; input_schema: Schema };
-/** One turn's reply: its content blocks as they are to be sent back and why it stopped, or why there is no reply. */
-export type TreeReply = { content: TreeBlock[]; stopReason: string | null; refusalCategory?: string | null } | { error: string };
-export type TreeModel = {
+type TreeModel = {
   /** One JSON object, for the reviews and descriptions; an empty object when the reply was not one. */
   judge(stage: string, system: string, payload: unknown): Promise<Record<string, unknown>>;
 };
@@ -77,7 +73,7 @@ const CLAIM = object({ text: { type: "string" }, sourceIds: SOURCE_IDS });
 const REVENUE = { type: "array", items: object({ type: { type: "string", enum: [...REVENUE_MODEL_TYPES] }, label: { type: "string" }, text: { type: "string" }, sourceIds: SOURCE_IDS }) };
 const SUMMARY = { anyOf: [CLAIM, { type: "null" }] };
 /** The loop's actions as Claude tools. Strict: the arguments always match the schema, so the harness checks only what they say. */
-export const TREE_TOOLS: TreeTool[] = [
+const TREE_TOOLS: TreeTool[] = [
 
   { name: "read", description: "Read a source's text: the harness returns its passages about focus. source is a source ID; focus is the English keywords you are looking for.", input_schema: object({ source: { type: "string" }, focus: { type: "string" } }) },
   {
@@ -121,7 +117,7 @@ type Material = { id: string; url: string; title: string; publishedAt: string | 
 type Draft = { id: string; parentId: string | null; name: string; gloss: string | null; kind: "line" | "product"; flowNodeId: string | null; summary: TreeClaim | null; anchor: TreeClaim | null; revenue: TreeRevenueModel[] };
 type ToolCall = TreeBlock & { id: string; name: string; input: unknown };
 type Outcome = { observation: string; done?: boolean; error?: boolean };
-export type TreeRunInput = {
+type TreeRunInput = {
   ticker: string; companyName: string; periodEnd: string; businesses: TreeBusiness[]; filings?: TreeFiling[]; search: TreeSearch; model: TreeModel;
   modelVersion: string; fingerprint: string; now: string; stage?: Stage; filingLibrary?: TreeLibrary;
   /** Runs each business's session: a Pi session in production, a scripted driver in tests. */
@@ -693,7 +689,7 @@ async function review(ctx: BranchContext, prefix: string, round: "review" | "des
 type Verdict = { nodes: Array<{ id: string; kind: "name" | "placement"; parent?: string }>; fields: Set<string>; issues: Array<{ id: string; field: string; problem: string }>; answered: boolean };
 
 /** The heading ("## Devices") of the section the quoted passage sits in, as the read text gives it; null when there is none. */
-export function sectionHeading(text: string, quote: string): string | null {
+function sectionHeading(text: string, quote: string): string | null {
   const lines = text.split(/\n+/).map(l => l.trim());
   const head = compactName(quote.split(/\s*(?:…|\.{3})\s*/)[0]!).slice(0, 60);
   const at = head ? lines.findIndex(l => !l.startsWith("#") && compactName(l).includes(head)) : -1;
@@ -708,7 +704,7 @@ export function sectionHeading(text: string, quote: string): string | null {
  * The sentence or heading that introduces the paragraph an anchor quotes ("This segment primarily comprises:", "Application
  * Services"), walking back over the list items before it; null when the quote is not found or nothing introduces it.
  */
-export function leadIn(text: string, quote: string): string | null {
+function leadIn(text: string, quote: string): string | null {
   const paragraphs = text.split(/\n+/).map(p => p.trim()).filter(Boolean);
   const head = compactName(quote.split(" … ")[0]!).slice(0, 60);
   const at = head ? paragraphs.findIndex(p => compactName(p).includes(head)) : -1;
@@ -762,7 +758,7 @@ async function readPage(ctx: BranchContext, url: string, terms: string[]): Promi
  * The paragraphs of a web page most about the terms, in page order, each with the short lead-in before it (a heading, or
  * "This segment primarily comprises:"), so a listed item reads with the line that names what it belongs to.
  */
-export function pageExcerpt(text: string, terms: string[], budget: number): string {
+function pageExcerpt(text: string, terms: string[], budget: number): string {
   if (!terms.length) return excerpt(text, terms, budget);
   const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   const table = (p: string) => (p.match(/\|/g)?.length ?? 0) >= 12;

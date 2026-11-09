@@ -136,7 +136,7 @@ function thresholdValue(form: MetricForm, value: number, locale: Locale): string
   }
 }
 /** The rule as a formula the reader can check: each condition in the metric's units, then the run it must hold for. */
-export function ruleThreshold(rule: StatementRuleDef, locale: Locale = "en", defs: ReadonlyMap<string, StatementMetricDef> = METRIC_BY_ID): string {
+function ruleThreshold(rule: StatementRuleDef, locale: Locale = "en", defs: ReadonlyMap<string, StatementMetricDef> = METRIC_BY_ID): string {
   return ruleText(rule, locale, defs, op => `${op} `);
 }
 
@@ -200,7 +200,7 @@ const section = (lines: Array<{ group: string; value: string }> | null, group: s
  * do not reconcile contributes its total as one step. Running totals (operating, free cash flow, net change) are
  * marked, and `closes` says whether the steps add up to the statement's own net change.
  */
-export function cashBridge(data: FindingData, periodEnd: string, span: FindingSpan, locale: Locale = "en"): CashBridge | null {
+function cashBridge(data: FindingData, periodEnd: string, span: FindingSpan, locale: Locale = "en"): CashBridge | null {
   const read = (pick: Parameters<typeof cashFlowSpan>[3]) => cashFlowSpan(data, periodEnd, span, pick);
   const total = read(c => Number(c.operating.total));
   if (!total) return null;
@@ -249,7 +249,7 @@ const CHAIN: Array<{ id: CapitalChain["series"][number]["id"]; label: [string, s
   { id: "operatingCashFlow", label: ["Operating cash flow, four quarters", "经营现金流（近四季）"], ref: { capital: "operatingCashFlow" }, span: "fiscal_year" },
 ];
 /** Capex, the assets it became, and the revenue and cash that followed, each indexed to the oldest quarter all four answer. */
-export function capitalChain(data: FindingData, periodEnd: string, locale: Locale = "en", quarters = 8): CapitalChain | null {
+function capitalChain(data: FindingData, periodEnd: string, locale: Locale = "en", quarters = 8): CapitalChain | null {
   const ends = Array.from({ length: quarters }, (_, i) => shiftPeriod(periodEnd, -3 * (quarters - 1 - i)));
   const raw = CHAIN.map(s => ({ ...s, values: ends.map(end => resolveRef(data, s.ref, end, s.span)?.value ?? null) }));
   const base = ends.findIndex((_, i) => raw.every(s => (s.values[i] ?? 0) > 0));

@@ -1,5 +1,5 @@
 /** Retry-After accepts seconds or an HTTP date. A missing header uses one minute. */
-export function retryDelay(value: string | null, now = Date.now()): number {
+function retryDelay(value: string | null, now = Date.now()): number {
   if (value != null && /^\d+(?:\.\d+)?$/.test(value.trim())) return Number(value) * 1000;
   const date = value ? Date.parse(value) : NaN;
   return Number.isFinite(date) ? Math.max(0, date - now) : 60_000;

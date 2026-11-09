@@ -6,7 +6,7 @@ import type { EventType } from "./registry.ts";
  * Which of the map's resources each event publishes into. Generous on purpose: a revision that moves without a visible
  * change costs the reader one comparison, while a missed one leaves the page stale.
  */
-export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
+const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "financials.published": ["company", "capital"],
   "map.derived": ["company", "capital"],
   "report.published": ["company", "filings"],

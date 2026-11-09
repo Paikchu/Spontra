@@ -14,7 +14,7 @@ export type EventFilter = (typeof EVENT_FILTERS)[number];
 const MATERIAL = new Set(["executive", "vote", "deal", "financing", "capital_return", "legal"]);
 
 /** Reads `?events=`. An absent or unknown value is the default, Key. */
-export function readEventFilter(search: string): EventFilter {
+function readEventFilter(search: string): EventFilter {
   const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("events");
   return EVENT_FILTERS.includes(raw as EventFilter) ? raw as EventFilter : "key";
 }
@@ -31,14 +31,6 @@ export function defaultEventFilter(search: string, items: readonly RailItem[] | 
   const fallback = !explicit && filter === "key" && recent.length > 0
     && !recent.some(item => matchesEventFilter(item, "key", allEvents));
   return { filter: fallback ? "all" : filter, fallback };
-}
-
-/** Writes the filter into a query, leaving every other parameter where it is. Key stays in the URL so a shared link names it. */
-export function withEventFilter(search: string, filter: EventFilter): string {
-  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  params.set("events", filter);
-  const query = params.toString();
-  return query ? `?${query}` : "";
 }
 
 const DAY_MS = 86_400_000;
@@ -79,7 +71,7 @@ export type NoiseRow =
   | { kind: "routine"; id: string; date: string; items: RailItem[] };
 
 /** The rows of a reading: routine 6-Ks fold by month; everything else, each Form 4 included, lists as itself at its date. */
-export function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
+function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
   const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
   const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items)).sort((a, b) => b.date.localeCompare(a.date));
   const hosts = new Map<RailItem, NoiseRow>();
@@ -105,17 +97,6 @@ export function noiseRows(items: readonly RailItem[], filter: EventFilter): Nois
   });
 }
 
-/** How many rows each filter shows, after folding. */
-export function filterCounts(items: readonly RailItem[]): Record<EventFilter, number> {
-  return {
-    key: noiseRows(items, "key").length,
-    earnings: noiseRows(items, "earnings").length,
-    material: noiseRows(items, "material").length,
-    insiders: noiseRows(items, "insiders").length,
-    all: noiseRows(items, "all").length,
-  };
-}
-
 /** The filings a row stands for, in list order. */
 export function rowLeaves(row: NoiseRow): RailItem[] {
   return row.kind === "item" ? [row.item] : row.items;
@@ -124,11 +105,6 @@ export function rowLeaves(row: NoiseRow): RailItem[] {
 /** Share counts in the fold row use grouping digits (4,725), not the compact form the single rows use. */
 export function exactShares(shares: number): string {
   return new Intl.NumberFormat(getLocale() === "zh-CN" ? "zh-CN" : "en-US", { maximumFractionDigits: 0 }).format(Math.round(shares));
-}
-
-/** Accession numbers and event ids the filter draws, after folding is expanded back to filings. */
-export function timelineIds(items: readonly RailItem[], filter: EventFilter): Set<string> {
-  return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row).map(item => item.id)));
 }
 
 const isEarningsRow = (row: NoiseRow) => row.kind === "item" && (row.item.kind === "report"
@@ -160,7 +136,7 @@ const isEarningsRelease = (item: RailItem): item is RailItem & { kind: "event" }
  * on the three-month grid of `anchor` (a known period end) and the periods of the reports listed. Null when another
  * release came out between that quarter's end and this one, or when nothing dates the quarters.
  */
-export function releasedPeriod(release: RailItem, items: readonly RailItem[], anchor: string | null): string | null {
+function releasedPeriod(release: RailItem, items: readonly RailItem[], anchor: string | null): string | null {
   const filed = release.date;
   const ends = items.flatMap(item => item.kind === "report" && item.report.periodEnd && item.report.periodEnd < filed ? [item.report.periodEnd] : []);
   if (anchor) {

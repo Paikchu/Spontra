@@ -127,7 +127,7 @@ export type CalcRequest = {
  * management scenario and the ranges, each multiplied by the same factor; the ranges' price ratios are recomputed on the
  * rolled values. Operating values, cash flows, gates, the implied growth and the verification stay as computed today.
  */
-export function rollForward(model: ValuationModelResult, months: number, r: number): ValuationModelResult {
+function rollForward(model: ValuationModelResult, months: number, r: number): ValuationModelResult {
   if (!(months > 0)) return model;
   const factor = requireFinite((1 + r) ** (months / 12), "forward factor");
   const scale = (v: number) => v * factor;
@@ -169,7 +169,7 @@ export const gordonTerminal = (lastCashFlow: number, r: number, g: number) => re
  * The value-driver terminal: growth has to be paid for with reinvestment at the terminal return on capital, so
  * `FCF = NOPAT × (1 − g/ROIC)`; at ROIC equal to the cost of capital growth adds almost nothing.
  */
-export function valueDriverTerminal(lastNopat: number, r: number, g: number, terminalRoic: number): { terminalValue: number; reinvestmentRate: number } {
+function valueDriverTerminal(lastNopat: number, r: number, g: number, terminalRoic: number): { terminalValue: number; reinvestmentRate: number } {
   requireFinite(terminalRoic, "terminal ROIC");
   if (terminalRoic <= 0) throw new ValuationCalcError("invalid_input", "terminal ROIC must be positive");
   if (g < 0) throw new ValuationCalcError("invalid_input", "terminal growth cannot be negative under the value-driver terminal");
@@ -182,7 +182,7 @@ const shareValue = (equity: number, shares: number) => requireFinite(requireFini
 const terminalShareOf = (pvExplicit: number, pvTerminal: number) => { const total = pvExplicit + pvTerminal; return total > 0 ? pvTerminal / total : null; };
 
 /** One scenario of one model: the equity value and per-share value from its drivers, the shared rate, shares and bridge. */
-export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
+function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
   requireFinite(shares, "shares");
   finiteResult(bridge, "bridge");
   return finiteResult(evaluateScenario(drivers, r, shares, bridge, options), "scenario result");
@@ -537,7 +537,7 @@ export function coreEquityEarnings(ebit: number, interestExpense: number | null,
 }
 
 /** Year-`h` EBITDA and core EPS: D&A from the explicit plan or scaled with revenue; interest held at its trailing level. */
-export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; epsStatus: "ready" | "insufficient_data"; notes: string[] } {
+function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; epsStatus: "ready" | "insufficient_data"; notes: string[] } {
   const years = horizonOf(drivers.path);
   const n = Math.min(Math.max(h, 1), years);
   let revenue = drivers.revenue0;
@@ -561,7 +561,7 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
  * Enterprise exit value and each interim FCFF are discounted at WACC before today's equity bridge.
  * An equity exit price is discounted at the separately supplied cost of equity; it is already after financing claims.
  */
-export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number } & ({ kind: "ev"; bridge: EquityBridge; shares: number; pvExplicit: number } | { kind: "equity" })): { low: number; base: number; high: number } {
+function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number } & ({ kind: "ev"; bridge: EquityBridge; shares: number; pvExplicit: number } | { kind: "equity" })): { low: number; base: number; high: number } {
   const { metric, multiples, horizonYears: h, r } = input;
   requireFinite(metric, "forward metric"); requireFinite(r, "discount rate");
   requireDiscountRate(r);
@@ -584,7 +584,7 @@ export const WEIGHT_SUM_TOLERANCE = 1e-6;
  * be non-negative and sum to 1 within `WEIGHT_SUM_TOLERANCE`, else they are rejected; none are bounded or renormalized.
  * Without explicit weights the life-cycle defaults apply (the code-only prior; never the published run, whose tool requires them).
  */
-export function methodWeightsOf(explicit: CalcContext["methodWeights"], lifecycle: Lifecycle | null): Record<ValuationMethodKey, number> {
+function methodWeightsOf(explicit: CalcContext["methodWeights"], lifecycle: Lifecycle | null): Record<ValuationMethodKey, number> {
   const defaults: Record<Lifecycle, Record<ValuationMethodKey, number>> = {
     build: { dcf: 0.5, ev_ebitda_forward: 0.3, pe_forward: 0.2 }, growth: { dcf: 0.6, ev_ebitda_forward: 0.25, pe_forward: 0.15 }, mature: { dcf: 0.7, ev_ebitda_forward: 0.15, pe_forward: 0.15 },
   };
@@ -605,7 +605,7 @@ export function methodWeightsOf(explicit: CalcContext["methodWeights"], lifecycl
 const appliedMethodCount = (triangulation: Triangulation | null): number => triangulation ? Object.values(triangulation.weights).filter(w => w > 0).length : 0;
 
 /** The football field: method weights renormalized over the methods that applied; dispersion is max/min of the bases. */
-export function triangulate(methods: MethodValuation[]): Triangulation | null {
+function triangulate(methods: MethodValuation[]): Triangulation | null {
   const applied = methods.filter(m => m.base != null && m.low != null && m.high != null && m.weight > 0);
   if (!applied.length) return null;
   const total = applied.reduce((sum, m) => sum + m.weight, 0);
@@ -664,7 +664,7 @@ export function rpoRevenueFloor(input: { asOf: string; total: number; buckets: A
 }
 
 /** The base revenue path against the contracted floor: years whose revenue falls under what is already contracted. */
-export function floorBreaches(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, anchor: RevenueAnchor): Array<{ year: number; revenue: number; floor: number }> {
+function floorBreaches(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, anchor: RevenueAnchor): Array<{ year: number; revenue: number; floor: number }> {
   const out: Array<{ year: number; revenue: number; floor: number }> = [];
   let revenue = drivers.revenue0;
   drivers.path.revenueGrowth.forEach((g, i) => { revenue *= 1 + g; const f = anchor.floor[i]; if (f != null && revenue < f) out.push({ year: i + 1, revenue, floor: f }); });
@@ -772,7 +772,7 @@ function checkScenarioConsistency(scenarios: Record<ScenarioKey, ScenarioAssumpt
   }
 }
 
-export function valuationRange(values: Record<ScenarioKey, number>, expected: number | null, price: number | null): ValuationRange {
+function valuationRange(values: Record<ScenarioKey, number>, expected: number | null, price: number | null): ValuationRange {
   const ratio = (numerator: number | null, denominator: number | null) => numerator != null && denominator != null && denominator > 0 && numerator >= 0 ? numerator / denominator - 1 : null;
   return {
     low: values.bear, high: values.bull, base: values.base, expected, price,
@@ -847,7 +847,7 @@ export function sensitivitiesOf(request: CalcRequest, r: number, shares: number)
  * base per-share value equal the price. Solved by bisection on a monotone interval; `converged` false when the price
  * sits outside what any growth in [−50%, +100%] produces.
  */
-export function impliedGrowth(request: CalcRequest, r: number, shares: number, price: number): ImpliedPath | null {
+function impliedGrowth(request: CalcRequest, r: number, shares: number, price: number): ImpliedPath | null {
   const base = request.scenarios.base.drivers;
   if (base.modelType !== "fcff" || !(price > 0)) return null;
   const years = horizonOf(base.path);
@@ -867,14 +867,6 @@ export function impliedGrowth(request: CalcRequest, r: number, shares: number, p
   }
   const implied = (low + high) / 2;
   return { factor: "revenueGrowth", implied, baseAverage, gap: implied - baseAverage, converged: true };
-}
-
-/** Treasury-stock-method dilution from in-the-money options and unvested units at the reference price. */
-export function treasuryStockDilution(input: { options: number; weightedStrike: number; unvestedUnits: number; price: number }): number {
-  const { options, weightedStrike, unvestedUnits, price } = input;
-  if (!(price > 0)) return Math.max(unvestedUnits, 0);
-  const optionDilution = options > 0 && weightedStrike < price ? options - options * weightedStrike / price : 0;
-  return Math.max(optionDilution, 0) + Math.max(unvestedUnits, 0);
 }
 
 /** Quartiles of a factor's history, with the percentile rank of a value: the share of observations at or below it. */

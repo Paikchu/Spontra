@@ -36,7 +36,7 @@ const flowConcepts=new Set([...Object.values(tags).flat(), 'RevenuesNetOfInteres
 const operatingSegments=([axis,member]:[string,string])=>local(axis)==='ConsolidationItemsAxis'&&local(member)==='OperatingSegmentsMember';
 const near=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1,Math.max(Math.abs(a),Math.abs(b))*1e-9);
 /** Positive reportable-segment evidence, independent of product/service revenue tables. */
-export function hasSingleReportableSegment(html:string,cik?:string):boolean {
+function hasSingleReportableSegment(html:string,cik?:string):boolean {
  const contexts=new Map([...html.matchAll(/<(?:[\w-]+:)?context\b([^>]*)>([\s\S]*?)<\/(?:[\w-]+:)?context\s*>/gi)]
   .map(m=>[attrs(m[1]).id,m[2]]));
  const counts=[...html.matchAll(/<ix:nonFraction\b([^>]*)>([\s\S]*?)<\/ix:nonFraction\s*>/gi)].flatMap(m=>{

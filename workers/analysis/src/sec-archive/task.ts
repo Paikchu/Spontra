@@ -5,7 +5,6 @@ import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { archiveCompleteKey, archiveDocuments, archivingReader, type ArchiveCompletion } from "./archive.ts";
-export { archiveCompleteKey } from "./archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 const MINUTE = 60_000;

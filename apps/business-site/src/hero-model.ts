@@ -21,7 +21,7 @@ const lowerBase = (ref: FindingBaseRef) => "metric" in ref && LOWER_METRICS.incl
   || "derived" in ref && LOWER_DERIVED.includes(ref.derived) || "fundamental" in ref && LOWER_FUNDAMENTALS.includes(ref.fundamental);
 
 /** Which way the figure moves to be good news: up, down, or neither (capex, financing, assets read neither way). */
-export function goodWhen(ref: FindingRef): "up" | "down" | null {
+function goodWhen(ref: FindingRef): "up" | "down" | null {
   if (higherIsBetter(ref)) return "up";
   if (!("ratio" in ref)) return lowerBase(ref) ? "down" : null;
   const { numerator, denominator } = ref.ratio;
@@ -42,7 +42,7 @@ function move(r: ResolvedEvidence): number {
  * Good or bad news by the figure's direction; none for a figure that reads neither way or did not move. A level with
  * no comparison is bad news only below zero where higher is better: a loss, cash burned.
  */
-export function heroTone(ref: FindingRef, r: ResolvedEvidence): HeroTone | undefined {
+function heroTone(ref: FindingRef, r: ResolvedEvidence): HeroTone | undefined {
   const good = goodWhen(ref);
   if (good === "up" && !r.compare && r.current.unit === "USD" && r.current.value < 0) return "bad";
   const shift = move(r);

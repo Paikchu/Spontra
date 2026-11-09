@@ -19,7 +19,7 @@ export type ForeignInsiderCheck = {
 };
 
 /** The raw XML of an event's Form 4: the stored document URL without EDGAR's rendering directory (`xslF345X06/`). */
-export function eventForm4Url(event: Pick<CompanyEvent, "documentUrl">): string {
+function eventForm4Url(event: Pick<CompanyEvent, "documentUrl">): string {
   const cut = event.documentUrl.lastIndexOf("/", event.documentUrl.lastIndexOf("/") - 1);
   return form4XmlUrl(event.documentUrl.slice(0, cut), event.documentUrl.slice(cut + 1));
 }

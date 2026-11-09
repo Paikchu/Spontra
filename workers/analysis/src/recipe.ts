@@ -1,5 +1,4 @@
-import type { ToolCall } from "./tool-loop.ts";
-import type { AnyTool, ToolOutcome, ToolPolicy } from "./tools/registry.ts";
+import type { AnyTool, ToolPolicy } from "./tools/registry.ts";
 
 /**
  * What one agent run is made of, whoever drives it (the Pi session host, pi/host.ts): the model replies, the harness runs the
@@ -32,7 +31,7 @@ export type Recipe<I, O, S> = {
 
 export const defaultBudgetLine = (left: number) => `Budget left: ${left} turn${left === 1 ? "" : "s"}.${left <= 1 ? " Finish now with what you have." : ""}`;
 
-export const DEFAULT_RESULT_CHARS = 12_000;
+const DEFAULT_RESULT_CHARS = 12_000;
 /** A tool result as the model reads it. A cut is always stated, so a partial result cannot pass for a whole one. */
 export function fitResult(observation: string, limit = DEFAULT_RESULT_CHARS): string {
   if (observation.length <= limit) return observation;
@@ -40,20 +39,3 @@ export function fitResult(observation: string, limit = DEFAULT_RESULT_CHARS): st
 }
 
 export type TurnRecord = { turn: number; thought: string; action: string; input: string; observation: string; failed?: boolean };
-
-/** Where the loop's effects go: the per-turn allowance, the trail, and how calls run. */
-export type LoopHost = {
-  /** Reserves one model call against the daily allowances; false ends the run. */
-  reserve(): Promise<boolean>;
-  record(turn: TurnRecord): void;
-  /** Runs one turn's calls; the stage runs safe calls together, a Workflow one durable step each. */
-  execute(turn: number, calls: ToolCall[], run: (call: ToolCall) => Promise<ToolOutcome>): Promise<ToolOutcome[]>;
-  /** Called with a reply's first tool name as soon as the stream shows it (the stage's waiting state). */
-  onToolStart?(name: string): void;
-  signal: AbortSignal;
-  now(): number;
-  /** Durable steps for outside work; unset runs the work directly. */
-  stage?<T>(name: string, work: () => Promise<T>): Promise<T>;
-};
-
-export type LoopOutcome<O> = { output: O; reason: "finished" | "budget" | "failed" | "interrupted" | "cancelled"; turns: number; asked: string | null };

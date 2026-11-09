@@ -91,7 +91,7 @@ const DIRECTORY_PAGE = 50;
  * beside it), ETFs left out, with the five layer switches as they stand. `filter=on` keeps the companies with layer 1
  * on; a query ranks by ticker and name over the whole directory.
  */
-export function directoryPage(entries: IssuerEntry[], etf: (ticker: string) => boolean, layers: (ticker: string) => Record<Layer, boolean>,
+function directoryPage(entries: IssuerEntry[], etf: (ticker: string) => boolean, layers: (ticker: string) => Record<Layer, boolean>,
   query: string, filter: 'on' | 'all', page: number): BusinessMapDirectory {
   const issuers = new Map<string, { entry: IssuerEntry; classes: string[] }>();
   for (const entry of entries) {

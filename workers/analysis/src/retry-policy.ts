@@ -9,7 +9,6 @@ export const SEC_MODEL_STALL_MS = 60_000;
 // Only bounded content is retained in memory.
 export const SEC_MODEL_MAX_CONTENT_BYTES = 8 * 1024 * 1024;
 export const SEC_MODEL_OUTPUT_TOKENS = 65_536;
-export const SEC_MODEL_RECOVERY_CALLS = 6;
 // Covers one model attempt, maximum retry backoff, and commit overhead.
 export const SEC_MEMORY_MODEL_LEASE_MS = SEC_MODEL_EXECUTION_BUDGET_MS + 6 * 60_000;
 

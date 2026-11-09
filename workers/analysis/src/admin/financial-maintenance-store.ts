@@ -15,7 +15,7 @@ export type MaintenanceRow = {
   completed_steps: number; total_steps: number; attempt: number; lease_token: string | null; lease_until: string | null;
   created_at: string; updated_at: string; completed_at: string | null;
 };
-export const MAINTENANCE_LEASE_MS = 5 * 60_000;
+const MAINTENANCE_LEASE_MS = 5 * 60_000;
 export const ACTIVE_MAINTENANCE = ["queued", "running", "cancel_requested"];
 export function taskView(row: MaintenanceRow): FinancialMaintenanceTask {
   const reread = (JSON.parse(row.state_json) as MaintenanceState).reread;

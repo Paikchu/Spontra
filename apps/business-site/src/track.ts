@@ -10,14 +10,14 @@ const SID_KEY = "bv-sid";
 const SID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const pageRecent = new Map<string, number>();
 
-export type TrackPrivacy = { doNotTrack?: string | null; globalPrivacyControl?: boolean };
+type TrackPrivacy = { doNotTrack?: string | null; globalPrivacyControl?: boolean };
 
 /** 「请勿追踪」or Global Privacy Control: send nothing. */
-export function privacyBlocks(nav: TrackPrivacy | null | undefined): boolean {
+function privacyBlocks(nav: TrackPrivacy | null | undefined): boolean {
   return nav?.doNotTrack === "1" || nav?.globalPrivacyControl === true;
 }
 
-export type TrackDelivery = {
+type TrackDelivery = {
   beacon: (url: string, body: string) => boolean;
   fetch: (url: string, body: string) => void;
   storage: { getItem(key: string): string | null; setItem(key: string, value: string): void } | null;
@@ -57,7 +57,7 @@ function cleanProps(props: Record<string, string | number> | undefined): Record<
 }
 
 /** Builds and sends one event. Returns the body that left the browser, or null when it was dropped. */
-export function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<string, string | number>): string | null {
+function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<string, string | number>): string | null {
   try {
     if (privacyBlocks(env.privacy)) return null;
     if (!TRACK_NAMES.includes(name)) return null;

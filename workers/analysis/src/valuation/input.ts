@@ -143,7 +143,7 @@ function shareFacts(snapshot: SecHistorySnapshot | null, periodEnd: string): Val
 }
 
 /** Classified lease amounts from the reconciled balance sheet. An unclassified row keeps the split unknown. */
-export function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
+function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
   if (!sheet) return [];
   const rows = sheet.liabilities.filter(l => l.group === "leases");
   const classified = rows.map(l => {
@@ -171,7 +171,7 @@ export function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
 const sheetAt = (data: FindingData, periodEnd: string) => data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(periodEnd)) <= 20 * DAY)?.balanceSheet ?? null;
 
 /** Every fact the specs name that the stored data can resolve at the newest quarter, with what is missing. */
-export function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, periodEnd: string, currency: string, disclosedLeases: readonly ValuationFact[] = []): { facts: ValuationFact[]; missing: string[] } {
+function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, periodEnd: string, currency: string, disclosedLeases: readonly ValuationFact[] = []): { facts: ValuationFact[]; missing: string[] } {
   const facts: ValuationFact[] = [];
   const missing: string[] = [];
   for (const spec of FACT_SPECS) {
@@ -316,7 +316,7 @@ async function peerInterestExpense(db: D1Database, ticker: string, periodEnd: st
  * A peer that is loss-making (trailing operating income at or below zero), has EBITDA at or below zero, or lacks a
  * figure the multiples need is dropped with a note, so the quartiles are over companies whose multiples mean something.
  */
-export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>, disclosedLeasesOf?: (peer: string, periodEnd: string, sheet: BalanceSheet | null) => Promise<ValuationFact[]>, interestExpenseOf: (peer: string, periodEnd: string) => Promise<number | null> = (peer, periodEnd) => peerInterestExpense(db, peer, periodEnd)): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
+async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>, disclosedLeasesOf?: (peer: string, periodEnd: string, sheet: BalanceSheet | null) => Promise<ValuationFact[]>, interestExpenseOf: (peer: string, periodEnd: string) => Promise<number | null> = (peer, periodEnd) => peerInterestExpense(db, peer, periodEnd)): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
   if (!peers) return { peers: [], basis: "none", notes: ["no peers projection"] };
   const selection = selectPeers(peers, ticker, curated);
   const repository = new D1SecRepository(db);

@@ -141,7 +141,7 @@ export function isEsppTransaction(event: CompanyEvent): boolean {
 }
 
 /** A sale to fund vesting taxes, distinct from issuer-withheld shares on a separate F line. */
-export function isTaxWithholdingSale(event: CompanyEvent): boolean {
+function isTaxWithholdingSale(event: CompanyEvent): boolean {
   if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "sell") return false;
   const texts = insiderTexts(event);
   const taxSale = /(?:sale\s+of\s+shares|shares\s+sold|sold)\b[^.]*\b(?:solely\s+|purely\s+)?to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?(?:reporting\s+person['’]s\s+)?tax\s+(?:liability|withholding|obligations?)|\bsolely\s+to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?tax\s+(?:liability|withholding|obligations?)|\bto\s+(?:satisfy|cover)\s+(?:the\s+reporting\s+person['’]s\s+)?tax\s+withholding\s+obligations?\b/i;
@@ -156,9 +156,6 @@ export function isPlannedInsiderTrade(event: CompanyEvent): boolean {
     || [...(event.insider?.footnotes ?? []), event.description].some(text => /\b10b5-?1\b/i.test(text)));
 }
 
-export const isPlannedSale = (event: CompanyEvent) =>
-  event.class === "insider" && !!event.insider?.sold && event.insider.sold.shares > 0 && isPlannedInsiderTrade(event);
-
 export function isOpenMarketInsiderTrade(event: CompanyEvent): "buy" | "sell" | null {
   if (event.class !== "insider" || !event.insider) return null;
   const { sold, bought } = event.insider;
@@ -170,21 +167,21 @@ export function isOpenMarketInsiderTrade(event: CompanyEvent): "buy" | "sell" | 
 }
 
 /** Gross trade value; null when any reported sale or purchase has unknown total money. */
-export function insiderTradeValueUsd(event: CompanyEvent): number | null {
+function insiderTradeValueUsd(event: CompanyEvent): number | null {
   if (!isOpenMarketInsiderTrade(event)) return 0;
   const { sold, bought } = event.insider!;
   if ((sold && sold.proceeds == null) || (bought && bought.cost == null)) return null;
   return (sold ? sold.proceeds! : 0) + (bought ? bought.cost! : 0);
 }
 
-export function isKeyInsiderRole(title: string | null | undefined): boolean {
+function isKeyInsiderRole(title: string | null | undefined): boolean {
   if (!title) return false;
   if (/chief executive officer|\bceo\b|chief financial officer|\bcfo\b|\bchairman\b|\bchairwoman\b|\bchairperson\b|董事长|董事会主席|首席执行官|首席财务官/i.test(title)) return true;
   return !/\bvice[\s-]+president\b|\b(?:vp|svp|evp)\b/i.test(title) && /^\s*(?:co-)?president(?:\s*(?:and|&|\/)\s*(?:chief\s+\w+\s+officer|c[eo]o|director|officer|chairman|chairwoman|chairperson))?\s*$/i.test(title.replace(/\./g, ""));
 }
 
 /** Maximum gross trade value in a window containing this event; null if a contributing trade is unpriced. */
-export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number | null {
+function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number | null {
   if (isEsppTransaction(event) || isTaxWithholdingSale(event) || !isOpenMarketInsiderTrade(event)) return 0;
   if (!events?.length) return insiderTradeValueUsd(event);
   const seen = new Set<string>();
@@ -314,7 +311,7 @@ export type InsiderCadence = {
 };
 
 /** One owner's sales over the trailing months before (and including) the event, so a single filing reads against its own history. */
-export function insiderCadence(events: CompanyEvent[], ownerCik: string, until: string, months = 12): InsiderCadence {
+function insiderCadence(events: CompanyEvent[], ownerCik: string, until: string, months = 12): InsiderCadence {
   const end = Date.parse(until), start = end - months * 30.4 * DAY_MS;
   const sales = events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.sold && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
     .map(e => ({ id: e.id, date: e.eventDate, shares: e.insider!.sold!.shares, proceeds: e.insider!.sold!.proceeds, share: soldShareOfHolding(e.insider!), planned: e.insider!.rule10b51 }))
@@ -326,7 +323,7 @@ export function insiderCadence(events: CompanyEvent[], ownerCik: string, until: 
 }
 
 /** Other insiders who sold within the window around the event date: a cluster is a stronger signal than one seller. */
-export function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number | null }> {
+function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number | null }> {
   const self = events.find(e => e.id === eventId)?.insider;
   const at = Date.parse(events.find(e => e.id === eventId)?.eventDate ?? "");
   if (!self || !Number.isFinite(at)) return [];
@@ -405,42 +402,4 @@ export function insiderTone(events: CompanyEvent[], event: CompanyEvent): Inside
   const share = soldShareOfHolding(t);
   if ((share != null && share >= INSIDER_RULES.attentionShare) || insiderCluster(events, event.id).length + 1 >= INSIDER_RULES.clusterSellers || (cadence.sales.length <= 1 && t.rule10b51 !== true)) return "attention";
   return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
-}
-
-export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number | null; bought: number; cost: number | null; exercised: number; planned: boolean | null };
-
-/** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
-export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): HoldingPoint[] {
-  const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;
-  return events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.heldAfter != null && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
-    .map(e => ({
-      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold ? e.insider!.sold.proceeds : 0,
-      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought ? e.insider!.bought.cost : 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-/** Shares outstanding as a filing reports them, dated at the period end. */
-export type ShareCount = { date: string; shares: number };
-
-/** The share count in force on a date: the latest reported on or before it, else the earliest reported after it. */
-export function outstandingAt(counts: ShareCount[], date: string): ShareCount | null {
-  let at: ShareCount | null = null;
-  for (const c of counts) if (c.date <= date && (!at || c.date > at.date)) at = c;
-  return at ?? counts.reduce<ShareCount | null>((first, c) => !first || c.date < first.date ? c : first, null);
-}
-
-/** A filing's direct holding as a percent of shares outstanding, just before its trades and after them. */
-export type StakeChange = { before: number | null; after: number | null; /** The share count both are read against. */ outstanding: ShareCount };
-
-/**
- * The owner's stake in the company around one filing: the direct holding before and after its sales and purchases,
- * over the share count in force on the event date. Null when no share count is known or the holding after is not
- * disclosed; a percent is never estimated from a missing figure.
- */
-export function stakeChange(t: InsiderTransaction, counts: ShareCount[], date: string): StakeChange | null {
-  const outstanding = outstandingAt(counts.filter(c => c.shares > 0 && Number.isFinite(c.shares)), date);
-  if (!outstanding || t.heldAfter == null) return null;
-  const prior = t.heldAfter + (t.sold?.shares ?? 0) - (t.bought?.shares ?? 0);
-  return { before: prior >= 0 ? prior / outstanding.shares * 100 : null, after: t.heldAfter / outstanding.shares * 100, outstanding };
 }

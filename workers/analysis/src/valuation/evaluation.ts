@@ -26,7 +26,7 @@ const paramsSchema = z.object({ ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}
 const envelopeSchema = z.object({ schemaVersion: z.literal("valuation-evaluation-input.v1"), chunks: z.array(z.string().regex(/^valuation:evaluation:chunk:[a-zA-Z0-9-]+:\d+$/)).min(1).max(100), inputSha256: z.string().regex(/^[a-f0-9]{64}$/) });
 
 /** The research view deliberately excludes daily outcome series and all current database projections. */
-export function historicalResearchInput(history: HistoryInput, inputSha256: string, producedAt: string): {
+function historicalResearchInput(history: HistoryInput, inputSha256: string, producedAt: string): {
   input: ValuationInput; sources: FrozenResearchSource[]; market: Pick<ValuationState, "quote" | "riskFree" | "beta" | "peerMultiples" | "multipleHistory">;
 } {
   const byId = new Map(history.sources.map(s => [s.id, s]));

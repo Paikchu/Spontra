@@ -77,7 +77,7 @@ const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 export const factLine = (f: ValuationInput["facts"][number]) => `${f.id} | ${f.label} | ${f.value} ${f.unit}${f.unit === "ratio" ? "" : ` (${money(f.value)})`} | ${f.periodType}${f.periodEnd ? ` to ${f.periodEnd}` : ""} | ${f.basis}${f.formula ? ` (${f.formula})` : ""}`;
 
 /** Registers a passage once and returns its id: source identity plus content hash, so a re-split passage is new evidence. */
-export async function registerEvidence(state: ValuationState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null, displayedExcerpt?: string): Promise<string> {
+async function registerEvidence(state: ValuationState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null, displayedExcerpt?: string): Promise<string> {
   const contentSha256 = await sha256(passage.text);
   const excerpt = (displayedExcerpt ?? (passage.table ? renderTable(passage.table, []) : passage.text)).slice(0, READ_CHARS);
   const excerptSha256 = await sha256(excerpt);
@@ -223,13 +223,13 @@ export type ScenarioArgs = z.infer<typeof scenarioSchema>;
 const VALUATION_CASE_KEYS = ["base", "bear", "bull", "lower", "upper"] as const;
 export type ValuationCaseKey = typeof VALUATION_CASE_KEYS[number];
 export const VALUATION_CASE_TOOLS = { base: "set_base_case", bear: "set_bear_case", bull: "set_bull_case", lower: "set_lower_case", upper: "set_upper_case" } as const;
-export const commonValuationSchema = calcSchema.omit({ scenarios: true, fairValueBasis: true }).extend({
+const commonValuationSchema = calcSchema.omit({ scenarios: true, fairValueBasis: true }).extend({
   fairValueBasis: z.discriminatedUnion("status", [calcSchema.shape.fairValueBasis.options[0].omit({ lower: true, upper: true }).strict(), calcSchema.shape.fairValueBasis.options[1].strict()]),
 }).strict();
 export type CommonValuationArgs = z.infer<typeof commonValuationSchema>;
 export type ValuationDraft = { common: CommonValuationArgs; cases: Partial<Record<ValuationCaseKey, ScenarioArgs>> };
 
-export function valuationDraftStatus(state: Pick<ValuationState, "valuationDraft">): { status: "unconfigured" } | { status: "configured"; modelType: CommonValuationArgs["modelType"]; fairValueStatus: CommonValuationArgs["fairValueBasis"]["status"]; recorded: ValuationCaseKey[]; missing: ValuationCaseKey[] } {
+function valuationDraftStatus(state: Pick<ValuationState, "valuationDraft">): { status: "unconfigured" } | { status: "configured"; modelType: CommonValuationArgs["modelType"]; fairValueStatus: CommonValuationArgs["fairValueBasis"]["status"]; recorded: ValuationCaseKey[]; missing: ValuationCaseKey[] } {
   const draft = state.valuationDraft;
   if (!draft) return { status: "unconfigured" };
   const required: readonly ValuationCaseKey[] = draft.common.fairValueBasis.status === "available" ? VALUATION_CASE_KEYS : ["base", "bear", "bull"];
@@ -413,7 +413,7 @@ function calcContext(state: ValuationState, args: CalcArgs, consensus: Consensus
 
 const GATE_GAP: Partial<Record<string, ValuationGap["code"]>> = { terminal_share: "tv_share_high", terminal_growth: "terminal_growth_high", cited_inputs: "cited_input_mismatch", rpo_floor: "rpo_floor_breached", implied_multiple_vs_history: "implied_multiple_outside_history", method_dispersion: "method_dispersion", consensus_divergence: "consensus_divergence", consensus_unavailable: "unverified_consensus", non_negative_scenarios: "negative_scenario", lease_classification: "missing_inputs", management_targets: "management_target_gap", method_unavailable: "method_unavailable", method_zero_weight: "method_zero_weight" };
 /** Flagged gates as gaps the report carries; a passing gate leaves nothing behind. */
-export function gateGaps(gates: SanityGate[]): ValuationGap[] {
+function gateGaps(gates: SanityGate[]): ValuationGap[] {
   return gates.flatMap(g => g.status === "pass" || !GATE_GAP[g.key] ? [] : [{ code: GATE_GAP[g.key]!, field: g.key, message: g.detail, evidenceIds: [] }]);
 }
 

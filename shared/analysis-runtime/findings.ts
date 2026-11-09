@@ -293,7 +293,7 @@ function cashMetric(c: CashFlowStatement, metric: CapitalMetric): number | null 
 const ASSET_GROUPS: Partial<Record<CapitalMetric, string>> = { cash: "cash", receivables: "receivables", inventory: "inventory", productive: "productive", leaseAssets: "leaseAssets", intangibles: "intangibles", investments: "investments" };
 const LIABILITY_GROUPS: Partial<Record<CapitalMetric, string>> = { debt: "debt", leases: "leases", customerAdvances: "customerAdvances", payables: "payables", deferredTax: "deferredTax" };
 /** A balance-sheet figure: a total as stated, or the sum of the lines in one economic group (zero when the group is empty on a reconciled sheet). */
-export function balanceMetric(b: BalanceSheet, metric: CapitalMetric): number | null {
+function balanceMetric(b: BalanceSheet, metric: CapitalMetric): number | null {
   if (metric === "totalAssets") return Number(b.totals.assets);
   if (metric === "equity") return Number(b.totals.equity);
   if (metric === "totalLiabilities") return Number(b.totals.liabilities);
@@ -432,7 +432,7 @@ function peerAt(data: FindingData, ticker: string, ref: { capital: CapitalMetric
 }
 
 /** "(in millions)", "(Dollars in thousands)", "(in billions, except per share data)": the scale a table's unit header states, or null. */
-export function tableScale(unit: string | null): number | null {
+function tableScale(unit: string | null): number | null {
   if (!unit) return null;
   const m = /\b(thousand|million|billion)s?\b/i.exec(unit);
   return m ? { thousand: 1e3, million: 1e6, billion: 1e9 }[m[1]!.toLowerCase()]! : null;

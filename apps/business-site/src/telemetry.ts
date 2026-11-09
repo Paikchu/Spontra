@@ -12,9 +12,9 @@ const DAY = 86_400_000;
 const RETAIN_MS = 35 * DAY;
 export const TELEMETRY_RATE_LIMIT = 60;
 
-export type TelemetryProps = Record<string, string | number>;
+type TelemetryProps = Record<string, string | number>;
 
-export type StoredEvent = {
+type StoredEvent = {
   received: number;
   name: TrackName;
   path: string;
@@ -55,7 +55,7 @@ function p75(values: number[]): number | null {
 }
 
 /** Field Web Vitals grouped by the route the page was loaded on. */
-export function summarizeVitals(rows: ReadonlyArray<{ path: string; props: TelemetryProps }>): VitalsSummary[] {
+function summarizeVitals(rows: ReadonlyArray<{ path: string; props: TelemetryProps }>): VitalsSummary[] {
   const groups = new Map<VitalsSummary["route"], Array<TelemetryProps>>();
   for (const row of rows) {
     const route = row.path === "/" ? "home" : /^\/companies\/[^/]+\/?$/.test(row.path) ? "company" : null;
@@ -106,7 +106,7 @@ function propsOf(value: unknown): TelemetryProps | null {
 }
 
 /** A client event the store can keep. Anything else is refused. The raw IP is never part of this. */
-export function parseTelemetryEvent(value: unknown): Omit<StoredEvent, "received"> | null {
+function parseTelemetryEvent(value: unknown): Omit<StoredEvent, "received"> | null {
   const row = record(value);
   if (!row) return null;
   const name = row.name;
@@ -152,7 +152,7 @@ function rate(part: number, whole: number): number | null {
   return Math.round((part / whole) * 1000) / 1000;
 }
 
-export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, now: number): TelemetrySummary {
+function summarize(rows: readonly StoredEvent[], range: TelemetryRange, now: number): TelemetrySummary {
   const window = buckets(range, now);
   const from = window[0]?.start ?? now;
   const events = rows.filter(row => row.received >= from && row.received <= now);
@@ -201,28 +201,6 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
     expandRate: rate(counts.get("finding_expand") ?? 0, companyViews),
     errorRate: rate(counts.get("error_shown") ?? 0, pageViews),
     vitals: summarizeVitals(events.filter(event => event.name === "web_vitals")),
-  };
-}
-
-export function memoryRepository(): RowRepository {
-  const events: StoredEvent[] = [];
-  const hits = new Map<string, number>();
-  return {
-    allow(actor, minute, limit) {
-      const key = `${actor}:${minute}`;
-      const next = (hits.get(key) ?? 0) + 1;
-      hits.set(key, next);
-      return next <= limit;
-    },
-    add(row) { events.push({ ...row, props: { ...row.props } }); },
-    read(since) { return events.filter(row => row.received >= since).map(row => ({ ...row, props: { ...row.props } })); },
-    prune(oldestEvent, oldestMinute) {
-      for (let i = events.length - 1; i >= 0; i -= 1) if (events[i]!.received < oldestEvent) events.splice(i, 1);
-      for (const key of hits.keys()) {
-        const minute = Number(key.slice(key.lastIndexOf(":") + 1));
-        if (minute < oldestMinute) hits.delete(key);
-      }
-    },
   };
 }
 

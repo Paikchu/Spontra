@@ -197,7 +197,7 @@ async function planFollowUps(input: { companyName: string; ticker: string; model
 }
 
 /** A query that names the issuer, in any form its filings use, stands as written; any other is prefixed with the company. */
-export function companyQuery(query: string, companyName: string): string {
+function companyQuery(query: string, companyName: string): string {
   const text = compactName(query);
   return issuerNames(companyName).some(name => text.includes(compactName(name))) ? query : `${companyName} ${query}`;
 }

@@ -61,7 +61,7 @@ const STRINGS = { type: "array", items: { type: "string" } };
 /** Open: the lens grammar is larger than a strict schema may be, and the harness checks every document against it. */
 const DOCUMENT = { type: "object", description: "The whole lens document, {rows:[...]}, in the grammar the system prompt describes." };
 /** The loop's actions as Claude tools. The research tools are strict; compile and finish carry a whole document and are checked by the harness. */
-export const ANALYST_TOOLS: AgentClientTool[] = [
+const ANALYST_TOOLS: AgentClientTool[] = [
   {
     name: "filings", strict: true,
     description: "The written filing analyses of the company, or of a comparable peer (ticker), newest report first: each with its id (the filing's accession), form, filing date, report period and title.",
@@ -157,7 +157,7 @@ const RATIOS: Array<[string, FindingRef]> = [
 const PEER_CAPITAL = ["operatingCashFlow", "capex", "freeCashFlow", "debtIssued", "equityIssued", "buybacks", "dividends", "totalAssets", "debt", "cash", "equity", "leases", "customerAdvances", "rpo", "depreciation", "stockCompensation"] as const;
 
 /** The divergence table: each comparable ratio for the company and its peers at the aligned period, with the company marked when it sits outside the peers' range. */
-export function divergence(data: FindingData, ticker: string, periodEnd: string): string[] {
+function divergence(data: FindingData, ticker: string, periodEnd: string): string[] {
   const comparable = comparablePeers(data.peers, ticker);
   const lines: string[] = [];
   if (comparable) {

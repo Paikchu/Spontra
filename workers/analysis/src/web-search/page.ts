@@ -8,7 +8,7 @@ export type MarkdownConverter = {
     Promise<{ format: string; data?: string; error?: string } | Array<{ format: string; data?: string; error?: string }>>;
 };
 /** How one page read went, for the logs: read here, or handed to the fallback and why. */
-export type PageReadRecord = { url: string; outcome: "direct" | "fallback"; reason?: string; status?: number; contentType?: string; characters?: number; durationMs: number };
+type PageReadRecord = { url: string; outcome: "direct" | "fallback"; reason?: string; status?: number; contentType?: string; characters?: number; durationMs: number };
 export type DirectPageOptions = { fetcher?: typeof fetch; markdown?: MarkdownConverter; timeoutMs?: number; record?: (read: PageReadRecord) => void };
 
 const MAX_BYTES = 8 * 1024 * 1024, MAX_REDIRECTS = 5, TIMEOUT_MS = 20_000;

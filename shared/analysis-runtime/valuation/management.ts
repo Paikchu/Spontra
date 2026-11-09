@@ -14,7 +14,7 @@ const MANAGEMENT_DISCOUNT_FLAG = 0.25, MANAGEMENT_PREMIUM_FLAG = 0.10;
 
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 /** The forecast year (1-based) a fiscal year lands on: the first year ending at or after the fiscal year's end; 0 when it is already past, null beyond the horizon. */
-export function forecastYearOf(fiscalYear: number, set: Pick<ManagementTargetSet, "fiscalYearEndMonth">, periodEnd: string, years: number): number | null {
+function forecastYearOf(fiscalYear: number, set: Pick<ManagementTargetSet, "fiscalYearEndMonth">, periodEnd: string, years: number): number | null {
   const end = fiscalYear * 12 + set.fiscalYearEndMonth - 1, base = monthIndex(periodEnd);
   if (end <= base) return 0;
   const year = Math.ceil((end - base) / 12);
@@ -31,7 +31,7 @@ const byYear = (set: ManagementTargetSet, periodEnd: string, years: number, metr
 };
 
 /** Revenue growth by year through the total-revenue targets (geometric between anchors), then a straight fade to the terminal growth. */
-export function managementRevenueGrowth(set: ManagementTargetSet, periodEnd: string, years: number, revenue0: number, terminalGrowth: number): { growth: number[]; anchors: Array<{ fiscalYear: number; year: number; target: number }> } | null {
+function managementRevenueGrowth(set: ManagementTargetSet, periodEnd: string, years: number, revenue0: number, terminalGrowth: number): { growth: number[]; anchors: Array<{ fiscalYear: number; year: number; target: number }> } | null {
   const targets = [...byYear(set, periodEnd, years, "revenue").entries()].sort((a, b) => a[0] - b[0]);
   if (!targets.length || !(revenue0 > 0)) return null;
   const growth = new Array<number>(years).fill(0);
@@ -51,7 +51,7 @@ export function managementRevenueGrowth(set: ManagementTargetSet, periodEnd: str
  * revenue) and less the reinvestment revenue growth already pays through sales-to-capital; in a year with a free-cash-flow
  * floor, whatever leaves exactly that cash flow. Years after the last anchor carry none, so the build ends in the horizon.
  */
-export function managementBuildCapex(set: ManagementTargetSet, periodEnd: string, path: { revenue: number[]; nopat: number[]; reinvestment: number[] }, facts: ManagementFacts): { buildCapex: number[]; anchors: Array<{ metric: "capex" | "fcf"; fiscalYear: number; year: number; target: number }>; notes: string[] } | null {
+function managementBuildCapex(set: ManagementTargetSet, periodEnd: string, path: { revenue: number[]; nopat: number[]; reinvestment: number[] }, facts: ManagementFacts): { buildCapex: number[]; anchors: Array<{ metric: "capex" | "fcf"; fiscalYear: number; year: number; target: number }>; notes: string[] } | null {
   const years = path.revenue.length;
   const capex = byYear(set, periodEnd, years, "capex"), fcf = byYear(set, periodEnd, years, "fcf");
   if (!capex.size && !fcf.size) return null;

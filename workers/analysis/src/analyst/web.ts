@@ -19,7 +19,7 @@ export const webMaterialKey = (ticker: string, id: string) => `research:v1:${tic
 export type WebMaterialRecord = { id: string; url: string; title: string; publishedAt: string | null; retrievedAt: string; textSha256: string; excerpt: string };
 
 /** Lines written at a reader rather than to one: instructions a page may carry for an assistant are not evidence. */
-export function stripInstructions(text: string): string {
+function stripInstructions(text: string): string {
   return text.split("\n").filter(line => !/^\s*(?:(?:please\s+)?(?:ignore|disregard|forget)\b.*(?:instructions|prompt|rules)|(?:you are|you're|as an?)\s+(?:an?\s+)?(?:ai|assistant|language model|llm)\b|system prompt|assistant:|\[inst\]|<\|)/i.test(line)).join("\n");
 }
 
@@ -27,7 +27,7 @@ export const hostOf = (url: string) => { try { return new URL(url).hostname.repl
 const validDate = (value: string | null | undefined) => value && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null;
 
 /** The id a page reads under: 'w' plus a hash of its URL, shaped like a passage id so the same verification path serves it. */
-export async function webMaterialId(url: string): Promise<string> { return "w" + (await sha256(url.trim())).slice(0, 27); }
+async function webMaterialId(url: string): Promise<string> { return "w" + (await sha256(url.trim())).slice(0, 27); }
 
 export type WebReadResult = { record: WebMaterialRecord; passage: FindingPassage };
 
@@ -46,7 +46,7 @@ export async function readWebPage(env: AnalysisEnv, ticker: string, hit: SearchH
   return { record, passage: webPassage(record) };
 }
 
-export function webPassage(record: WebMaterialRecord): FindingPassage {
+function webPassage(record: WebMaterialRecord): FindingPassage {
   return { passageId: record.id, documentId: record.url, title: record.title, form: "web", filedAt: record.publishedAt ?? record.retrievedAt, url: record.url, path: [hostOf(record.url)], text: record.excerpt, table: null };
 }
 

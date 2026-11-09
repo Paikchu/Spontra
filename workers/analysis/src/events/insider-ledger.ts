@@ -14,7 +14,7 @@ import { readEventsResponse } from "./read.ts";
  * a filing whose issuer is another company is skipped, and one read before the issuer was parsed is kept, as the rail keeps it.
  */
 
-export type InsiderFilingInput = {
+type InsiderFilingInput = {
   ticker: string;
   /** The company's CIK, padded or not. */
   companyCik: string | number;
@@ -99,7 +99,7 @@ export function toLedgerRow(r: StoredRow, now: Date): InsiderLedgerRow {
 const stripPerson = (row: InsiderLedgerRow): InsiderTransactionRow => omit(row, "personKey", "ownerCik", "name", "role");
 
 /** The accessions the ledger already holds for the company, so a refresh records only what is missing. */
-export async function recordedAccessions(db: D1Database, ticker: string): Promise<Set<string>> {
+async function recordedAccessions(db: D1Database, ticker: string): Promise<Set<string>> {
   const rows = await db.prepare("SELECT DISTINCT accession FROM insider_transactions WHERE ticker = ?").bind(ticker).all<{ accession: string }>();
   return new Set(rows.results.map(r => r.accession));
 }
@@ -112,7 +112,7 @@ async function batched(db: D1Database, statements: D1PreparedStatement[]): Promi
  * Records filings and recomputes the persons they touch. A filing about another issuer is skipped and counted; a
  * filing with no parsable line writes nothing. Idempotent: the same filing again rewrites the same rows.
  */
-export async function recordInsiderFilings(db: D1Database, filings: readonly InsiderFilingInput[], now: Date): Promise<{ recorded: number; skipped: number; persons: number }> {
+async function recordInsiderFilings(db: D1Database, filings: readonly InsiderFilingInput[], now: Date): Promise<{ recorded: number; skipped: number; persons: number }> {
   const stamp = now.toISOString();
   const statements: D1PreparedStatement[] = [];
   const touched = new Map<string, Map<string, string>>();

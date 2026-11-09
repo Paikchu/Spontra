@@ -29,7 +29,7 @@ import { transcriptForEvent } from "../transcripts/library.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
-export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
+const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
 /**
  * `manual` is an operator's re-run: it extracts every material again under the current extractor version.

@@ -18,7 +18,7 @@ const CURSOR_KEY = "storage-sweep:v1:cursor";
 export type SweepContext = { now: number; aiTickers: Set<string>; liveSearchObjects: Set<string>; analysisSchema: string };
 export type SweepRule = { prefix: string; why: string; dead(key: string, uploaded: number, ctx: SweepContext): boolean };
 
-export const SWEEP_RULES: SweepRule[] = [
+const SWEEP_RULES: SweepRule[] = [
   {
     // Prepared SEC filings are read only by the SEC report Workflow, which runs for AI-listed companies.
     prefix: "filings/", why: "prepared filing of a company outside the AI list",

@@ -2,7 +2,6 @@ import { WebSearchError, type CachePolicy, type ContentData, type ContentRequest
   type RetrievalData, type SearchData, type SearchProvider, type SearchRequest } from "./types.ts";
 import type { SearchStore, StoredResult } from "./store.ts";
 import { digest, isEdgarUrl, normalizeContent, normalizeSearch } from "./validation.ts";
-export { isEdgarUrl } from "./validation.ts";
 const MINUTE = 60_000;
 export class WebSearchService {
   private readonly provider: SearchProvider;

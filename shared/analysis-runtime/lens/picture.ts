@@ -8,16 +8,16 @@ import type { LensFrameTheme } from "../../analysis-contract/lens-frame.ts";
  */
 
 /** The frame's own policy, as `_headers` serves it for `/html-frame`; the harness applies it as a meta tag. */
-export const PICTURE_CSP = "default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'unsafe-inline'; img-src data: blob:; font-src https: data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+const PICTURE_CSP = "default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'unsafe-inline'; img-src data: blob:; font-src https: data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 
 /**
  * Paper, type and SVG defaults under every fragment. The body is a column exactly the frame's height: a fragment
  * puts its title and subtitle first and gives the drawing the rest (`flex:1; min-height:0`); nothing scrolls.
  */
-export const PICTURE_BASE_CSS = "html,body{margin:0;padding:0;height:100%;background:transparent;overflow:hidden}body{display:flex;flex-direction:column;color:var(--foreground);font-family:var(--sans,system-ui,sans-serif);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}svg{display:block;max-width:100%;overflow:visible}";
+const PICTURE_BASE_CSS = "html,body{margin:0;padding:0;height:100%;background:transparent;overflow:hidden}body{display:flex;flex-direction:column;color:var(--foreground);font-family:var(--sans,system-ui,sans-serif);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}svg{display:block;max-width:100%;overflow:visible}";
 
 /** The page's dark theme, the one the harness measures in: the values of `apps/business-site/src/style.css` `:root` (a test keeps them equal). */
-export const PICTURE_PREVIEW_THEME: LensFrameTheme = { scheme: "dark", tokens: {
+const PICTURE_PREVIEW_THEME: LensFrameTheme = { scheme: "dark", tokens: {
   "--background": "#000000", "--surface": "#0d0d0d", "--border": "#2a2a2a", "--hairline": "#ffffff14", "--foreground": "#ededed",
   "--muted-foreground": "#a1a1a1", "--faint": "#8b8b8b", "--up": "#79d9cd", "--loss": "#f08e83", "--flow-revenue": "#d6d6d6",
   "--flow-profit": "#79d9cd", "--flow-expense": "#e8b777", "--biz-0": "#7d8f88", "--biz-1": "#4489e0", "--biz-2": "#d2578c",

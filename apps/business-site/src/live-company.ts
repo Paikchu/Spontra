@@ -63,7 +63,7 @@ function primaryResources(search: string, valuation: ValuationResponse | null): 
 }
 
 /** Start every versioned read together; publish the primary view before unrelated supplements finish. */
-export async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
+async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
   const { signal } = request;
   const revisions = await request.revisions.catch(() => null);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");

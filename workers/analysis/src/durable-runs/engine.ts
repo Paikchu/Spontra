@@ -43,7 +43,7 @@ export type Journal = {
 };
 
 /** Steps that start within this window of the first one share its invocation, so parallel steps stay parallel. */
-export const SHARED_START_MS = 20_000;
+const SHARED_START_MS = 20_000;
 /** Failed checks of a `waitFor` in a row before the run fails. */
 const WAIT_CHECK_RETRIES = 5;
 /** An alarm may run 15 minutes; a step is cut before that so the invocation can record the failure. */

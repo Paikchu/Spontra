@@ -3,7 +3,7 @@
  * marked busy is normally looking at an invocation the platform cancelled before its `finally` ran.
  */
 /** Longer than a wake is ever expected to overlap the one before it. */
-export const BUSY_STALE_MS = 60_000;
+const BUSY_STALE_MS = 60_000;
 /** How soon a wake that found the run busy looks again, so a dead invocation cannot leave the run with no wake at all. */
 export const BUSY_RECHECK_MS = 30_000;
 /** A scheduled wake this far overdue did not fire. */

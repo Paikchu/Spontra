@@ -29,7 +29,7 @@ export const COMPANY_TOTAL = "reported-company-total";
 
 export const unitKeyOf = (ticker: string, flowNodeId: string) => `${ticker}|${flowNodeId}`;
 export const pairKeyOf = (a: string, b: string) => a < b ? `${a}~${b}` : `${b}~${a}`;
-export const tagIdOf = (unitKey: string, sector: string, facet: string, label: string) => `t${libraryHash(`${unitKey}|${sector}|${facet}|${label.toLowerCase()}`).slice(0, 24)}`;
+const tagIdOf = (unitKey: string, sector: string, facet: string, label: string) => `t${libraryHash(`${unitKey}|${sector}|${facet}|${label.toLowerCase()}`).slice(0, 24)}`;
 /** One vector namespace per sector and facet, so a query only meets tags it may be compared with. */
 export const tagNamespace = (sector: string, facet: string) => `${sector}.${facet}`;
 const isCategory = (value: unknown): value is IndustryCategory => typeof value === "string" && Object.hasOwn(INDUSTRY_CATEGORIES, value);
@@ -156,7 +156,7 @@ export function facetValue(score: number | null, has: boolean, thresholds: TagTh
  * all, the other three how close. A facet a side has no tag in says nothing either way: direct needs the same offering,
  * no other known facet different and at least half of them the same.
  */
-export function tierOf(facets: Record<TagFacet, FacetValue>): PeerTier {
+function tierOf(facets: Record<TagFacet, FacetValue>): PeerTier {
   const others = (["customers", "contract", "cost"] as const).map(f => facets[f]);
   const known = others.filter(v => v !== "unknown");
   if (facets.offering === "same") return known.length && !known.includes("different") && known.filter(v => v === "same").length * 2 >= known.length ? "direct" : "partial";
@@ -184,7 +184,7 @@ const mean = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.le
  * other side and averaged, and the two averages are combined as a harmonic mean. One shared tag among many does not
  * make a broad business the same as a narrow one; both sides must be covered. Null when no tag pair has a score.
  */
-export function coverage(own: string[], peer: string[], score: (own: string, peer: string) => number | null): { score: number; own: string; peer: string } | null {
+function coverage(own: string[], peer: string[], score: (own: string, peer: string) => number | null): { score: number; own: string; peer: string } | null {
   const forward = new Map<string, number>(), backward = new Map<string, number>();
   let top: { score: number; own: string; peer: string } | null = null;
   for (const o of own) for (const p of peer) {

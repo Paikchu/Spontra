@@ -36,7 +36,7 @@ export function businessHint(id: string, name: string): string {
  * the passage comes from the company's own filing, which is about the company throughout: there "Our
  * SASE platform" puts the line in the company, which is the business when it discloses only one.
  */
-export function anchors(name: string, ancestors: string[], passage: string, issuer: string[] = []): boolean {
+function anchors(name: string, ancestors: string[], passage: string, issuer: string[] = []): boolean {
   return namedIn(name, passage) && namesAncestor(name, ancestors, passage, issuer);
 }
 

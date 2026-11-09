@@ -17,7 +17,7 @@ import { previousSectionOf, sectionDocuments, updateFiling } from "./store.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual" };
-export type FilingState = WebToolState & { published: boolean; candidates: unknown[] };
+type FilingState = WebToolState & { published: boolean; candidates: unknown[] };
 
 const ok = (observation: string): HandResult => ({ observation });
 const fail = (observation: string): HandResult => ({ observation, error: true });
@@ -44,7 +44,7 @@ export function filingSummary(filing: SecFiling, args: Record<string, unknown>, 
     ...(text(args.eventCategory) ? { eventCategory: text(args.eventCategory) as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: "claude", generatedBy: "pi", generatedAt: at };
 }
 
-export function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, data: StageData | null): Recipe<FilingSpec, boolean, FilingState> {
+function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, data: StageData | null): Recipe<FilingSpec, boolean, FilingState> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;

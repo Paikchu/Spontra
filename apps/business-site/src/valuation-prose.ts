@@ -65,13 +65,6 @@ export function proseBlocks(text: string): ProseBlock[] {
   return blocks;
 }
 
-/** The first sentence of a rationale (English or Chinese) with its citations removed: what a dimension's row says. */
-export function leadSentence(text: string): string {
-  const clean = text.replace(CITE, "").replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
-  const match = /^[^]*?(?:[.!?](?=\s+[A-Z("“]|$)|[。！？])/.exec(clean);
-  return (match ? match[0] : clean).trim();
-}
-
 /** The last step of a source path ("Item 2. … › Liquidity and Capital Resources" → "Liquidity and Capital Resources"). */
 export function pathLeaf(path: string | null | undefined): string | null {
   if (!path) return null;

@@ -12,13 +12,11 @@ import { lensDocumentOf } from "../../../../shared/analysis-runtime/lens/legacy.
 import { compileDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";
 import type { Ledger } from "../findings/ledger.ts";
 import type { Recipe, TurnRecord } from "../recipe.ts";
-import { asObject, type AgentAct, type AgentMessage, type AgentTool } from "../tool-loop.ts";
-import { defineTool, schemasFor, type AnyTool, type ToolPolicy } from "../tools/registry.ts";
+import { asObject, type AgentMessage } from "../tool-loop.ts";
+import { defineTool, type AnyTool, type ToolPolicy } from "../tools/registry.ts";
 
-/** One turn of the loop, taken through the tools; a broken reply comes back as `{ error }` rather than failing the run. */
-export type LensModel = AgentAct;
 /** Turns per finding: reading the series, writing the pictures, and revising them until the browser sees nothing wrong. */
-export const LENS_BUDGET = { turns: 10, wallMs: 30 * 60_000 } as const;
+const LENS_BUDGET = { turns: 10, wallMs: 30 * 60_000 } as const;
 
 /** One call of the loop as the operator reads it; `thought` is what the reply said beside its calls, often nothing. */
 export type LensTurn = TurnRecord;
@@ -125,8 +123,6 @@ const lensTools: AnyTool<LensState>[] = [
     }, observe: (_a, v) => v }),
 ];
 const LENS_POLICY: ToolPolicy = { allow: ["series", "compile", "revise", "finish"] };
-/** The loop's actions as Claude tools. */
-export const LENS_TOOLS: AgentTool[] = schemasFor(lensTools, LENS_POLICY);
 
 /** The catalogue from the ledger: one row per distinct reference, with how many spans it answers and whether it changes are known. */
 export function lensCatalogue(ledger: Ledger, data: FindingData, periodEnd: string): LensCatalogueRow[] {

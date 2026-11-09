@@ -8,7 +8,7 @@ export type FilingProfile = { id: ProfileId; match(form: string): boolean; turns
 const MINUTE = 60_000;
 const REPORT_SHAPE = "Finish with publish_report: a headline, bullets, the analyst view, and the full report in Markdown.";
 
-export const PROFILES: readonly FilingProfile[] = [
+const PROFILES: readonly FilingProfile[] = [
   {
     id: "periodic", match: form => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form), turns: 60, wallMs: 120 * MINUTE, reasoning: "high",
     prompt: `The subject is a periodic report. The first message lists every section with how it changed against the earlier filing. Read the sections in batches with read_sections, the changed and new ones first, and read_previous when the earlier wording matters; you decide how far to go. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE}`,

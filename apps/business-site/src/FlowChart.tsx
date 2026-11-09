@@ -73,7 +73,7 @@ export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCo
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 /** Prefer beside, then below. A compact mark stays inside the bar if both are occupied. */
-export function placeGuidance(beside: Box, below: Box, occupied: readonly Box[], bounds: Box): Box | null {
+function placeGuidance(beside: Box, below: Box, occupied: readonly Box[], bounds: Box): Box | null {
   const clear = (box: Box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1
     && occupied.every(other => box.x1 + 4 <= other.x0 || box.x0 >= other.x1 + 4 || box.y1 + 4 <= other.y0 || box.y0 >= other.y1 + 4);
   return [beside, below].find(clear) ?? null;

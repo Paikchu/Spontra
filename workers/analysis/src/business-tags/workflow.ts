@@ -12,7 +12,7 @@ type Step = { do<T>(name: string, callback: () => Promise<T>): Promise<T> };
  * Writes the company's units and its reviewed tags. A tag an admin rejected stays rejected when the run writes it
  * again; any other tag of the company this run no longer has is removed. Returns the ids whose vectors must leave the index.
  */
-export async function writeTags(db: D1Database, ticker: string, assignments: Record<string, string>, tags: TagDraft[], fingerprint: string, now: string): Promise<{ units: number; tags: number; kept: number; removed: string[] }> {
+async function writeTags(db: D1Database, ticker: string, assignments: Record<string, string>, tags: TagDraft[], fingerprint: string, now: string): Promise<{ units: number; tags: number; kept: number; removed: string[] }> {
   const plan = await tagsPlan(db, ticker);
   if (!plan) return { units: 0, tags: 0, kept: 0, removed: [] };
   const { units } = buildUnits(ticker, plan.links, plan.nodes, assignments);

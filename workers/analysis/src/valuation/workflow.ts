@@ -52,7 +52,7 @@ ${VALUATION_DIMENSIONS.map(key => `- ${anchorLine(key)}`).join("\n")}
 Confidence: ${CONFIDENCES.map(c => `${c} = ${CONFIDENCE_RULES[c]}`).join("; ")}.
 Do not give 5 for uncertainty: say what is known, what is not, and score null with a gap when the material is missing.`;
 
-export const RESEARCH_SYSTEM = `You research one listed company for a valuation assessment. Everything you conclude must rest on evidence you read in this run: filing passages (a filing analysis's quoted passages included), call excerpts or the business breakdown's anchoring pages, registered with an id like [e1a2b3c4d5], or the validated facts listed by id. A finding or an analysis's conclusion is not evidence; only a registered passage is. Assumptions are never disclosures.
+const RESEARCH_SYSTEM = `You research one listed company for a valuation assessment. Everything you conclude must rest on evidence you read in this run: filing passages (a filing analysis's quoted passages included), call excerpts or the business breakdown's anchoring pages, registered with an id like [e1a2b3c4d5], or the validated facts listed by id. A finding or an analysis's conclusion is not evidence; only a registered passage is. Assumptions are never disclosures.
 Work the four research dimensions: businessQuality, growthExecution, financialResilience, mispricingCatalysts. Build on the analysis already done below you: read_findings for what the financial review concluded, read_business_tree for the businesses and the researched pages anchoring them, read_filing_analyses and read_filing_analysis for each filing's analysis and the passages it quoted. Read a filing section yourself (find_filing_sections, read_filing_section) only for a disclosure none of them carries: the debt and commitments notes, share counts, leases. Read guidance and the calls. Treat counter-evidence first. There is no web search here; a gap the layers below do not cover is recorded as a gap.
 The diagnostics listed in the opening message were computed by code from the facts; each dimension's rationale must answer the ones that bear on it (ROIC, accruals, cash conversion, dilution, leverage, coverage) by name.
 A rationale is at most 1000 characters: the judgement first, then the two or three facts that decide it with their evidence ids. A figure the diagnostics list or another dimension already states is named, not re-derived; the page shows the diagnostics beside the scores.
@@ -130,7 +130,7 @@ export function managementText(state: ValuationState): string {
   return `Management targets (cited, fiscal year ends month ${set.fiscalYearEndMonth}, as of ${set.asOf}; evidence ${ids.join(", ") || "registered at the start of the run"}):\n${lines.join("\n")}`;
 }
 
-export function openingAssume(state: ValuationState, prior: CalcRequest | null): string {
+function openingAssume(state: ValuationState, prior: CalcRequest | null): string {
   const { input } = state;
   const dims = [...state.dimensions.values()].map(d => `${d.key}: ${d.score ?? "null"} (${d.confidence}) — ${d.rationale.slice(0, 300)}`).join("\n");
   const evidence = [...state.evidence.values()].slice(0, 24).map(e => `[${e.evidenceId}] ${e.title} › ${e.path ?? ""}: ${excerptOf(e).slice(0, 120)}`).join("\n");
@@ -152,7 +152,7 @@ export function openingAssume(state: ValuationState, prior: CalcRequest | null):
 }
 
 /** The judgements behind the model, one line each, for the composer's opening. */
-export function judgementLines(calc: ValuationModelResult): string[] {
+function judgementLines(calc: ValuationModelResult): string[] {
   const out: string[] = [];
   const fair = calc.fairValueRange;
   if (fair?.status === "unavailable") out.push(`Normal fair-value range unavailable: ${fair.reason}${fair.evidenceIds.length ? ` [${fair.evidenceIds.join("][")}]` : ""}.`);
@@ -288,14 +288,14 @@ async function redTeam(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
   return { weakestAssumptions: weakest, decisiveCounterEvidence: parsed.data.decisiveCounterEvidence && known(parsed.data.counterEvidenceIds).length > 0, counterEvidenceIds: known(parsed.data.counterEvidenceIds) };
 }
 /** The counter-evidence reviewer's reply: every field required; the two weakest assumptions each with a reason and evidence. */
-export const RED_TEAM_SCHEMA = z.object({
+const RED_TEAM_SCHEMA = z.object({
   weakestAssumptions: z.array(z.object({ factor: z.string().min(1), why: z.string().min(1), evidenceIds: z.array(z.string()) })).min(1).max(3),
   decisiveCounterEvidence: z.boolean(),
   counterEvidenceIds: z.array(z.string()),
 });
 
 /** The publication from the run's state: ceilings applied, scores composed, the verdict decided, every figure the calculator's. */
-export async function assemblePublication(state: ValuationState, now: string, methodVersion: string): Promise<{ publication: ValuationPublication; evidence: ValuationEvidence[] }> {
+async function assemblePublication(state: ValuationState, now: string, methodVersion: string): Promise<{ publication: ValuationPublication; evidence: ValuationEvidence[] }> {
   const calc = state.calc?.result ?? null;
   const gaps: ValuationGap[] = [...state.modelGaps];
   if (!state.quote) gaps.push({ code: "missing_quote", message: "No reference close could be read, so no price comparison is made.", evidenceIds: [] });

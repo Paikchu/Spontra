@@ -161,8 +161,6 @@ function reconcile<T extends { value: number }>(items: T[], total: number): T[] 
 function classify<G extends string>(row: Row, rules: Array<[G, RegExp]>, fallback: G): G {
   return rules.find(([, pattern]) => pattern.test(local(row.concept)) || pattern.test(row.label))?.[0] ?? fallback;
 }
-/** The equity group a balance-sheet line falls in by its concept and label (the same rules the extractor applies). */
-export const equityGroupOf = (concept: string, label: string): EquityGroup => classify({ concept, label } as Row, EQUITY_RULES, "paidIn");
 
 const ASSET_RULES: Array<[AssetGroup, RegExp]> = [
   ["leaseAssets", /OperatingLeaseRightOfUse|operating lease right[- ]of[- ]use/i],
@@ -508,7 +506,7 @@ const bucketList = (buckets: Map<number, string>): ScheduleBucket[] => [...bucke
  * instant the series shares (the filing's period end); a schedule stating fewer than two buckets is not a ladder and
  * is left out. Nothing is derived: the total is published only when the issuer tags it at that same instant.
  */
-export function extractSchedules(disclosures: FilingDisclosures, source: CapitalSource): CapitalSchedule[] {
+function extractSchedules(disclosures: FilingDisclosures, source: CapitalSource): CapitalSchedule[] {
   const facts = scheduleFacts(disclosures);
   const schedules: CapitalSchedule[] = [];
   const publish = (kind: ScheduleKind, asOf: string | null, read: ReturnType<typeof readSeries>) => {

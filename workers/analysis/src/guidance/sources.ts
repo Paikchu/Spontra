@@ -47,7 +47,7 @@ export class TranscriptQuotaError extends Error {
  * a per-second or per-minute rate decides first; a notice naming neither is treated as a burst, which costs a retry a
  * minute later rather than the rest of the day.
  */
-export function alphaVantageLimit(message: string): "daily" | "burst" | null {
+function alphaVantageLimit(message: string): "daily" | "burst" | null {
   if (!/rate|limit|frequency|requests? per|(?:api )?call volume/i.test(message)) return null;
   if (/per\s+(?:second|minute)|sparingly|spreading out|frequency/i.test(message)) return "burst";
   return /per\s+day|daily/i.test(message) ? "daily" : "burst";

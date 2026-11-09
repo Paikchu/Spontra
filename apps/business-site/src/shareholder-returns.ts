@@ -52,7 +52,7 @@ const plus = (a: number | null, b: number | null) => a == null && b == null ? nu
 const paid = (v: number | null) => v == null ? null : Math.abs(v);
 
 /** The fiscal year a twelve-month period ending on `periodEnd` closes: a year closing in a month's first week belongs to the month before. */
-export function fiscalYearOf(periodEnd: string): number {
+function fiscalYearOf(periodEnd: string): number {
   const month = yearEndMonth(periodEnd), year = Number(periodEnd.slice(0, 4));
   return month === 12 && Number(periodEnd.slice(5, 7)) === 1 ? year - 1 : year;
 }

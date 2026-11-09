@@ -15,7 +15,7 @@ const FRESH_MS = 24 * 3600_000;
 /** The directory parsed once per isolate; D1 holds it across isolates. */
 let memory: { fetchedAt: string; entries: IssuerEntry[] } | null = null;
 
-export function parseIssuerDirectory(raw: unknown): IssuerEntry[] {
+function parseIssuerDirectory(raw: unknown): IssuerEntry[] {
   const directory = raw as { fields?: unknown; data?: unknown };
   if (!Array.isArray(directory.fields) || !Array.isArray(directory.data)) throw new Error('Invalid SEC issuer directory');
   const ticker = directory.fields.indexOf('ticker'), name = directory.fields.indexOf('name'), exchange = directory.fields.indexOf('exchange'), cik = directory.fields.indexOf('cik');
@@ -104,7 +104,7 @@ const LISTINGS_KEY = 'catalog:listings:v1';
 const LISTINGS_URL = 'https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt';
 let listingMemory: { fetchedAt: string; entries: ListingEntry[] } | null = null;
 
-export function parseListings(text: string): ListingEntry[] {
+function parseListings(text: string): ListingEntry[] {
   const [header, ...rows] = text.split(/\r?\n/);
   const fields = (header ?? '').split('|');
   const symbol = fields.indexOf('Symbol'), title = fields.indexOf('Security Name'), etf = fields.indexOf('ETF'), testIssue = fields.indexOf('Test Issue');
@@ -147,7 +147,7 @@ function listing(entries: ListingEntry[], ticker: string): ListingEntry | null {
 }
 
 /** A listing title without its share-class wording: "Alphabet Inc. - Class A Common Stock" reads "Alphabet Inc.". */
-export function issuerFromTitle(title: string): string {
+function issuerFromTitle(title: string): string {
   return title.replace(/\s+-\s+.*$/, '').replace(/\s+(?:New\s+)?(?:Class\s+[A-Z]\s+)?(?:Common Stock|Capital Stock|Ordinary Shares|American Depositary Shares?|Depositary Shares?)\b.*$/i, '').trim() || title.trim();
 }
 

@@ -25,7 +25,7 @@ export type SankeyLink = { source:string; target:string; value:number };
 /** `deficit` graphs draw a loss as funding: every link is a positive flow, and the net loss is a source. */
 export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; signed?:boolean; deficit?:boolean };
 
-export function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
+function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
   if (!nodes.length || nodes.length > 64 || links.length > 128) return false;
   const ids=new Set(nodes.map(n=>n.name));
   if(ids.size!==nodes.length || nodes.some(n=>!n.name || !Number.isFinite(n.value) || n.value<0)) return false;

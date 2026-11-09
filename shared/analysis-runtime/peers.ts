@@ -138,13 +138,13 @@ const sum = (lines: Array<{ value: string }>) => lines.reduce((total, line) => t
 const asDecimal = (value: number) => String(Math.round(value) || 0);
 
 /** The lines of one liability group added up; null when the statement presents no line in that group, never zero. */
-export function liabilityGroupTotal(sheet: BalanceSheet, group: BalanceSheet["liabilities"][number]["group"]): number | null {
+function liabilityGroupTotal(sheet: BalanceSheet, group: BalanceSheet["liabilities"][number]["group"]): number | null {
   const lines = sheet.liabilities.filter(l => l.group === group);
   return lines.length ? sum(lines) : null;
 }
 
 /** Non-cash operating add-backs whose concept names depreciation or amortization; null when the statement tags none. */
-export function depreciationOf(statement: CashFlowStatement): number | null {
+function depreciationOf(statement: CashFlowStatement): number | null {
   const lines = (statement.operating.lines ?? []).filter(l => l.group === "nonCash" && /Depreciation|Amortization/i.test(l.concept));
   return lines.length ? sum(lines) : null;
 }

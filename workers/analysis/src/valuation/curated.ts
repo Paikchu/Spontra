@@ -18,7 +18,7 @@ const target = z.object({
 });
 const targetsSchema = z.object({ asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), sources: z.array(source).min(1).max(20), targets: z.array(target).min(1).max(60) }).strict();
 /** A target set older than this before the research date is no longer management's current plan and is not used. */
-export const MANAGEMENT_TARGETS_MAX_AGE_DAYS = 540;
+const MANAGEMENT_TARGETS_MAX_AGE_DAYS = 540;
 const DAY = 86_400_000;
 
 const issues = (error: z.ZodError) => error.issues.slice(0, 3).map(i => `${i.path.join(".") || "value"}: ${i.message}`).join("; ");

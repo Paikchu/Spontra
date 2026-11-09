@@ -54,7 +54,7 @@ export async function getSecFundamentals(database: D1Like, query: FundamentalApi
   return buildSecFundamentals(historyFromRows(rows.results), query, null, new Date(), revenueHistory?.quarters);
 }
 
-export async function buildSecFundamentals(history: SecHistorySnapshot, query: FundamentalApiQuery, fetchedAt: string | null, now = new Date(), releaseQuarters: RevenueHistoryQuarter[] = []): Promise<PublicFundamentalsResponse> {
+async function buildSecFundamentals(history: SecHistorySnapshot, query: FundamentalApiQuery, fetchedAt: string | null, now = new Date(), releaseQuarters: RevenueHistoryQuarter[] = []): Promise<PublicFundamentalsResponse> {
   history = withReleaseEps(history, releaseQuarters);
   const revenue = history.series.find((series) => series.seriesId === "revenue")?.quarters ?? [];
   // Revenue may be absent even when a quarter's other statements were disclosed. Keep the
@@ -130,7 +130,7 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
 }
 
 /** A release's printed quarterly EPS fills holes only; EPS is never an additive FY-minus-nine-month measure. */
-export function withReleaseEps(history: SecHistorySnapshot, quarters: RevenueHistoryQuarter[]): SecHistorySnapshot {
+function withReleaseEps(history: SecHistorySnapshot, quarters: RevenueHistoryQuarter[]): SecHistorySnapshot {
   const existing = history.series.find(s => s.seriesId === "diluted_eps");
   const additions: HistoricalObservation[] = quarters.flatMap(q => {
     const eps = q.dilutedEps;

@@ -21,7 +21,7 @@ function availableAt(filedAt: string, researchAsOf: string, archivedAt?: string)
 }
 
 /** Consolidated instant facts from one filing, never an annual payment schedule or a mixture of filing versions. */
-export function filingLeaseFacts(value: unknown, query: { ticker: string; periodEnd: string; currency: string; researchAsOf: string; archivedAt?: string }): FilingLeaseFacts {
+function filingLeaseFacts(value: unknown, query: { ticker: string; periodEnd: string; currency: string; researchAsOf: string; archivedAt?: string }): FilingLeaseFacts {
   const parsed = inventorySchema.safeParse(value);
   if (!parsed.success) return { facts: [], unresolved: [] };
   const inventory = parsed.data, src = inventory.source;

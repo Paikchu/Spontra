@@ -6,7 +6,7 @@ export const HINT_MS = 3000;
 export type SideScroll = { overflow: boolean; atEnd: boolean };
 
 /** Whether a box holds more than it shows sideways, and whether the reader has reached its right edge (a pixel of slack). */
-export function sideScroll(box: { scrollLeft: number; scrollWidth: number; clientWidth: number }): SideScroll {
+function sideScroll(box: { scrollLeft: number; scrollWidth: number; clientWidth: number }): SideScroll {
   const overflow = box.scrollWidth - box.clientWidth > 1;
   return { overflow, atEnd: !overflow || box.scrollLeft + box.clientWidth >= box.scrollWidth - 1 };
 }

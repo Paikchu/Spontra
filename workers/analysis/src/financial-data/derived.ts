@@ -60,14 +60,14 @@ const industryOf = (flow: PublicBusinessFlow): Industry => {
 };
 
 /** The oldest filing date any reader of the snapshot looks at: capital reaches three years behind the latest quarter. */
-export function auditWindowStart(latestPeriodEnd: string): string {
+function auditWindowStart(latestPeriodEnd: string): string {
   const start = new Date(latestPeriodEnd);
   start.setUTCFullYear(start.getUTCFullYear() - 3);
   return start.toISOString().slice(0, 10);
 }
 
 /** Accessions the published flow cites that the archive read did not return. */
-export function unarchivedSources(flow: PublicBusinessFlow, audits: StoredAudit[]): string[] {
+function unarchivedSources(flow: PublicBusinessFlow, audits: StoredAudit[]): string[] {
   const read = new Set(audits.map(r => r.source.accessionNumber));
   return [...new Set(flow.quarters.flatMap(q => q.sources.map(s => s.id)).filter(id => /^\d{10}-\d{2}-\d{6}$/.test(id) && !read.has(id)))];
 }
@@ -79,7 +79,7 @@ const issuerOf = (r: StoredAudit) => r.source.documentUrl.match(/\/Archives\/edg
  * A period is taken from the newest filing that presents it, so it is shown on that filing's basis, recast or
  * reclassified as the filing presents it, the same basis as the newer quarter it is the year-ago period of.
  */
-export function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): StoredAudit[] {
+function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): StoredAudit[] {
   const latest = latestOf(flow);
   const issuer = latest?.sources.map(s => s.url.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]).find(Boolean);
   if (!latest || !issuer) return [];
@@ -108,7 +108,7 @@ const wholeCompany = (q: BusinessFlowQuarter) => q.segments.length === 1 && q.se
  * exhibit derived (six months to date − second quarter) carries the rounding of both printed amounts, so it may differ
  * by one printed unit: the coarsest power of ten every amount of the exhibit's quarter is a multiple of.
  */
-export function supersedes(incoming: BusinessFlowQuarter, existing: BusinessFlowQuarter): boolean {
+function supersedes(incoming: BusinessFlowQuarter, existing: BusinessFlowQuarter): boolean {
   const amounts = Object.values(existing.figures).map(f => Math.abs(Number(f?.value))).filter(v => Number.isFinite(v) && v > 0);
   let unit = 1;
   while (unit < 1e9 && amounts.length && amounts.every(v => v % (unit * 10) === 0)) unit *= 10;

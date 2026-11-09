@@ -14,15 +14,15 @@ import {omit} from '../../../../shared/analysis-runtime/omit.ts';
 export const READ_NOTE_VERSION = 'read-note.v3';
 
 /** One table as text: each row's non-empty cells, a parenthesised negative closed into one cell. */
-export type FilingTable = { id: number; url: string; rows: string[][] };
+type FilingTable = { id: number; url: string; rows: string[][] };
 export type FilingDocument = { url: string; html: string };
 export type TablePlace = { table: number; unit: 'units' | 'thousands' | 'millions' | 'billions'; current: number };
 export type NoteItem = { slot: string; table: number; row: number; sign?: 1 | -1 };
 export type NewItem = { group: 'expense' | 'other' | 'afterTax' | 'segment'; name: string; table: number; row: number; sign?: 1 | -1 };
 export type ReadNote = { period: { end: string; quote: string } | null; tables: TablePlace[]; items: NoteItem[]; new?: NewItem[] };
-export type NoteSource = { accession: string; url: string; filedAt: string; form: string };
+type NoteSource = { accession: string; url: string; filedAt: string; form: string };
 /** What a note is checked against: the published pair (newest first) and the revenue history. */
-export type NoteContext = { tables: FilingTable[]; text: string; published: BusinessFlowQuarter[]; history: RevenueHistoryQuarter[]; source: NoteSource };
+type NoteContext = { tables: FilingTable[]; text: string; published: BusinessFlowQuarter[]; history: RevenueHistoryQuarter[]; source: NoteSource };
 
 const SCALE = { units: 1, thousands: 1e3, millions: 1e6, billions: 1e9 } as const;
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -73,7 +73,7 @@ function knownAmounts(context: Pick<NoteContext, 'published' | 'history'>): numb
   return values.filter(v => Number.isFinite(v) && v !== 0);
 }
 /** The tables that print an already published amount in any unit: the ones a note can be checked on. */
-export function relevantTables(tables: FilingTable[], context: Pick<NoteContext, 'published' | 'history'>): FilingTable[] {
+function relevantTables(tables: FilingTable[], context: Pick<NoteContext, 'published' | 'history'>): FilingTable[] {
   const known = new Set(knownAmounts(context).map(v => Math.abs(Math.round(v))));
   const matches = (n: number) => Object.values(SCALE).some(s => known.has(Math.abs(Math.round(n * s))));
   return tables.filter(t => t.rows.some(row => amounts(row).some(n => n !== 0 && Number.isInteger(n) && matches(n))));
@@ -115,7 +115,7 @@ export function slotsOf(template: BusinessFlowQuarter): Array<{ slot: string; na
  * published quarter gives the structure; a note dated to that same quarter replaces it only when it came from an
  * earnings release (the quarterly report supersedes the release).
  */
-export function applyNote(note: ReadNote, context: NoteContext): { quarter: BusinessFlowQuarter | null; issues: string[]; replaces: boolean } {
+function applyNote(note: ReadNote, context: NoteContext): { quarter: BusinessFlowQuarter | null; issues: string[]; replaces: boolean } {
   const issues: string[] = [];
   const [newest, older] = context.published;
   if (!newest) return { quarter: null, issues: ['nothing is published to check against'], replaces: false };
@@ -286,7 +286,7 @@ export function applyNote(note: ReadNote, context: NoteContext): { quarter: Busi
  * operating-loss row as a segment, preferred dividends after net income). It is read again without them, the most lines
  * kept first; every total still has to reconcile, so a new line the statement needs cannot be left out.
  */
-export function applyNoteKeeping(note: ReadNote, context: NoteContext): { note: ReadNote; quarter: BusinessFlowQuarter | null; issues: string[]; replaces: boolean } {
+function applyNoteKeeping(note: ReadNote, context: NoteContext): { note: ReadNote; quarter: BusinessFlowQuarter | null; issues: string[]; replaces: boolean } {
   const first = applyNote(note, context), proposed = note.new ?? [];
   if (first.quarter || !proposed.length || proposed.length > 8) return { note, ...first };
   const subsets = Array.from({ length: 2 ** proposed.length - 1 }, (_, mask) => proposed.filter((_, i) => mask & (1 << i)))

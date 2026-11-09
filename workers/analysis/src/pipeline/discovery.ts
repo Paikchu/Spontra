@@ -44,7 +44,7 @@ function recentFilings(payload: unknown): Filing[] {
 }
 
 /** The form of the issuer's latest annual report in its whole recent list, amendments read as the report they amend. */
-export function annualForm(payload: unknown): string | null {
+function annualForm(payload: unknown): string | null {
   const forms = (payload as { filings?: { recent?: { form?: unknown[] } } } | null)?.filings?.recent?.form;
   const form = Array.isArray(forms) ? forms.map(String).find(f => /^(?:10-K|20-F|40-F)(?:\/A)?$/.test(f)) : undefined;
   return form ? form.replace(/\/A$/, "") : null;

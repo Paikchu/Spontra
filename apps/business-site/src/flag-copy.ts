@@ -42,7 +42,7 @@ const VERDICT: Record<string, (n: number, locale: Locale) => string> = {
 
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 /** Quarters a rule has held for, from the oldest quarter of its run to the report. */
-export function runQuarters(since: string, periodEnd: string): number {
+function runQuarters(since: string, periodEnd: string): number {
   return Math.max(1, Math.round((monthIndex(periodEnd) - monthIndex(since)) / 3) + 1);
 }
 

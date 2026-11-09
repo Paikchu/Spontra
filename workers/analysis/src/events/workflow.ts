@@ -11,7 +11,7 @@ import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { recordRailInsiders } from "./insider-ledger.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
-export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
+type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
 
 /** How old a stored submission list may be before a run re-reads it anyway; a discovered filing always re-reads it. */
 const REFRESH_MS = 6 * 60 * 60_000;
@@ -31,7 +31,7 @@ const asArray = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
  * The 8-K/6-K, Form 4, offering and proxy filings in EDGAR's submission list, newest first, inside the window and the
  * per-form caps. Offerings have their own cap, so a bank's stream of structured-note supplements never crowds out its 8-Ks.
  */
-export function parseEventSubmissions(payload: unknown, cikNumber: number, now: Date): RawEventFiling[] {
+function parseEventSubmissions(payload: unknown, cikNumber: number, now: Date): RawEventFiling[] {
   const recent = asRecord(asRecord(asRecord(payload)?.filings)?.recent);
   if (!recent) return [];
   const column = (name: string) => asArray(recent[name]);
@@ -90,7 +90,7 @@ export type InsiderCacheEntry = InsiderTransaction | { unreadable: true } | { ot
  * A Form 4 belongs on the company's rail only when the company is its issuer. A transaction read before the issuer was
  * parsed carries no issuer and is kept; `scripts/clean-foreign-insider.ts` re-reads those.
  */
-export function sameIssuer(insider: Pick<InsiderTransaction, "issuerCik">, companyCik: string | number): boolean {
+function sameIssuer(insider: Pick<InsiderTransaction, "issuerCik">, companyCik: string | number): boolean {
   return !insider.issuerCik || normalizeCik(insider.issuerCik) === normalizeCik(companyCik);
 }
 
@@ -102,7 +102,7 @@ export const secAccessPaused = (error: unknown) => error instanceof Error && err
  * EDGAR's business filings into `sec_filings`, the table the public filings list pages; the SEC report run adds summaries
  * and earnings groups. Filings new to the list move its revision (`filings.indexed`).
  */
-export async function indexFilings(db: D1Database, ticker: string, cik: string, submissions: unknown, at: string, causeId: string | null = null): Promise<number> {
+async function indexFilings(db: D1Database, ticker: string, cik: string, submissions: unknown, at: string, causeId: string | null = null): Promise<number> {
   const filings = parseSecSubmissions(submissions, { ticker, cik, cikNumber: Number(cik), name: ticker }, 40);
   if (!filings.length) return 0;
   const known = new Set((await db.prepare("SELECT accession_number a FROM sec_filings WHERE ticker = ? AND accession_number IN (SELECT value FROM json_each(?))")

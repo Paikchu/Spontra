@@ -1,6 +1,6 @@
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FlowMetric } from "../analysis-contract/business-flow.ts";
-import type { CapitalMetric, DerivedMetric, FindingBaseRef, FindingRef, FindingView, FindingsPublication, ReportHighlights, StatementHighlight } from "../analysis-contract/findings.ts";
+import type { CapitalMetric, DerivedMetric, FindingBaseRef, FindingRef, FindingView, ReportHighlights, StatementHighlight } from "../analysis-contract/findings.ts";
 import { proseNumbers, resolveEvidence, type FindingData, type ResolvedEvidence } from "./findings.ts";
 import { multiple, type Locale } from "./locale.ts";
 
@@ -73,7 +73,7 @@ export const highlightChange = (r: ResolvedEvidence, locale: Locale = "en"): str
 const EMPHASIS = new RegExp(String.raw`\b(?:(?:climb|jump|surge|soar|skyrocket|rocket|leap|vault|spike|balloon|swell|explode|boom|plunge|plummet|tumble|slump|sink|crater|tank|collapse|rise|fall|grow|accelerate|decelerate|outrun|outpace|eclipse|stay|remain|hold|keep|continue|turn|hit|reach|top|pass)(?:s|es|d|ed|ing)?|slip(?:s|ped|ping)?|slide[sd]?|sliding|dip(?:s|ped|ping)?|rose|risen|rising|fell|fallen|grew|grown|accelerating|decelerating|sank|sunk|leapt|strong|stronger|robust|stellar|impressive|massive|huge|dramatic|remarkable|record|sharp|sharply|steep|solid|healthy|blowout|unprecedented|soaring|booming)\b`, "i");
 
 /** The figure's own name, and "growth" or "change" when the large number is its change. */
-export function plainTitle(r: ResolvedEvidence, show: StatementHighlight["show"], locale: Locale = "en"): string {
+function plainTitle(r: ResolvedEvidence, show: StatementHighlight["show"], locale: Locale = "en"): string {
   if (show !== "change") return r.label.slice(0, 40);
   if (locale === "zh-CN") return `${r.label}${r.current.unit === "USD" ? "增长" : "变化"}`.slice(0, 40);
   return `${r.label} ${r.current.unit === "USD" ? "growth" : "change"}`.slice(0, 40);
@@ -112,14 +112,4 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
     });
   }
   return { verified, withheld };
-}
-
-const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
-
-/** The verified tiles a view shows for a report, or null when too few survive and the view keeps its fixed tiles. */
-export function highlightsFor(publication: FindingsPublication | null, data: FindingData, periodEnd: string, view: FindingView, locale: Locale = "en"): VerifiedHighlight[] | null {
-  const report = publication?.highlights?.find(h => near(h.periodEnd, periodEnd));
-  if (!report) return null;
-  const tiles = verifyHighlights(report, data, locale).verified[view].slice(0, HIGHLIGHT_COUNT);
-  return tiles.length >= MIN_HIGHLIGHTS ? tiles : null;
 }

@@ -20,7 +20,7 @@ const EPSILON = 0.05;
  * Year-over-year growth per quarter, on consecutive quarterly positions from the oldest value to the newest (or to
  * `until`): a quarter the values lack is a gap, and so is any quarter whose year-ago base is missing or not positive.
  */
-export function yoyPoints(values: ValuePoint[], until: string | null = null): YoyPoint[] {
+function yoyPoints(values: ValuePoint[], until: string | null = null): YoyPoint[] {
   const known = values.filter(v => v.value != null && Number.isFinite(v.value) && (!until || monthIndex(v.periodEnd) <= monthIndex(until) + 1))
     .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
   if (!known.length) return [];
@@ -33,7 +33,7 @@ export function yoyPoints(values: ValuePoint[], until: string | null = null): Yo
   }).filter((_, i) => i >= 4);
 }
 
-export function growthMomentum(points: YoyPoint[]): Momentum | null {
+function growthMomentum(points: YoyPoint[]): Momentum | null {
   const shown = points.slice(-5);
   const [a, b, c] = points.slice(-3).map(p => p.yoy);
   if (b != null && c != null && b > 0 && c < 0) return { kind: "turnedNegative", points: shown };

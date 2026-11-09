@@ -31,10 +31,10 @@ export const EVENT_CLASS_LABEL = labels(EVENT_CLASS_LABEL_EN,
 export const shares = (v: number): string => compactShares(v, getLocale());
 
 /** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元); an unknown amount (a Form 4 line without a price) reads "—". */
-export const dollars = (v: number | null): string => v == null ? "—" : compactMoney(v, "USD", getLocale());
+const dollars = (v: number | null): string => v == null ? "—" : compactMoney(v, "USD", getLocale());
 
 /** A total of amounts some of which may be unknown: exact when all are known, "≥" the known part when some are, "—" when none are. */
-export function partialDollars(values: readonly (number | null)[]): string {
+function partialDollars(values: readonly (number | null)[]): string {
   const known = values.filter((v): v is number => v != null);
   const total = dollars(known.reduce((s, v) => s + v, 0));
   return known.length === values.length ? total : known.length ? `≥ ${total}` : "—";

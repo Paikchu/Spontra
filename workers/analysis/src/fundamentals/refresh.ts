@@ -39,7 +39,7 @@ export type FundamentalsRefresh = {
 };
 
 /** The latest quarter a snapshot's statement flows reach. */
-export function snapshotQuarter(history: SecHistorySnapshot | null): string | null {
+function snapshotQuarter(history: SecHistorySnapshot | null): string | null {
   let latest: string | null = null;
   for (const series of history?.series ?? []) if (FLOW_SERIES.has(series.seriesId)) for (const q of series.quarters) if (q.startDate && (!latest || q.endDate > latest)) latest = q.endDate;
   return latest;

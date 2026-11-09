@@ -38,7 +38,7 @@ Method:
 5. finish checks the analysis and either accepts it or lists what to fix; fix and finish again.`;
 
 const STRINGS = { type: "array", items: { type: "string" } };
-export const NOTE_TOOLS: AgentClientTool[] = [
+const NOTE_TOOLS: AgentClientTool[] = [
   {
     name: "read_filing_analysis", strict: true,
     description: "Read one filing analysis (id from filings): its conclusion and the verbatim passages it quoted, each becoming a material [m<n>]; focus terms select the passages and table rows about them.",
@@ -78,7 +78,7 @@ export type NoteRunInput = {
  * A model sometimes writes "×" as the escape "\u00d7" inside its text, or leaves a run of quote marks where a quote was
  * cut; the escape is read as the character it names and the run is dropped.
  */
-export const unescaped = (text: string) => text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/"{2,}/g, "");
+const unescaped = (text: string) => text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/"{2,}/g, "");
 
 /** How the metric is computed, in words, so the analysis explains the figure rather than wondering how it was made. */
 function definition(data: FindingData, metricId: string): string {

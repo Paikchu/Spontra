@@ -7,7 +7,7 @@ import type { TaskName } from "./registry.ts";
 import type { TaskOutcome } from "./tasks.ts";
 
 type Instance = { status(): Promise<{ status: string; error?: unknown }>; terminate?(): Promise<void> };
-export type WorkflowBindingLike = { create(options: { id: string; params: unknown }): Promise<unknown>; get?(id: string): Promise<Instance> };
+type WorkflowBindingLike = { create(options: { id: string; params: unknown }): Promise<unknown>; get?(id: string): Promise<Instance> };
 /** `trigger`: the due row's cause when the run started; a different cause at completion means a new trigger arrived meanwhile. */
 type Started = { instanceId: string; startedAt: string; fingerprint?: string; trigger?: string | null };
 
@@ -25,7 +25,7 @@ export const failedInputKey = (task: string, ticker: string) => `pipeline:workfl
  * What is known about the last failure on an input: how many runs failed on it in a row, and when the next automatic
  * retry may start (`null` once the retries are spent or the failure was final, when only an admin replay runs it again).
  */
-export type FailedInput = { fingerprint: string; instanceId: string; failure: string; attempts: number; retryAt: string | null };
+type FailedInput = { fingerprint: string; instanceId: string; failure: string; attempts: number; retryAt: string | null };
 /** Waits before each automatic retry of a run that failed on the same input; after the last one the run is a dead letter. */
 export const FAILED_INPUT_RETRY_WAITS_MS = [60 * 60_000, 6 * 60 * 60_000, 24 * 60 * 60_000] as const;
 /**

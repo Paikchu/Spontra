@@ -49,7 +49,7 @@ export const tableName = (role: string) => role.split('/').at(-1)!;
  * statement that combines operations and comprehensive income roots its tree at comprehensive income; the net income
  * total inside it is the root taken. Null when the filing declares none; the caller then reads the statement rows.
  */
-export function parseIncomeCalculation(json: unknown): IncomeCalculation | null {
+function parseIncomeCalculation(json: unknown): IncomeCalculation | null {
   for (const instance of Object.values((json as MetaLinks | null)?.instance ?? {})) {
     const reports = Object.values(instance?.report ?? {})
       .filter(r => r.groupType === 'statement' && typeof r.role === 'string')
@@ -81,7 +81,7 @@ export function parseIncomeCalculation(json: unknown): IncomeCalculation | null 
 }
 
 /** The revenue reconciliations and tables a filing's `MetaLinks.json` declares (see RevenueStructure); null when it has none. */
-export function parseRevenueStructure(json: unknown): RevenueStructure | null {
+function parseRevenueStructure(json: unknown): RevenueStructure | null {
   const arcs: RevenueStructure['arcs'] = [], labels: Record<string, string> = {}, members: Record<string, string[]> = {};
   for (const instance of Object.values((json as MetaLinks | null)?.instance ?? {})) {
     const tags = Object.entries(instance?.tag ?? {});

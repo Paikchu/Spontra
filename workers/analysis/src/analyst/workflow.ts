@@ -81,7 +81,7 @@ function background(f: VerifiedFinding, previous: FindingsPublication | null, da
  * drawn from its URL, already unique and within the contract's length, and stays as read so a paragraph citing it
  * through sourceIds still finds it.
  */
-export function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "documents" | "materials"> {
+function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "documents" | "materials"> {
   const documents: DossierPublication["documents"] = {};
   const materials = new Map<string, DossierPublication["materials"][number]>();
   for (const o of outcomes) if (o.document) {
@@ -112,7 +112,7 @@ export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promis
  * finding is unanswered when it failed, or when none of its turns got a usable reply (each reads as an invalid turn
  * with nothing said). Decided from the settled outcomes, so a replayed instance decides the same way.
  */
-export function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[]): boolean {
+function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[]): boolean {
   const unanswered = (r: PromiseSettledResult<AnalystOutcome>) => r.status === "rejected"
     || (!r.value.document && r.value.turns.length > 0 && r.value.turns.every(t => t.action === "invalid" && !t.thought));
   return researched.length > 0 && researched.every(unanswered);

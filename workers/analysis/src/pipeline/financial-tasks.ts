@@ -33,7 +33,7 @@ const until = (at: string | null | undefined, now: Date, floor = SECOND) => Math
  * newest filing collection reads (discovery's `collectable`) is compared with the job's listing, and a missing one
  * starts a new collection. Each accession restarts at most once, so a filing a job cannot list never loops.
  */
-export async function missedFiling(db: D1Database, ticker: string, jobId: string): Promise<string | null> {
+async function missedFiling(db: D1Database, ticker: string, jobId: string): Promise<string | null> {
   const state = await db.prepare("SELECT json_extract(payload, '$.collectable[0]') newest FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ newest: string | null }>();
   if (!state?.newest) return null;
   const job = await db.prepare("SELECT cursor_json FROM financial_collection_jobs WHERE job_id = ?").bind(jobId).first<{ cursor_json: string | null }>();

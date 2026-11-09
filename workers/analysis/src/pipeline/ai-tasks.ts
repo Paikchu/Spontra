@@ -61,7 +61,7 @@ const LAYER_TASKS = {
 /** A run waiting in a lower layer longer than this is stuck, not settling, and no longer holds the layers above. */
 const SETTLING_MS = 6 * 60 * MINUTE;
 /** The lower-layer runs still waiting their turn for the company; an empty list means the layers below have settled. */
-export async function unsettledBelow(env: AnalysisEnv, ticker: string, layers: ReadonlyArray<keyof typeof LAYER_TASKS>, now: Date, extra: readonly string[] = []): Promise<string[]> {
+async function unsettledBelow(env: AnalysisEnv, ticker: string, layers: ReadonlyArray<keyof typeof LAYER_TASKS>, now: Date, extra: readonly string[] = []): Promise<string[]> {
   const tasks = [...layers.flatMap(l => LAYER_TASKS[l]), ...extra];
   const rows = await env.DB!.prepare("SELECT task FROM pipeline_due WHERE ticker = ? AND task IN (SELECT value FROM json_each(?)) AND due_at > ? AND first_requested_at > ?")
     .bind(ticker, JSON.stringify(tasks), now.toISOString(), new Date(now.getTime() - SETTLING_MS).toISOString()).all<{ task: string }>().catch(() => ({ results: [] as Array<{ task: string }> }));

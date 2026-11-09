@@ -127,7 +127,7 @@ function firstThreeQuarters(history: RevenueHistoryQuarter[], start: string, end
  *   consolidated totals may change quarterly tags, while the FY and 9M operands must still match exactly.
  * Identical tags alone do not prove comparability. Direct disclosed Q4 columns take priority over this fallback.
  */
-export function deriveFourthQuarters(facts: Fact[], cik: string, history: RevenueHistoryQuarter[] = []): RevenueHistoryQuarter[] {
+function deriveFourthQuarters(facts: Fact[], cik: string, history: RevenueHistoryQuarter[] = []): RevenueHistoryQuarter[] {
   const quarters: RevenueHistoryQuarter[] = [];
   facts = uniqueFacts(facts);
   const annuals = facts.filter(f => span(f) >= 330 && span(f) <= 380);

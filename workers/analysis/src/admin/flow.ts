@@ -18,7 +18,7 @@ const RUN_KIND: Partial<Record<TaskName, AiRunKind>> = { guidance: 'guidance', f
 const RUNNING_WINDOW_MS = 2 * 3600_000;
 
 /** The drawn part of the event registry: an edge per pair of drawn nodes an event links, with the events it carries. */
-export function flowGraph(): { nodes: Array<{ id: string; source: boolean; depth: number }>; edges: FlowEdge[] } {
+function flowGraph(): { nodes: Array<{ id: string; source: boolean; depth: number }>; edges: FlowEdge[] } {
   const drawn = new Set<string>([...FLOW_SOURCES, ...FLOW_TASKS]);
   const emits = (id: string): readonly EventType[] => (SOURCES[id] ?? TASKS[id as TaskName]?.emits ?? []);
   const edges = new Map<string, FlowEdge>();

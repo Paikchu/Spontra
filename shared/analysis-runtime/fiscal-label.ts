@@ -84,7 +84,7 @@ export function calendarLabel(periodEnd: string): string {
  * First-week closes belong to the previous nominal month. The fiscal year is that month's calendar
  * year when it is on or before `fyEndMonth`, otherwise the next year.
  */
-export function deriveFiscalQuarter(periodEnd: string, fyEndMonth: number): { fiscalYear: number; fiscalQuarter: FiscalQuarterNumber } | null {
+function deriveFiscalQuarter(periodEnd: string, fyEndMonth: number): { fiscalYear: number; fiscalQuarter: FiscalQuarterNumber } | null {
   const date = parts(periodEnd);
   if (!date || fyEndMonth < 1 || fyEndMonth > 12) return null;
   const { year, month } = nominalFiscalMonth(date.y, date.m, date.d);

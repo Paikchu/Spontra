@@ -16,7 +16,7 @@ import type { SecReader } from './provider.ts';
 export type PresentationProfile = { structure: BridgeStructure; version: string };
 export type ProfileRow = { cik: string; ticker: string; status: 'verified' | 'unresolved'; structure_json: string | null; structure_key: string | null; accession: string; attempts: number; issues_json: string; updated_at: string; judge_version?: string | null };
 
-export async function verifiedPresentation(db: D1Database, cik: string): Promise<PresentationProfile | null> {
+async function verifiedPresentation(db: D1Database, cik: string): Promise<PresentationProfile | null> {
   const row = await db.prepare("SELECT structure_json, structure_key FROM financial_presentation_profiles WHERE cik = ? AND status = 'verified'").bind(cik).first<{ structure_json: string | null; structure_key: string | null }>().catch(() => null);
   if (!row?.structure_json || !row.structure_key) return null;
   try { return { structure: JSON.parse(row.structure_json) as BridgeStructure, version: row.structure_key }; } catch { return null; }
@@ -37,7 +37,7 @@ export const degraded = (q: BusinessFlowQuarter | undefined) => q?.presentation?
 
 /** One statement line as the model sees it: the filing's concept, label and printed position, with its value in each period. */
 export type StatementLine = { concept: string; label: string; order: number; values: Record<string, number> };
-export function statementLines(periods: BridgePeriod[]): StatementLine[] {
+function statementLines(periods: BridgePeriod[]): StatementLine[] {
   const lines = new Map<string, StatementLine>();
   for (const p of periods) for (const f of p.facts) {
     if (!f.statementRow || Object.keys(f.dimensions).length) continue;
@@ -49,7 +49,7 @@ export function statementLines(periods: BridgePeriod[]): StatementLine[] {
 }
 
 /** Why a proposal fails, in the words the model needs to fix it: the concept it named that is not a line, or each period's imbalance. */
-export function checkProposal(structure: BridgeStructure, periods: BridgePeriod[], lines: StatementLine[]): string[] {
+function checkProposal(structure: BridgeStructure, periods: BridgePeriod[], lines: StatementLine[]): string[] {
   const known = new Set(lines.map(l => l.concept));
   const unknown = [structure.pretax, ...structure.afterTax.map(a => a.concept)].filter((c): c is string => !!c && !known.has(c));
   if (unknown.length) return unknown.map(c => `${c} is not a line of this statement`);

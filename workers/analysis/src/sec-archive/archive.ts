@@ -34,7 +34,7 @@ export type ArchivedDocument = {
  * A filing as the archive holds it: every document stored for the accession, the body first. `complete` says the body
  * and every exhibit it names are stored; a batch interrupted between them is not, and its readers wait.
  */
-export type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; complete: boolean; documents: ArchivedDocument[] };
+type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; complete: boolean; documents: ArchivedDocument[] };
 
 const MIN_EXHIBIT_TEXT = 400;
 const fileOf = (url: string) => decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));

@@ -32,7 +32,7 @@ const composeInput = (input: ReportInput): ComposeInput => ({
   earlierAvailable: input.earlierAvailable, quoteFiling: true, minEvidence: 1,
 });
 
-export const reportTools = (input: ReportInput) => composeTools(composeInput(input));
+const reportTools = (input: ReportInput) => composeTools(composeInput(input));
 
 export const REPORT_POLICY: ToolPolicy = { allow: ["company_overview", "findings", "read_series", "find_sections", "read_section", "search", "read_web", "compose", "finish"] };
 

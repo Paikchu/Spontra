@@ -117,7 +117,7 @@ export function stageTools(input: StageInput): AnyTool<StageTurn>[] {
 }
 
 /** A report spends the reader's one report of the day, so the reader confirms it first; nothing in the turn can start one alone. */
-export const STAGE_POLICY: ToolPolicy = {
+const STAGE_POLICY: ToolPolicy = {
   allow: ["scene_read", "company_overview", "findings", "read_series", "compile", "finish", "reply", "write_report"],
   pre: exec => exec.name === "write_report" ? { kind: "ask", question: (exec.args as { question: string }).question } : { kind: "allow" },
 };

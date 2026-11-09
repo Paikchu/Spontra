@@ -157,7 +157,7 @@ export const historyAssumptionsSchema = z.object({
 export type HistoryAssumptions = z.infer<typeof historyAssumptionsSchema>;
 
 /** Values supplied by the Agent cannot replace the frozen market, peer, management or reported-fact context. */
-export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions, inputSha256: string): CalcRequest {
+function historyRequest(input: HistoryInput, artifact: HistoryAssumptions, inputSha256: string): CalcRequest {
   if (artifact.ticker !== input.ticker || artifact.cutoff !== input.cutoff || artifact.inputSha256 !== inputSha256) throw new Error("Agent assumptions do not belong to this frozen input");
   if (input.missing.length) throw new Error(`Historical input incomplete: ${input.missing.join(", ")}`);
   const request = artifact.request;
@@ -215,7 +215,7 @@ export const historyOutcomeSchema = z.object({
   const present = [value.benchmarkSymbol, value.benchmarkSourceId, value.benchmarkReturnBasis].filter(v => v != null).length;
   if (present !== 0 && present !== 3) ctx.addIssue({ code: "custom", path: ["benchmarkSymbol"], message: "Benchmark symbol, source id and return basis must be provided together" });
 });
-export type HistoryOutcome = z.infer<typeof historyOutcomeSchema>;
+type HistoryOutcome = z.infer<typeof historyOutcomeSchema>;
 
 /** Evaluate only identical metric periods/bases; partial annual observations never stand in for a full-year forecast. */
 export function evaluateHistory(input: HistoryInput, artifact: HistoryAssumptions, outcome: HistoryOutcome, inputSha256: string) {

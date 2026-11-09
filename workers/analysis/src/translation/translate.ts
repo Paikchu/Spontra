@@ -152,7 +152,7 @@ async function reserveCall(env: AnalysisEnv, now: string): Promise<boolean> {
  * that says nothing about the strings, so none of them is marked.
  */
 export type AskTranslations = (stage: string, items: Array<{ i: number; text: string; problems?: string[] }>) => Promise<Map<number, string>>;
-export class ModelUnavailable extends Error { constructor(reason: string) { super(reason); this.name = "ModelUnavailable"; } }
+class ModelUnavailable extends Error { constructor(reason: string) { super(reason); this.name = "ModelUnavailable"; } }
 
 async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string, runId: string, stage: string, items: Array<{ i: number; text: string; problems?: string[] }>): Promise<Map<number, string>> {
   const model = modelFor(env, "translate");
@@ -175,7 +175,7 @@ async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string,
  * failed, and every outcome remembered: a translation that still fails is stored as rejected and the page keeps
  * the English. Returns null when the day's model calls are spent, so the run stops and the task comes back tomorrow.
  */
-export async function translateBatch(env: AnalysisEnv, ticker: string, runId: string, batch: TranslationItem[],
+async function translateBatch(env: AnalysisEnv, ticker: string, runId: string, batch: TranslationItem[],
   ask: AskTranslations = (stage, items) => askModel(env, fetch, ticker, runId, stage, items), locale: Locale = LOCALE): Promise<{ ready: number; rejected: number; stopped?: "budget" | "unavailable" } | null> {
   const now = new Date().toISOString();
   const outcome = new Map<number, { text: string | null; problems: string[] }>();
@@ -217,7 +217,7 @@ export async function translateBatch(env: AnalysisEnv, ticker: string, runId: st
  * Writes one table per resource from the remembered translations of the strings it carries now, and announces the
  * run, in one batch. Read fresh, so a publication that changed while the run translated gets what is known for it.
  */
-export async function publishTables(db: D1Database, ticker: string, locale: Locale = LOCALE, read: () => Promise<TranslationSource[]> = () => readSources(db, ticker)): Promise<{ tables: number; translated: number; total: number }> {
+async function publishTables(db: D1Database, ticker: string, locale: Locale = LOCALE, read: () => Promise<TranslationSource[]> = () => readSources(db, ticker)): Promise<{ tables: number; translated: number; total: number }> {
   const sources = await read();
   const unique = [...new Set(sources.flatMap(s => s.strings))];
   const hashes = await Promise.all(unique.map(sha256));

@@ -13,7 +13,7 @@ const DAY = 86400000;
 const distance = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b));
 
 /** The schedule of this kind at the quarter nearest `periodEnd`, within 20 days of it (a fiscal quarter end is never exact). */
-export function scheduleAt(capital: PublicCapitalStructure | null, kind: ScheduleKind, periodEnd: string): CapitalSchedule | null {
+function scheduleAt(capital: PublicCapitalStructure | null, kind: ScheduleKind, periodEnd: string): CapitalSchedule | null {
   const quarters = (capital?.quarters ?? []).filter(q => distance(q.periodEnd, periodEnd) <= 20 * DAY && q.schedules?.some(s => s.kind === kind))
     .sort((a, b) => distance(a.periodEnd, periodEnd) - distance(b.periodEnd, periodEnd) || b.periodEnd.localeCompare(a.periodEnd));
   return quarters[0]?.schedules?.find(s => s.kind === kind) ?? null;

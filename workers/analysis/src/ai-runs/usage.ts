@@ -31,7 +31,7 @@ export type AiUsageRow = {
 export type AiUsageCall = { at: string; durationMs: number; provider: string; ticker?: string; runId?: string; kind?: string; searchCalls?: number; userHash?: string; conversationId?: string };
 
 /** Stage names start with the feature that made the call; the two business agents share a `business-` prefix. */
-export function aiUsageKind(stage: string): string {
+function aiUsageKind(stage: string): string {
   const business = /^business-(tree|explainer)(?:[-:]|$)/.exec(stage);
   if (business) return business[1]!;
   return stage.split(/[-:]/, 1)[0] || stage;

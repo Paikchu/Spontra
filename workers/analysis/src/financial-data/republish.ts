@@ -7,7 +7,7 @@ import {readRevenueHistory} from './history.ts';
 
 /** Rebuild only revenue presentation from stored history. The stored complete statements remain
  * the authority for their accounting totals. No extraction, network fetch, event, or model dispatch. */
-export function rebuildPublication(flow: PublicBusinessFlow, history: RevenueHistoryQuarter[], at: string): PublicBusinessFlow {
+function rebuildPublication(flow: PublicBusinessFlow, history: RevenueHistoryQuarter[], at: string): PublicBusinessFlow {
   const quarters = flow.quarters.map(q => {
     let h = history.find(h => h.periodEnd === q.periodEnd && h.periodStart === q.periodStart && h.currency === q.currency);
     // A company total alone is not evidence of a verified business split.

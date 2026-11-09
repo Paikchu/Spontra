@@ -13,7 +13,7 @@ import { rereadHistoryFiling, runHistoryStep } from "../financial-data/history.t
 import { listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
 import { FinancialMaintenanceStore, type MaintenanceRow, type MaintenanceState } from "./financial-maintenance-store.ts";
 
-export interface MaintenanceDependencies {
+interface MaintenanceDependencies {
   reader(env: AnalysisEnv, ticker: string, options?: {silentArchive?: boolean}): SecReader;
   discover: typeof discoverDataIssuer;
   collect(env: AnalysisEnv, job: Job, reader: SecReader): Promise<{ published: boolean; reasons: string[] }>;
@@ -37,7 +37,7 @@ const dependencies: MaintenanceDependencies = {
  * a restatement still to review, or source facts whose format the statements do not use.
  * `ANALYSIS_INCOMPLETE` and an unverified revenue breakdown are not notes.
  */
-export function maintenanceIssueBlocksTask(issue: string): boolean {
+function maintenanceIssueBlocksTask(issue: string): boolean {
   return !/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|NO_QUARTERLY_PERIOD|RESTATEMENT_REVIEW_REQUIRED)$/.test(issue)
     && !issue.startsWith("UNSUPPORTED_SOURCE_FACTS:");
 }

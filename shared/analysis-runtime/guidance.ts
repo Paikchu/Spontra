@@ -64,7 +64,7 @@ const NUMBER = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(%|percent\b|basis points
  * same range ("$15.0 to $15.2 billion"), and basis points read as percentage points.
  * Monetary values retain signs supported by minus signs, accounting parentheses or local loss wording.
  */
-export function quoteNumbers(quote: string, monetary = false): number[] {
+function quoteNumbers(quote: string, monetary = false): number[] {
   const text = quote.normalize("NFKC").replace(/−/g, "-");
   const found = [...text.matchAll(NUMBER)].map(m => ({ value: Number(`${m[1].replace(/,/g, "")}${m[2] ? `.${m[2]}` : ""}`), suffix: (m[3] ?? "").toLowerCase(), start: m.index!, end: m.index! + m[0].length }));
   const rangeBetween = (from: number, to: number) => /^\s*(?:to|[-–—]|and|or)\s*[+-]?\s*$/i.test(text.slice(from, to).replace(/[()$]/g, ""));
