@@ -1,6 +1,6 @@
 import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
 import { within } from "./within.ts";
-import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ToolRegistration } from "@earendil-works/pi-durable";
+import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { defaultBudgetLine, fitResult, type Recipe, type TurnRecord } from "../recipe.ts";
 import { CALLS_PER_TURN } from "../tool-loop.ts";
@@ -155,7 +155,7 @@ export class PiHost {
     try {
       this.assertRunning();
       const session = options.session ? this.harness.sessions.get(options.session) : await this.harness.sessions.create();
-      const conversation = (await this.harness.conversation(session.id)).id as unknown as string;
+      const conversation = String((await this.harness.conversation(session.id)).id);
       this.assertRunning();
       // One run per session at a time: a second would take over the first one's recipe and state.
       const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
@@ -373,25 +373,25 @@ export class PiHost {
       tools.set(name, {
         name, description: t.nativeSearch ? "Search the web (never for SEC filings). Results become source IDs you can read." : t.description,
         parameters, replay: "safe", prepareArguments: parseArgs as never,
-        execute: async (args: unknown, api: { conversationId: string; callId: string }, context: { abortSignal?: AbortSignal }) =>
-          this.call(api.conversationId, api.callId, name, args, context.abortSignal ?? new AbortController().signal),
+        execute: async (args: unknown, api: { conversationId: ConversationId; callId: string }, context: { abortSignal?: AbortSignal }) =>
+          this.call(String(api.conversationId), api.callId, name, args, context.abortSignal ?? new AbortController().signal),
       } as unknown as ToolRegistration);
     }
     this.registry.install({
       name: "spontra",
-      sections: [{ key: "recipe", tag: false, render: async (input: { conversationId: string }) => (await this.bound(input.conversationId))?.system }],
+      sections: [{ key: "recipe", tag: false, render: async (input: { conversationId: ConversationId }) => (await this.bound(String(input.conversationId)))?.system }],
       tools: [...tools.values()],
       hooks: [hook(GenerationTask, {
-        beforeRequest: async (_request: unknown, api: { conversationId: string }) => { await this.guard(() => this.beforeRequest(api.conversationId)); return undefined; },
-        beforeProviderRequest: async (request: { payload: unknown }, api: { conversationId: string }) => {
-          const b = await this.bound(api.conversationId);
+        beforeRequest: async (_request: unknown, api: { conversationId: ConversationId }) => { await this.guard(() => this.beforeRequest(String(api.conversationId))); return undefined; },
+        beforeProviderRequest: async (request: { payload: unknown }, api: { conversationId: ConversationId }) => {
+          const b = await this.bound(String(api.conversationId));
           this.assertRunning();
           return b ? { payload: shapePayload(request.payload, b.loaded.effort) } : undefined;
         },
-        afterResponse: async (message: PiAssistant, api: { conversationId: string }) => { await this.guard(() => this.afterResponse(api.conversationId, message)); },
-        onYield: async (answer: PiAssistant, api: { conversationId: string }) => this.onYield(api.conversationId, answer),
-        afterRun: async (_run: unknown, api: { conversationId: string }) => {
-          const b = this.bindings.get(api.conversationId);
+        afterResponse: async (message: PiAssistant, api: { conversationId: ConversationId }) => { await this.guard(() => this.afterResponse(String(api.conversationId), message)); },
+        onYield: async (answer: PiAssistant, api: { conversationId: ConversationId }) => this.onYield(String(api.conversationId), answer),
+        afterRun: async (_run: unknown, api: { conversationId: ConversationId }) => {
+          const b = this.bindings.get(String(api.conversationId));
           if (b) {
             // A recipe with its own ending has nobody coming to settle it, so its session closes here.
             if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); await this.close(b); }
@@ -400,9 +400,9 @@ export class PiHost {
           return undefined;
         },
       } as never), hook(CompactionTask, {
-        beforeCompact: async (compaction: { reason: string; entries: readonly unknown[] }, api: { conversationId: string }) => {
+        beforeCompact: async (compaction: { reason: string; entries: readonly unknown[] }, api: { conversationId: ConversationId }) => {
           await this.guard(async () => {
-            const b = await this.bound(api.conversationId);
+            const b = await this.bound(String(api.conversationId));
             if (b) this.trail(b, { turn: b.turns, thought: "", action: "compaction", input: compaction.reason, observation: `${compaction.entries.length} entries summarised.` });
           });
           return undefined;
