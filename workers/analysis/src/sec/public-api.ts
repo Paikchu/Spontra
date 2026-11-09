@@ -102,6 +102,8 @@ export async function getPublicFiling(
 
 async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWithSummary, companyName: string): Promise<PublicSecFiling> {
   const jobAccession = filing.earningsGroup?.canonicalAccession ?? filing.accessionNumber;
+  // A report the filing path published is the whole of what a reader sees for this filing, whatever an earlier run left.
+  if (filing.summary?.generatedBy === "pi") filing = { ...filing, analysis: undefined };
   if (filing.analysis?.publication) {
     filing = { ...filing.analysis.publication.filing, summary: filing.analysis.publication.summary, analysis: filing.analysis,
       ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}) };

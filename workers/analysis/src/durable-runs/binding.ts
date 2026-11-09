@@ -4,7 +4,7 @@ import type { RunState } from "./engine.ts";
 export const RUN_BINDINGS = [
   "GUIDANCE_WORKFLOW", "BUSINESS_EXPLAINER_WORKFLOW", "BUSINESS_TREE_WORKFLOW", "VALUATION_WORKFLOW", "LIBRARY_CARDS_WORKFLOW",
   "LIBRARY_LINKS_WORKFLOW", "BUSINESS_TAGS_WORKFLOW", "TRANSLATE_WORKFLOW", "ANALYST_WORKFLOW", "CHECKUP_WORKFLOW", "FINDINGS_WORKFLOW",
-  "ITEMS_WORKFLOW", "FILING_ANALYSIS_WORKFLOW", "SEC_ANALYSIS_WORKFLOW", "SEC_MEMORY_WORKFLOW", "COMPANY_ANALYSIS_WORKFLOW", "REPORT_WORKFLOW",
+  "SEC_MEMORY_WORKFLOW", "COMPANY_ANALYSIS_WORKFLOW", "REPORT_WORKFLOW",
 ] as const;
 export type RunKind = typeof RUN_BINDINGS[number];
 
@@ -14,6 +14,7 @@ export type RunStub = {
   status(): Promise<RunState>;
   terminate(): Promise<void>;
   report(): Promise<unknown>;
+  startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void>;
 };
 type RunNamespace = { idFromName(name: string): unknown; get(id: never): unknown };
 
@@ -38,6 +39,20 @@ export function runBinding(namespace: RunNamespace, kind: RunKind) {
       const run = await stub(id);
       return { id, status: () => run.status(), terminate: () => run.terminate(), report: () => run.report() };
     },
+  };
+}
+
+/** Pi sessions that run on their own in a `TaskRunner` Agent of their own: nothing polls them, and one publishes its own result. */
+export function filingSessions(env: object) {
+  const namespace = (env as { TASK_RUNS?: RunNamespace }).TASK_RUNS;
+  if (!namespace) return null;
+  const stub = async (id: string) => {
+    const { getAgentByName } = await import("agents");
+    return await getAgentByName(namespace as never, `FILING:${id}`) as unknown as RunStub;
+  };
+  return {
+    start: async (id: string, kind: string, spec: unknown, opening: string, operationId: string) => (await stub(id)).startSession(kind, spec, opening, operationId),
+    report: async (id: string) => (await stub(id)).report(),
   };
 }
 

@@ -1,15 +1,9 @@
-import type { SectionFacts, SectionNote } from "./worklist.ts";
+export type SectionFacts = { documentId: string; sectionId: string; path: string[]; canonical: string; change: "unchanged" | "changed" | "new"; previousSectionId: string | null; chars: number };
 
 export type FilingStatus = "registered" | "waiting" | "running" | "published" | "recorded" | "withheld" | "failed";
 export type FilingRow = { ticker: string; accession: string; unitKey: string; form: string; filedAt: string; profile: string; profileVersion: string; status: FilingStatus; reason: string | null; attempts: number; tokens: number; revision: number };
 export type NewFiling = Pick<FilingRow, "ticker" | "accession" | "unitKey" | "form" | "filedAt" | "profile" | "profileVersion">;
 type Row = { ticker: string; accession_number: string; unit_key: string; form: string; filed_at: string; profile: string; profile_version: string; status: FilingStatus; reason: string | null; attempts: number; tokens: number; revision: number };
-
-/** A filing whose row in the events publication is not there yet. The publication triggers nothing here (it follows the
- * reports this path publishes, so that edge would be a loop): the task looks again shortly, for a bounded time. */
-export const WAITING_FOR_EVENTS = "waiting for the events publication";
-export const eventsWaitOver = async (db: D1Database, ticker: string, filedSince: string) =>
-  !!await db.prepare("SELECT 1 AS ok FROM filing_analyses WHERE ticker = ? AND status = 'waiting' AND reason = ? AND filed_at >= ? LIMIT 1").bind(ticker, WAITING_FOR_EVENTS, filedSince).first();
 
 /** A failed filing is tried again by later runs this many times, then waits for the admin. */
 export const MAX_ATTEMPTS = 3;
@@ -61,19 +55,10 @@ export async function previousSectionOf(db: D1Database, sectionId: string): Prom
   return row ? { sectionId: row.section_id, documentId: row.document_id } : null;
 }
 
-export async function readSectionNotes(db: D1Database, sectionIds: string[]): Promise<Map<string, SectionNote>> {
-  const notes = new Map<string, SectionNote>();
-  if (!sectionIds.length) return notes;
-  const rows = await db.prepare("SELECT section_id, note_json FROM filing_section_notes WHERE section_id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(sectionIds)).all<{ section_id: string; note_json: string }>();
-  for (const r of rows.results) notes.set(r.section_id, JSON.parse(r.note_json) as SectionNote);
-  return notes;
-}
-
-export type NoteWrite = { section: SectionFacts; ticker: string; status: "written" | "carried"; carriedFrom: string | null; prior: "note" | "text" | "none"; note: SectionNote; profileVersion: string };
-export async function writeSectionNotes(db: D1Database, notes: NoteWrite[], now: string): Promise<void> {
-  if (!notes.length) return;
-  const statement = db.prepare(`INSERT INTO filing_section_notes (section_id, document_id, ticker, canonical, status, carried_from, prior, note_json, profile_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(section_id) DO UPDATE SET status = excluded.status, carried_from = excluded.carried_from, prior = excluded.prior, note_json = excluded.note_json, profile_version = excluded.profile_version, created_at = excluded.created_at`);
-  // D1 takes a limited number of statements per batch.
-  for (let i = 0; i < notes.length; i += 50) await db.batch(notes.slice(i, i + 50).map(n => statement.bind(n.section.sectionId, n.section.documentId, n.ticker, n.section.canonical, n.status, n.carriedFrom, n.prior, JSON.stringify(n.note), n.profileVersion, now)));
+/** Which document each section belongs to, in the order asked. */
+export async function sectionDocuments(db: D1Database, sectionIds: string[]): Promise<Array<[string, string]>> {
+  if (!sectionIds.length) return [];
+  const rows = await db.prepare("SELECT section_id, document_id FROM sec_sections WHERE section_id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(sectionIds)).all<{ section_id: string; document_id: string }>();
+  const found = new Map(rows.results.map(r => [r.section_id, r.document_id]));
+  return sectionIds.flatMap(id => found.has(id) ? [[id, found.get(id)!] as [string, string]] : []);
 }

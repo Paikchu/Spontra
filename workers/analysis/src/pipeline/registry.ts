@@ -25,8 +25,8 @@ export type EventType = typeof EVENT_TYPES[number];
 export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
-  "sec-report", "fundamentals", "guidance", "events", "extract",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items", "filing-analysis",
+  "fundamentals", "guidance", "events", "extract",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "filing-analysis",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
 ] as const;
@@ -73,7 +73,6 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // A full pass over the archive for copies left behind before replacements were recorded; admin-requested.
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
-  "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Re-reads Company Facts when new statements are published, so the SEC fundamentals keep up with the page; retried
   // while Company Facts is still behind the filing. No model.
   "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
@@ -100,8 +99,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "checkup": { emits: ["checkup.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
   // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
-  "items": { emits: ["items.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "filings" },
-  // Every filing's one path (docs/filing-analysis-design.md); it took over from `sec-report` and `items`, which nothing starts any more.
+  // Every filing's one path (docs/filing-analysis-design.md); the sessions it starts publish on their own.
   "filing-analysis": { emits: ["filings.indexed", "report.published", "fundamentals.updated", "items.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "filings" },

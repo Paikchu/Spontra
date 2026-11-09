@@ -10,13 +10,13 @@ export const SEC_SUMMARY_VERSION = 8;
  * the events publication schema (shared/analysis-runtime/events.ts: headline 400, label 120, detail 1200,
  * analystView 1200), which copies these summaries onto the event rail.
  */
-export const SEC_SUMMARY_LIMITS = { label: 60, detail: 800, headline: 400, analystView: 650, report: 15_000, error: 240 } as const;
+const SEC_SUMMARY_LIMITS = { label: 60, detail: 800, headline: 400, analystView: 650, report: 15_000, error: 240 } as const;
 
 /**
  * Shortens text to at most `max` characters on a word boundary, ending with an ellipsis. Text with no
  * usable space before the limit (CJK, long tokens) is cut at the limit instead.
  */
-export function clipText(value: string, max: number): string {
+function clipText(value: string, max: number): string {
   if (value.length <= max) return value;
   const room = value.slice(0, Math.max(0, max - 1));
   const boundary = room.search(/\s\S*$/);
@@ -24,11 +24,7 @@ export function clipText(value: string, max: number): string {
   return `${cut.replace(/[\s,;:.\-–—(]+$/, "")}…`;
 }
 
-const MAX_HEADING_CHARACTERS = 120;
-const ITEM_HEADING_LEVEL = 2;
-const BOLD_HEADING_LEVEL = 7;
-
-export const BUSINESS_FILING_FORMS = new Set([
+const BUSINESS_FILING_FORMS = new Set([
   "10-K",
   "10-Q",
   "8-K",
@@ -41,38 +37,27 @@ export const BUSINESS_FILING_FORMS = new Set([
   "6-K/A",
 ]);
 
-export type SecSummaryImportance = "high" | "medium" | "low";
+type SecSummaryImportance = "high" | "medium" | "low";
 
 /** What kind of event an 8-K/6-K discloses, used for differentiated presentation. */
-export type SecEventCategory = "earnings_update" | "guidance" | "m&a" | "executive" | "legal" | "other";
+type SecEventCategory = "earnings_update" | "guidance" | "m&a" | "executive" | "legal" | "other";
 
-export const SEC_EVENT_CATEGORIES: readonly SecEventCategory[] = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"];
+const SEC_EVENT_CATEGORIES: readonly SecEventCategory[] = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"];
 
-export function normalizeSecEventCategory(value: unknown): SecEventCategory | undefined {
+function normalizeSecEventCategory(value: unknown): SecEventCategory | undefined {
   const candidate = String(value ?? "").trim().toLowerCase();
   return (SEC_EVENT_CATEGORIES as readonly string[]).includes(candidate) ? candidate as SecEventCategory : undefined;
 }
 
-export type SecSummaryBullet = {
+type SecSummaryBullet = {
   label: string;
   detail: string;
   importance: SecSummaryImportance;
 };
 
-export type SecHeadingCandidate = {
-  title: string;
-  level: number;
-  start: number;
-};
+type SecNodeSpec = SecNodeSpecV2;
 
-export type SecDocument = {
-  text: string;
-  headings: SecHeadingCandidate[];
-};
-
-export type SecNodeSpec = SecNodeSpecV2;
-
-export type SecNodePlan = {
+type SecNodePlan = {
   nodes: SecNodeSpec[];
   outlineSections: number;
   clamped?: number;
@@ -80,7 +65,7 @@ export type SecNodePlan = {
   warnings?: string[];
 };
 
-export type SecWorkflowEvidence = {
+type SecWorkflowEvidence = {
   start: number;
   end: number;
   score: number;
@@ -88,7 +73,7 @@ export type SecWorkflowEvidence = {
   excerpt: string;
 };
 
-export type SecNodeResult = {
+type SecNodeResult = {
   id: string;
   title: string;
   status: "complete" | "empty" | "error";
@@ -138,6 +123,8 @@ export type SecFilingSummary = {
   repairRounds?: number;
   /** Who wrote the summary: "filing" is the document's own statement; older model summaries keep "deepseek"; "error" marks a failed run. */
   source: "claude" | "deepseek" | "filing" | "error";
+  /** Written by the filing path's Pi session; such a summary carries the whole report and supersedes any earlier analysis. */
+  generatedBy?: "pi";
   generatedAt: string;
   error?: string;
 };
@@ -174,7 +161,7 @@ export function cleanSecAccession(value: string): string {
   return String(value ?? "").trim().replace(/[^0-9A-Za-z-]/g, "");
 }
 
-export function isBusinessFiling(form: string): boolean {
+function isBusinessFiling(form: string): boolean {
   return BUSINESS_FILING_FORMS.has(form);
 }
 
@@ -188,23 +175,6 @@ export function sortSecFilings(filings: SecFiling[]): SecFiling[] {
 
 export function htmlToSecText(html: string): string {
   return flattenSecHtml(stripSecNonContent(String(html ?? "")));
-}
-
-export function htmlToSecDocument(html: string): SecDocument {
-  const source = stripSecNonContent(String(html ?? ""));
-  const text = flattenSecHtml(source);
-  const emphasis = collectSecEmphasis(source);
-  const headings: SecHeadingCandidate[] = [];
-  let cursor = 0;
-  for (const line of text.split("\n")) {
-    const title = line.trim();
-    if (title) {
-      const level = emphasis.get(title) ?? (isSecItemHeading(title) ? ITEM_HEADING_LEVEL : 0);
-      if (level) headings.push({ title, level, start: cursor + line.length - line.trimStart().length });
-    }
-    cursor += line.length + 1;
-  }
-  return { text, headings };
 }
 
 function stripSecNonContent(html: string): string {
@@ -225,54 +195,6 @@ function flattenSecHtml(html: string): string {
     .replace(/\n\s+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim());
-}
-
-function collectSecEmphasis(html: string): Map<string, number> {
-  const levels = new Map<string, number>();
-  const record = (raw: string, level: number) => {
-    const title = flattenSecHtml(raw).replace(/\s+/g, " ").trim();
-    if (!title || title.length > MAX_HEADING_CHARACTERS) return;
-    levels.set(title, Math.min(levels.get(title) ?? level, level));
-  };
-  for (const match of html.matchAll(/<h([1-6])\b[^>]*>([\s\S]{0,400}?)<\/h\1\s*>/gi)) record(match[2], Number(match[1]));
-  for (const match of html.matchAll(/<(b|strong)\b[^>]*>([\s\S]{0,400}?)<\/\1\s*>/gi)) record(match[2], BOLD_HEADING_LEVEL);
-  for (const match of html.matchAll(/<([a-z]+)\b[^>]*font-weight\s*:\s*(?:bold(?:er)?|[6-9]00)[^>]*>([\s\S]{0,400}?)<\/\1\s*>/gi)) record(match[2], BOLD_HEADING_LEVEL);
-  return levels;
-}
-
-function isSecItemHeading(value: string): boolean {
-  return /^(?:part\s+[ivx]+|items?\s+\d{1,2}[a-z]?)\b/i.test(value.trim());
-}
-
-export function cleanSecNodeId(value: unknown): string {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-}
-
-/** A single text document inside a SEC full-submission `<accession>.txt` stream. */
-/** Boilerplate fragments that identify filing-metadata bullets (signers, addresses, Item numbers). */
-const EVENT_METADATA_PATTERNS = [
-  /signat/i, /general counsel/i, /corporate secretary/i, /treasurer/i, /controller\b/i,
-  /commission file/i, /irs employer/i, /date of report/i, /state of incorporation/i,
-  /exact name of registrant/i, /address of principal/i, /item\s*\d/i, /exhibit\s*\d/i,
-  /\bform type\b/i, /principal (?:executive )?offices?/i,
-  // Chinese summaries are still stored; keep matching them.
-  /签署人?/, /报告日期/, /文件形式/, /注册地/, /委员会登记/, /主要办公地/,
-] as const;
-
-/** True when a bullet carries only filing metadata (form type, report date, signer, address, Item no.). */
-export function isEventMetadataBullet(bullet: SecSummaryBullet): boolean {
-  const sample = `${bullet.label}\n${bullet.detail}`;
-  return EVENT_METADATA_PATTERNS.some((pattern) => pattern.test(sample));
-}
-
-/** True when every bullet is filing metadata — the model saw only the filing envelope, not the content. */
-export function hasOnlyEventMetadataBullets(bullets: SecSummaryBullet[]): boolean {
-  return bullets.length > 0 && bullets.every(isEventMetadataBullet);
 }
 
 export function normalizeSecSummary(

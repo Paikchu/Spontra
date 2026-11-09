@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exhibitType } from "../src/sec-archive/archive.ts";
-import { prepareSecFiling, SEC_ARCHIVE_MISSING } from "../src/sec/pipeline.ts";
 import type { ArchivedFiling } from "../src/sec-archive/index.ts";
 import { isEdgarUrl, WebSearchService } from "../src/web-search/service.ts";
 import { WebSearchError } from "../src/web-search/types.ts";
@@ -21,29 +20,6 @@ const archived: ArchivedFiling = {
     { url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/orcl-ex99_1.htm", filename: "orcl-ex99_1.htm", role: "exhibit", type: "EX-99.1", html: `<html><body><h1>Oracle Announces Fiscal 2027 First Quarter Financial Results</h1>${paragraph("Total quarterly revenues were up 12% year over year.")}</body></html>` },
   ],
 };
-
-test("a filing is prepared from the archive alone: the body first, exhibits after it, spans offset into one text", async () => {
-  const prepared = await prepareSecFiling(filing, archived);
-  assert.deepEqual(prepared.sourceMaterials.map(m => [m.type, m.filename, m.status]), [["8-K", "d1.htm", "read"], ["EX-99.1", "orcl-ex99_1.htm", "read"]]);
-  assert.ok(prepared.blocks.some(b => b.source === "body"), "body blocks");
-  const exhibit = prepared.blocks.find(b => b.source === "exhibit");
-  assert.equal(exhibit?.exhibitType, "EX-99.1");
-  assert.match(prepared.document.text.slice(exhibit!.start, exhibit!.end), /Total quarterly revenues/, "an exhibit block's span points into the combined document");
-  assert.match(prepared.document.text, /fiscal first quarter results[\s\S]*Total quarterly revenues/);
-});
-
-test("an exhibit with an ordinary file name is still an exhibit: EDGAR's listed body decides the roles", async () => {
-  // The archive's own guess called the plainly named release a body; the filing's listed primary document corrects it.
-  const release = { url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/coreweave4q25earningspress.htm", filename: "coreweave4q25earningspress.htm", role: "primary" as const, type: "8-K", html: archived.documents[1]!.html };
-  const prepared = await prepareSecFiling(filing, { ...archived, documents: [release, archived.documents[0]!] });
-  assert.deepEqual(prepared.sourceMaterials.map(m => [m.type, m.filename]), [["8-K", "d1.htm"], ["EX-99", "coreweave4q25earningspress.htm"]]);
-  assert.ok(prepared.blocks.filter(b => b.source === "exhibit").length > 0, "the release's blocks are exhibit evidence, not body");
-});
-
-test("a filing the archive does not hold is SEC_ARCHIVE_MISSING, never downloaded", async () => {
-  await assert.rejects(prepareSecFiling(filing, null), new RegExp(SEC_ARCHIVE_MISSING));
-  await assert.rejects(prepareSecFiling(filing, { ...archived, accession: "0001193125-26-000001" }), new RegExp(SEC_ARCHIVE_MISSING));
-});
 
 test("an exhibit's type is read from its file name", () => {
   assert.equal(exhibitType("orcl-ex99_1.htm"), "EX-99.1");

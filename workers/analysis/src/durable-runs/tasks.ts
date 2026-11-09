@@ -1,9 +1,8 @@
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
-import { maintenanceAnalysisEnvironment } from "../admin/financial-maintenance-runner.ts";
-import { assertFeatureTicker, assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "../core.ts";
-import { createAnalysisOperations, SecModelHttpError, type AnalysisEnv } from "../operations.ts";
+import { assertFeatureTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams } from "../core.ts";
+import { SecModelHttpError, type AnalysisEnv } from "../operations.ts";
 import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "../retry-policy.ts";
-import { executeSecAnalysisWorkflow, type WorkflowStepLike } from "../workflow-core.ts";
+import type { WorkflowStepLike } from "../workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "../workflow-results.ts";
 import { executeCompanyAnalysisWorkflow } from "../company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "../memory-workflow.ts";
@@ -14,8 +13,6 @@ import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valua
 import { executeValuationEvaluation, type ValuationEvaluationParams } from "../valuation/evaluation.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "../guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
-import { executeItemsWorkflow, type ItemsParams } from "../items/workflow.ts";
-import { executeFilingAnalysisWorkflow, type FilingAnalysisParams } from "../filing-analysis/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
 import { executeCheckupWorkflow, type CheckupWorkflowParams } from "../checkup/workflow.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "../filing-library/cards.ts";
@@ -69,16 +66,6 @@ const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name
 
 /** What each run kind executes; the bodies the Workflow classes had. */
 export const RUN_TASKS: Record<RunKind, Task> = {
-  async SEC_ANALYSIS_WORKFLOW(params: SecWorkflowParams, { env: raw, step, id }) {
-    const env = await maintenanceAnalysisEnvironment(await companyPolicyEnvironment(raw), params, id);
-    // A scheduled run that finds the company gone from the reports list completes with nothing to publish.
-    if (!scheduledAnalysisAllowed(env, params)) return { analyzed: [], skipped: [], failed: [] };
-    assertTrackedTicker(env, params.ticker);
-    const operations = createAnalysisOperations(env, fetch, id);
-    // One-off reports do not enroll a company in recurring memory/company analysis.
-    if (params.maintenanceTaskId) operations.enqueueMemory = undefined;
-    return executeSecAnalysisWorkflow(params, id, durableSteps(step, env, id), operations);
-  },
   async BUSINESS_EXPLAINER_WORKFLOW(params: BusinessExplainerParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
     const run = { env, kind: "explainer" as const, ticker: params.ticker, runId: id };
@@ -127,16 +114,6 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     const env = await companyPolicyEnvironment(raw);
     const run = { env, kind: "findings" as const, ticker: params.ticker, runId: id };
     return trackRun(run, () => executeFindingsWorkflow(params, trackSteps(durableSteps(step, env, id), run), env));
-  },
-  async ITEMS_WORKFLOW(params: ItemsParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    return executeItemsWorkflow(params, durableSteps(step, env, id), env, id);
-  },
-  async FILING_ANALYSIS_WORKFLOW(params: FilingAnalysisParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    if (!scheduledAnalysisAllowed(env, params)) return { status: "off" };
-    assertTrackedTicker(env, params.ticker);
-    return executeFilingAnalysisWorkflow(params, id, durableSteps(step, env, id), env, createAnalysisOperations(env, fetch, id));
   },
   async GUIDANCE_WORKFLOW(params: GuidanceWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);

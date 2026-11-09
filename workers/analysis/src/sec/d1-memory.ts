@@ -2,7 +2,7 @@ import type { CompanyMemoryItem } from "./analysis.ts";
 import { buildCompanyMemorySummary, consolidateMemoryCandidates, type MemoryCandidateV2 } from "./memory.ts";
 import { parseJson, type D1Like, type D1ResultStatement } from "./d1-support.ts";
 
-export type SecMemoryJobClaim = {
+type SecMemoryJobClaim = {
   jobId: string;
   ticker: string;
   filingId: string;
@@ -12,11 +12,11 @@ export type SecMemoryJobClaim = {
   leaseUntil: string;
 };
 
-export type SecMemoryExtractionPayload = {
+type SecMemoryExtractionPayload = {
   candidates: MemoryCandidateV2[];
 };
 
-export type SecMemoryCommitResult = {
+type SecMemoryCommitResult = {
   noOp: boolean;
   itemCount: number;
   memoryVersion: number;

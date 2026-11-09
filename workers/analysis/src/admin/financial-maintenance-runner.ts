@@ -1,3 +1,4 @@
+import { startFilingRuns } from "../filing-analysis/start.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -137,25 +138,17 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
         const active = await env.DB.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker=? AND status IN ('queued','running') AND updated_at>=? LIMIT 1")
           .bind(row.ticker, new Date(Date.now()-2*3600_000).toISOString()).first();
         if (active) { await finish("analysis_dispatch", { delayMs: 120_000 }); return outcome(); }
-        try {
-          await env.SEC_ANALYSIS_WORKFLOW.create({ id: state.workflowId!, params: { ticker: row.ticker, requestedBy: "manual", maintenanceTaskId: row.task_id,
-            ...(row.accession_number ? { accessionNumber: row.accession_number } : {}) } });
-        } catch {
-          // Ambiguous dispatch is retried with the exact same Workflow id, never a new run.
-          if (!env.SEC_ANALYSIS_WORKFLOW.get) throw new Error("WORKFLOW_DISPATCH_UNCONFIRMED");
-          await (await env.SEC_ANALYSIS_WORKFLOW.get(state.workflowId!)).status();
-        }
+        await startFilingRuns(env, row.ticker, { requestedBy: "manual", runId: state.workflowId!, ...(row.accession_number ? { accession: row.accession_number } : {}) });
         await finish("analysis_wait");
       }
     } else if (row.stage === "analysis_wait") {
-      if (!env.SEC_ANALYSIS_WORKFLOW.get) throw new Error("WORKFLOW_STATUS_UNAVAILABLE");
-      const status = (await (await env.SEC_ANALYSIS_WORKFLOW.get(state.workflowId!)).status()).status;
-      if (status === "complete") {
-        const jobs = await env.DB.prepare("SELECT status FROM sec_analysis_jobs WHERE workflow_instance_id=?").bind(state.workflowId).all<{ status: string }>();
-        if (!jobs.results.length || jobs.results.some(j=>j.status!=="complete")) issues.push("ANALYSIS_INCOMPLETE");
+      // Each filing records its own outcome; nothing is left running once its sessions have ended.
+      const rows = (await env.DB!.prepare("SELECT status FROM filing_analyses WHERE run_id = ?").bind(state.workflowId).all<{ status: string }>()).results;
+      if (rows.some(r => r.status === "running")) await finish("analysis_wait", { delayMs: 120_000 });
+      else {
+        if (rows.some(r => r.status === "failed" || r.status === "withheld")) issues.push("ANALYSIS_INCOMPLETE");
         await finish("complete", { ...taskStatus(issues), completedSteps: 5, issues: [...new Set(issues)] });
-      } else if (["errored", "terminated"].includes(status)) await finish("analysis_wait", { status: "failed", errorCode: "ANALYSIS_FAILED" });
-      else await finish("analysis_wait", { delayMs: 120_000 });
+      }
     } else await finish(row.stage, { status: "failed", errorCode: "UNKNOWN_STAGE" });
   } catch (error) {
     // Provider messages can contain query strings, credentials or raw document text; never persist them.

@@ -1,6 +1,6 @@
 # 文件分析统一路径设计
 
-日期：2026-11-09。状态：已上线（8e8c6871），尚未有文件实际跑过；实现与设计的差异见第 14 节。
+日期：2026-11-09。状态：第 15 节的单会话版本取代了前文的逐节、校验和分期方案；前文保留作设计记录。
 
 前置文档：[spontra-architecture-upgrade](spontra-architecture-upgrade.md)（五层）、[sec-archive](sec-archive.md)（EDGAR 唯一入口）、[agent-sdk-pi-migration-checklist](agent-sdk-pi-migration-checklist.md)（迁移收尾；本文取代其中第 13–15 项）。
 
@@ -431,3 +431,16 @@ NET 2026 Q3，假设上期结果已存在：
 - P5 清理。`sec-report` 和 `items` 已经没有事件订阅，但代码保留到线上验证之后；`sec/report-agent.ts` 的写报告部分仍在使用。
 - 后台 `financials` 的“分析”按钮和财报维护任务仍走旧的 `SEC_ANALYSIS_WORKFLOW`。
 - 按文件的非定期路径（`current` 等）依赖完整的线上数据，只有控制流有单元测试，需要线上验证。
+
+## 15. 单会话版本（2026-11-09）
+
+目标改为先让 Pi Harness 产出一份完整报告并能被追踪到，前文的逐节编排和固定校验都已去掉：
+
+- **运行方式**：`filing-analysis` 任务只登记文件并启动会话，随即结束。每份文件一个 Pi 会话（`filing-analysis/start.ts`），外层不再轮询或等待。
+- **结束方式**：会话调用 `publish_report` 自己发布，并写入 `filing_analyses`；没发布就结束时，由 `afterRun` 记录失败。
+- **读取方式**：开场给全部章节的目录和变化情况，Agent 用 `read_sections`、`read_previous` 自己决定读什么。
+- **产物**：摘要和完整 Markdown 报告都写入 `sec_filing_summaries`（`generatedBy: "pi"`），会覆盖该文件旧的分析。
+- **去掉的校验**：报告结构、数字、引用、覆盖度、编辑审查全部去掉，只要求 `headline` 和 `report` 不为空。
+- **暂不生成**：424B、Form 4、投票文件只登记。逐文件分析、结构化指标表和公司记忆材料暂时不再产生，要点等上层只能读到旧数据。
+- **追踪**：每轮结束把元数据写入 `pi_trace_queue`，再由一次定时调用写 span。Pi 跨调用运行时所在的上下文追踪已关闭，当场写的 span 会丢失，平台自动 span 也一样。
+- **已删除**：`sec-report`、`items` 任务及只被它们使用的代码。

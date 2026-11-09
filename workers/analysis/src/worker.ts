@@ -34,7 +34,6 @@ function healthResponse(): Response {
 function readyResponse(env: AnalysisEnv): Response {
   const checks = {
     analysisStore: Boolean(env.DB),
-    analysisWorkflow: Boolean(env.SEC_ANALYSIS_WORKFLOW),
     // Generation needs a model; reads never do, which is why this is not part of `ready`.
     modelConfigured: Boolean(env.DEEPSEEK_API_KEY),
   };

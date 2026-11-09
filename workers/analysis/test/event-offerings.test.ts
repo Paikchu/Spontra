@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import type { CompanyEvent, EventsPublication } from "../../../shared/analysis-contract/events.ts";
 import { annotateEvent, classifyEvent, eventImportance, filingDocumentTitle, readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { parseEventSubmissions } from "../src/events/workflow.ts";
-import { itemSubjects } from "../src/items/recipe.ts";
 
 const NOW = new Date("2026-11-03T00:00:00Z");
 
@@ -50,13 +49,4 @@ test("a prospectus supplement is key, a shelf is normal, and a program issuer's 
   // ORCL's pace: twenty offering filings over twenty-two months (an ATM program, a bond deal every few months).
   const frequent = Array.from({ length: 20 }, (_, i) => event(`0001193125-26-${1000 + i}`, i % 2 ? "FWP" : "424B5", new Date(Date.parse("2026-11-02") - i * 33 * 86_400_000).toISOString().slice(0, 10)));
   assert.equal(eventImportance(frequent[0]!, frequent), "key");
-});
-
-test("a stored rail with offerings reads back, and its non-routine prospectus supplements get an analysis", () => {
-  const stored: EventsPublication = { schemaVersion: "events.v1", ticker: "ORCL", checkedAt: NOW.toISOString(), pendingInsider: 0, events: [
-    event("0001193125-26-442729", "424B5", "2026-11-02"), event("0001193125-26-442669", "S-3ASR", "2026-11-02"), event("0001193125-26-402816", "DEF 14A", "2026-09-25"),
-  ] };
-  const read = readEventsPublication(JSON.parse(JSON.stringify(stored)), "ORCL");
-  assert.equal(read?.events.length, 3);
-  assert.deepEqual(itemSubjects(null, read, NOW).map(s => [s.kind, s.form]), [["current", "424B5"]]);
 });

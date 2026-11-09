@@ -20,6 +20,8 @@ export type Recipe<I, O, S> = {
   settle(state: S, reason: "finished" | "budget" | "failed" | "interrupted" | "cancelled"): O;
   /** What the model is told when a reply calls no tool. */
   nudge: string;
+  /** Called when the run ends, however it ended: the way a session with nobody waiting on it records a failure. */
+  afterRun?(state: S): Promise<void>;
   /** Called as each model turn begins, with its number. */
   onTurn?(state: S, turn: number): void;
   /** The line closing every tool result, given the turns left; the default names the turns alone. */

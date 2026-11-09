@@ -71,7 +71,11 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   private readonly pi = new PiHost({ sql: this.ctx.storage.sql, env: this.env }, { stage: spec => this.loadStage(spec as StageSpec) }, {
     models: () => piModelIds(this.env as StageEnv),
     onSettled: operationId => { void this.completeTurn(operationId); },
+    scheduleTraceFlush: () => this.schedule(new Date(Date.now() + 1000), "flushPiTraces"),
   });
+
+  /** Scheduled after a turn ends: an invocation of its own, whose trace is live, writes the turns' spans. */
+  flushPiTraces() { this.pi.flushTraces(); }
   private readonly piInstalled = this.lifecycle.use(this.pi.harness);
 
   async onStart(props?: StageProps): Promise<void> {

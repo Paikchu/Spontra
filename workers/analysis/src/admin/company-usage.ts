@@ -5,7 +5,7 @@ import { TASKS, type TaskName } from '../pipeline/registry.ts';
 // Legacy ledger names resolve to the same tasks as current calls. The registry owns each task's layer.
 const USAGE_TASK: Record<string, TaskName> = {
   'read-note': 'collect', presentation: 'presentation', translate: 'translate',
-  'sec-analysis': 'sec-report', 'sec-report': 'sec-report', guidance: 'guidance', memory: 'memory', items: 'items', filing: 'filing-analysis',
+  'sec-analysis': 'filing-analysis', 'sec-report': 'filing-analysis', guidance: 'guidance', memory: 'memory', items: 'filing-analysis', filing: 'filing-analysis',
   library: 'library', 'library-cards': 'library-cards', 'library-links': 'library-links',
   'library-links-review': 'library-links', 'business-tags': 'business-tags',
   business: 'company-analysis', 'company-analysis': 'company-analysis',

@@ -7,13 +7,13 @@ type StoredSecFeed = Omit<SecFilingFeed, "filings"> & {
 };
 
 /** A cached filing plus the period whose structured report it carries, if it carries one. */
-export type CachedSecFiling = SecFiling & { structuredPeriodId: string | null };
+type CachedSecFiling = SecFiling & { structuredPeriodId: string | null };
 
-export type CachedSecFeed = Omit<SecFilingFeed, "filings"> & {
+type CachedSecFeed = Omit<SecFilingFeed, "filings"> & {
   filings: CachedSecFiling[];
 };
 
-export function secFilingCacheKey(ticker: string): string {
+function secFilingCacheKey(ticker: string): string {
   return `sec:filings:${ticker}`;
 }
 

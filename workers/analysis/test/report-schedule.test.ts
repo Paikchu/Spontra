@@ -64,41 +64,34 @@ test("routing a filing does not queue a report for a company whose reports are o
   assert.ok(sent.some(message => message.ticker === "NBIS" && message.task === "map-derive"));
 });
 
-test("a report task already queued for a company that has left the list finishes without starting a workflow", async () => {
+test("a filing task queued for a company that has left the list finishes without starting anything", async () => {
   const db = database();
-  const workflows = binding({});
-  const env = { DB: db, SEC_ANALYSIS_WORKFLOW: workflows, SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
-  const outcome = await SEC_TASKS["sec-report"].run(env, "NBIS", { causeId: "m1", now: new Date("2026-10-22T08:57:00.000Z"), trigger: "e1" });
+  const env = { DB: db, SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
+  const outcome = await SEC_TASKS["filing-analysis"].run(env, "NBIS", { causeId: "m1", now: new Date("2026-10-22T08:57:00.000Z"), trigger: "e1" });
   assert.equal(outcome.status, "done");
   assert.equal((outcome.detail as { skipped?: string }).skipped, "reports are off for this company");
-  assert.deepEqual(workflows.created, []);
-  const tracked = { DB: db, SEC_ANALYSIS_WORKFLOW: workflows, SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
-  const at = new Date("2026-10-22T05:11:00.000Z");
-  const started = await SEC_TASKS["sec-report"].run(tracked, "META", { causeId: "m2", now: at, trigger: "e2" });
-  assert.equal(started.status, "later");
-  assert.equal(workflows.created[0], `scheduled-META-${at.getTime()}`);
 });
 
 test("a workflow that already failed because the company is not tracked is a skip, not a feature failure", async () => {
   const db = database();
   await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'filings', 1, 1, '2026-10-22T08:00:00.000Z')").run();
   await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind(
-    failedInputKey("sec-report", "NBIS"),
+    failedInputKey("filing-analysis", "NBIS"),
     JSON.stringify({ fingerprint: "0001104659-26-065681", instanceId: "older", failure: "editorial", attempts: 1, retryAt: "2026-10-22T09:00:00.000Z" }),
     "2026-10-22T08:00:00.000Z",
   ).run();
   const workflows = binding({ "scheduled-NBIS-1792659144946": { status: "errored", error: { message: "Ticker is not tracked" } } });
   const env = { DB: db, SEC_AI_TICKERS: "NBIS", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
-  const deadLetter = { task: "sec-report" as const, ticker: "NBIS", causeId: "c1" };
+  const deadLetter = { task: "filing-analysis" as const, ticker: "NBIS", causeId: "c1" };
   const start = async () => ({ id: "scheduled-NBIS-1792659144946", params: { ticker: "NBIS", requestedBy: "scheduled" } });
-  assert.equal((await driveWorkflow(env, "sec-report:NBIS", workflows, start, { deadLetter, trigger: "e1" })).status, "later");
-  const outcome = await driveWorkflow(env, "sec-report:NBIS", workflows, start, { deadLetter, trigger: "e1" });
+  assert.equal((await driveWorkflow(env, "filing-analysis:NBIS", workflows, start, { deadLetter, trigger: "e1" })).status, "later");
+  const outcome = await driveWorkflow(env, "filing-analysis:NBIS", workflows, start, { deadLetter, trigger: "e1" });
   assert.equal(outcome.status, "done");
   assert.equal((outcome.detail as { skipped?: string }).skipped, "Ticker is not tracked");
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM admin_messages").first<{ n: number }>())!.n, 0);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 0);
   assert.equal((await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = 'NBIS' AND feature = 'filings'").first<{ generate: number }>())!.generate, 1);
-  assert.equal(await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind(failedInputKey("sec-report", "NBIS")).first(), null);
+  assert.equal(await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = ?").bind(failedInputKey("filing-analysis", "NBIS")).first(), null);
 });
 
 test("a workflow that failed for a tracked company is recorded as a feature failure, and the feature stays on for its retry", async () => {
@@ -106,10 +99,10 @@ test("a workflow that failed for a tracked company is recorded as a feature fail
   await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('META', 'filings', 1, 1, '2026-10-22T05:00:00.000Z')").run();
   const workflows = binding({ "scheduled-META-1792645596262": { status: "errored", error: { message: "No core facts passed factual verification" } } });
   const env = { DB: db, SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
-  const deadLetter = { task: "sec-report" as const, ticker: "META", causeId: "c2" };
+  const deadLetter = { task: "filing-analysis" as const, ticker: "META", causeId: "c2" };
   const start = async () => ({ id: "scheduled-META-1792645596262", params: { ticker: "META", requestedBy: "scheduled" }, fingerprint: "0001326801-26-000001" });
-  await driveWorkflow(env, "sec-report:META", workflows, start, { deadLetter, trigger: "e1" });
-  const outcome = await driveWorkflow(env, "sec-report:META", workflows, start, { deadLetter, trigger: "e1" });
+  await driveWorkflow(env, "filing-analysis:META", workflows, start, { deadLetter, trigger: "e1" });
+  const outcome = await driveWorkflow(env, "filing-analysis:META", workflows, start, { deadLetter, trigger: "e1" });
   assert.equal(outcome.status, "later");
   const message = await db.prepare("SELECT outcome, feature FROM admin_messages WHERE ticker = 'META'").first<{ outcome: string; feature: string }>();
   assert.deepEqual(message, { outcome: "failed", feature: "filings" });

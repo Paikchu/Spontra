@@ -7,8 +7,8 @@ import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { PiHost, type PiLoader } from "../pi/host.ts";
 import { piModelIds } from "../pi/model.ts";
 import type { PiRuns } from "../pi/runs.ts";
-import { itemsLoader } from "../items/workflow.ts";
 import { filingLoader } from "../filing-analysis/recipe.ts";
+import { BUSY_RECHECK_MS, isBusy, lostWake } from "./wakes.ts";
 import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
 import { lensLoader } from "../lens/pi.ts";
@@ -16,7 +16,6 @@ import { checkupLoader } from "../checkup/workflow.ts";
 import { analystLoader } from "../analyst/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
 import { businessLoader } from "../company-analysis-workflow.ts";
-import { reportLoader as secReportLoader } from "../sec/report-agent.ts";
 
 type RunRow = { kind: RunKind; id: string; params: string; created_at: number; status: RunStatus; error: string | null; output: string | null };
 /** What a connected client (the admin, a chat) sees of the run, kept current with every wake. */
@@ -42,15 +41,14 @@ export class TaskRunner extends Agent<Env, RunView> {
     models: () => piModelIds(this.env as unknown as AnalysisEnv),
     // A session that ended wakes the run, which is waiting on it, without waiting for its next check.
     onSettled: () => { void this.wake(Date.now()); },
+    scheduleTraceFlush: () => this.schedule(new Date(Date.now() + 1000), "flushPiTraces"),
   });
   private readonly piInstalled = this.lifecycle.use(this.pi.harness);
 
   private loaders(): Record<string, PiLoader> {
     const env = () => companyPolicyEnvironment(this.taskEnv());
     return {
-      items: async spec => itemsLoader(spec, await env()),
       filing: async spec => filingLoader(spec, await env()),
-      "sec-report": async spec => secReportLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
       lens: async spec => lensLoader(spec, await env()),
       checkup: async spec => checkupLoader(spec, await env()),
@@ -98,7 +96,25 @@ export class TaskRunner extends Agent<Env, RunView> {
   async status(): Promise<RunState> {
     const row = this.row();
     if (!row) throw new Error("instance.not_found");
+    await this.reviveIfLost(row);
     return { status: row.status, ...(row.error ? { error: JSON.parse(row.error) } : {}), ...(row.output ? { output: JSON.parse(row.output) } : {}) };
+  }
+
+  /** Starts a Pi session that runs on its own; this returns as soon as Pi has stored the input. */
+  async startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void> { await this.pi.start(kind, spec, opening, { operationId }); }
+
+  /** Scheduled after a turn ends: a wake of its own, whose trace is live, writes the turns' spans. */
+  flushPiTraces() { this.pi.flushTraces(); }
+
+  /** A run its task still polls but nothing will wake again (its last wake died) is woken now. */
+  private async reviveIfLost(row: RunRow): Promise<void> {
+    if (FINAL.has(row.status) || isBusy(this.busySince, Date.now())) return;
+    const pending = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0];
+    if (!pending || !lostWake(pending.wake_at, Date.now())) return;
+    if (pending.wake_id) await this.cancelSchedule(pending.wake_id).catch(() => false);
+    this.db().exec("UPDATE run SET wake_id = NULL, wake_at = NULL WHERE k = 1");
+    console.warn(JSON.stringify({ event: "run-revived", kind: row.kind, id: row.id }));
+    await this.wake(Date.now());
   }
 
   /** The run's state and what each of its agent sessions did, turn by turn. */
@@ -133,8 +149,8 @@ export class TaskRunner extends Agent<Env, RunView> {
     this.db().exec("UPDATE run SET wake_id = NULL, wake_at = NULL WHERE k = 1 AND wake_at <= ?", Date.now());
     const row = this.row();
     if (!row || FINAL.has(row.status)) return;
-    // A wake that arrives while one runs (a session settled meanwhile) is taken up when that one ends.
-    if (this.busySince && Date.now() - this.busySince < WATCHDOG_MS) { this.rewake = true; return; }
+    // A wake that finds one running looks again soon: the first may be gone, and this wake was the only one pending.
+    if (isBusy(this.busySince, Date.now())) { this.rewake = true; await this.wake(Date.now() + BUSY_RECHECK_MS); return; }
     this.busySince = Date.now();
     this.rewake = false;
     try {

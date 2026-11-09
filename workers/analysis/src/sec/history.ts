@@ -1,13 +1,13 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v7";
+const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v7";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
   concepts: string[];
 };
 
-export const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
+const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
   { seriesId: "revenue", concepts: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"] },
   { seriesId: "gross_profit", concepts: ["GrossProfit"] },
   { seriesId: "operating_income", concepts: ["OperatingIncomeLoss"] },

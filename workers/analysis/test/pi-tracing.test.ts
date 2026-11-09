@@ -1,46 +1,68 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PiTurnTraces, type PiSpan, type PiTracer } from "../src/pi/tracing.ts";
+import { emitTurnSpans, PiTurnTraces, type PiSpan, type PiTracer, type TurnTrace } from "../src/pi/tracing.ts";
 
 function recorder() {
-  const spans: Array<{ name: string; attributes: Record<string, unknown>; ended: number }> = [];
-  const span = (name: string): PiSpan => {
-    const row = { name, attributes: {} as Record<string, unknown>, ended: 0 };
+  const spans: Array<{ name: string; parent: string | null; attributes: Record<string, unknown>; ended: number }> = [];
+  const stack: string[] = [];
+  const tracer: PiTracer = { enterSpan: (name, callback) => {
+    const row = { name, parent: stack.at(-1) ?? null, attributes: {} as Record<string, unknown>, ended: 0 };
     spans.push(row);
-    return { setAttribute: (k, v) => { row.attributes[k] = v; }, end: () => { row.ended++; } };
-  };
-  const tracer: PiTracer = { startSpan: span, enterSpan: (name, callback) => { const s = span(name); const out = callback(s); void Promise.resolve(out).finally(() => s.end()); return out; } };
+    stack.push(name);
+    const span: PiSpan = { setAttribute: (k, v) => { row.attributes[k] = v; }, end: () => { row.ended++; } };
+    try { return callback(span); } finally { stack.pop(); row.ended++; }
+  } };
   return { spans, tracer };
 }
-const who = { kind: "sec-report", conversation: "c1" };
+const who = { kind: "filing", conversation: "c1" };
 
-test("a turn is one invoke_agent, one chat and its tool runs, each carrying the agent identity and no payload", async () => {
-  const { spans, tracer } = recorder();
-  const traces = new PiTurnTraces(() => tracer);
+async function oneTurn() {
+  const sent: TurnTrace[] = [];
+  const traces = new PiTurnTraces((turn) => sent.push(turn));
   traces.beginTurn(who, "deepseek-flash", 3);
   traces.endChat("c1", { inputTokens: 10, outputTokens: 2, finishReason: "toolUse" });
   await traces.tool(who, "submit_report", "call-1", async () => ({ observation: "secret draft check", error: true }));
   traces.endTurn("c1");
-  assert.deepEqual(spans.map((s) => s.name), ["invoke_agent spontra-sec-report", "chat deepseek-flash", "execute_tool submit_report"]);
+  return sent;
+}
+
+test("nothing is traced while a turn runs: its record goes out once when it ends, with no payload", async () => {
+  const sent = await oneTurn();
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0]!.tools.map(t => [t.name, t.error]), [["submit_report", true]]);
+  assert.equal(sent[0]!.inputTokens, 10);
+  assert.doesNotMatch(JSON.stringify(sent), /secret/);
+});
+
+test("a recorded turn becomes invoke_agent holding chat and its tools, each with the agent identity", async () => {
+  const { spans, tracer } = recorder();
+  emitTurnSpans(tracer, (await oneTurn())[0]);
+  assert.deepEqual(spans.map(s => [s.name, s.parent]), [
+    ["invoke_agent spontra-filing", null],
+    ["chat deepseek-flash", "invoke_agent spontra-filing"],
+    ["execute_tool submit_report", "invoke_agent spontra-filing"],
+  ]);
   for (const s of spans) {
     assert.equal(s.ended, 1, s.name);
-    assert.equal(s.attributes["gen_ai.agent.name"], "spontra-sec-report");
+    assert.equal(s.attributes["gen_ai.agent.name"], "spontra-filing");
     assert.equal(s.attributes["gen_ai.conversation.id"], "c1");
   }
   assert.equal(spans[1]!.attributes["gen_ai.usage.output_tokens"], 2);
   assert.equal(spans[2]!.attributes["error.type"], "tool_error");
-  assert.doesNotMatch(JSON.stringify(spans), /secret/);
 });
 
-test("a tracer that throws or is absent never stops the work, and the next turn closes one left open", async () => {
-  const broken: PiTracer = { startSpan() { throw new Error("no"); }, enterSpan() { throw new Error("no"); } };
-  const quiet = new PiTurnTraces(() => broken);
+test("a broken or absent tracer stops nothing, a sink that throws stops nothing, and the next turn closes one left open", async () => {
+  const broken: PiTracer = { enterSpan() { throw new Error("no"); } };
+  const turn = (await oneTurn())[0]!;
+  emitTurnSpans(broken, turn);
+  emitTurnSpans(undefined, turn);
+  const quiet = new PiTurnTraces(() => { throw new Error("no"); });
   quiet.beginTurn(who, "m", 1);
   assert.deepEqual(await quiet.tool(who, "t", "c", async () => ({ ok: 1 })), { ok: 1 });
-  assert.deepEqual(await new PiTurnTraces(() => undefined).tool(who, "t", "c", async () => ({ ok: 2 })), { ok: 2 });
-  const { spans, tracer } = recorder();
-  const traces = new PiTurnTraces(() => tracer);
+  quiet.endTurn("c1");
+  const sent: TurnTrace[] = [];
+  const traces = new PiTurnTraces(t => sent.push(t));
   traces.beginTurn(who, "m", 1);
   traces.beginTurn(who, "m", 2);
-  assert.deepEqual(spans.slice(0, 2).map((s) => s.ended), [1, 1]);
+  assert.deepEqual(sent.map(t => t.turn), [1]);
 });

@@ -16,13 +16,13 @@ export type MemoryCandidateV2 = {
   disposition: "provisional" | "active" | "stale" | "resolved" | "contradicted" | "superseded" | "rejected";
 };
 
-export type MemoryConsolidationState = {
+type MemoryConsolidationState = {
   ticker: string;
   periodId: string;
   items: CompanyMemoryItem[];
 };
 
-export type MemoryEventV2 = {
+type MemoryEventV2 = {
   eventId: string;
   memoryId: string;
   jobId: string;

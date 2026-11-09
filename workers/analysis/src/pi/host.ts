@@ -1,4 +1,5 @@
-import { PiTurnTraces } from "./tracing.ts";
+import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
+import { within } from "./within.ts";
 import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ToolRegistration } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { defaultBudgetLine, fitResult, type Recipe, type TurnRecord } from "../recipe.ts";
@@ -84,10 +85,11 @@ export class PiHost {
   private restored = false;
   private tables = false;
 
-  private readonly traces = new PiTurnTraces();
+  private readonly traces = new PiTurnTraces((turn) => this.recordTurn(turn));
+  private traceFlushPending = false;
 
   constructor(private readonly agent: HostAgent, private readonly loaders: Record<string, PiLoader>,
-    private readonly options: { models: () => string[]; onSettled?: (operationId: string) => void }) {
+    private readonly options: { models: () => string[]; onSettled?: (operationId: string) => void; /** Ask for `flushTraces` to run in an invocation of its own. */ scheduleTraceFlush?: () => Promise<unknown> }) {
     this.harness = new PiHarness({
       harness: async ({ storage, context, onWake }) => {
         await this.restore();
@@ -113,6 +115,7 @@ export class PiHost {
       sql.exec("CREATE TABLE IF NOT EXISTS pi_trail (conversation TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT NOT NULL, PRIMARY KEY (conversation, seq))");
       // The outcome of each call of the round in progress, so a call Pi replays after an eviction is not run twice.
       sql.exec("CREATE TABLE IF NOT EXISTS pi_calls (conversation TEXT NOT NULL, call_id TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (conversation, call_id))");
+      sql.exec("CREATE TABLE IF NOT EXISTS pi_trace_queue (seq INTEGER PRIMARY KEY AUTOINCREMENT, turn TEXT NOT NULL)");
       // Sessions created before the token budget have no such column; adding it twice is the only failure and is harmless.
       try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN spent INTEGER NOT NULL DEFAULT 0"); } catch { /* present */ }
       this.tables = true;
@@ -164,14 +167,28 @@ export class PiHost {
   async poll<O>(operationId: string): Promise<PiOutcome<O> | null> {
     const session = this.sessionOf(operationId);
     if (session === "") return this.finish<O>(operationId);
-    const pending = await this.harness.pending({ session }).catch(() => []);
-    if (pending.some((p) => p.operationId === operationId)) return null;
-    // The check must return: a run that is not pending yet has not resolved its wait is looked at again on the next wake.
-    const settled = new AbortController();
-    const timer = setTimeout(() => settled.abort(), POLL_WAIT_MS);
-    try { return await this.finish<O>(operationId, settled.signal); }
-    catch (error) { if (settled.signal.aborted) return null; throw error; }
-    finally { clearTimeout(timer); }
+    // The check must return, whatever Pi's promises do: on time it means "look again on the next wake".
+    return within(POLL_WAIT_MS, async (signal) => {
+      const pending = await this.harness.pending({ session }).catch(() => []);
+      if (pending.some((p) => p.operationId === operationId)) return null;
+      return this.finish<O>(operationId, signal);
+    });
+  }
+
+  /** A finished turn waits in storage until an invocation with a live trace writes its spans. */
+  private recordTurn(turn: TurnTrace) {
+    this.db().exec("INSERT INTO pi_trace_queue (turn) VALUES (?)", JSON.stringify(turn));
+    if (this.traceFlushPending || !this.options.scheduleTraceFlush) return;
+    this.traceFlushPending = true;
+    void this.options.scheduleTraceFlush().catch(() => { this.traceFlushPending = false; });
+  }
+
+  /** Writes the spans of the turns recorded so far; called from an invocation of its own, so they reach the trace. */
+  flushTraces() {
+    this.traceFlushPending = false;
+    const rows = this.db().exec<{ seq: number; turn: string }>("SELECT seq, turn FROM pi_trace_queue ORDER BY seq LIMIT 200").toArray();
+    for (const row of rows) emitTurnSpans(currentPiTracer(), JSON.parse(row.turn) as TurnTrace);
+    if (rows.length) this.db().exec("DELETE FROM pi_trace_queue WHERE seq <= ?", rows.at(-1)!.seq);
   }
 
   /** What each session of this Agent did, turn by turn, for the admin. */
@@ -291,7 +308,7 @@ export class PiHost {
         onYield: async (answer: PiAssistant, api: { conversationId: string }) => this.onYield(api.conversationId, answer),
         afterRun: async (_run: unknown, api: { conversationId: string }) => {
           const b = this.bindings.get(api.conversationId);
-          if (b) this.options.onSettled?.(b.operationId);
+          if (b) { await this.guard(async () => { await b.loaded.recipe.afterRun?.(b.state); }); this.options.onSettled?.(b.operationId); }
           return undefined;
         },
       } as never), hook(CompactionTask, {

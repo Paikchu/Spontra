@@ -1,3 +1,5 @@
+import { filingSessions } from "../durable-runs/binding.ts";
+import { startFilingRuns } from "../filing-analysis/start.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { ReportAdminDetail, ReportAdminItem, ReportAdminPage, ReportAdminJob } from "../../../../shared/analysis-contract/admin.ts";
 import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
@@ -11,7 +13,7 @@ import { jobAnalysisVersionFor } from "../workflow-core.ts";
 import { authenticateAdmin, createAdminSession, matchesAdminKey } from "./auth.ts";
 import { json } from "./http.ts";
 
-type AdminEnv = SecCronEnv & { REPORT_ADMIN_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> }; FILING_ANALYSIS_WORKFLOW?: AnalysisEnv["FILING_ANALYSIS_WORKFLOW"] };
+type AdminEnv = SecCronEnv & { REPORT_ADMIN_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> } };
 const reviewKey = (ticker: string, accession: string, version: string) => `admin:review:${ticker}:${accession}:${version}`;
 // Match report identity through its publication snapshot, with a fallback for older reports.
 const REPORT_IDENTITY = `(json_extract(r.payload, '$.publication.filing.accessionNumber') = f.accession_number OR
@@ -146,13 +148,10 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
   if (process && request.method === "GET") {
     const [, ticker, accession, runId] = process as unknown as [string, string, string, string];
     const owned = await env.DB.prepare("SELECT 1 AS ok FROM sec_analysis_jobs WHERE ticker = ? AND accession_number = ? AND workflow_instance_id = ? LIMIT 1").bind(ticker, accession, runId).first();
-    // Runs of the filing path carry their own prefix; older runs belong to the SEC report task.
-    const binding = /^filings?-/.test(runId) ? env.FILING_ANALYSIS_WORKFLOW : env.SEC_ANALYSIS_WORKFLOW;
-    if (!owned || !binding?.get) return json({ error: "运行记录不存在。" }, 404);
-    try {
-      const run = await binding.get(runId) as unknown as { report(): Promise<unknown> };
-      return json(await run.report());
-    } catch { return json({ error: "运行记录暂时不可读。" }, 503); }
+    const sessions = filingSessions(env);
+    if (!owned || !sessions) return json({ error: "运行记录不存在。" }, 404);
+    try { return json(await sessions.report(runId)); }
+    catch { return json({ error: "运行记录暂时不可读。" }, 503); }
   }
   const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate))?$/.exec(url.pathname);
   if (!match) return json({ error: "Not found" }, 404);
@@ -182,7 +181,6 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       return json({ status: "reviewed", reviewedAt: new Date(now).toISOString() });
     }
     if (!trackedTickersFor(env).includes(ticker)) return json({ error: "该公司未启用 AI 财报分析。" }, 403);
-    if (!env.FILING_ANALYSIS_WORKFLOW) return json({ error: "生成服务尚未配置。" }, 503);
     const requestId = request.headers.get("idempotency-key") ?? "";
     if (!/^[a-f0-9-]{36}$/.test(requestId)) return json({ error: "操作标识无效。" }, 400);
     const workflowId = `filing-${ticker}-${canonical}-${requestId}`;
@@ -197,17 +195,8 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at
       WHERE sec_cache.fetched_at < ?`).bind(`admin:generate-lock:${ticker}:${canonical}`, JSON.stringify({ workflowId }), new Date(now).toISOString(), new Date(now - 60_000).toISOString()).run();
     if (!lock.meta.changes) return json({ error: "这份报告正在提交生成任务，请稍后刷新。" }, 409);
-    const job = { jobId, ticker, accessionNumber: canonical, analysisVersion: jobAnalysisVersionFor(filing.form),
-      status: "queued" as const, currentStage: "queued", attempt: 1, requestedBy: "manual" as const, workflowInstanceId: workflowId, updatedAt: new Date(now).toISOString() };
-    await repository.upsertAnalysisJob(job);
-    try {
-      await env.FILING_ANALYSIS_WORKFLOW!.create({ id: workflowId, params: { ticker, requestedBy: "manual", accessionNumber: canonical } });
-    } catch {
-      // A timeout after successful create is ambiguous. Inspect the same instance, never launch another.
-      let created = false;
-      try { if (env.FILING_ANALYSIS_WORKFLOW?.get) { await (await env.FILING_ANALYSIS_WORKFLOW.get(workflowId)).status(); created = true; } } catch { /* creation was not confirmed */ }
-      if (!created) { await repository.upsertAnalysisJob({ ...job, status: "failed", errorCode: "workflow_dispatch_failed", completedAt: new Date(now).toISOString() }); return json({ error: "生成任务未能提交，请稍后重试。" }, 503); }
-    }
+    try { await startFilingRuns(env as unknown as AnalysisEnv, ticker, { requestedBy: "manual", accession: canonical, runId: workflowId }); }
+    catch { await repository.upsertAnalysisJob({ jobId, ticker, accessionNumber: canonical, analysisVersion: jobAnalysisVersionFor(filing.form), status: "failed", currentStage: "queued", attempt: 1, requestedBy: "manual", workflowInstanceId: workflowId, updatedAt: new Date(now).toISOString(), errorCode: "workflow_dispatch_failed", completedAt: new Date(now).toISOString() }); return json({ error: "生成任务未能提交，请稍后重试。" }, 503); }
     return json({ status: "queued", jobId: workflowId, ticker, accessionNumber: canonical }, 202);
   } catch {
     return json({ error: "财报管理服务暂时不可用，请稍后重试。" }, 503);

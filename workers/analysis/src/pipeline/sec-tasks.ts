@@ -8,12 +8,12 @@ import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
 import { earningsEvents, publishGuidance, RELEASE_ARCHIVE_WAIT_MS } from "../guidance/workflow.ts";
 import { scheduledAnalysisAllowed } from "../core.ts";
-import { eventsWaitOver, failedFilings } from "../filing-analysis/store.ts";
+import { startFilingRuns } from "../filing-analysis/start.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { archiveHolds } from "../sec-archive/index.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
-import { driveWorkflow, FAILED_INPUT_RETRY_WAITS_MS, failedInputKey, pendingRetryOutcome, type WorkflowBindingLike } from "./workflow-task.ts";
+import { driveWorkflow, FAILED_INPUT_RETRY_WAITS_MS, failedInputKey } from "./workflow-task.ts";
 
 /** How often an earnings release waiting for the archive is looked at again when no `filing.archived` comes. */
 const ARCHIVE_RECHECK_MS = 6 * 3_600_000;
@@ -79,13 +79,6 @@ async function reconcileGuidance(env: Parameters<typeof driveWorkflow>[0], ticke
  * The filings a finished SEC report run failed on: the Workflow records a failed filing in `sec_analysis_jobs` and goes
  * on with the next, so its instance completes either way. A run with failures is a failed run for the task.
  */
-async function failedReports(db: D1Database, instanceId: string): Promise<{ failure: string; fingerprint: string } | null> {
-  const rows = (await db.prepare("SELECT accession_number, error_code FROM sec_analysis_jobs WHERE workflow_instance_id = ? AND status = 'failed' ORDER BY accession_number")
-    .bind(instanceId).all<{ accession_number: string; error_code: string | null }>()).results;
-  if (!rows.length) return null;
-  return { failure: rows.map(r => `${r.accession_number}:${r.error_code ?? "failed"}`).join(", "), fingerprint: rows.map(r => r.accession_number).join(",") };
-}
-
 const SECOND = 1000, MINUTE = 60 * SECOND;
 
 export const SEC_TASKS = {
@@ -101,47 +94,14 @@ export const SEC_TASKS = {
     },
   },
   /**
-   * Takes the company's filings through the one analysis path (filing-analysis/). A run in progress finishes first; a run
-   * that failed on a filing is run again after 1, 6 and 24 hours, and the filing keeps its own count of attempts.
+   * Hands the company's filings to the analysis path (filing-analysis/). Each ready filing becomes a Pi session that
+   * runs and publishes on its own, so this task only starts them and is done.
    */
   "filing-analysis": {
-    version: "filing-analysis.v1",
-    async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
-      const outcome = await driveWorkflow(env, `filing-analysis:${ticker}`, env.FILING_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
-        if (!scheduledAnalysisAllowed(env, { ticker, requestedBy: "scheduled" })) return { status: "done", detail: { skipped: "reports are off for this company" } };
-        const waiting = await pendingRetryOutcome(env, "filing-analysis", ticker, now);
-        if (waiting) return waiting;
-        return { id: `filings-${ticker}-${now.getTime()}`, params: { ticker, requestedBy: "scheduled" } };
-      }, { trigger, deadLetter: { task: "filing-analysis", ticker, causeId }, verify: id => failedFilings(env.DB!, id) });
-      // A run that left filings waiting for the events publication comes back for them, for two days at most.
-      if (outcome.status !== "done" || !await eventsWaitOver(env.DB!, ticker, new Date(now.getTime() - 2 * 24 * 60 * MINUTE).toISOString().slice(0, 10))) return outcome;
-      return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "events publication" } };
-    },
-  },
-
-  /**
-   * Runs the SEC report Workflow for an AI company with a new filing: it indexes the filing list (`filings.indexed`),
-   * writes reports and 8-K summaries (`report.published`) and the SEC fundamentals (`fundamentals.updated`). A run
-   * already in progress started before this filing, so the task waits for it and then starts its own (driveWorkflow
-   * evaluates `start` again when the trigger moved during the run). A run that failed on a filing is run again after
-   * 1, 6 and 24 hours (the next run analyses the failed filings again), then becomes a dead letter.
-   */
-  "sec-report": {
-    // v3: the run writes each periodic filing's fiscal period from Company Facts, which guidance dates its items by.
-    // v5: a period's canonical report is the original, not its amendment (NBIS had only a cover-page 20-F/A, NET a 10-K/A).
-    version: "sec-report.v5-original-canonical",
-    async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
-      return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
-        // The message may have been queued while reports were still on. Starting now would throw
-        // "Ticker is not tracked" and record another failure of the feature that was just switched off.
-        if (!scheduledAnalysisAllowed(env, { ticker, requestedBy: "scheduled" })) return { status: "done", detail: { skipped: "reports are off for this company" } };
-        const waiting = await pendingRetryOutcome(env, "sec-report", ticker, now);
-        if (waiting) return waiting;
-        const active = await env.DB!.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
-          .bind(ticker, new Date(now.getTime() - 2 * 60 * MINUTE).toISOString()).first();
-        if (active) return { status: "later", afterMs: 10 * MINUTE, detail: { waiting: "an analysis is already running" } };
-        return { id: `scheduled-${ticker}-${now.getTime()}`, params: { ticker, requestedBy: "scheduled", backfill: false } };
-      }, { trigger, deadLetter: { task: "sec-report", ticker, causeId }, verify: id => failedReports(env.DB!, id) });
+    version: "filing-analysis.v2",
+    async run(env, ticker): Promise<TaskOutcome> {
+      if (!scheduledAnalysisAllowed(env, { ticker, requestedBy: "scheduled" })) return { status: "done", detail: { skipped: "reports are off for this company" } };
+      return { status: "done", detail: await startFilingRuns(env, ticker, { requestedBy: "scheduled" }) };
     },
   },
 

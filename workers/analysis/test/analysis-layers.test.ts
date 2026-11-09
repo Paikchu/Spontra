@@ -31,9 +31,7 @@ test("the findings read layer 2 only: map changes reach them through the per-per
   }
   assert.deepEqual(SUBSCRIPTIONS["extract.published"]!.map(s => s.task), ["findings"]);
   assert.equal(TASKS.extract.scope, "filings");
-  assert.equal(TASKS.items.scope, "filings");
-  const { ITEM_POLICY } = await import("../src/items/recipe.ts");
-  assert.ok(!ITEM_POLICY.allow!.includes("findings"), "a filing analysis never reads the findings built on it");
+  assert.equal(TASKS["filing-analysis"].scope, "filings");
 });
 
 test("the layers above read a filing's analysis and the passages it quoted, never the filing", async () => {
@@ -59,7 +57,7 @@ test("a layer waits while a lower layer's run is still due for the company, and 
   const { unsettledBelow } = await import("../src/pipeline/ai-tasks.ts");
   const now = new Date("2026-11-04T12:00:00Z");
   const due = [
-    { ticker: "CRWV", task: "items", due_at: "2026-11-04T12:05:00Z", first_requested_at: "2026-11-04T11:50:00Z" },
+    { ticker: "CRWV", task: "filing-analysis", due_at: "2026-11-04T12:05:00Z", first_requested_at: "2026-11-04T11:50:00Z" },
     { ticker: "CRWV", task: "library-cards", due_at: "2026-11-04T13:00:00Z", first_requested_at: "2026-11-03T00:00:00Z" },
     { ticker: "CRWV", task: "translate", due_at: "2026-11-04T12:05:00Z", first_requested_at: "2026-11-04T11:50:00Z" },
   ];
@@ -68,6 +66,6 @@ test("a layer waits while a lower layer's run is still due for the company, and 
     return { results: due.filter(r => r.ticker === ticker && (JSON.parse(tasks) as string[]).includes(r.task) && r.due_at > at && r.first_requested_at > since) };
   } }; return s; } } as unknown as D1Database;
   const env = { DB: db } as never;
-  assert.deepEqual(await unsettledBelow(env, "CRWV", ["map", "filings"], now), ["items"]);
+  assert.deepEqual(await unsettledBelow(env, "CRWV", ["map", "filings"], now), ["filing-analysis"]);
   assert.deepEqual(await unsettledBelow(env, "ORCL", ["map", "filings"], now), []);
 });

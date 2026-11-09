@@ -22,7 +22,7 @@ const labels: Record<string, string> = { revenue: "收入", cost: "营业成本"
 
 export async function listFinancialCompanies(env: AnalysisEnv): Promise<FinancialMaintenanceCompanyList> {
   const companies = await financialCompanyRows(env);
-  return { companies, environment: { aiEnabled: aiIsEnabled(env), dataCollectionEnabled: env.SEC_DATA_COLLECTION_ENABLED === "true", workflowAvailable: Boolean(env.SEC_ANALYSIS_WORKFLOW) } };
+  return { companies, environment: { aiEnabled: aiIsEnabled(env), dataCollectionEnabled: env.SEC_DATA_COLLECTION_ENABLED === "true", workflowAvailable: Boolean((env as { TASK_RUNS?: unknown }).TASK_RUNS) } };
 }
 async function financialCompanyRows(env: AnalysisEnv, selectedTicker?: string): Promise<FinancialMaintenanceCompany[]> {
   const dataEnabled = dataTickersFor(env), tracked = trackedTickersFor(env);
@@ -175,7 +175,6 @@ export async function handleFinancialAdminRequest(request: Request, env: Analysi
       return json({ task: taskView(existing), reused: true }, 202);
     }
     if (action === "analyze" && !aiIsEnabled(env)) return json({ error: "当前环境已禁用 AI 分析。可以先补全确定性财报数据；此操作不会修改分析开关。" }, 409);
-    if (action === "analyze" && !env.SEC_ANALYSIS_WORKFLOW) return json({ error: "分析工作流尚未配置。" }, 503);
     const created = await store.create({ requestId: body.requestId!, ticker, action, accessionNumber, ...(body.action === "retry" ? { retryOf: body.retryTaskId } : {}) }, new Date(now));
     if (!created) {
       const same = await store.byRequest(body.requestId!);

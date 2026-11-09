@@ -9,7 +9,7 @@ import {emit} from '../pipeline/outbox.ts';
 const collectionEnv=(env:AnalysisEnv)=>({DB:requireDb(env),SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS});
 
 /** The legacy entry point now submits to the canonical collector; it never writes the legacy cache. */
-export async function refreshSecBusinessFlow(env:AnalysisEnv,ticker:string,fetcher:typeof fetch=fetch){
+async function refreshSecBusinessFlow(env:AnalysisEnv,ticker:string,fetcher:typeof fetch=fetch){
  env=await companyPolicyEnvironment(env);
  assertDataTicker(env,ticker);
  return requestFinancialCollection(collectionEnv(env),ticker,{fetcher});

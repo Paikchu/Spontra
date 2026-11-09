@@ -32,38 +32,6 @@ const readFailed = async (db: D1Database, task: string, ticker: string) => {
   return row ? JSON.parse(row.payload) as { attempts: number; retryAt: string | null; fingerprint: string } : null;
 };
 
-test("a finished SEC report run that failed on a filing is retried after a wait, and a clean run clears the record", async () => {
-  const db = database();
-  const statuses: Record<string, { status: string }> = {};
-  const workflows = binding(statuses);
-  const env = { DB: db, SEC_ANALYSIS_WORKFLOW: workflows, SEC_AI_TICKERS: "NBIS", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
-  const context = (now: Date) => ({ causeId: "m1", now, trigger: "e1" });
-  const t0 = new Date();
-
-  assert.equal((await SEC_TASKS["sec-report"].run(env, "NBIS", context(t0))).status, "later");
-  const first = workflows.created[0]!;
-  statuses[first] = { status: "complete" };
-  await failedJob(db, first, "0001-26-000001");
-  const failed = await SEC_TASKS["sec-report"].run(env, "NBIS", context(t0));
-  assert.equal(failed.status, "later");
-  assert.equal((failed as { afterMs: number }).afterMs, 60 * 60_000);
-  const record = await readFailed(db, "sec-report", "NBIS");
-  assert.deepEqual({ fingerprint: record?.fingerprint, attempts: record?.attempts, scheduled: !!record?.retryAt }, { fingerprint: "0001-26-000001", attempts: 1, scheduled: true });
-
-  // Before the retry time a new trigger waits; once it has passed, a new run starts.
-  const early = await SEC_TASKS["sec-report"].run(env, "NBIS", context(new Date(t0.getTime() + 60_000)));
-  assert.equal((early.detail as { waiting?: string }).waiting, "retry of a failed run");
-  assert.equal(workflows.created.length, 1);
-  assert.equal((await SEC_TASKS["sec-report"].run(env, "NBIS", context(new Date(t0.getTime() + 2 * 60 * 60_000)))).status, "later");
-  assert.equal(workflows.created.length, 2);
-
-  // The retry analyses the filing cleanly: done, and the failure record is gone.
-  statuses[workflows.created[1]!] = { status: "complete" };
-  const clean = await SEC_TASKS["sec-report"].run(env, "NBIS", context(new Date(t0.getTime() + 2 * 60 * 60_000)));
-  assert.equal(clean.status, "done");
-  assert.equal(await readFailed(db, "sec-report", "NBIS"), null);
-});
-
 test("a model provider refusing for balance (HTTP 402) is retried even though the step declared it final", async () => {
   const db = database();
   const workflows = binding({ "run-x": { status: "errored", error: { name: "NonRetryableError", message: "Model deepseek-flash tree-plan HTTP 402: Insufficient Balance" } } });

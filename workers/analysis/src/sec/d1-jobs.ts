@@ -1,6 +1,6 @@
 import type { D1Like } from "./d1-support.ts";
 
-export type SecAnalysisJobUpdate = {
+type SecAnalysisJobUpdate = {
   jobId: string;
   ticker: string;
   accessionNumber: string;
@@ -16,7 +16,7 @@ export type SecAnalysisJobUpdate = {
   completedAt?: string;
 };
 
-export type SecAnalysisJobStatus = SecAnalysisJobUpdate["status"];
+type SecAnalysisJobStatus = SecAnalysisJobUpdate["status"];
 
 /**
  * How long a job may sit in a non-terminal state before another run is allowed to take it over.
