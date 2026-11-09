@@ -6,6 +6,7 @@ import { FEATURES, LAYER_REQUIRES, LAYERS, type Feature, type Layer } from '../.
 import { isFeature, layersAbove } from '../../../../shared/analysis-runtime/business-features.ts';
 import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '../financial-data/company-policy.ts';
 import { writeFeatureSetting } from './feature-settings.ts';
+import { scheduledAnalysisOn, setScheduledAnalysis } from '../pipeline/scheduled-analysis.ts';
 import { AiRunStore } from '../ai-runs/store.ts';
 import { readFlow } from './flow.ts';
 import { readCompanyUsage } from './company-usage.ts';
@@ -150,7 +151,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       // What each feature has published, by company: the newest publication's time, read once per feature.
       const published = Object.fromEntries(await Promise.all(FEATURES.map(async feature=>[feature,new Map((await db.prepare(PUBLISHED[feature]).bind().all<{ticker:string;at:string}>().catch(()=>({results:[]}))).results.map(r=>[r.ticker,r.at]))]))) as Record<Feature,Map<string,string>>;
       const lists = Object.fromEntries(FEATURES.map(feature=>[feature,featureCompaniesFor(env,feature)])) as Record<Feature,string[]>;
-      const [runs, outcomes] = await Promise.all([featureRuns(db), latestOutcomes(db)]);
+      const [runs, outcomes, scheduledAnalysis] = await Promise.all([featureRuns(db), latestOutcomes(db), scheduledAnalysisOn(db)]);
       const generation=Object.fromEntries(FEATURES.map(feature=>[feature,featureEnabled(env,feature)])) as Record<Feature,boolean>;
       const companies: BusinessMapCompanies['companies'] = list.companies.map(company=>{
         const row=byTicker.get(company.ticker)!;
@@ -178,7 +179,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
             reasons:invalid?['INVALID_PAYLOAD']:reasons.length?reasons:flow?[]:['MISSING_TWO_QUARTERS'],periods:flow?.quarters.map(q=>q.periodEnd)??[],revenueCoverage:flow?.quarters.map(q=>({period:q.periodEnd,status:q.segmentDisclosure==='single_reportable_segment'?'single_segment' as const:q.segments.some(s=>s.id==='reported-company-total')?'unverified' as const:'verified' as const,segments:q.segments.length,adjustments:q.revenueAdjustments?.length??0}))??[]}};
         return {...current, layerStatuses:companyLayerStatuses(current, {automaticCollection:list.environment.dataCollectionEnabled,generation})};
       });
-      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,generation} satisfies BusinessMapCompanies);
+      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,scheduledAnalysis,generation} satisfies BusinessMapCompanies);
     }
     const usage = /^\/admin\/business-map\/companies\/([^/]+)\/usage$/.exec(path);
     if (usage && request.method === 'GET') {
@@ -207,6 +208,12 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
     }
     // The feature switches, applied by company-policy.ts. Per company, one
+    if (path === '/admin/business-map/scheduled-analysis' && request.method === 'POST') {
+      const body = await request.json() as {on?:unknown};
+      if (typeof body.on !== 'boolean') return json({error:'操作参数无效。'},400);
+      await setScheduledAnalysis(env,body.on);
+      return json({on:body.on},200);
+    }
     // switch: on generates the feature and shows it, off stops generating and hides what was written (it stays stored).
     // Global: whether the feature is generated for anyone; what is shown follows the company switches. Each change emits
     // `feature.settings`, which checks for something to write and moves the map's revisions.

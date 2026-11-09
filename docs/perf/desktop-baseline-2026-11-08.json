@@ -1,0 +1,96 @@
+{
+  "app": "Spontra.app (release, arm64)",
+  "at": "2026-11-08T10:03:26.725Z",
+  "runs": 5,
+  "appMb": 7.9,
+  "cold": {
+    "page": "/companies/GOOGL",
+    "spawnToContentMs": 1901,
+    "processToContentMs": 1890.8,
+    "webviewContentMs": 1665,
+    "memoryMb": 221.2
+  },
+  "warm": {
+    "page": "/companies/GOOGL",
+    "spawnToContentMs": 392,
+    "processToContentMs": 382.6,
+    "webviewContentMs": 163,
+    "memoryMb": 227.3
+  },
+  "samples": {
+    "cold": [
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 2738,
+        "processToContentMs": 2292.672042,
+        "webviewContentMs": 2029,
+        "memoryMb": 221.2353515625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 1947,
+        "processToContentMs": 1941.6713340000001,
+        "webviewContentMs": 1720,
+        "memoryMb": 223.3447265625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 1716,
+        "processToContentMs": 1707.7465840000002,
+        "webviewContentMs": 1494,
+        "memoryMb": 218.3603515625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 1854,
+        "processToContentMs": 1840.0999169999998,
+        "webviewContentMs": 1617,
+        "memoryMb": 223.2666015625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 1901,
+        "processToContentMs": 1890.790958,
+        "webviewContentMs": 1665,
+        "memoryMb": 220.3447265625
+      }
+    ],
+    "warm": [
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 394,
+        "processToContentMs": 383.43508399999996,
+        "webviewContentMs": 165,
+        "memoryMb": 225.4072265625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 398,
+        "processToContentMs": 390.126916,
+        "webviewContentMs": 163,
+        "memoryMb": 229.3759765625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 392,
+        "processToContentMs": 382.570792,
+        "webviewContentMs": 160,
+        "memoryMb": 227.3291015625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 389,
+        "processToContentMs": 381.997208,
+        "webviewContentMs": 161,
+        "memoryMb": 227.3447265625
+      },
+      {
+        "page": "/companies/GOOGL",
+        "spawnToContentMs": 386,
+        "processToContentMs": 379.526833,
+        "webviewContentMs": 163,
+        "memoryMb": 227.3291015625
+      }
+    ]
+  }
+}

@@ -24,7 +24,7 @@ export function LanguageToggle() {
 }
 
 export function ThemeToggle({ light, onToggle }: { light: boolean; onToggle: () => void }) {
-  return <Button variant="unstyled" type="button" className="icon-button" aria-label={m.lightTheme} aria-pressed={light} onClick={onToggle}>
+  return <Button variant="unstyled" type="button" className="icon-button" data-theme-toggle aria-label={m.lightTheme} aria-pressed={light} onClick={onToggle}>
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {light ? <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" /> : <>
         <circle cx="12" cy="12" r="4" />

@@ -31,3 +31,4 @@ npm-debug.log*
 
 apps/admin/dist/
 apps/admin/.wrangler/
+/apps/business-site/dist-desktop/

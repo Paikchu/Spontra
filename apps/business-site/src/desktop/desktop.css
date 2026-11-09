@@ -1,0 +1,31 @@
+/* WKWebView composites each backdrop filter separately, so full-width bars and dialog veils stay opaque. */
+.home-nav[data-stuck], .search-dialog::backdrop, .report-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.home-nav[data-stuck] { background: var(--background); }
+.search-dialog::backdrop, .report-dialog::backdrop { background: color-mix(in srgb, var(--background) 78%, transparent); }
+
+/* The site's page turn runs about half a second and holds the chart until it ends; opening a company here takes 40 ms. */
+:root[data-desktop]::view-transition-group(*),
+:root[data-desktop]::view-transition-old(*),
+:root[data-desktop]::view-transition-new(*) { animation-duration: .14s !important; animation-delay: 0s !important; }
+
+/* Scrollbars: the system's never show or take room; scroll-thumb.ts draws one while something moves. */
+:root[data-desktop] *, :root[data-desktop] { scrollbar-width: none !important; }
+:root[data-desktop] *::-webkit-scrollbar, :root[data-desktop]::-webkit-scrollbar { display: none !important; }
+.desktop-scroll-thumb {
+  position: fixed; z-index: 2147483647; width: 5px; border-radius: 3px; pointer-events: none;
+  background: color-mix(in srgb, var(--foreground) 32%, transparent); opacity: 0; transition: opacity .3s;
+}
+.desktop-scroll-thumb[data-visible] { opacity: 1; transition-duration: .08s; }
+
+/* macOS: no title bar. The window controls sit in the sidebar, which runs edge to edge. Heights are page pixels at 90% zoom. */
+@media (min-width: 961px) {
+  :root[data-desktop="mac"] { --rail-collapsed-w: 84px; }
+  :root[data-desktop="mac"] .map { padding-top: 0; padding-left: 0; padding-bottom: 0; }
+  :root[data-desktop="mac"] .rail, :root[data-desktop="mac"] main[data-rail="collapsed"] .rail {
+    align-self: stretch; border-radius: 0; border-width: 0 1px 0 0; box-shadow: none;
+  }
+  :root[data-desktop="mac"] .rail-top { padding-top: 44px; }
+  :root[data-desktop="mac"] main[data-rail="collapsed"] .rail-top { padding-top: 48px; }
+  :root[data-desktop="mac"] .stage { padding-top: 24px; }
+}
+:root[data-desktop="mac"] .home-nav { padding-left: 92px; }

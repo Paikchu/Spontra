@@ -1,4 +1,5 @@
 import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { markContent } from "./vitals";
 import { Button } from "@/packages/web/src/ui/button";
 import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -460,6 +461,7 @@ function footnotesOf(report: ValuationPublication): Footnotes {
 }
 
 export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
+  useEffect(() => { markContent("company"); }, []);
   const [open, setOpen] = useState<string | null>(null);
   // Another company starts with no source open.
   const [shownTicker, setShownTicker] = useState(ticker);

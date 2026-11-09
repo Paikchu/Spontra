@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useAgent } from "agents/react";
+import { stageSocketOptions } from "./socket-options";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import type { NoticeCode } from "@/shared/analysis-contract/scene";
@@ -86,7 +87,7 @@ function Connected({ conversation, state, send, view, onScene, onSay, onActivity
   const opened = useRef(false);
   const socket = useRef<{ send(data: string): void } | null>(null);
   const agent = useAgent<StageState>({
-    agent: "stage-agent", name: conversation,
+    agent: "stage-agent", name: conversation, ...stageSocketOptions,
     onStateUpdate: next => {
       const committed = next.revision > revision.current && opened.current;
       revision.current = next.revision;

@@ -6,6 +6,7 @@ import type { EventMessage, TaskMessage } from "./messages.ts";
 import { SUBSCRIPTIONS, TASKS, type TaskName, type TaskScope } from "./registry.ts";
 import { revisionStatements } from "./revisions.ts";
 import { messageStatements } from "../admin/messages.ts";
+import { beforePause, scheduledAnalysisPausedAt } from "./scheduled-analysis.ts";
 
 /** The companies a task covers, for a version change that re-runs it everywhere. */
 export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<string[]> {
@@ -15,7 +16,8 @@ export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<
   return [...dataTickers(policyEnv)].sort();
 }
 
-type Target = { task: TaskName; ticker: string; causeId: string };
+/** `heldSince`: when the event behind the run was written, if that was before scheduled analysis went off. */
+type Target = { task: TaskName; ticker: string; causeId: string; heldSince?: string };
 type DueRow = { ticker: string; task: string; due_at: string; first_requested_at: string };
 
 async function targets(env: AnalysisEnv, event: EventMessage, scopes: (scope: TaskScope) => Promise<string[]>): Promise<Target[]> {
@@ -48,7 +50,8 @@ export const delaySeconds = (dueAt: string, now: number) => Math.min(86_400, Mat
 /**
  * Turns a batch of events into one pending run per company and task: records each in `pipeline_due`, then sends
  * one delayed task message per run. Events for the same company and task inside the batch collapse into one. The
- * map's publication revisions move in the same batches.
+ * map's publication revisions move in the same batches. While scheduled analysis is off, an event written before it went
+ * off queues a run that will be held; any other event opens a window of its own, so it never waits behind a held run.
  * Throws when anything fails, so the queue redelivers the whole batch; re-recording a due run is harmless.
  */
 export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now = Date.now()): Promise<{ events: number; runs: number }> {
@@ -57,10 +60,15 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
   const fanout = new Map<string, number>();
   const known = new Map<TaskScope, Promise<string[]>>();
   const scopes = (scope: TaskScope) => { if (!known.has(scope)) known.set(scope, scopeTickers(env, scope)); return known.get(scope)!; };
+  const pausedAt = await scheduledAnalysisPausedAt(db);
   for (const event of events) {
     const list = await targets(env, event, scopes);
     fanout.set(event.id, list.length);
-    for (const target of list) wanted.set(`${target.ticker}\u0000${target.task}`, target);
+    const early = beforePause(event.at, pausedAt);
+    for (const target of list) {
+      const key = `${target.ticker}\u0000${target.task}`;
+      wanted.set(key, { ...target, heldSince: early && (!wanted.has(key) || wanted.get(key)!.heldSince) ? event.at : undefined });
+    }
   }
   const at = new Date(now).toISOString();
   const statements: D1PreparedStatement[] = [];
@@ -70,10 +78,10 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
     const existing = new Map((await db.prepare("SELECT ticker, task, due_at, first_requested_at FROM pipeline_due WHERE ticker || char(0) || task IN (SELECT value FROM json_each(?))")
       .bind(JSON.stringify(keys)).all<DueRow>()).results.map(row => [`${row.ticker}\u0000${row.task}`, row]));
     for (const [key, target] of wanted) {
-      const { dueAt, first } = nextDue(target.task, existing.get(key), now);
+      const { dueAt, first } = nextDue(target.task, pausedAt && !target.heldSince ? undefined : existing.get(key), now);
       statements.push(db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id`)
-        .bind(target.ticker, target.task, dueAt, first, target.causeId));
+        ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id, held_at = NULL`)
+        .bind(target.ticker, target.task, dueAt, target.heldSince ?? first, target.causeId));
       messages.push({ v: 1, kind: "task", id: crypto.randomUUID(), causeId: target.causeId, task: target.task, ticker: target.ticker, dueAt });
     }
   }

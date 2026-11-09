@@ -17,7 +17,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
-    const write = request.method === "POST" && (route === "messages/read" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
+    const write = request.method === "POST" && (route === "messages/read" || route === "scheduled-analysis" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {

@@ -18,6 +18,10 @@ Each load gets a fresh headless Chrome with an empty cache. `slow` is 150 ms rou
 
 Report a change only when its medians move clearly beyond the run-to-run spread in `samples`; compare runs taken from the same machine and network.
 
+## Desktop
+
+`npm run desktop:perf` launches the built app repeatedly, against an empty disk cache and a filled one, and reports time to main content and physical footprint. `desktop-baseline-2026-11-08.json` is the first release build.
+
 ## Baseline
 
 `baseline-2026-11-06.json`: production before any P1–P6 change.

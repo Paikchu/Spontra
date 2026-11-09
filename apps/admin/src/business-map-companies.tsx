@@ -145,6 +145,19 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     }
     finally {pending.current.delete(key);setRefresh(n=>n+1);}
   }
+  async function switchScheduledAnalysis(on:boolean) {
+    const key='scheduled-analysis';
+    if(pending.current.has(key))return;
+    const before=data;
+    pending.current.add(key);switched.current++;setError('');
+    setData(d=>d&&{...d,scheduledAnalysis:on});
+    try {await adminApi('business-map/scheduled-analysis',{method:'POST',body:JSON.stringify({on})});}
+    catch(err){
+      setData(before);
+      if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);
+    }
+    finally {pending.current.delete(key);setRefresh(n=>n+1);}
+  }
   async function judge(symbol:string) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
     try {await adminApi(`business-map/companies/${symbol}/presentation`,{method:'POST',body:'{}'});setRefresh(n=>n+1);setNotice(`${symbol} 重新判定已提交`);}
@@ -157,6 +170,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     <header className="ra-page-header bm-directory-toolbar">
       <label className="bm-admin-search"><span className="bm-admin-sr">搜索公司</span><span className="ra-search bm-admin-query"><Search size={16}/><input aria-label="搜索公司" placeholder="代码或公司名" value={typed} onChange={e=>setTyped(e.target.value.toUpperCase())}/></span></label>
       <div className="bm-admin-filter">
+        <span className="bm-admin-scheduled"><span id="bm-scheduled-label">定时分析</span><button className="bm-switch" role="switch" aria-checked={!!data?.scheduledAnalysis} aria-labelledby="bm-scheduled-label" title={data?.scheduledAnalysis?'定时分析已开启 · 点击暂停':'定时分析已暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchScheduledAnalysis(!data?.scheduledAnalysis)}><span/></button></span>
         <div className="bm-admin-scope" role="group" aria-label="范围">
           <button aria-pressed={!query&&scope==='on'} disabled={!!query} onClick={()=>{setScope('on');setPage(1);}}>已开启</button>
           <button aria-pressed={!!query||scope==='all'} disabled={!!query} onClick={()=>{setScope('all');setPage(1);}}>全部美股</button>
@@ -167,6 +181,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     </header>
     {createPortal(<div className="bm-toasts" aria-live="polite">{notice&&<p className="bm-toast" role="status">{notice}</p>}{(error||loadError)&&<p className="bm-toast" data-tone="error" role="alert">{error||loadError}</p>}</div>,document.body)}
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
+    {data&&!data.scheduledAnalysis&&<p className="bm-admin-warning">定时分析已暂停</p>}
     {data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
     <p className="bm-admin-sr" id="bm-switch-guide">表头开关控制自动生成；每行开关控制该公司的功能。</p>
     {!directory&&!loadError&&<div className="bm-admin-loading" role="status"><span>加载公司</span>{Array.from({length:6},(_,i)=><div key={i} aria-hidden="true"/>)}</div>}

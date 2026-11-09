@@ -50,6 +50,10 @@ const eslintConfig = defineConfig([
   },
   globalIgnores([
     "apps/business-site/dist/**",
+    "apps/business-site/dist-desktop/**",
+    "apps/desktop/src-tauri/target/**",
+    "apps/desktop/src-tauri/gen/**",
+    "scripts/desktop-selftest.js",
     "apps/admin/dist/**",
     "apps/admin/.wrangler/**",
     "apps/business-site/.wrangler/**",

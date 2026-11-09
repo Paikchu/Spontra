@@ -24,6 +24,10 @@ Shared UI comes from `packages/web/`; contracts and verification shared with the
 - `/agents/*` reaches the stage over the second binding `SPONTRA_STAGE` (`StageGateway` entrypoint), same-origin only and limited per address (`AGENT_LIMIT`).
 - Public reads are limited per IP (`PUBLIC_READ_LIMIT`, 300/min) and cached at the edge. `global_fetch_strictly_public` keeps any stray global fetch on public routing.
 
+## Desktop
+
+`vite build --mode desktop` builds the same page for the Tauri app in `apps/desktop`. `src/desktop/boot.ts` runs ahead of the page and redirects its site reads to the local proxy; the site build does not contain it. The app's security policies are derived from `public/_headers`.
+
 ## Local development
 
 ```bash

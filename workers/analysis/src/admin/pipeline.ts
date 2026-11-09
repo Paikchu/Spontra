@@ -64,7 +64,7 @@ async function replay(env: AnalysisEnv, db: D1Database, id: string): Promise<Res
     await db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(failedInputKey(task.task, task.ticker)).run();
     const now = Date.now(), dueAt = new Date(now).toISOString();
     await db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id`)
+      ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id, held_at = NULL`)
       .bind(task.ticker, task.task, dueAt, dueAt, task.id).run();
     await env.PIPELINE_TASKS.send({ ...task, id: crypto.randomUUID(), causeId: task.id, dueAt }, { contentType: "json", delaySeconds: delaySeconds(dueAt, now) });
   } else {
