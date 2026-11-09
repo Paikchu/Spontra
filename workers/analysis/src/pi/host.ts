@@ -32,8 +32,10 @@ export type PiLoaded<S = any> = {
   model: string;
   effort: string;
   ledger: { kind: string; ticker?: string; runId?: string; userHash?: string; conversationId?: string };
-  /** Reserves one model call against the allowances; false makes the next round the last. It may mark the state. */
-  reserve?(state: S): Promise<boolean>;
+  /** Reserves one model call against the allowances; false ends the run after the current round. It may mark the state. */
+  reserve?(state: S, now: number): Promise<boolean>;
+  /** Returns the unused call reserved at this time, including its original budget day. */
+  refund?(state: S, reservedAt: number): Promise<void>;
   record?(entry: TurnRecord): void;
   onToolStart?(name: string, args: unknown): void;
 };
@@ -62,12 +64,12 @@ type Binding = {
   startedAt: number; turns: number; quiet: number; said: string;
   lastRound: boolean; capped: boolean; finished: boolean; asked: string | null;
   /** The calls of the round in progress, from the reply that made them; when the request went out. */
-  round: RoundCall[]; requestAt: number; spent: number;
+  round: RoundCall[]; requestAt: number; spent: number; reservedAt: number | null;
 };
 type RoundCall = { id: string; name: string; args: unknown };
 type Row = { conversation: string; session: string; operation_id: string; kind: string; spec: string; state: string; started_at: number;
   turns: number; quiet: number; last_round: number; capped: number; finished: number; asked: string | null; round: string | null; spent: number | null;
-  startup: string | null };
+  startup: string | null; reserved_at: number | null };
 type Startup = { phase: "prepared" | "model-set"; opening: string };
 
 const text = (value: string) => [{ type: "text" as const, text: value }];
@@ -123,6 +125,7 @@ export class PiHost {
       try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN spent INTEGER NOT NULL DEFAULT 0"); } catch { /* present */ }
       // NULL means submitted (including bindings created before startup checkpoints existed).
       try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN startup TEXT"); } catch { /* present */ }
+      try { sql.exec("ALTER TABLE pi_bindings ADD COLUMN reserved_at INTEGER"); } catch { /* present */ }
       this.tables = true;
     }
     return sql;
@@ -140,24 +143,32 @@ export class PiHost {
     loaded.hydrate?.(state);
     // The first call is reserved before the session starts; each later one before the round ahead of it. A refused
     // start never reaches Pi: it is recorded as settled on its budget, so the caller reads an ordinary outcome.
-    if (loaded.reserve && !await loaded.reserve(state)) {
+    const reservedAt = Date.now();
+    if (loaded.reserve && !await loaded.reserve(state, reservedAt)) {
       this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, last_round, capped, active) VALUES (?, '', ?, ?, ?, ?, ?, 1, 1, 0)",
         `refused:${options.operationId}`, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now());
       return { operationId: options.operationId, session: "", refused: "capped" };
     }
-    const session = options.session ? this.harness.sessions.get(options.session) : await this.harness.sessions.create();
-    const conversation = (await this.harness.conversation(session.id)).id as unknown as string;
-    // One run per session at a time: a second would take over the first one's recipe and state.
-    const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
-    if (running) throw new Error(`pi: session ${session.id} is still running ${running.operation_id}`);
-    this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, startup) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now(), JSON.stringify({ phase: "prepared", opening } satisfies Startup));
-    this.db().exec("DELETE FROM pi_trail WHERE conversation = ?", conversation);
-    this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
-    this.bind({ conversation, session: session.id, operationId: options.operationId, kind, spec, loaded, state, startedAt: Date.now(),
-      turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0 });
-    await this.ensureStarted(options.operationId);
-    return { operationId: options.operationId, session: session.id };
+    let bound = false;
+    try {
+      const session = options.session ? this.harness.sessions.get(options.session) : await this.harness.sessions.create();
+      const conversation = (await this.harness.conversation(session.id)).id as unknown as string;
+      // One run per session at a time: a second would take over the first one's recipe and state.
+      const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
+      if (running) throw new Error(`pi: session ${session.id} is still running ${running.operation_id}`);
+      this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, startup, reserved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now(), JSON.stringify({ phase: "prepared", opening } satisfies Startup), loaded.reserve ? reservedAt : null);
+      this.db().exec("DELETE FROM pi_trail WHERE conversation = ?", conversation);
+      this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
+      this.bind({ conversation, session: session.id, operationId: options.operationId, kind, spec, loaded, state, startedAt: Date.now(),
+        turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0, reservedAt: loaded.reserve ? reservedAt : null });
+      bound = true;
+      await this.ensureStarted(options.operationId);
+      return { operationId: options.operationId, session: session.id };
+    } catch (error) {
+      if (!bound) await loaded.refund?.(state, reservedAt);
+      throw error;
+    }
   }
 
   private async ensureStarted(operationId: string): Promise<void> {
@@ -254,11 +265,16 @@ export class PiHost {
     if (result.status === "unanswered") this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: `run ended: ${result.reason ?? "unanswered"}` });
     const trail = this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", b.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord);
     const output = b.loaded.recipe.settle(b.state, reason) as O;
-    this.close(b);
+    await this.close(b);
     return { output, reason, turns: b.turns, asked: b.asked, capped: b.capped, trail, spent: b.spent, state: b.state };
   }
 
-  private close(b: Binding) {
+  private async close(b: Binding) {
+    if (b.reservedAt !== null) {
+      await b.loaded.refund?.(b.state, b.reservedAt);
+      b.reservedAt = null;
+      this.persist(b);
+    }
     this.traces.endTurn(b.conversation);
     this.db().exec("UPDATE pi_bindings SET active = 0 WHERE conversation = ?", b.conversation);
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", b.conversation);
@@ -290,7 +306,7 @@ export class PiHost {
     loaded.hydrate?.(state);
     const b = this.bind({ conversation, session: row.session, operationId: row.operation_id, kind: row.kind, spec, loaded, state,
       startedAt: row.started_at, turns: row.turns, quiet: row.quiet, lastRound: !!row.last_round, capped: !!row.capped, finished: !!row.finished, asked: row.asked,
-      round: row.round ? JSON.parse(row.round) as RoundCall[] : [], requestAt: 0, spent: row.spent ?? 0 });
+      round: row.round ? JSON.parse(row.round) as RoundCall[] : [], requestAt: 0, spent: row.spent ?? 0, reservedAt: row.reserved_at });
     if (!anyState) this.install();
     return b;
   }
@@ -306,8 +322,8 @@ export class PiHost {
   }
 
   private persist(b: Binding) {
-    this.db().exec("UPDATE pi_bindings SET state = ?, turns = ?, quiet = ?, last_round = ?, capped = ?, finished = ?, asked = ?, round = ?, spent = ? WHERE conversation = ?",
-      packState(b.state), b.turns, b.quiet, b.lastRound ? 1 : 0, b.capped ? 1 : 0, b.finished ? 1 : 0, b.asked, JSON.stringify(b.round), b.spent, b.conversation);
+    this.db().exec("UPDATE pi_bindings SET state = ?, turns = ?, quiet = ?, last_round = ?, capped = ?, finished = ?, asked = ?, round = ?, spent = ?, reserved_at = ? WHERE conversation = ?",
+      packState(b.state), b.turns, b.quiet, b.lastRound ? 1 : 0, b.capped ? 1 : 0, b.finished ? 1 : 0, b.asked, JSON.stringify(b.round), b.spent, b.reservedAt, b.conversation);
   }
 
   private trail(b: Binding, entry: TurnRecord) {
@@ -348,7 +364,7 @@ export class PiHost {
           const b = this.bindings.get(api.conversationId);
           if (b) {
             // A recipe with its own ending has nobody coming to settle it, so its session closes here.
-            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.close(b); }
+            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); await this.close(b); }
             this.options.onSettled?.(b.operationId);
           }
           return undefined;
@@ -373,6 +389,12 @@ export class PiHost {
   private async beforeRequest(conversation: string) {
     const b = await this.bound(conversation);
     if (!b) return;
+    // Provider retries can arrive without a preceding tool round or yield.
+    if (b.reservedAt === null && b.loaded.reserve && !await b.loaded.reserve(b.state, Date.now())) {
+      b.lastRound = true;
+      b.capped = true;
+    }
+    b.reservedAt = null;
     b.turns++;
     b.loaded.recipe.onTurn?.(b.state, b.turns);
     b.round = [];
@@ -381,7 +403,6 @@ export class PiHost {
     this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
     const { budget } = b.loaded.recipe;
     if (b.turns >= budget.turns || Date.now() - b.startedAt > budget.wallMs || (budget.tokens !== undefined && b.spent >= budget.tokens)) b.lastRound = true;
-    else if (b.loaded.reserve && !await b.loaded.reserve(b.state)) { b.lastRound = true; b.capped = true; }
     this.persist(b);
   }
 
@@ -413,7 +434,8 @@ export class PiHost {
     if (++b.quiet >= 2) { this.persist(b); return undefined; }
     this.persist(b);
     void answer;
-    return { continue: b.loaded.recipe.nudge };
+    await this.reserveNext(b);
+    return b.lastRound ? undefined : { continue: b.loaded.recipe.nudge };
   }
 
   /**
@@ -457,8 +479,18 @@ export class PiHost {
       this.persist(b);
       stored.set(call.id, outcome);
     }
+    await this.reserveNext(b);
     this.traces.endTurn(b.conversation);
     return stored;
+  }
+
+  /** Reserve only after a round needs another request; a settling round spends no extra allowance. */
+  private async reserveNext(b: Binding) {
+    if (b.finished || b.lastRound || b.reservedAt !== null || !b.loaded.reserve) return;
+    const reservedAt = Date.now();
+    if (await b.loaded.reserve(b.state, reservedAt)) b.reservedAt = reservedAt;
+    else { b.lastRound = true; b.capped = true; }
+    this.persist(b);
   }
 
   /** The web search the native server tool did, as a client call to DeepSeek's search API, fed to the recipe's search tool. */

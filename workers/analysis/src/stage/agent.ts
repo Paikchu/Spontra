@@ -284,11 +284,12 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       hydrate: state => { state.onDraft = rows => this.emit({ type: "stage:draft", rows }); },
       model: modelFor(env, "stage"), effort: reasoningFor(env, "stage"),
       ledger: { kind: "stage", ticker: owner.ticker, runId: spec.turnId, userHash: spec.userHash, conversationId: this.name },
-      reserve: async () => {
-        const r = await reserve(env.DB!, "stage-calls", who).catch(() => ({ ok: false as const, which: "global" as const }));
+      reserve: async (_state, now) => {
+        const r = await reserve(env.DB!, "stage-calls", who, 1, now).catch(() => ({ ok: false as const, which: "global" as const }));
         if (!r.ok) this.capHits.set(spec.turnId, r.which);
         return r.ok;
       },
+      refund: (_state, reservedAt) => refund(env.DB!, "stage-calls", who, 1, reservedAt),
       record: entry => { void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${spec.turnId}, ${JSON.stringify(entry)})`; },
       onToolStart: (name, args) => {
         const call = { type: "tool_use", id: "", name, input: args } as ToolCall;
@@ -317,12 +318,19 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     const db = env.DB!;
     if (!env.REPORT_WORKFLOW) { this.notice("report-failed"); return; }
     const day = new Date().toISOString().slice(0, 10);
-    const runId = (await sha256(`report-v1\n${owner.user_id}\n${owner.ticker}\n${day}\n${row.question.trim().toLowerCase()}`)).slice(0, 32);
-    const existing = await db.prepare("SELECT status FROM user_runs WHERE user_id = ? AND id = ?").bind(owner.user_id, runId).first<{ status: string }>();
-    if (!existing) {
+    const businessKey = (await sha256(`report-v1\n${owner.user_id}\n${owner.ticker}\n${day}\n${row.question.trim().toLowerCase()}`)).slice(0, 32);
+    const existing = await db.prepare("SELECT id, status FROM user_runs WHERE user_id = ? AND business_key = ?").bind(owner.user_id, businessKey).first<{ id: string; status: string }>();
+    const runId = existing?.status === "failed" ? crypto.randomUUID().replace(/-/g, "") : existing?.id ?? businessKey;
+    if (!existing || existing.status === "failed") {
       const spent = await reserve(db, "stage-reports", { reader: owner.user_id, address });
       if (!spent.ok) { this.notice(spent.which === "global" ? "global-cap-reached" : "quota-reached"); return; }
-      await db.prepare("INSERT INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at) VALUES (?, ?, 'report', ?, ?, ?, 'queued', ?)").bind(owner.user_id, runId, owner.ticker, this.name, runId, new Date().toISOString()).run();
+      const claimed = await db.prepare("INSERT INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at) VALUES (?, ?, 'report', ?, ?, ?, 'queued', ?) ON CONFLICT(user_id, business_key) DO UPDATE SET id = excluded.id, conversation_id = excluded.conversation_id, status = 'queued', started_at = excluded.started_at, finished_at = NULL, result = NULL, error = NULL WHERE user_runs.status = 'failed' RETURNING id")
+        .bind(owner.user_id, runId, owner.ticker, this.name, businessKey, new Date().toISOString()).first<{ id: string }>();
+      if (!claimed) {
+        await refund(db, "stage-reports", { reader: owner.user_id, address }, 1);
+        this.notice("report-failed");
+        return;
+      }
       try { await env.REPORT_WORKFLOW.create({ id: runId, params: { userId: owner.user_id, address, conversationId: this.name, ticker: owner.ticker, question: row.question, locale: owner.locale === "zh-CN" ? "zh-CN" : "en" } }); }
       catch (error) {
         await refund(db, "stage-reports", { reader: owner.user_id, address }, 1);
@@ -332,6 +340,9 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       }
     } else if (existing.status === "done") {
       this.placeReport(runId, runId);
+      return;
+    } else if (existing.status !== "queued" && existing.status !== "running") {
+      this.notice("report-failed");
       return;
     }
     this.notice("report-started");

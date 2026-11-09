@@ -27,7 +27,8 @@ export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<
   return {
     recipe: reportRecipe(input), input, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
     ledger: { kind: "stage-report", ticker: params.ticker, runId: spec.runId, userHash: spec.userHash, conversationId: params.conversationId },
-    reserve: async () => (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address })).ok,
+    reserve: async (_state, now) => (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, now)).ok,
+    refund: (_state, reservedAt) => refund(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, reservedAt),
   };
 }
 type StageEnv = AnalysisEnv & { StageAgent?: DurableObjectNamespace };

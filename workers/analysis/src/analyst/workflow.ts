@@ -104,7 +104,11 @@ async function reserveTurn(env: AnalysisEnv, now: string): Promise<boolean> {
 /** One finding's session, rebuilt from its spec; each model call is reserved against the day's allowance. */
 export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promise<PiLoaded<AnalystState>> {
   return { recipe: analystRecipe(spec, env), input: spec, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
-    ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: () => reserveTurn(env, new Date().toISOString()) };
+    ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: (_state, now) => reserveTurn(env, new Date(now).toISOString()),
+    refund: async (_state, reservedAt) => {
+      await requireDb(env).prepare("UPDATE feature_budget SET units=max(0,units-1) WHERE day=? AND feature='analyst-turns'")
+        .bind(new Date(reservedAt).toISOString().slice(0, 10)).run();
+    } };
 }
 
 /**
