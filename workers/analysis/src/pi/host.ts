@@ -327,6 +327,10 @@ export class PiHost {
     if (!row || !this.loaders[row.kind]) return undefined;
     const spec = JSON.parse(row.spec) as unknown;
     const loaded = await this.loaders[row.kind]!(spec);
+    // Another hook or startup may have bound this conversation while its loader awaited D1.
+    // Share that live state instead of replacing it with the snapshot read before the await.
+    const current = this.bindings.get(conversation);
+    if (current) return current;
     const state = unpackState<unknown>(row.state);
     loaded.hydrate?.(state);
     const b = this.bind({ conversation, session: row.session, operationId: row.operation_id, kind: row.kind, spec, loaded, state,
