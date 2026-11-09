@@ -8,7 +8,7 @@ const pageResponse = z.object({ content: z.string().min(1) });
 export type WebApiCall = { stage: "web-search" | "web-fetch"; durationMs: number; searchCalls: number; error?: string };
 
 /** Raw Search/Fetch APIs for scheduled retrieval and page reads. No Messages API or model is involved. */
-type WebApiOptions = { apiKey: string; fetcher?: typeof fetch; record?: (call: WebApiCall) => Promise<void> };
+type WebApiOptions = { apiKey: string; signal?: AbortSignal; fetcher?: typeof fetch; record?: (call: WebApiCall) => Promise<void> };
 export class DeepSeekWebProvider implements SearchProvider {
   readonly id = "deepseek-search-api:v1";
   private readonly options: WebApiOptions;
@@ -16,11 +16,12 @@ export class DeepSeekWebProvider implements SearchProvider {
 
   private async request(kind: "search" | "fetch", body: object): Promise<unknown> {
     const started = Date.now();
+    const timeout = AbortSignal.timeout(120_000);
     let error: string | undefined;
     try {
       const response = await (this.options.fetcher ?? fetch)(`https://api.deepseek.com/v1/tools/${kind}`, {
         method: "POST", headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(body), signal: AbortSignal.timeout(120_000),
+        body: JSON.stringify(body), signal: this.options.signal ? AbortSignal.any([timeout, this.options.signal]) : timeout,
       });
       if (!response.ok) {
         error = `http:${response.status}`;

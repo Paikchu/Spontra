@@ -94,7 +94,7 @@ export class PiHost {
   private traceFlushPending = false;
 
   constructor(private readonly agent: HostAgent, private readonly loaders: Record<string, PiLoader>,
-    private readonly options: { models: () => string[]; onSettled?: (operationId: string) => void; /** Ask for `flushTraces` to run in an invocation of its own. */ scheduleTraceFlush?: () => Promise<unknown> }) {
+    private readonly options: { models: () => string[]; isStopped?: () => boolean; onSettled?: (operationId: string) => void; /** Ask for `flushTraces` to run in an invocation of its own. */ scheduleTraceFlush?: () => Promise<unknown> }) {
     this.harness = new PiHarness({
       harness: async ({ storage, context, onWake }) => {
         await this.restore();
@@ -133,12 +133,14 @@ export class PiHost {
 
   /** Starts one session on the stored spec; the same operation id joins the run already started. */
   async start(kind: string, spec: unknown, opening: string, options: { operationId: string; session?: string }): Promise<{ operationId: string; session: string; refused?: "capped" }> {
+    this.assertRunning();
     const existing = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", options.operationId).toArray()[0];
     if (existing) {
       await this.ensureStarted(existing.operation_id);
       return { operationId: existing.operation_id, session: existing.session, ...(existing.capped && !existing.session ? { refused: "capped" as const } : {}) };
     }
     const loaded = await this.loaders[kind]!(spec);
+    this.assertRunning();
     const state = loaded.recipe.open(loaded.input);
     loaded.hydrate?.(state);
     // The first call is reserved before the session starts; each later one before the round ahead of it. A refused
@@ -151,8 +153,10 @@ export class PiHost {
     }
     let bound = false;
     try {
+      this.assertRunning();
       const session = options.session ? this.harness.sessions.get(options.session) : await this.harness.sessions.create();
       const conversation = (await this.harness.conversation(session.id)).id as unknown as string;
+      this.assertRunning();
       // One run per session at a time: a second would take over the first one's recipe and state.
       const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
       if (running) throw new Error(`pi: session ${session.id} is still running ${running.operation_id}`);
@@ -183,17 +187,25 @@ export class PiHost {
   private async resumeStart(operationId: string): Promise<void> {
     const row = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
     if (!row?.startup) return;
+    this.assertRunning();
     const startup = JSON.parse(row.startup) as Startup;
     const session = this.harness.sessions.get(row.session);
     if (startup.phase === "prepared") {
       const b = await this.bound(row.conversation);
       if (!b) throw new Error(`pi: session ${row.conversation} cannot be rebuilt`);
       await session.setModel({ provider: PI_PROVIDER, id: b.loaded.model });
+      this.assertRunning();
       this.db().exec("UPDATE pi_bindings SET startup = ? WHERE operation_id = ?", JSON.stringify({ phase: "model-set", opening: startup.opening } satisfies Startup), operationId);
     }
     // The operation id is Pi's idempotency key: replay is safe if submit succeeded but its acknowledgement was lost.
-    await session.submit(startup.opening, { operationId });
+    try { await session.submit(startup.opening, { operationId }); }
+    // Termination can interleave with submit, including a lost acknowledgement.
+    finally { if (this.options.isStopped?.()) await session.abort(); }
     this.db().exec("UPDATE pi_bindings SET startup = NULL WHERE operation_id = ?", operationId);
+  }
+
+  private assertRunning() {
+    if (this.options.isStopped?.()) throw new Error("pi: task terminated");
   }
 
   /** Waits for the session's run and settles the recipe. */
@@ -247,6 +259,19 @@ export class PiHost {
   async abort(operationId: string): Promise<void> {
     const session = this.sessionOf(operationId);
     if (session) await this.harness.sessions.get(session).abort(operationId);
+  }
+
+  /** Abort every live session, including sessions restored from storage after an eviction. */
+  async abortActive(): Promise<void> {
+    const rows = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE active = 1").toArray();
+    const results = await Promise.allSettled(rows.map(async row => {
+      await this.harness.sessions.get(row.session).abort();
+      this.db().exec("UPDATE pi_bindings SET active = 0, startup = NULL WHERE conversation = ?", row.conversation);
+      this.bindings.delete(row.conversation);
+    }));
+    this.install();
+    const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+    if (errors.length) throw new AggregateError(errors, "pi: failed to abort active sessions");
   }
 
   private sessionOf(operationId: string): string | undefined {
@@ -356,6 +381,7 @@ export class PiHost {
         beforeRequest: async (_request: unknown, api: { conversationId: string }) => { await this.guard(() => this.beforeRequest(api.conversationId)); return undefined; },
         beforeProviderRequest: async (request: { payload: unknown }, api: { conversationId: string }) => {
           const b = await this.bound(api.conversationId);
+          this.assertRunning();
           return b ? { payload: shapePayload(request.payload, b.loaded.effort) } : undefined;
         },
         afterResponse: async (message: PiAssistant, api: { conversationId: string }) => { await this.guard(() => this.afterResponse(api.conversationId, message)); },
@@ -461,6 +487,8 @@ export class PiHost {
     const stored = new Map(this.db().exec<{ call_id: string; outcome: string }>("SELECT call_id, outcome FROM pi_calls WHERE conversation = ?", b.conversation)
       .toArray().map((r) => [r.call_id, JSON.parse(r.outcome) as ToolOutcome]));
     for (const [index, call] of b.round.entries()) {
+      this.assertRunning();
+      signal.throwIfAborted();
       if (stored.has(call.id)) continue;
       const args = own?.id === call.id ? own.args : call.args;
       let outcome: ToolOutcome;
@@ -504,6 +532,7 @@ export class PiHost {
       const ledger = b.loaded.ledger;
       const provider = new DeepSeekWebProvider({
         apiKey: this.env.DEEPSEEK_API_KEY,
+        signal,
         record: (call) => recordAiUsage(this.env, aiUsageFromMetrics({ stage: call.stage, model: "search-fetch-api", ...(call.error ? { error: call.error } : {}) },
           { at: new Date(Date.now() - call.durationMs).toISOString(), durationMs: call.durationMs, provider: "deepseek", kind: ledger.kind, searchCalls: call.searchCalls,
             ...(ledger.ticker ? { ticker: ledger.ticker } : {}), ...(ledger.runId ? { runId: ledger.runId } : {}), ...(ledger.userHash ? { userHash: ledger.userHash } : {}), ...(ledger.conversationId ? { conversationId: ledger.conversationId } : {}) })),
@@ -513,7 +542,7 @@ export class PiHost {
     } catch (error) {
       batch = { query, hits: [], error: `Web search failed (${error instanceof Error ? error.message.slice(0, 120) : "error"}); use another query or existing sources.` };
     }
-    void signal;
+    signal.throwIfAborted();
     return runTool(b.tools, b.loaded.recipe.policy, { name: native.name, input: batch }, { state: b.state, signal, recipe: b.loaded.recipe.id, stage: (_n, work) => work() });
   }
 }
