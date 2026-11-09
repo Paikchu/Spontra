@@ -101,12 +101,13 @@ export async function getPublicFiling(
 }
 
 async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWithSummary, companyName: string): Promise<PublicSecFiling> {
-  const jobAccession = filing.earningsGroup?.canonicalAccession ?? filing.accessionNumber;
+  const jobAccession = filing.accessionNumber;
   // A report the filing path published is the whole of what a reader sees for this filing, whatever an earlier run left.
   if (filing.summary?.generatedBy === "pi") filing = { ...filing, analysis: undefined };
   if (filing.analysis?.publication) {
-    filing = { ...filing.analysis.publication.filing, summary: filing.analysis.publication.summary, analysis: filing.analysis,
-      ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}) };
+    const { filing: published, summary } = filing.analysis.publication;
+    // A report first published under the earnings release stays on this filing's own row.
+    filing = { ...(published.accessionNumber === filing.accessionNumber ? published : filing), summary, analysis: filing.analysis };
   }
   const job = await readJobSummary(repository, filing.ticker, jobAccession);
   const report = filing.analysis;
@@ -122,7 +123,6 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
     : job?.status === "queued" || job?.status === "running" ? "processing" : "not_collected";
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
   return {
-    ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     fiscalPeriod: report?.fiscalPeriod !== undefined ? report.fiscalPeriod : typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null,
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,

@@ -10,9 +10,9 @@ import "@/packages/web/src/report/report-blocks/report-content.css";
 import "@/packages/web/src/report/figures/figures.css";
 
 const m = messages({
-  label: "Full report", combined: (date: string) => `Combined report · Period ended ${date}`, close: "Close report", loadFailed: "Load failed", loading: "Loading",
+  label: "Full report", close: "Close report", loadFailed: "Load failed", loading: "Loading",
 }, {
-  label: "完整财报", combined: (date: string) => `合并财报 · 截至 ${date}`, close: "关闭财报", loadFailed: "加载失败", loading: "加载中",
+  label: "完整财报", close: "关闭财报", loadFailed: "加载失败", loading: "加载中",
 });
 
 /**
@@ -45,7 +45,7 @@ export default function ReportDialog({ ticker, accession, snapshot, onClose }: {
   }, [ticker, accession, snapshot?.reportDate, snapshot?.reportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   return <dialog ref={ref} className="report-dialog" aria-label={m.label} onClose={onClose} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="report-dialog-bar">
-      <span>{ticker} · {detail?.filing.earningsGroup ? m.combined(detail.filing.earningsGroup.periodEnd) : `${detail?.filing.form ?? ""} ${accession}`}</span>
+      <span>{ticker} · {detail?.filing.form ?? ""} {accession}</span>
       <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
     </div>
     <div className="report-dialog-body earning-report">

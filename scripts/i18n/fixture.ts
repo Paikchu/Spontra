@@ -212,8 +212,8 @@ export const events: EventsPublication = {
 };
 
 const digest = (over: Partial<PublicFilingDigest> & Pick<PublicFilingDigest, "accessionNumber" | "date">): PublicFilingDigest => ({
-  form: "10-Q", filingDate: over.date, reportDate: PERIOD, periodEnd: PERIOD, periodLabel: "FY2026 Q4", sources: [], headline: "Generated report headline.",
-  bullets: [{ label: "Cloud", detail: "Generated bullet.", importance: "high" }], analystView: "Generated analyst view.", report: "Generated report.", warnings: [], generatedAt: "2026-08-01T00:00:00Z",
+  form: "10-Q", filingDate: over.date, reportDate: PERIOD, periodEnd: PERIOD, periodLabel: "FY2026 Q4", headline: "Generated report headline.",
+  bullets: [{ label: "Cloud", detail: "Generated bullet.", importance: "high" }], analystView: "Generated analyst view.", warnings: [], generatedAt: "2026-08-01T00:00:00Z",
   keyMetrics: [{ key: "revenue", label: "Revenue", value: "$7.7B", yoy: "+12.0%", qoq: "+3.1%", status: "verified" }, { key: "fcf", label: "Free cash flow", value: "−$0.9B", yoy: null, qoq: null, status: "derived" }],
   changes: [{ compare: "YoY", topic: "Capex", statement: "Generated change statement." }], risks: ["Generated risk."], guidance: ["Generated guidance line."],
   verification: "verified", analysisStatus: "complete", hasReport: true, snapshot: null, edgarUrl: SRC, documentUrl: SRC, ...over,
@@ -221,7 +221,7 @@ const digest = (over: Partial<PublicFilingDigest> & Pick<PublicFilingDigest, "ac
 export const filings: PublicFilingDigestPage = {
   schemaVersion: "filing-digests.v1", ticker: TICKER, total: 2, checkedAt: "2026-08-10T00:00:00Z",
   filings: [
-    digest({ accessionNumber: "0001-26-000002", date: "2026-07-30", sources: [{ form: "8-K", filingDate: "2026-07-30", accessionNumber: "e-8k", indexUrl: SRC }] }),
+    digest({ accessionNumber: "0001-26-000002", date: "2026-07-30" }),
     digest({ accessionNumber: "0001-26-000001", date: "2026-04-30", periodEnd: "2026-03-31", reportDate: "2026-03-31", periodLabel: "FY2026 Q3", headline: "", analysisStatus: "processing", verification: null, hasReport: false, keyMetrics: [], changes: [], bullets: [] }),
   ],
 };

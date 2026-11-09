@@ -7,14 +7,14 @@ const PERIODIC = /^(10-Q|10-K|20-F)(\/A)?$/;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Reporting period end for a periodic filing or an earnings group; null for a standalone event. */
-export function filingPeriodEnd(filing: Pick<PublicSecFiling, "form" | "reportDate" | "earningsGroup" | "fiscalPeriod">): string | null {
-  if (!filing.earningsGroup && !PERIODIC.test(filing.form)) return null;
-  const end = filing.earningsGroup?.periodEnd || filing.fiscalPeriod?.periodEnd || filing.reportDate;
+export function filingPeriodEnd(filing: Pick<PublicSecFiling, "form" | "reportDate" | "fiscalPeriod">): string | null {
+  if (!PERIODIC.test(filing.form)) return null;
+  const end = filing.fiscalPeriod?.periodEnd || filing.reportDate;
   return ISO.test(end) ? end : null;
 }
 
 /** Issuer quarter for a filing. DEI focus is kept when it agrees with the fiscal calendar; a missing focus is derived. */
-export function filingFiscalFields(filing: Pick<PublicSecFiling, "ticker" | "form" | "reportDate" | "earningsGroup" | "fiscalPeriod" | "fiscalYearEndMonth">): (FiscalPeriodFields & { periodEnd: string }) | null {
+export function filingFiscalFields(filing: Pick<PublicSecFiling, "ticker" | "form" | "reportDate" | "fiscalPeriod" | "fiscalYearEndMonth">): (FiscalPeriodFields & { periodEnd: string }) | null {
   const periodEnd = filingPeriodEnd(filing);
   if (!periodEnd) return null;
   const focus = filing.fiscalPeriod;

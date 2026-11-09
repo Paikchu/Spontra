@@ -795,7 +795,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} onOpenReport={() => setReader(true)} />
         {reader && <Suspense fallback={null}><ReportDialog ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber}
           snapshot={focusedReport.snapshot ? { reportDate: focusedReport.snapshot.reportDate, reportVersion: focusedReport.snapshot.reportVersion } : null} onClose={() => setReader(false)} /></Suspense>}</div>
-      : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} /></div>
+      : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)}
+        onOpenReport={filings?.filings.some(f => f.accessionNumber === focusedEvent.id && f.hasReport) ? () => setReader(true) : undefined} />
+        {reader && <Suspense fallback={null}><ReportDialog ticker={ticker} accession={focusedEvent.id} snapshot={null} onClose={() => setReader(false)} /></Suspense>}</div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary">

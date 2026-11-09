@@ -20,9 +20,10 @@ export async function readItemAnalysisResponse(db: D1Database, rawTicker: string
   const ticker = rawTicker.trim().toUpperCase();
   if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   if (!/^\d{10}-\d{2}-\d{6}$/.test(id)) throw new AnalysisRequestError("ROUTE_NOT_FOUND", "Invalid filing id.");
-  const stored = options.hidden ? null : await new D1SecRepository(db).getCache<StoredItem>(itemAnalysisKey(ticker, id));
+  const repository = new D1SecRepository(db);
+  const stored = options.hidden ? null : await repository.getCache<StoredItem>(itemAnalysisKey(ticker, id));
   const value = stored?.payload;
-  if (!value || value.schemaVersion !== "item-analysis.v1" || value.ticker !== ticker || value.finding?.lens?.type !== "document") return { schemaVersion: "item-analysis-response.v1", status: "unavailable", analysis: null };
+  if (!value || value.schemaVersion !== "item-analysis.v1" || value.ticker !== ticker || value.finding?.lens?.type !== "document" || (await repository.getSummary(ticker, id))?.generatedBy === "pi") return { schemaVersion: "item-analysis-response.v1", status: "unavailable", analysis: null };
   const { trace: _trace, ...analysis } = value;
   void _trace;
   return { schemaVersion: "item-analysis-response.v1", status: "ready", analysis };

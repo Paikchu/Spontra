@@ -24,12 +24,12 @@ const CATEGORY = labels<NonNullable<NonNullable<CompanyEvent["summary"]>["eventC
   { earnings_update: "业绩更新", guidance: "业绩指引", "m&a": "并购", executive: "管理层", legal: "法律", other: "其他" });
 
 const m = messages({
-  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", close: "Close event",
+  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", close: "Close event", readFull: "Read full report",
   analystView: "Analyst view", aiSummary: "AI summary", noSummary: "No summary",
   edgarIndex: "EDGAR filing index", filing: (form: string) => `${form} filing`,
   form: "Form", eventDate: "Event date", items: "Items", item: (code: string) => `Item ${code}`, document: "Document", exhibits: "Exhibits", summaryCategory: "Summary category",
 }, {
-  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", close: "关闭事件",
+  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", close: "关闭事件", readFull: "阅读完整财报",
   analystView: "分析观点", aiSummary: "AI 摘要", noSummary: "无摘要",
   edgarIndex: "EDGAR 文件索引", filing: (form: string) => `${form} 文件`,
   form: "文件类型", eventDate: "事件日期", items: "事项", item: (code: string) => `Item ${code}`, document: "文档", exhibits: "附件", summaryCategory: "摘要类别",
@@ -42,7 +42,7 @@ const m = messages({
  * document; the summary's headline is the title, so it is not repeated. A Form 4's analysis is one article about that
  * filing alone; a Form 4 without one shows its filer's every transaction of the company, newest first.
  */
-export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onClose }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onOpenReport, onClose }: {
   event: CompanyEvent;
   publication: EventsPublication;
   ticker: string;
@@ -51,6 +51,8 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   nodeColor: (id: string) => string;
   /** Opens another filing of the events publication on the stage. */
   onFocusEvent: (id: string) => void;
+  /** Opens this filing's full report, when it has one. */
+  onOpenReport?: () => void;
   onClose: () => void;
 }) {
   const analysis = useItemAnalysis(ticker, event.id, updates);
@@ -66,6 +68,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <span className="lens-basis">{event.form} · {m.filed} {event.filedAt}{event.eventDate !== event.filedAt ? ` · ${m.eventOn} ${event.eventDate}` : ""}</span>
       </div>
       <div className="lens-nav">
+        {onOpenReport && <Button variant="unstyled" type="button" className="lens-pair report-open" onClick={onOpenReport}>{m.readFull}</Button>}
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>

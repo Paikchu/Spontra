@@ -261,9 +261,10 @@ const insider = z.object({
   bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
   exercised: finite.nonnegative(), heldAfter: finite.nullable(), footnotes: z.array(text(2000)).max(40),
 });
+/** The model's text is kept as it wrote it: its length is no reason to refuse a company's whole list of filings. */
 const summary = z.object({
-  headline: text(400), bullets: z.array(z.object({ label: text(120), detail: text(1200), importance: z.enum(["high", "medium", "low"]) })).max(12),
-  analystView: text(1200), eventCategory: z.enum(["earnings_update", "guidance", "m&a", "executive", "legal", "other"]).nullable(), generatedAt: z.string().max(40),
+  headline: z.string(), bullets: z.array(z.object({ label: z.string(), detail: z.string(), importance: z.enum(["high", "medium", "low"]) })).max(12),
+  analystView: z.string(), eventCategory: z.enum(["earnings_update", "guidance", "m&a", "executive", "legal", "other"]).nullable(), generatedAt: z.string().max(40),
 });
 const event = z.object({
   id: text(40), ticker: z.string().regex(TICKER_PATTERN), form: z.enum(EVENT_FORMS as [EventForm, ...EventForm[]]), filedAt: date, eventDate: date,
