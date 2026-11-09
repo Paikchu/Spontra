@@ -1,6 +1,6 @@
 # 文件分析统一路径设计
 
-日期：2026-11-09。状态：代码已完成（未上线），实现与设计的差异见第 14 节。
+日期：2026-11-09。状态：已上线（8e8c6871），尚未有文件实际跑过；实现与设计的差异见第 14 节。
 
 前置文档：[spontra-architecture-upgrade](spontra-architecture-upgrade.md)（五层）、[sec-archive](sec-archive.md)（EDGAR 唯一入口）、[agent-sdk-pi-migration-checklist](agent-sdk-pi-migration-checklist.md)（迁移收尾；本文取代其中第 13–15 项）。
 
@@ -10,7 +10,7 @@
 
 合并后：
 
-- 一个分析单元只产生一份分析。文件摘要、完整财报、逐文件分析都是这一份分析的不同视图。
+- 一份文件只产生一份分析。文件摘要、完整财报、逐文件分析都是这一份分析的不同视图。
 - 定期报告按章节滚动分析：代码遍历每一节，没变的沿用上期结果，变了的才交给模型。模型不选章节。
 - 所有文件都读文件库，不再使用整份纯文本。
 - 每份文件有自己的状态行，失败可见、可重试。
@@ -101,7 +101,7 @@ flowchart TB
 
 ```ts
 type FilingProfile = {
-  id: "periodic" | "earnings" | "current" | "offering" | "insider" | "proxy" | "record-only";
+  id: "periodic" | "current" | "offering" | "insider" | "proxy" | "record-only";
   version: string;
   match(filing: FilingFacts): boolean;
   /** off 时走完路径但不开会话，只登记并发布基础信息。 */
@@ -110,12 +110,10 @@ type FilingProfile = {
   /** 打开时代码遍历章节；关闭时直接成文。 */
   sectionPass: { enabled: false } | { enabled: true; batchChars: number; recipe: SessionLimits };
   compose: SessionLimits & { prompt: string; tools: string[]; effort: "low" | "medium" | "high" };
-  /** 一份文件所有会话的合计上限。 */
-  fileTokens: number;
   checks: { minEvidence: number; quoteFiling: boolean; quotePrevious: boolean; coverage: boolean; editorial: boolean; custom?: FindingCheck };
   output: { digest: boolean; readerReport: boolean; memoryItems: boolean };
 };
-type SessionLimits = { turns: number; wallMs: number; tokens: number; resultChars?: number };
+type SessionLimits = { turns: number; wallMs: number; resultChars?: number };
 ```
 
 配置放在 `workers/analysis/src/filing-analysis/profiles.ts`。引导词写在配置里，运行代码里没有按表单分支的逻辑。
@@ -125,23 +123,22 @@ type SessionLimits = { turns: number; wallMs: number; tokens: number; resultChar
 | 配置 | 匹配 | 模型 | 逐节 | 对比对象 | 产出 |
 |---|---|---|---|---|---|
 | `periodic` | 10-Q、10-K、20-F、40-F 及 /A | 是 | 是 | 同类上一份 | 面板、完整财报、公司记忆材料 |
-| `earnings` | 8-K Item 2.02、业绩 6-K | 是 | 否 | 上一季业绩稿 | 面板、完整财报 |
-| `current` | 其他 8-K、6-K | 是 | 否 | 早先提到同一事项的文件 | 面板 |
+| `current` | 8-K、6-K | 是 | 否 | 早先提到同一事项的文件 | 面板 |
 | `offering` | 424B | 是 | 否 | 上一次发行、最新报表 | 面板 |
 | `insider` | 规则标记需关注的 Form 4 | 是 | 否 | 同一人的历史交易 | 面板 |
 | `proxy` | DEF 14A 等 | 默认关闭，见第 13 节 | 否 | 上一年度 | 面板 |
 | `record-only` | 其他 Form 4、只加封面的修正、无法读取的文件 | 否 | 否 | 无 | 只有登记和基础信息 |
 
-初始预算，上线前用 NET 实测后调整：
+初始预算，用 NET 实测后调整。不设 Token 上限，只限制轮数和时间：
 
-| 配置 | 逐节会话 | 成文会话 | 单份合计 |
-|---|---|---|---:|
-| `periodic` | 4 轮、5 分钟、8 万 Token | 20 轮、30 分钟、40 万 Token | 120 万 |
-| `earnings` | 无 | 16 轮、20 分钟、30 万 Token | 30 万 |
-| `current`、`offering` | 无 | 12 轮、10 分钟、12 万 Token | 12 万 |
-| `insider` | 无 | 12 轮、10 分钟、6 万 Token | 6 万 |
+| 配置 | 逐节会话 | 成文会话 |
+|---|---|---|
+| `periodic` | 4 轮、5 分钟 | 24 轮、30 分钟 |
+| `current` | 无 | 16 轮、20 分钟 |
+| `offering` | 无 | 12 轮、10 分钟 |
+| `insider` | 无 | 12 轮、10 分钟 |
 
-Token 计数口径和 `ai_usage` 一致：未缓存输入加输出。
+实际消耗记录在 `filing_analyses.tokens`，口径和 `ai_usage` 一致：未缓存输入加输出。
 
 ### 4.3 引导词结构
 
@@ -170,22 +167,13 @@ under a plan or not, what holding remains, and what it does and does not signal.
 
 `current` 和 `insider` 的引导词直接沿用 `items/recipe.ts` 的 `KIND`。
 
-## 5. 分析单元
+## 5. 每份文件独立
 
-一份文件和一个分析单元不一定对应。文件流把同一季度的业绩稿和定期报告合并成一行，新路径沿用这一分组。
+一份文件就是一个分析对象，`unit_key` 固定为 `accession:{accession}`。路径不按财报季分组：业绩稿和同季度的 10-Q 各分析一次、各占文件流一行。
 
-| 情况 | `unit_key` |
-|---|---|
-| 定期报告、业绩稿 | `period:{periodEnd}` |
-| 其他文件 | `accession:{accession}` |
+8-K 和 6-K 不分类，全部用 `current` 配置，由 Agent 读文件后按实际内容拆解；是业绩稿就按这一期的业绩分析。路径里没有判断文件是否业绩稿的步骤。
 
-同一季度先收到 8-K 业绩稿，后收到 10-Q：
-
-1. 8-K 按 `earnings` 写第一版，文件流显示这份分析。
-2. 10-Q 按 `periodic` 走完逐节，成文时读取第一版作为同一季度的已有结论，在同一单元上写第二版，指出定期报告新增或修正了什么。
-3. 单元只有一份当前分析，旧版本保留在 R2 供追溯。
-
-先到 10-Q、后到 8-K 时，8-K 只登记，并入来源列表，不再开会话。
+历史数据里已有的季度分组不改动，文件流仍按它显示旧文件；手动重跑时只分析指定的这一份文件。
 
 ## 6. 定期报告的逐节分析
 
@@ -235,7 +223,6 @@ under a plan or not, what holding remains, and what it does and does not signal.
 | `read_notes` | 按章节读结果，单次结果受 `resultChars` 限制 |
 | `read_section`、`read_previous` | 回到原文核对 |
 | `read_series`、`company_overview` | 读数字 |
-| `read_filing_analysis` | 读同一季度或上一期已发布的分析 |
 | `search`、`read_web` | 只用于文件提到但没解释的内容；不得读取 sec.gov |
 | `compose` | 校验完整分析 |
 | `finish` | 发布已通过的分析 |
@@ -281,7 +268,7 @@ type FilingAnalysis = ComposedAnalysis & {
 | `minEvidence`、`quoteFiling`、`quotePrevious` | 按配置 | 同上 |
 | 章节覆盖 | `periodic` | 列出未处理的章节 |
 | 指标表校验 | 有 `digest` 的配置 | 代码剔除或补齐，不交给模型 |
-| 编辑审查 | `periodic`、`earnings` | 按补丁修改，上限 2 轮 |
+| 编辑审查 | `periodic` | 按补丁修改，上限 5 轮 |
 
 所有校验问题一次报告完。修复用局部补丁，不重发全文。连续 8 次校验失败时结束会话，状态为 `withheld`，错误写入状态行。
 
@@ -362,7 +349,6 @@ CREATE INDEX filing_section_notes_document ON filing_section_notes(document_id);
 - `stage` 取 `section` 或 `compose`，同一个工厂函数按配置返回两种配方。
 - 驱逐后按 spec 重建：spec 只存 `ticker`、`accession`、`profileVersion`、`stage`、批次号，材料重新从 D1 读取。
 - 模型通过 `modelFor(env, "filing")` 选择，`effort` 来自配置。
-- 单份合计预算在发起每个会话前检查，超过时不再开新会话，转 `withheld`。
 - SEC 原文只来自文件库，不增加 EDGAR 访问。
 
 可观测：
@@ -385,7 +371,7 @@ CREATE INDEX filing_section_notes_document ON filing_section_notes(document_id);
 | 期 | 内容 | 验证 |
 |---|---|---|
 | P1 登记和选配置 | 建表、`profileFor`、登记。只写状态，不调用模型 | 用线上 `sec_documents` 全量回放，所有表单都有配置 |
-| P2 非定期文件迁入 | `current`、`offering`、`insider`、`record-only`、`earnings`；同时写旧视图；去掉 `summarizeEvent` | CRWV 各类型各跑一次，文件流标题和面板正常 |
+| P2 非定期文件迁入 | `current`、`offering`、`insider`、`record-only`；同时写旧视图；去掉 `summarizeEvent` | CRWV 各类型各跑一次，文件流标题和面板正常 |
 | P3 定期报告 | 逐节、滚动、成文、校验 | 后台只重跑 NET 2026 Q3，记录总 Token 和覆盖情况；再用下一份验证沿用 |
 | P4 切换 | `filing.discovered` 接管全部表单，停用 `sec-report` 和 `items` 的订阅 | 一份真实新文件端到端，只产生一次分析 |
 | P5 清理 | 删除 `sec/report-agent.ts`、`prepareSecFiling` 的报告路径、`items` 的 `report` 类和批处理；后台合并为“文件分析” | 全量测试、类型检查、边界检查 |
@@ -394,10 +380,10 @@ CREATE INDEX filing_section_notes_document ON filing_section_notes(document_id);
 
 ### 验收标准
 
-- 一个分析单元只有一份当前分析，面板和“阅读完整财报”的 `revision` 相同。
+- 一份文件只有一份当前分析，面板和“阅读完整财报”来自同一次运行。
 - 每个收到的文件在 `filing_analyses` 都有一行，后台能看到状态和原因。
 - 定期报告的每个章节都是 `written` 或 `carried`。
-- NET 2026 Q3 的合计 Token 不超过 120 万，且产出通过全部校验。估算见下。
+- NET 2026 Q3 完整跑完，产出通过全部校验，并记录总 Token。估算见下。
 - 运行代码里没有按表单判断的分支，新增文件类型只需要加一份配置。
 
 ### Token 估算（未实测）
@@ -419,27 +405,29 @@ NET 2026 Q3，假设上期结果已存在：
 | 未被规则标记的 Form 4 是否写分析 | 不写，走 `record-only`。每家公司数量多，单份信息量小 |
 | 章节 `changed` 判定偏粗 | 工作清单按段落的 `change` 送内容，章节级只决定是否进入清单 |
 | 文件库解析版本变化导致 `section_id` 断链 | 找不到上期结果时按 `prior: "text"` 处理，不阻塞 |
-| 逐节会话数量多 | 单份合计预算封顶；分批大小按实测调整 |
+| 逐节会话数量多 | 分批大小按实测调整；不设 Token 上限，避免分析半途停下 |
 | 一个 10-Q 运行时间长 | 不同文件的成败隔离；后到的文件由下一次运行处理 |
 | 下游依赖旧字段 | 第一阶段写旧形状，下游不改；P5 之后再统一 |
-| 线上 `sec/report-agent.ts` 没有 token 上限 | P4 之前继续用后台“定时分析”开关控制，或先上线单会话上限 |
 
 ## 14. 实施记录（2026-11-09）
 
-代码在 `workers/analysis/src/filing-analysis/`，迁移 `0047_filing_analysis.sql`。P1–P4 一起完成，尚未上线和线上验证。
+代码在 `workers/analysis/src/filing-analysis/`，迁移 `0047_filing_analysis.sql`。P1–P4 一起完成，2026-11-09 上线（8e8c6871），尚未有文件实际跑过。
 
 和前文不同的地方：
 
 - **定期报告的成文工具**：沿用 `sec/report-agent.ts` 的写报告工具（`report_inputs`、`submit_report`、`revise_report`、`read_nodes` 等）和全部校验。逐节结果转成 `SecNodePlan`、`SecNodeResult`，以“已有分析”的方式交给成文会话，所以设计里的 `read_notes` 就是 `read_nodes`，`coverage` 由代码保证。
 - **定期报告的材料**：`operations.prepare` 仍负责财年信息、封面修正判断和历史数据，之后 `rebaseOnLibrary` 把正文、章节和证据 ID 全部换成文件库的内容。
 - **逐节结果的字段**：`save_note` 只有 `summary`、`changes`、`watch`、`quotes`，不带 `facts`。逐节会话不读 `read_series`，数字在成文时由 XBRL 校验。
-- **`earnings` 配置**：只出面板摘要，不写完整财报，和之前 8-K 的行为一致；完整财报等 10-Q 到达后生成。
+- **业绩稿不单列配置**（2026-11-09）：8-K、6-K 统一用 `current`，只出面板摘要，不写完整财报。
+- **去掉财报季合并**（2026-11-09）：不再调用 `classifyEarnings` 和 `groupEarnings`，见第 5 节。
 - **`events.published` 不触发本路径**：事件图不允许环（本路径发布报告后会刷新 `events`）。等事件数据的文件由任务延时 5 分钟重查，最多到提交后两天。
 - **历史文件的例外**：除上线后收到的文件外，公司最新一份定期报告和最新 5 份当前报告如果从未分析过，也会进入路径，这样新加入的公司不会是空的。
 - **卡住的运行**：标记 `running` 超过 6 小时的文件由后续运行接手。
+
+- **不设 Token 上限**：会话只受轮数和时间限制。Token 上限更可能让正常分析半途停下，实际消耗记录在 `filing_analyses.tokens`（未缓存输入加输出，不含编辑审查）。
 
 还没做：
 
 - P5 清理。`sec-report` 和 `items` 已经没有事件订阅，但代码保留到线上验证之后；`sec/report-agent.ts` 的写报告部分仍在使用。
 - 后台 `financials` 的“分析”按钮和财报维护任务仍走旧的 `SEC_ANALYSIS_WORKFLOW`。
-- 按文件的非定期路径（`current`、`earnings` 等）依赖完整的线上数据，只有控制流有单元测试，需要线上验证。
+- 按文件的非定期路径（`current` 等）依赖完整的线上数据，只有控制流有单元测试，需要线上验证。

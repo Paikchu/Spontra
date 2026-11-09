@@ -12,7 +12,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { sessionRunner, type SessionRunner } from "../pi/runs.ts";
 import type { PiOutcome } from "../pi/host.ts";
-import { assertHistoryUnits, type AnalysisOperations, type PreparedFilingReference, type WorkflowStepLike, discoverFilings, jobAnalysisVersionFor, selectLatestWorkflowFilings } from "../workflow-core.ts";
+import { assertHistoryUnits, type AnalysisOperations, type PreparedFilingReference, type WorkflowStepLike, jobAnalysisVersionFor, selectLatestWorkflowFilings } from "../workflow-core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { FilingBlock, SecAnalysisBrief } from "../sec/analysis.ts";
 import type { PreparedSecFiling } from "../sec/pipeline.ts";
@@ -20,7 +20,7 @@ import { artifactKey, reportOpening, type Restored } from "../sec/report-agent.t
 import type { SecFiling } from "../sec/sec.ts";
 import { ANALYSIS_SINCE, FILING_ANALYSIS_VERSION, profileById, profileFor, type FilingProfile } from "./profiles.ts";
 import { filingItemInput, filingItemRecipe, sectionOpening, type ComposeOutcome, type ComposeSpec, type ItemOutcome, type ItemSpec, type PeriodicState, type SectionSpec, type ItemState } from "./recipe.ts";
-import { WAITING_FOR_EVENTS, dueFilings, leafSections, readSectionNotes, registerFilings, resetFiling, unitRows, updateFiling, writeSectionNotes, type FilingRow, type NewFiling, type NoteWrite } from "./store.ts";
+import { WAITING_FOR_EVENTS, dueFilings, leafSections, readSectionNotes, registerFilings, resetFiling, updateFiling, writeSectionNotes, type FilingRow, type NewFiling, type NoteWrite } from "./store.ts";
 import { buildWorklist, notesToNodes, type SectionFacts, type SectionNote, type WorkEntry } from "./worklist.ts";
 
 export type FilingAnalysisParams = { ticker: string; requestedBy: "scheduled" | "manual"; accessionNumber?: string };
@@ -35,27 +35,23 @@ const STALE_RUN_MS = 6 * 60 * 60_000;
 
 class Withheld extends Error {}
 
-const PERIODIC_FORM = /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/;
-const unitKeyOf = (form: string, accession: string, reportDate: string, group: SecFiling["earningsGroup"]) =>
-  group ? `period:${group.periodEnd}` : PERIODIC_FORM.test(form) ? `period:${reportDate}` : `accession:${accession}`;
-
-type Known = { accession: string; form: string; filedAt: string; items: string; unitKey: string; flagged: boolean; earnings: boolean };
+type Known = { accession: string; form: string; filedAt: string; flagged: boolean };
 
 /** Everything the company has filed that the path should hold, from the filing list and the events publication. */
 export function knownFilings(filings: SecFiling[], events: EventsPublication | null): Known[] {
   const all = events?.events ?? [];
   const known = new Map<string, Known>();
-  for (const f of filings) known.set(f.accessionNumber, { accession: f.accessionNumber, form: f.form, filedAt: f.filingDate, items: f.items ?? "", unitKey: unitKeyOf(f.form, f.accessionNumber, f.reportDate, f.earningsGroup), flagged: false, earnings: Boolean(f.earningsGroup) || /(^|,)\s*2\.02\b/.test(f.items ?? "") });
+  for (const f of filings) known.set(f.accessionNumber, { accession: f.accessionNumber, form: f.form, filedAt: f.filingDate, flagged: false });
   for (const e of all) {
     if (known.has(e.id)) continue;
-    known.set(e.id, { accession: e.id, form: e.form, filedAt: e.filedAt, items: e.items.join(","), unitKey: `accession:${e.id}`, flagged: e.class === "insider" && insiderTone(all, e) === "attention", earnings: e.items.includes("2.02") });
+    known.set(e.id, { accession: e.id, form: e.form, filedAt: e.filedAt, flagged: e.class === "insider" && insiderTone(all, e) === "attention" });
   }
   return [...known.values()];
 }
 
 const registration = (ticker: string, k: Known): NewFiling => {
-  const profile = profileFor({ form: k.form, items: k.items, earnings: k.earnings, flagged: k.flagged });
-  return { ticker, accession: k.accession, unitKey: k.unitKey, form: k.form, filedAt: k.filedAt, profile: profile.id, profileVersion: profile.version };
+  const profile = profileFor({ form: k.form, flagged: k.flagged });
+  return { ticker, accession: k.accession, unitKey: `accession:${k.accession}`, form: k.form, filedAt: k.filedAt, profile: profile.id, profileVersion: profile.version };
 };
 
 /** The whole of a section as one body of text, so the report's evidence ids are the library's own passages. */
@@ -94,7 +90,6 @@ async function rebaseOnLibrary(env: AnalysisEnv, reference: PreparedFilingRefere
   ]);
 }
 
-const accessionsOf = (filing: SecFiling) => [filing.accessionNumber, ...(filing.earningsGroup?.sources ?? []).map(s => s.accessionNumber)];
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export type FilingDeps = { sessions?: SessionRunner };
@@ -109,7 +104,18 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
   const sessions = deps.sessions ?? sessionRunner(env as never, step);
   const manual = params.requestedBy === "manual" ? params.accessionNumber ?? null : null;
   const now = await step.do("fa-time", async () => new Date().toISOString());
-  const discovery = await discoverFilings({ ticker, requestedBy: params.requestedBy, accessionNumber: params.accessionNumber, regenerateReport: Boolean(manual) }, step, operations);
+  // Each filing is analysed on its own: a run asks for no quarter grouping, and a manual run ignores one stored earlier.
+  const discovery = manual ? { filings: [await step.do("fa-load", async () => {
+    const filing = await operations.loadFiling!(ticker, manual);
+    if (!filing) throw new Error("Requested filing is no longer available");
+    const { earningsGroup: _group, ...single } = filing;
+    void _group;
+    return single as SecFiling;
+  })] } : await step.do("fa-discover", async () => {
+    const found = await operations.discover(ticker);
+    await operations.publishFeed(found.feed);
+    return { filings: found.filings };
+  });
   const events = await step.do("fa-events", async () => {
     const stored = await new D1SecRepository(db).getCache<unknown>(eventsCacheKey(ticker));
     return stored ? readEventsPublication(stored.payload, ticker) as EventsPublication | null : null;
@@ -127,9 +133,6 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
   });
   if (!due.length) return { status: "empty" };
 
-  // A filing's unit: a periodic report that is here or done makes the release of the same quarter a record of it.
-  const members = await step.do("fa-units", () => unitRows(db, ticker, [...new Set(due.map(r => r.unitKey))]));
-  const covered = (row: FilingRow) => row.profile !== "periodic" && members.some(m => m.unitKey === row.unitKey && m.profile === "periodic" && m.accession !== row.accession && m.status !== "failed" && m.status !== "withheld");
   const entries: Array<{ id: string; kind: "report" | "current" | "insider"; written: boolean; reason?: string }> = [];
 
   const analyse = async (row: FilingRow): Promise<void> => {
@@ -137,11 +140,9 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
     const a = row.accession;
     const mark = (update: Parameters<typeof updateFiling>[3]) => step.do(`${a}:status:${update.status}`, async () => { await updateFiling(db, ticker, a, { runId, ...update }, new Date().toISOString()); return true; });
     if (profile.model === "off") { await mark({ status: "recorded", reason: "no model run for this kind of filing" }); return; }
-    if (!manual && covered(row)) { await mark({ status: "recorded", reason: "part of the quarter's periodic report" }); return; }
     const filing = filings.get(a) ?? null;
     const event = eventOf.get(a) ?? null;
-    const accessions = filing ? accessionsOf(filing) : [a];
-    const documents = profile.materials === "library" ? await step.do(`${a}:documents`, () => listLibraryDocuments(db, { ticker, accessions, limit: 20 })) : [];
+    const documents = profile.materials === "library" ? await step.do(`${a}:documents`, () => listLibraryDocuments(db, { ticker, accessions: [a], limit: 20 })) : [];
     const ready = documents.filter(d => d.status === "ready");
     if (profile.materials === "library" && !ready.length) {
       if (documents.length) await mark({ status: "recorded", reason: "the library could not read this filing" }); else await mark({ status: "waiting", reason: "waiting for the filing library" });
@@ -202,7 +203,6 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
     const jobBase = { jobId: `${ticker}:${a}:${jobAnalysisVersionFor(filing.form)}:${runId}`, ticker, accessionNumber: a, analysisVersion: jobAnalysisVersionFor(filing.form), attempt: 1, requestedBy: params.requestedBy, workflowInstanceId: runId } as const;
     await step.do(`${a}:job-start`, () => operations.updateJob({ ...jobBase, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
     let tokens = 0;
-    const spend = (more: number) => { tokens += more; if (tokens >= profile.fileTokens) throw new Withheld(`the filing's token budget (${profile.fileTokens}) is spent`); };
     try {
       const reference = await step.do(`${a}:prepare`, () => operations.prepare(filing));
       if (reference.coverAmendment && operations.publishAmendment) {
@@ -228,7 +228,6 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
       });
       const failedBatches: WorkEntry[][] = [];
       const readBatch = async (entries: WorkEntry[], index: number) => {
-        spend(0);
         const spec: SectionSpec = { stage: "section", ticker, profile: profile.id, entries, runId };
         const opening = await step.do(`${a}:s${index}:open`, () => sectionOpening(env, spec));
         const outcome: PiOutcome<SectionNote[] | null> = await sessions("filing", spec, opening, `${runId}:${a}:s${index}`);
@@ -262,16 +261,10 @@ export async function executeFilingAnalysisWorkflow(params: FilingAnalysisParams
         await Promise.all([env.SEC_FILINGS.put(artifactKey(reference, "context"), JSON.stringify(context)), env.SEC_FILINGS.put(artifactKey(reference, "brief"), JSON.stringify(brief))]);
         return true;
       });
-      spend(0);
-      // The same quarter's earlier analysis, and whether a filing before this one exists to quote.
       const { opening, periodEnd } = await step.do(`${a}:compose-open`, async () => {
-        const repository = new D1SecRepository(db);
-        const siblings = (await unitRows(db, ticker, [row.unitKey])).filter(m => m.accession !== a && m.status === "published");
-        const earlierItem = siblings.length ? (await repository.getCache<StoredItem>(itemAnalysisKey(ticker, siblings[0]!.accession)))?.payload ?? null : null;
         const object = await env.SEC_FILINGS.get(`${reference.key}/meta.json`), body = await env.SEC_FILINGS.get(`${reference.key}/text.json`);
         const prepared = { ...JSON.parse(await object!.text()), ...JSON.parse(await body!.text()) } as PreparedSecFiling;
-        const quarter = earlierItem ? { title: earlierItem.finding.title, judgment: earlierItem.finding.judgment.text } : null;
-        return { periodEnd: filing.earningsGroup?.periodEnd ?? filing.reportDate, opening: `${reportOpening(prepared, brief, restored)}\n${JSON.stringify({ sameQuarter: quarter, nodesToRead: restored.plan.nodes.map(n => ({ id: n.id, title: n.title })) })}` };
+        return { periodEnd: filing.reportDate, opening: `${reportOpening(prepared, brief, restored)}\n${JSON.stringify({ nodesToRead: restored.plan.nodes.map(n => ({ id: n.id, title: n.title })) })}` };
       });
       const spec: ComposeSpec = { stage: "compose", ticker, profile: profile.id, reference, restored, now, periodEnd, earlierAvailable: documents.some(d => d.previousDocumentId), workflowInstanceId: runId, runId };
       const composed: PiOutcome<ComposeOutcome> & { state: PeriodicState } = await sessions("filing", spec, opening, `${runId}:${a}:compose`);

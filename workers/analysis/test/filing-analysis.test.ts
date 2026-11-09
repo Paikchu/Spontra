@@ -23,12 +23,12 @@ function database() {
   return { prepare: (sql: string) => statement(sql), batch: async (list: Array<{ run(): Promise<unknown> }>) => { for (const s of list) await s.run(); return []; } } as unknown as D1Database;
 }
 
-const facts = (over: Partial<{ form: string; items: string; earnings: boolean; flagged: boolean }>) => ({ form: "8-K", items: "", earnings: false, flagged: false, ...over });
+const facts = (over: Partial<{ form: string; flagged: boolean }>) => ({ form: "8-K", flagged: false, ...over });
 test("every form gets exactly one profile, and the running code needs no other branch", () => {
   assert.equal(profileFor(facts({ form: "10-Q" })).id, "periodic");
   assert.equal(profileFor(facts({ form: "10-K/A" })).id, "periodic");
   assert.equal(profileFor(facts({ form: "20-F" })).id, "periodic");
-  assert.equal(profileFor(facts({ form: "8-K", earnings: true })).id, "earnings");
+  assert.equal(profileFor(facts({ form: "8-K" })).id, "current");
   assert.equal(profileFor(facts({ form: "6-K" })).id, "current");
   assert.equal(profileFor(facts({ form: "424B5" })).id, "offering");
   assert.equal(profileFor(facts({ form: "4", flagged: true })).id, "insider");
@@ -36,7 +36,7 @@ test("every form gets exactly one profile, and the running code needs no other b
   assert.equal(profileFor(facts({ form: "DEF 14A" })).id, "proxy");
   assert.equal(profileFor(facts({ form: "SOMETHING" })).id, "record-only");
   for (const id of ["proxy", "record-only"]) assert.equal(PROFILES.find(p => p.id === id)!.model, "off");
-  assert.ok(PROFILES.filter(p => p.model === "agent").every(p => p.fileTokens > 0));
+  assert.ok(PROFILES.filter(p => p.model === "agent").every(p => p.compose.turns > 0), "a session is bounded by turns and time, not tokens");
 });
 
 const section = (id: string, change: SectionFacts["change"], over: Partial<SectionFacts> = {}): SectionFacts => ({ documentId: "d2", sectionId: id, path: ["Item 2", id], canonical: id, change, previousSectionId: `old-${id}`, chars: 1000, ...over });
@@ -85,15 +85,11 @@ test("all filings reach the path through its own events; the old tasks are start
   assert.ok(SUBSCRIPTIONS["library.prepared"]!.some(s => s.task === "filing-analysis"));
 });
 
-test("known filings put a quarter's release and report in one unit and keep other filings apart", () => {
-  const group = { periodEnd: "2026-09-30" };
-  const filing = (accessionNumber: string, form: string, earningsGroup?: unknown) => ({ accessionNumber, form, filingDate: "2026-11-10", reportDate: "2026-09-30", items: "", earningsGroup }) as never;
-  const known = knownFilings([filing("q", "10-Q", group), filing("k", "8-K", group), filing("o", "8-K")], { events: [{ id: "f", form: "424B5", filedAt: "2026-11-11", items: [], class: "financing" }] } as never);
-  const unit = new Map(known.map(k => [k.accession, k.unitKey]));
-  assert.equal(unit.get("q"), unit.get("k"));
-  assert.equal(unit.get("q"), "period:2026-09-30");
-  assert.equal(unit.get("o"), "accession:o");
-  assert.equal(unit.get("f"), "accession:f");
+test("each filing stands alone, and a current report is not sorted by its item numbers", () => {
+  const filing = (accessionNumber: string, form: string, items = "", earningsGroup?: unknown) => ({ accessionNumber, form, filingDate: "2026-11-10", reportDate: "2026-09-30", items, earningsGroup }) as never;
+  const known = knownFilings([filing("q", "10-Q"), filing("k", "8-K", "2.02,9.01"), filing("o", "8-K", "5.02"), filing("g", "6-K", "", { periodEnd: "2026-09-30" })], { events: [{ id: "f", form: "424B5", filedAt: "2026-11-11", items: [], class: "financing" }] } as never);
+  assert.deepEqual(known.map(k => k.accession), ["q", "k", "o", "g", "f"]);
+  for (const k of known.filter(k => /^(?:8|6)-K/.test(k.form))) assert.equal(profileFor(k).id, "current");
 });
 
 async function seedSections(db: D1Database) {
@@ -157,13 +153,16 @@ test("a filing that fails keeps its own state and is tried again by later runs, 
   assert.equal(await failedFilings(db, "filings-1"), null);
 });
 
-test("the release of a quarter whose periodic report is on the path adds no analysis of its own", async () => {
+test("a release and the report of one quarter are two filings, and a run asks no model to group them", async () => {
   const db = database();
   const env = { DB: db, SEC_FILINGS: {} } as never;
-  const group = { periodEnd: "2026-09-30", sources: [] };
-  await executeFilingAnalysisWorkflow({ ticker: "FOO", requestedBy: "scheduled" }, "filings-1", steps, env, operations([{ ...sec("q", "10-Q", "2026-11-10"), earningsGroup: group }, { ...sec("k", "8-K", "2026-11-09"), earningsGroup: group }]));
-  assert.equal((await row(db, "k"))!.status, "recorded");
-  assert.match((await row(db, "k"))!.reason!, /periodic report/);
+  let classified = 0;
+  const ops = { ...(operations([sec("q", "10-Q", "2026-11-10"), { ...sec("k", "8-K", "2026-11-09"), items: "2.02" }]) as object), classifyEarnings: async () => { classified++; return "2026-09-30"; }, groupEarnings: async (f: unknown) => f } as never;
+  await executeFilingAnalysisWorkflow({ ticker: "FOO", requestedBy: "scheduled" }, "filings-1", steps, env, ops);
+  assert.equal(classified, 0);
+  assert.deepEqual([(await row(db, "q"))!.status, (await row(db, "k"))!.status], ["waiting", "waiting"]);
+  const units = await db.prepare("SELECT profile, unit_key u FROM filing_analyses ORDER BY accession_number").all<{ profile: string; u: string }>();
+  assert.deepEqual(units.results.map(r => [r.profile, r.u]), [["current", "accession:k"], ["periodic", "accession:q"]]);
 });
 
 test("a periodic filing walks its sections, carries what did not change, and publishes one report and one analysis", async () => {
@@ -196,5 +195,5 @@ test("a periodic filing walks its sections, carries what did not change, and pub
   assert.equal(JSON.parse(item!.payload).itemKind, "report");
   const prepared = JSON.parse(r2.get("prep/text.json")!);
   assert.equal(prepared.blocks[0].blockId, "p2", "the report's evidence ids are the library's passages");
-  assert.match(String(r2.get("analysis/FOO/filing-analysis/period_2026-09-30/r1.json")), /filing-analysis\.v1/);
+  assert.match(String(r2.get("analysis/FOO/filing-analysis/accession_q/r1.json")), /filing-analysis\.v1/);
 });

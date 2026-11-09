@@ -36,12 +36,6 @@ export async function dueFilings(db: D1Database, ticker: string, accession: stri
   return rows.results.map(rowOf);
 }
 
-export async function unitRows(db: D1Database, ticker: string, unitKeys: string[]): Promise<FilingRow[]> {
-  if (!unitKeys.length) return [];
-  const rows = await db.prepare("SELECT * FROM filing_analyses WHERE ticker = ? AND unit_key IN (SELECT value FROM json_each(?))").bind(ticker, JSON.stringify(unitKeys)).all<Row>();
-  return rows.results.map(rowOf);
-}
-
 export type FilingUpdate = { status: FilingStatus; reason?: string | null; runId?: string; tokens?: number; failed?: boolean; revision?: number; artifactKey?: string; publishedAt?: string };
 export const updateFiling = (db: D1Database, ticker: string, accession: string, update: FilingUpdate, now: string) =>
   db.prepare(`UPDATE filing_analyses SET status = ?, reason = ?, run_id = COALESCE(?, run_id), tokens = COALESCE(?, tokens), attempts = attempts + ?, revision = COALESCE(?, revision), artifact_key = COALESCE(?, artifact_key), published_at = COALESCE(?, published_at), updated_at = ? WHERE ticker = ? AND accession_number = ?`)

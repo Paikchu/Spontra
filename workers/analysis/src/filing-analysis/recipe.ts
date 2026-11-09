@@ -106,7 +106,7 @@ const CATEGORIES = ["earnings_update", "guidance", "m&a", "executive", "legal", 
 
 export function filingItemInput(env: AnalysisEnv, spec: ItemSpec, profile: FilingProfile, data: StageData): ItemInput {
   return { env, data, subject: spec.subject, periodEnd: itemPeriodEnd(spec.subject, data), now: spec.now, ...spec.prepared, prompt: profile.compose.prompt,
-    limits: { turns: profile.compose.turns, wallMs: profile.compose.wallMs, tokens: profile.compose.tokens, webReads: profile.compose.webReads, searches: profile.compose.searches },
+    limits: { turns: profile.compose.turns, wallMs: profile.compose.wallMs, webReads: profile.compose.webReads, searches: profile.compose.searches },
     checks: { minEvidence: profile.checks.minEvidence, quoteFiling: profile.checks.quoteFiling } };
 }
 
@@ -145,7 +145,7 @@ export function periodicComposeRecipe(env: AnalysisEnv, spec: ComposeSpec, profi
   const hand = handPolicy(writing);
   return {
     id: "filing.periodic.v1",
-    budget: { turns: profile.compose.turns, wallMs: profile.compose.wallMs, tokens: profile.compose.tokens },
+    budget: { turns: profile.compose.turns, wallMs: profile.compose.wallMs },
     ...(profile.compose.resultChars ? { resultChars: profile.compose.resultChars } : {}),
     system: () => [FILING_SYSTEM(spec.ticker), profile.compose.prompt, "Report rules (submit_report.draft is the report JSON). The draft is kept: every later correction is revise_report with only what changes.", REPORT_RULES(), "Analysis rules:", COMPOSE_CONTRACT].join("\n"),
     open: () => ({ ...openCompose(input), written: restoredReportState(spec.restored) }),
