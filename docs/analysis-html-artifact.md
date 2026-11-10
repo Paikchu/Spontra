@@ -369,7 +369,7 @@ sequenceDiagram
 | P1 | 公司分析改为编排文档；证据复核改为逐块修复；接入 Haiku 视觉评审 | NET 跑一次：复核和视觉问题都在同一次运行里逐块修掉，通过验收后发布，后台能看到截图和验收报告 |
 | P2 | 文件分析改为编排文档 | 一份 10-Q 和一份 8-K 的报告通过验收后在舞台显示 |
 | P3 | 分析师卷宗与要点图表 | 卷宗以 HTML 发布，`/html-frame` 不再用于新产物 |
-| P4 | 估值、舞台报告 | 估值报告通过验收后发布 |
+| P4 | 舞台报告 | 读者的报告通过验收后交付 |
 
 每个阶段上线后，旧格式的产物保留读取，直到被新产物替换。
 
@@ -380,10 +380,9 @@ sequenceDiagram
 | P1 | `company-analysis`，主体为代码 | `company-analysis/compose-agent.ts`（研究会话之后） | 舞台“公司分析”视图 |
 | P2 | `filing-report`，主体为 accession | `filing-analysis/recipe.ts` | 文件报告 |
 | P3 | `dossier`，主体为“要点发布指纹前 16 位.要点 id” | `analyst/agent.ts` | 要点面板：要点本身（判断、数字、观察）在上，卷宗在下 |
-| P4 | `valuation-report`，主体为 `g<代次>` | `valuation/report-artifact.ts`（实时运行；历史回放仍写分段） | 估值页“报告”部分，记录的取值依据留在其下 |
 | P4 | `stage-report`，主体为运行 id | `stage/report.ts` | 读者报告，整份存入读者自己的报告 |
 
-估值发布的分段（`sections`）从已发布的块读回，供判定与旧读者使用。
+估值不在本方案内：估值页面由单独的估值任务（估值页面增强）负责，报告仍按估值自己的分段写入和展示。
 
 ### 10.1 Lens 的去留
 

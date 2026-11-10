@@ -10,9 +10,6 @@ import { track } from "./track";
 import { citationOrder, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
 import { Radar } from "./ValuationCharts";
 import "./valuation.css";
-import { ArtifactFrame } from "./ArtifactFrame";
-import { usePreview } from "./artifact-reads";
-import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 
 /**
  * The assessment as one document: the composite score and the reference close in the head, the five dimensions on the
@@ -377,14 +374,8 @@ function ValueSource({ report, onCite }: { report: ValuationPublication; onCite:
 }
 
 /** The written report in the system's own sections: conclusion, thesis, expectations gap, the recorded value sources, catalysts, next checks, counter-evidence, model notes. */
-function Report({ report, onCite, artifact }: { report: ValuationPublication; onCite: (id: string) => void; artifact?: PublishedArtifact | null }) {
+function Report({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   const s = report.sections;
-  // The report composed as an artifact: the artifact is the written report; the recorded value sources stay beside it.
-  if (artifact) return <section className="val-block val-report">
-    <h3>{m.report}</h3>
-    <ArtifactFrame artifact={artifact} />
-    <div className="val-prose"><ValueSource report={report} onCite={onCite} /></div>
-  </section>;
   const notes = legacyNotes(s.modelNotes);
   const lists: Array<[label: string, items: string[]]> = [[m.catalysts, s.catalysts], [m.nextChecks, s.nextChecks], [m.counterEvidence, s.counterEvidence]];
   return <section className="val-block val-report">
@@ -478,13 +469,9 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   // One report per period: the current publication, never a picked older version.
   const locale = useLocale();
   const report = valuation.report;
-  const preview = usePreview("valuation-report", "*");
-  const artifact = preview ?? valuation.artifact ?? null;
   const range = report?.model?.range;
   const footnotes = useMemo(() => report ? footnotesOf(report) : null, [report]);
   if (!report || !footnotes) {
-    // A first report's draft opened by the visual review has no publication beside it yet.
-    if (preview) return <section className="lens val-panel" aria-label={m.title}><div className="lens-doc val-doc"><ArtifactFrame artifact={preview} /></div></section>;
     const failed = valuation.availability === "failed";
     return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
       <div className="lens-empty val-empty"><h2>{failed ? m.failed : m.preparing}</h2><p>{failed ? m.failedNote : m.preparingNote}</p>{!failed && <i className="lens-loading" />}</div>
@@ -515,7 +502,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <Model report={report} onCite={setOpen} />
         </div>
       </details></section>}
-      <Report report={report} onCite={setOpen} artifact={artifact} />
+      <Report report={report} onCite={setOpen} />
       <Sources report={report} open={open} onOpen={setOpen} onClose={() => setOpen(null)} />
     </div>
   </section></FootnotesContext.Provider>;

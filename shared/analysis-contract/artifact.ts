@@ -7,7 +7,7 @@
 
 export const ARTIFACT_SCHEMA = "analysis-artifact.v1";
 
-export const ARTIFACT_KINDS = ["filing-report", "company-analysis", "dossier", "valuation-report", "stage-report"] as const;
+export const ARTIFACT_KINDS = ["filing-report", "company-analysis", "dossier", "stage-report"] as const;
 export type ArtifactKind = typeof ARTIFACT_KINDS[number];
 
 /**
@@ -18,7 +18,6 @@ export const ARTIFACT_REQUIRED_BLOCKS: Record<ArtifactKind, readonly string[]> =
   "filing-report": ["summary"],
   "company-analysis": ["business", "mechanics", "revenue", "financials", "industry", "moat", "risks", "investment"],
   "dossier": ["thesis"],
-  "valuation-report": ["summary"],
   "stage-report": ["answer"],
 };
 

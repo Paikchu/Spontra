@@ -283,8 +283,6 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
         return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId) }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       }
       const payload = await readValuationResponse(database, ticker, { hidden: off });
-      // The written report's artifact, when the report was composed as one; English until artifacts are translated.
-      if (payload.report?.artifact) payload.artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "valuation-report", ticker, payload.report.artifact.subject).catch(() => null);
       if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
