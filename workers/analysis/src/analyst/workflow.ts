@@ -74,18 +74,13 @@ function background(f: VerifiedFinding, previous: FindingsPublication | null, da
 }
 
 /**
- * The published dossier artifacts by finding, and the materials they cite under ids unique across the dossier: a
- * filing material's id (m<n>) counts within one finding, so it takes the finding's id as a prefix; a web material's id
- * is drawn from its URL and stays as read.
+ * The published dossier artifacts by finding. An artifact carries its own sources, so the record names no materials:
+ * those served only the lens documents of dossiers written before artifacts.
  */
 function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "artifacts" | "materials"> {
   const artifacts: NonNullable<DossierPublication["artifacts"]> = {};
-  const materials = new Map<string, DossierPublication["materials"][number]>();
-  for (const o of outcomes) if (o.artifact) {
-    artifacts[o.id] = { subject: o.artifact.subject, version: o.artifact.version, degraded: o.artifact.degraded };
-    for (const m of o.materials) { const id = m.kind === "web" ? m.id : `${o.id}:${m.id}`; materials.set(id, { ...m, id }); }
-  }
-  return { artifacts, materials: [...materials.values()].slice(0, 120) };
+  for (const o of outcomes) if (o.artifact) artifacts[o.id] = { subject: o.artifact.subject, version: o.artifact.version, degraded: o.artifact.degraded.slice(0, 40) };
+  return { artifacts, materials: [] };
 }
 
 /** Atomic daily counter on the feature_budget table; false once the cap is reached. */
