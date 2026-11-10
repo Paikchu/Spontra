@@ -174,7 +174,7 @@ export function checkBlock(source: string, ctx: BlockContext): BlockCheck {
       }
       if (tag === "data") {
         const raw = attr(node, "value"), ref = attr(node, "data-ref");
-        const value = raw === undefined ? NaN : Number(raw);
+        const value = raw === undefined ? NaN : numericValue(raw);
         if (!Number.isFinite(value)) errors.push(`<data> needs a numeric value="…"`);
         else if (!ref) errors.push(`<data value="${raw}"> needs data-ref naming the figure or source it was read from`);
         else if (ctx.sourceUrl(ref) === undefined) errors.push(`<data data-ref="${ref}">: no such source in this run`);
@@ -205,6 +205,27 @@ export function checkBlock(source: string, ctx: BlockContext): BlockCheck {
     else if (t.triggers.join() !== t.contents.join()) errors.push(`tabs: triggers (${t.triggers.join(", ")}) and contents (${t.contents.join(", ")}) must match one to one, in order`);
   }
   return { html: serializeHtml(parsed.nodes), classes: [...classes], sources: [...sources], claims, errors: [...new Set(errors)].slice(0, 20), text: nodeText(parsed.nodes).replace(/\n{3,}/g, "\n\n").trim(), title };
+}
+
+/** A figure as written in value="…": plain digits, or with thousands separators, a currency sign, a percent sign or accounting parentheses. */
+export function numericValue(raw: string): number {
+  const text = raw.trim().replace(/[,$€£¥%\s]/g, "");
+  const negative = /^\(.*\)$/.test(text) || text.startsWith("-") || text.startsWith("−");
+  const digits = text.replace(/^[(−-]+|\)$/g, "");
+  return /^\d+(\.\d+)?$/.test(digits) ? Number(digits) * (negative ? -1 : 1) : NaN;
+}
+
+/**
+ * Whether the shown text is the figure as a reader would write it: the same number, or the number rounded to the
+ * digits shown, in units, thousands, millions or billions ("$10.7m" for 10,667 thousand).
+ */
+export function shownMatches(value: number, shown: string): boolean {
+  const found = shown.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+  if (!found.length) return true;
+  return found.some(s => {
+    const n = Number(s.replace(/,/g, "")), decimals = s.split(".")[1]?.length ?? 0;
+    return [1, 1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9].some(scale => Math.abs(Math.abs(value) - n * scale) <= Math.max(0.5 * 10 ** -decimals * scale, Math.abs(value) * 5e-4));
+  });
 }
 
 /** Whether a figure appears in a text: the same digits, or the same amount in thousands, millions or billions. */

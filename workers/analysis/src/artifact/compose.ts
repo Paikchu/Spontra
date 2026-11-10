@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ARTIFACT_BLOCK_ID, ARTIFACT_MAX_BLOCKS, ARTIFACT_REQUIRED_BLOCKS, type ArtifactBlock } from "../../../../shared/analysis-contract/artifact.ts";
 import type { LensChart } from "../../../../shared/analysis-contract/lens.ts";
-import { checkBlock, figureInText, quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
+import { checkBlock, figureInText, quoteInText, shownMatches } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { chartHeight, compileChart } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import type { FindingData } from "../../../../shared/analysis-runtime/findings.ts";
@@ -26,7 +26,7 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   read: (id: string, state: S) => Promise<{ title: string; text: string } | null>;
   chart?: { data: FindingData; periodEnd: string } | null;
   ledger: { ticker: string; runId?: string };
-  /** The session's turn budget; past 80% of it the harness settles what is left. */
+  /** The session's turn budget; with fewer than six turns left the harness settles what is left. */
   budgetTurns: number;
   /** The producer's research tools, named in the instruction to find more material. */
   research: string[];
@@ -92,8 +92,8 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const source = await setup.read(claim.kind === "figure" ? claim.ref : claim.source, state);
       if (!source) { errors.push(`${claim.kind === "figure" ? claim.ref : claim.source}: the source's text cannot be read back`); continue; }
       if (claim.kind === "figure") {
-        if (!figureInText(claim.value, source.text)) errors.push(`<data value="${claim.value}" data-ref="${claim.ref}">: ${claim.value} does not appear in ${source.title}`);
-        else if (claim.shown && /\d/.test(claim.shown) && !figureInText(claim.value, claim.shown)) errors.push(`<data value="${claim.value}">: the shown text "${claim.shown}" is not the same number`);
+        if (!figureInText(claim.value, source.text)) errors.push(`<data value="${claim.value}" data-ref="${claim.ref}">: ${claim.value} does not appear in ${source.title}. Cite the source that states this figure; a rate or ratio worked out from figures cites the figures source (d…) that states it, or is written as plain text without <data>`);
+        else if (claim.shown && !shownMatches(claim.value, claim.shown)) errors.push(`<data value="${claim.value}">: the shown text "${claim.shown}" is not this number, even rounded`);
       } else if (!quoteInText(claim.text, source.text)) errors.push(`<blockquote data-source="${claim.source}">: the quotation is not in ${source.title} word for word`);
     }
     if (errors.length) return { errors: [...new Set(errors)].slice(0, 20) };
@@ -128,13 +128,18 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   async function settleContent(state: S, force: boolean): Promise<string[]> {
     const c = state.composer;
     const drafts = c.blocks.filter(b => b.state === "draft");
+    const advice: string[] = [];
     const reader: SourceReader = id => setup.read(id, state);
     const reviewed = await pool(drafts, 4, b => reviewBlock(setup.env, b, reader, ledger(state)).catch(() => null));
     drafts.forEach((b, i) => {
-      const issues = reviewed[i];
       // A review that could not run leaves the block as written: the write checks already held its figures and quotes.
-      if (!issues || !issues.length) { b.state = "passed"; delete c.open[b.id]; }
-      else c.open[b.id] = issues;
+      // Only major problems hold a block back; minor ones are passed on once as advice and the block stands.
+      const issues = reviewed[i] ?? [];
+      const major = issues.filter(x => x.severity !== "minor");
+      const minor = issues.filter(x => x.severity === "minor");
+      if (minor.length) advice.push(`Block "${b.id}" stands; minor points you may still fix: ${minor.map(x => `${x.quote ? `"${x.quote}" — ` : ""}${x.problem}`).join(" | ")}`);
+      if (!major.length) { b.state = "passed"; delete c.open[b.id]; }
+      else c.open[b.id] = major;
     });
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, 0, "content", c.log.length, drafts.map((b, i) => ({ block: b.id, issues: reviewed[i] })));
     const notes: string[] = [];
@@ -154,7 +159,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       log(c, b.id, "content", step.level, issues.map(i => i.problem).join(" | "));
       notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
     }
-    return notes;
+    return notes.length ? [...notes, ...advice] : [];
   }
 
   async function settleRendering(state: S, force: boolean): Promise<string[]> {
@@ -200,7 +205,8 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     return [];
   }
 
-  const lowBudget = (state: S) => state.composer.turns >= Math.floor(setup.budgetTurns * 0.8);
+  // The harness settles what is left only when too few turns remain for another round of fixes (§6.4).
+  const lowBudget = (state: S) => state.composer.turns >= setup.budgetTurns - 6;
 
   async function finish(state: S): Promise<Result> {
     const c = state.composer;
@@ -268,7 +274,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       return ok(`Order: ${c.blocks.map(x => x.id).join(", ")}`);
     }),
     ...(setup.chart ? [tool<S>("add_chart", "Compile a chart from series the data holds (the lens chart grammar: id, title, aspect, span, series refs, marks). On success, place it in a block with <figure data-chart=\"id\"></figure>.", {
-      chart: { type: "object", description: "A chart spec: {id, title, aspect: wide|square|tall, span, series:[{id, ref, transform?}], marks:[{type, series:[…]}]}" },
+      chart: { type: "object", description: "A chart spec: {id, title, aspect: wide|square|tall, span: quarter|fiscal_year (required), series:[{id, ref, transform?}], marks:[{type, series:[…]}]}; refs are the ones company_overview and read_series list" },
     }, ["chart"], (a, state) => {
       const spec = parsed(a.chart) as LensChart;
       if (!spec || typeof spec !== "object" || typeof spec.id !== "string" || !ARTIFACT_BLOCK_ID.test(spec.id)) return fail("A chart needs an id (lowercase slug) and the chart grammar's fields.");
@@ -347,4 +353,4 @@ Markup: shadcn/ui data-display components, written as their HTML with data-slot 
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
 House style: a research report, not a dashboard. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.
 Evidence: every block cites the sources it rests on. Write figures as <data value="2876.8" data-ref="SOURCE_ID">$2,876.8m</data>, quotes as <blockquote data-source="SOURCE_ID">exact words</blockquote>, links as <a data-source="SOURCE_ID">text</a>. Write only what the material supports; where it does not settle a question, say what is not disclosed and what to look for next — that is part of the analysis.
-Check a block with check_block after writing it. Call finish when every block is written; it returns any problems block by block, and you fix only those blocks.`;
+Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, and check it with check_block. Call finish as soon as every block is written, leaving turns for the fixes it may ask for; it returns any problems block by block, and you fix only those blocks.`;

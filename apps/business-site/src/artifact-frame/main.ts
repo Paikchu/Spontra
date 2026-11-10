@@ -9,7 +9,8 @@ import { ARTIFACT_ATTRIBUTES, ARTIFACT_ELEMENTS, type ArtifactFrameMessage } fro
  */
 const post = (message: ArtifactFrameMessage) => window.parent.postMessage(message, "*");
 const ELEMENTS = new Set<string>([...ARTIFACT_ELEMENTS, "article", "section"]);
-const SVG = new Set(["svg", "g", "path", "rect", "line", "polyline", "polygon", "circle", "text", "tspan", "title", "defs", "lineargradient", "stop", "clippath", "desc"]);
+// The harness draws charts as SVG with their own <style>; only inside figure[data-chart] are these allowed.
+const SVG = new Set(["svg", "g", "path", "rect", "line", "polyline", "polygon", "circle", "text", "tspan", "title", "defs", "lineargradient", "stop", "clippath", "desc", "style"]);
 let rendered = false;
 
 /** Removes anything the specification does not allow; the server checked the same, so this only guards the sandbox. */

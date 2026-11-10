@@ -65,19 +65,43 @@ const txt = (text: string): HtmlNode => ({ type: "text", text });
  * flagged, so the block keeps only what the checks accepted.
  */
 export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]): ArtifactBlock {
-  const quotes = issues.flatMap(i => i.quote ? [i.quote.replace(/\s+/g, " ").trim().toLowerCase()] : []).filter(q => q.length >= 8);
-  const flagged = (node: HtmlNode) => quotes.some(q => nodeText([node]).replace(/\s+/g, " ").toLowerCase().includes(q));
+  const quotes = issues.flatMap(i => i.quote ? [i.quote.replace(/\s+/g, " ").trim()] : []).filter(q => q.length >= 8);
+  const fold = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+  let removed = 0;
+  // A flagged sentence is cut from its text where it sits whole; a quote that runs across elements takes its paragraph or item.
+  const cutSentence = (text: string): string => {
+    let out = text;
+    for (const q of quotes) {
+      const at = fold(out).indexOf(fold(q));
+      if (at < 0) continue;
+      const start = Math.max(out.lastIndexOf(". ", at) + 1, out.lastIndexOf("; ", at) + 1, 0);
+      const endMark = out.slice(at + q.length).search(/[.;](\s|$)/);
+      const end = endMark < 0 ? out.length : at + q.length + endMark + 1;
+      out = `${out.slice(0, start)}${out.slice(end)}`.replace(/\s{2,}/g, " ");
+      removed++;
+    }
+    return out;
+  };
   const prune = (nodes: HtmlNode[]): HtmlNode[] => nodes.flatMap((node): HtmlNode[] => {
-    if (node.type === "text") return [node];
-    if (/^(p|li|blockquote|dd|tr)$/.test(node.tag) && flagged(node)) return [];
-    return [{ ...node, children: prune(node.children) }];
+    if (node.type === "text") return [{ type: "text", text: cutSentence(node.text) }];
+    // Headings stay: the open point is listed under the content instead.
+    if (/^h[234]$/.test(node.tag)) return [node];
+    const before = removed;
+    const children = prune(node.children);
+    const whole = fold(nodeText([node]));
+    if (removed === before && /^(p|li|blockquote|dd|tr)$/.test(node.tag) && quotes.some(q => whole.includes(fold(q)))) { removed++; return []; }
+    if (/^(p|li)$/.test(node.tag) && !nodeText(children).trim()) return [];
+    return [{ ...node, children }];
   });
-  const kept = quotes.length ? prune(parseHtml(block.html).nodes) : [];
+  const kept = prune(parseHtml(block.html).nodes);
   const heading = parseHtml(block.html).nodes.find(n => n.type === "element" && /^h[23]$/.test(n.tag));
-  const body = kept.length && nodeText(kept).replace(heading ? nodeText([heading]) : "", "").trim().length > 40 ? kept : heading ? [heading] : [el("h2", [], [txt(block.title || block.id)])];
-  const note = el("div", [["data-slot", "alert"], ["class", "mt-4"]], [
-    el("div", [["data-slot", "alert-title"]], [txt("Unverified")]),
-    el("div", [["data-slot", "alert-description"]], [el("ul", [["class", "list-disc pl-5"]], issues.map(i => el("li", [], [txt(i.problem)])))]),
+  const body = nodeText(kept).replace(heading ? nodeText([heading]) : "", "").trim().length > 40 ? kept : heading ? [heading] : [el("h2", [], [txt(block.title || block.id)])];
+  // The open questions sit under the content that stands, folded away: a reader sees what is established first.
+  const note = el("div", [["data-slot", "accordion"], ["class", "mt-3 text-sm text-muted-foreground"]], [
+    el("div", [["data-slot", "accordion-item"]], [
+      el("button", [["data-slot", "accordion-trigger"]], [txt(`Not established (${issues.length})`)]),
+      el("div", [["data-slot", "accordion-content"]], [el("ul", [], issues.map(i => el("li", [], [txt(i.problem)])))]),
+    ]),
   ]);
   return { ...block, html: serializeHtml([...body, note]), state: "conservative", note: issues.map(i => i.problem).join(" | ").slice(0, 2000) };
 }

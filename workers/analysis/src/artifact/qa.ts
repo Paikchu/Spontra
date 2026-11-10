@@ -59,7 +59,9 @@ const MEASURE = `(async () => {
   Array.prototype.slice.call(article.querySelectorAll("figure[data-chart]")).forEach(function (f) { var svg = f.querySelector("svg"); var r = svg && svg.getBoundingClientRect(); if (!r || r.width < 40 || r.height < 40) push(f, "blocker", "render", "a chart did not draw"); });
   // Colours: every visible colour is a theme token (or a token at reduced opacity).
   var probe = document.createElement("span"); document.body.appendChild(probe);
-  var tokens = {}; ["--background","--foreground","--card","--card-foreground","--popover","--popover-foreground","--primary","--primary-foreground","--secondary","--secondary-foreground","--muted","--muted-foreground","--accent","--accent-foreground","--destructive","--border","--input","--ring","--chart-1","--chart-2","--chart-3","--chart-4","--chart-5","--gain","--gain-soft","--loss","--loss-soft","--caution","--caution-soft","--brand","--brand-soft","--sp-accent","--sp-accent-soft","--sp-ink","--ink-soft","--sp-ink-muted","--line","--line-strong","--surface","--surface-sunken","--canvas","--fill","--fill-strong","--link"].forEach(function (v) { probe.style.color = "var(" + v + ")"; var c = getComputedStyle(probe).color.match(/\\d+(\\.\\d+)?/g); if (c) tokens[c.slice(0, 3).join(",")] = v; });
+  // The page's own custom properties are the theme: every one that resolves to a colour is allowed.
+  var tokens = {}; var rootStyle = getComputedStyle(document.documentElement);
+  for (var k = 0; k < rootStyle.length; k++) { var v = rootStyle[k]; if (v.indexOf("--") !== 0) continue; probe.style.color = ""; probe.style.color = "var(" + v + ")"; var c = getComputedStyle(probe).color.match(/\\d+(\\.\\d+)?/g); if (c) tokens[c.slice(0, 3).join(",")] = v; }
   probe.remove();
   var rgb = function (s) { var m = s.match(/\\d+(\\.\\d+)?/g); return m && (m.length < 4 || Number(m[3]) > 0.02) ? m.slice(0, 3).join(",") : null; };
   var off = {};
