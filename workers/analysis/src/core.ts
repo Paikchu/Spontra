@@ -108,7 +108,9 @@ export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, no
   if (!env.COMPANY_ANALYSIS_WORKFLOW) return { started: null, running: false, nextRecoveryAt: null };
   const repository = new D1CompanyAnalysisRepository(requireDb(env));
   if (env.COMPANY_ANALYSIS_WORKFLOW.get) {
-    for (const execution of await repository.listActiveExecutions([ticker], new Date(now - 60 * 60_000).toISOString())) {
+    // Every active run is checked: status() only reports the state and restores a wake the run lost, so asking early is
+    // harmless, and this task is the only caller that polls a run the memory Workflow started.
+    for (const execution of await repository.listActiveExecutions([ticker], new Date(now).toISOString())) {
       try {
         const state = (await (await env.COMPANY_ANALYSIS_WORKFLOW.get(execution.workflowInstanceId)).status()).status;
         if (["errored", "terminated", "complete"].includes(state)) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());

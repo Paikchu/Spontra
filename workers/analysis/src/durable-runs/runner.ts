@@ -112,9 +112,11 @@ export class TaskRunner extends Agent<Env, RunView> {
     const pending = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0];
     if (!pending) return;
     if (!lostWake(pending.wake_at, Date.now()) && await this.wakeScheduled(pending.wake_id)) return;
+    // How the wake was lost: none recorded, recorded but overdue, or recorded and on time but gone from the job queue.
+    const lost = !pending.wake_id ? "none" : lostWake(pending.wake_at, Date.now()) ? "overdue" : "vanished";
     if (pending.wake_id) await this.cancelSchedule(pending.wake_id).catch(() => false);
     this.db().exec("UPDATE run SET wake_id = NULL, wake_at = NULL WHERE k = 1");
-    console.warn(JSON.stringify({ event: "run-revived", kind: row.kind, id: row.id }));
+    console.warn(JSON.stringify({ event: "run-revived", kind: row.kind, id: row.id, lost, wakeAt: pending.wake_at }));
     await this.wake(Date.now());
   }
 
