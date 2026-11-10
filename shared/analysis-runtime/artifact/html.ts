@@ -216,15 +216,15 @@ export function numericValue(raw: string): number {
 }
 
 /**
- * Whether the shown text is the figure as a reader would write it: the same number, or the number rounded to the
- * digits shown, in units, thousands, millions or billions ("$10.7m" for 10,667 thousand).
+ * Whether the shown text is the figure as a reader would write it: the same number, or the number rounded or cut to
+ * the digits shown, in units, thousands, millions or billions ("$10.7m" or "$10.6m" for 10,667 thousand).
  */
 export function shownMatches(value: number, shown: string): boolean {
   const found = shown.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
   if (!found.length) return true;
   return found.some(s => {
     const n = Number(s.replace(/,/g, "")), decimals = s.split(".")[1]?.length ?? 0;
-    return [1, 1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9].some(scale => Math.abs(Math.abs(value) - n * scale) <= Math.max(0.5 * 10 ** -decimals * scale, Math.abs(value) * 5e-4));
+    return [1, 1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9].some(scale => Math.abs(Math.abs(value) - n * scale) < Math.max(10 ** -decimals * scale, Math.abs(value) * 5e-4));
   });
 }
 

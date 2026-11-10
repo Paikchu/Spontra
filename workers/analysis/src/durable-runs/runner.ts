@@ -122,8 +122,16 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   /** The run's state and what each of its agent sessions did, turn by turn. */
   async report() {
+    // Reading a run also checks, in a wake of its own, for a session that ended while the object was replaced.
+    if (this.pi.sessionsReport().some(s => s.active)) await this.schedule(1, "recoverPiSessions");
     const row = this.row();
     return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport() };
+  }
+
+  /** Scheduled by a read: settles and delivers the sessions whose run ended unsettled (pi/host.ts recoverEnded). */
+  async recoverPiSessions() {
+    const outcome = await this.pi.recoverEnded().catch((error: unknown) => [{ operationId: "", state: `failed: ${error instanceof Error ? error.message : String(error)}` }]);
+    console.log(JSON.stringify({ event: "pi-recovery", outcome }));
   }
 
   async terminate(): Promise<void> {

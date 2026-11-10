@@ -256,6 +256,32 @@ export class PiHost {
     }));
   }
 
+  /**
+   * Sessions whose run ended while nobody was there to settle it (the object was replaced mid-run, as on a deploy):
+   * a recipe with its own ending (deliver, record) gets it now, so a standalone session never stays open with its
+   * work done. A session whose operation pi still holds is left to pi, which resumes it.
+   */
+  async recoverEnded(): Promise<Array<{ operationId: string; state: string }>> {
+    const out: Array<{ operationId: string; state: string }> = [];
+    for (const row of this.db().exec<Row>("SELECT * FROM pi_bindings WHERE active = 1").toArray()) {
+      if (row.startup) { out.push({ operationId: row.operation_id, state: "starting" }); continue; }
+      const pending = await this.harness.pending({ session: row.session }).catch(() => null);
+      if (!pending) { out.push({ operationId: row.operation_id, state: "unknown" }); continue; }
+      const held = pending.find(p => p.operationId === row.operation_id);
+      if (held) { out.push({ operationId: row.operation_id, state: held.status }); continue; }
+      const b = await this.bound(row.conversation);
+      if (!b?.loaded.recipe.afterRun) { out.push({ operationId: row.operation_id, state: "ended" }); continue; }
+      const result = await within(POLL_WAIT_MS, signal => this.harness.sessions.get(row.session).wait(row.operation_id, signal)).catch(() => null);
+      console.warn(JSON.stringify({ event: "pi-recovered-ended", kind: row.kind, operationId: row.operation_id, turns: b.turns, result: result ? { status: result.status, reason: result.reason ?? null } : null }));
+      await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); });
+      this.persist(b);
+      await this.close(b);
+      this.options.onSettled?.(b.operationId);
+      out.push({ operationId: row.operation_id, state: "recovered" });
+    }
+    return out;
+  }
+
   async abort(operationId: string): Promise<void> {
     const session = this.sessionOf(operationId);
     if (session) await this.harness.sessions.get(session).abort(operationId);
