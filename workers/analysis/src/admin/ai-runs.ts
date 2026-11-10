@@ -84,7 +84,8 @@ async function settle(env: AnalysisEnv, store: AiRunStore, runs: AiRun[], now: n
         return { ...run, status: "succeeded" as const, finishedAt: at };
       }
       return run;
-    } catch {
+    } catch (cause) {
+      console.error(JSON.stringify({ event: "ai-run-status", kind: run.kind, ticker: run.ticker, runId: run.runId, error: cause instanceof Error ? cause.message : String(cause) }));
       if (now - Date.parse(run.startedAt) < MISSING_AFTER_MS) return run;
       const error = "找不到对应的工作流实例。";
       await store.finish(run.kind, run.ticker, run.runId, { status: "failed", error }, at);

@@ -95,7 +95,8 @@ export class TaskRunner extends Agent<Env, RunView> {
   async status(): Promise<RunState> {
     const row = this.row();
     if (!row) throw new Error("instance.not_found");
-    await this.reviveIfLost(row);
+    // Reviving is a repair on the side: a failure there is logged, and the caller still reads the run's state.
+    await this.reviveIfLost(row).catch((error: unknown) => console.error(JSON.stringify({ event: "run-revive-failed", kind: row.kind, id: row.id, error: error instanceof Error ? error.message : String(error) })));
     return { status: row.status, ...(row.error ? { error: JSON.parse(row.error) } : {}), ...(row.output ? { output: JSON.parse(row.output) } : {}) };
   }
 
@@ -109,7 +110,8 @@ export class TaskRunner extends Agent<Env, RunView> {
   private async reviveIfLost(row: RunRow): Promise<void> {
     if (FINAL.has(row.status) || isBusy(this.busySince, Date.now())) return;
     const pending = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0];
-    if (!pending || !lostWake(pending.wake_at, Date.now())) return;
+    if (!pending) return;
+    if (!lostWake(pending.wake_at, Date.now()) && await this.wakeScheduled(pending.wake_id)) return;
     if (pending.wake_id) await this.cancelSchedule(pending.wake_id).catch(() => false);
     this.db().exec("UPDATE run SET wake_id = NULL, wake_at = NULL WHERE k = 1");
     console.warn(JSON.stringify({ event: "run-revived", kind: row.kind, id: row.id }));
@@ -142,12 +144,20 @@ export class TaskRunner extends Agent<Env, RunView> {
     if (row && FINAL.has(row.status)) return;
     const pending = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0];
     if (!pending) return;
-    if (pending.wake_id && pending.wake_at !== null && pending.wake_at <= at) return;
+    // The recorded wake stands only while its schedule still exists: an alarm whose invocation was cancelled is gone
+    // from the job queue though its id is still recorded, and trusting that id leaves the run with no wake at all.
+    if (pending.wake_id && pending.wake_at !== null && pending.wake_at <= at && await this.wakeScheduled(pending.wake_id)) return;
     if (pending.wake_id) await this.cancelSchedule(pending.wake_id).catch(() => false);
     const schedule = await this.schedule(new Date(at), "advance");
     const current = this.row();
     if (current && FINAL.has(current.status)) { await this.cancelSchedule(schedule.id); return; }
     this.db().exec("UPDATE run SET wake_id = ?, wake_at = ? WHERE k = 1", schedule.id, at);
+  }
+
+  /** Whether the recorded wake is still in the Agent's job queue. */
+  private async wakeScheduled(id: string | null): Promise<boolean> {
+    if (!id) return false;
+    return !!await this.getScheduleById(id).catch(() => undefined);
   }
 
   /** One wake: replays the task, runs what is due, and schedules the next wake or records how the run ended. */
