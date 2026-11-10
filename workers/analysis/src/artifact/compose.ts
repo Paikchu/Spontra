@@ -150,10 +150,17 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
       if (force || step.level >= 5) {
-        const settled = conservativeBlock(b, issues);
-        Object.assign(b, settled);
+        const { empty, ...settled } = conservativeBlock(b, issues);
         delete c.open[b.id];
         c.hidden = c.hidden.filter(h => h !== b.id);
+        // A section with nothing established is left out, unless the document cannot stand without it: a headline over
+        // a list of what could not be shown tells the reader nothing the other sections do not.
+        if (empty && !requiredOf(state).includes(b.id)) {
+          c.blocks = c.blocks.filter(x => x !== b);
+          log(c, b.id, "content", 5, `left out, nothing established: ${settled.note ?? ""}`);
+          continue;
+        }
+        Object.assign(b, settled);
         log(c, b.id, "content", 5, `conservative version: ${settled.note ?? ""}`);
         continue;
       }
@@ -217,7 +224,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     if (missing.length && !lowBudget(state)) return fail(`Write the required blocks first: ${missing.join(", ")}.`);
     const unmet = lowBudget(state) ? null : setup.precheck?.(state) ?? null;
     if (unmet) return fail(`Not published yet: ${unmet}`);
-    for (const id of missing) c.blocks.push(conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]));
+    for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
     if (content.length) return fail(`Not published yet. The evidence review found problems:\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);

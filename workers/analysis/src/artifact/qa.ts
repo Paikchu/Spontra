@@ -38,7 +38,7 @@ const MEASURE = `(async () => {
   // Horizontal overflow: anything reaching past the stage, outside a scroll container the components allow.
   all.forEach(function (el) {
     var r = el.getBoundingClientRect();
-    if (r.width && r.right > W + 1 && !el.closest('[data-slot="table-container"],[data-slot="scroll-area"],[data-slot="carousel-content"]')) push(el, "blocker", "render", "<" + el.tagName.toLowerCase() + "> reaches " + Math.round(r.right) + "px in a " + W + "px stage");
+    if (r.width && r.right > W + 1 && !el.closest('[data-slot="table-container"],[data-slot="scroll-area"],[data-slot="carousel-content"],[data-slot="tabs-list"]')) push(el, "blocker", "render", "<" + el.tagName.toLowerCase() + "> reaches " + Math.round(r.right) + "px in a " + W + "px stage");
   });
   // Clipped text: content larger than a box that hides its overflow.
   all.forEach(function (el) {

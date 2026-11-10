@@ -92,7 +92,7 @@ function cutSentence(nodes: HtmlNode[], match: RegExp): HtmlNode[] {
  * empty goes too. The open questions are listed under the content that stands, so the block keeps only what the
  * checks accepted and nothing is left half-cut.
  */
-export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]): ArtifactBlock {
+export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]): ArtifactBlock & { empty?: true } {
   const quotes = issues.flatMap(i => i.quote ? [i.quote.replace(/\s+/g, " ").trim()] : []).filter(q => q.length >= 8);
   const pattern = (q: string) => new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*"), "i");
   const holds = (text: string, q: string) => pattern(q).test(text);
@@ -111,7 +111,8 @@ export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]):
   });
   const kept = prune([el("div", [], parseHtml(block.html).nodes)]).flatMap(n => n.type === "element" ? n.children : [n]);
   const heading = parseHtml(block.html).nodes.find(n => n.type === "element" && /^h[23]$/.test(n.tag));
-  const body = nodeText(kept).replace(heading ? nodeText([heading]) : "", "").trim().length > 40 ? kept : heading ? [heading] : [el("h2", [], [txt(block.title || block.id)])];
+  const stands = nodeText(kept).replace(heading ? nodeText([heading]) : "", "").trim().length > 40;
+  const body = stands ? kept : heading ? [heading] : [el("h2", [], [txt(block.title || block.id)])];
   // The open questions sit under the content that stands, folded away: a reader sees what is established first.
   const note = el("div", [["data-slot", "accordion"], ["class", "mt-3 text-sm text-muted-foreground"]], [
     el("div", [["data-slot", "accordion-item"]], [
@@ -119,7 +120,7 @@ export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]):
       el("div", [["data-slot", "accordion-content"]], [el("ul", [], issues.map(i => el("li", [], [txt(i.problem)])))]),
     ]),
   ]);
-  return { ...block, html: serializeHtml([...body, note]), state: "conservative", note: issues.map(i => i.problem).join(" | ").slice(0, 2000) };
+  return { ...block, html: serializeHtml([...body, note]), state: "conservative", note: issues.map(i => i.problem).join(" | ").slice(0, 2000), ...(stands ? {} : { empty: true }) };
 }
 
 /**
