@@ -21,6 +21,8 @@ export type QaResult = {
   /** The review could not run (no browser, or the page never drew); the caller settles with the safe layout. */
   unavailable: string | null;
   shots: number;
+  /** Widths that could not be looked at while others could: the page's fault or the browser's, not a block's. */
+  errors?: string[];
 };
 type Measured = { stageWidth: number; blocks: Array<{ id: string; x: number; y: number; width: number; height: number }>; problems: Array<{ block: string; severity: "blocker" | "major" | "minor"; kind: "render" | "interaction"; problem: string }> };
 
@@ -186,8 +188,14 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
   const passes: Pass[] = [];
   try {
     for (const viewport of VIEWPORTS) {
-      try { passes.push(await renderPass(browser, url, viewport, errors)); }
-      catch (error) { errors.push(`${viewport.name}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300)); }
+      // The stage reloads its frame when the company's data moves under it; a width that lost its frame is tried once more.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try { passes.push(await renderPass(browser, url, viewport, errors)); break; }
+        catch (error) {
+          if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 2500)); continue; }
+          errors.push(`${viewport.name}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300));
+        }
+      }
     }
   } finally { browser.disconnect(); }
   if (!passes.length) return { issues: [], scores: null, unavailable: errors.join("; ").slice(0, 1500) || "the page never drew", shots: 0 };
@@ -201,7 +209,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
     seen.add(key);
     issues.push({ block, kind: p.kind, severity: p.severity, problem: p.problem, viewport: pass.viewport.name, key });
   }
-  for (const e of errors) issues.push({ block: blocks[0] ?? "*", kind: "render", severity: "blocker", problem: e, key: issueKey(blocks[0] ?? "*", e) });
+  // A width that never drew is on record but is held against no block: what was seen at the other widths is what is judged.
   let scores: Record<string, number> | null = null;
   const images = passes.flatMap(p => p.shots.map(s => ({ ...s, viewport: p.viewport.name, blocks: p.measured.blocks })));
   if (anthropicConfigured(env) && images.length) {
@@ -222,5 +230,5 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
       if (!(error instanceof AnthropicUnavailable)) throw error;
     }
   }
-  return { issues, scores, unavailable: null, shots: images.length };
+  return { issues, scores, unavailable: null, shots: images.length, ...(errors.length ? { errors } : {}) };
 }

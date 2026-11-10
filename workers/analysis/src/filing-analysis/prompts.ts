@@ -57,7 +57,7 @@ evidence: every fact in these passages that an analysis of this filing could nee
   - statement: the fact in one plain sentence, with its period
   - facts: the fact ids (f…) of the figures it uses, when the passage shows them
   - quote: the words that state it, copied exactly from that passage, at most 40 words. For a table row, copy the row's label.
-Prefer completeness here. A fact you leave out is one the analyst will not see.
+Prefer completeness here: a fact you leave out is one the analyst will not see. Keep each entry short, give at most 60, and when there are more put those a holder would care about first. Do not record boilerplate, definitions or a table's every cell; a table's totals and the lines that moved are enough.
 
 leads: what an analyst should look into. One entry per lead:
   - question: what needs answering, in one sentence

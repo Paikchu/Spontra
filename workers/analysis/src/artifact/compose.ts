@@ -218,8 +218,10 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (let pass = 0; pass < 3; pass++) {
       (c.rounds ??= { content: 0, render: 0 }).render += 1;
       const draft = await saveVersion(setup.env, toDocument(c, 0), await compileArtifactCss(c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes)), "draft", setup.ledger.runId ?? null);
-      const qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
-      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, issues: qa.issues });
+      let qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
+      // A rendering that could not be looked at is asked for once more before the blocks give up their layout for it.
+      if (qa.unavailable) { await new Promise(resolve => setTimeout(resolve, 5000)); qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger); }
+      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, issues: qa.issues, errors: qa.errors ?? [] });
       if (qa.unavailable) {
         // Without a rendering to look at, every block takes the layout that is known to pass (§6.5).
         for (const b of c.blocks) if (b.state !== "safe-layout") { Object.assign(b, safeLayoutBlock(b)); log(c, b.id, "render", 4, `safe layout: review unavailable (${qa.unavailable})`); }

@@ -26,7 +26,10 @@ const GROUPS: Array<{ name: string; canonicals: string[] }> = [
   { name: "risk factors", canonicals: ["risk_factors"] },
 ];
 const OTHER = "legal, controls, other items and exhibits";
-const GROUP_CHARS = 60_000;
+// A group is small enough that its notes fit one answer: the first run on NET's 10-Q read 60,000 characters a group and
+// seven of ten answers ran out of room.
+const GROUP_CHARS = 24_000;
+const READ_TOKENS = 48_000;
 
 async function documentPassages(db: D1Database, documents: string[]): Promise<PassageRow[]> {
   if (!documents.length) return [];
@@ -50,6 +53,13 @@ async function carried(db: D1Database, ticker: string, hashes: string[]): Promis
     for (const r of kept!.results) notes.set(r.text_sha256!, [...notes.get(r.text_sha256!) ?? [], { statement: r.statement!, quote: r.quote! }]);
   }
   return { read, notes };
+}
+
+async function pooled<T, R>(items: T[], size: number, work: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => { while (next < items.length) { const i = next++; out[i] = await work(items[i]!, i); } }));
+  return out;
 }
 
 /** A rewritten paragraph that only rolled its dates and amounts forward is not a change of wording. */
@@ -100,7 +110,7 @@ export async function buildPack(env: AnalysisEnv, input: { ticker: string; filin
   }
   const carriedNotes = evidence.length;
   const failures: string[] = [];
-  const answers = await Promise.all(batches.map(async (batch, index) => {
+  const answers = await pooled(batches, 8, async (batch, index) => {
     const shown = batch.passages.map(p => {
       const earlier = before.get(`${p.sectionId}|${p.ordinal}`);
       const delta = earlier ? wordingDelta(earlier, p.text) : null;
@@ -108,9 +118,9 @@ export async function buildPack(env: AnalysisEnv, input: { ticker: string; filin
     }).join("\n\n");
     try {
       return await callWorkerSecModel(env, fetch, `filing-read-${index + 1}`, `${READER_SYSTEM(ticker, filing.form, filing.reportDate || filing.filingDate, batch.part)}\n\n${CHECKLIST}`, { passages: shown },
-        modelFor(env, "filing-read"), 6 * 60_000, { reasoning: reasoningFor(env, "filing-read"), maxTokens: 24_000, ticker, runId: input.runId, kind: "filing-read" }) as ReaderAnswer;
+        modelFor(env, "filing-read"), 6 * 60_000, { reasoning: reasoningFor(env, "filing-read"), maxTokens: READ_TOKENS, ticker, runId: input.runId, kind: "filing-read" }) as ReaderAnswer;
     } catch (error) { failures.push(`${batch.part}: ${error instanceof Error ? error.message.slice(0, 120) : String(error)}`); return null; }
-  }));
+  });
   // What was read is recorded, group by group: a group whose call failed is left for the next run to read.
   const readNow = batches.flatMap((batch, i) => answers[i] ? batch.passages : []);
   const now = new Date().toISOString();
