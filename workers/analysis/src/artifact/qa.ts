@@ -129,7 +129,8 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1, isMobile: !!viewport.mobile, hasTouch: !!viewport.mobile });
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }, { name: "prefers-color-scheme", value: viewport.dark ? "dark" : "light" }]);
     await page.evaluateOnNewDocument(`try { localStorage.setItem("business-map-theme", ${JSON.stringify(viewport.dark ? "dark" : "light")}); } catch (e) {}`);
-    await page.goto(url, { waitUntil: "networkidle0", timeout: LOAD_MS });
+    // The drawn frame is what the review waits for; other parts of the page may keep loading (pictures, scripts).
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_MS });
     const found = await artifactFrame(page);
     if (!found) throw new Error("the artifact frame never drew");
     await found.frame.evaluate(axeSource).catch(() => undefined);

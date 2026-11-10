@@ -71,10 +71,12 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   dossier?: { version: number | null; subject: string | null };
 }) {
   const preview = usePreview("dossier", dossier?.subject ?? null);
+  // A draft opened for the visual review shows only what the published dossier will: nothing of the finding's older document.
+  const [previewing] = useState(() => new URLSearchParams(location.search).has("artifact-preview"));
   const published = usePublishedArtifact(ticker, !compact && dossier?.version ? `dossier/${finding.id}` : null, dossier?.version);
   const artifact = compact ? null : preview ?? published;
   // With a dossier the finding shows only its verified core above the analysis; the analysis is the artifact.
-  const core = useMemo<LensDocumentShape | null>(() => artifact || (!compact && dossier?.version) ? { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }, ...(finding.watch ? [{ kind: "watch" as const }] : []), ...(record?.length ? [{ kind: "record" as const }] : [])]] }] } : null, [artifact, compact, dossier?.version, finding.watch, record?.length]);
+  const core = useMemo<LensDocumentShape | null>(() => artifact || (!compact && (dossier?.version || previewing)) ? { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }, ...(finding.watch ? [{ kind: "watch" as const }] : []), ...(record?.length ? [{ kind: "record" as const }] : [])]] }] } : null, [artifact, compact, dossier?.version, previewing, finding.watch, record?.length]);
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
