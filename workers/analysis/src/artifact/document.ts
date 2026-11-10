@@ -23,6 +23,10 @@ export type ComposerState = {
   published: { version: number; hash: string } | null;
   /** How many times the evidence review and the rendering review have run; the content review is capped (§4.1). */
   rounds?: { content: number; render: number };
+  /** The sentences of each block a review has let stand, by key: a later review of the block judges only the others (§4.1). */
+  passed?: Record<string, string[]>;
+  /** How many times each block has been reviewed; a block is settled by the harness after its third. */
+  reviews?: Record<string, number>;
   /** Who settled the document: the session calling finish itself, or the harness delivering what it left. */
   settledBy?: "agent" | "harness";
   log: Array<{ at: string; block: string; phase: string; level: number; note: string }>;
@@ -59,6 +63,11 @@ export function documentHtml(doc: Pick<ArtifactDocument, "kind" | "ticker" | "su
 
 /** A block's plain text, for review, translation and the summaries other analyses read. */
 export const blockText = (html: string) => nodeText(parseHtml(html).nodes).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+
+/** A block's text as sentences, each with a key that survives a change of spacing, case or punctuation. */
+export function sentencesOf(text: string): Array<{ text: string; key: string }> {
+  return text.split(/(?<=[.!?。])\s+|\n+/).map(s => s.trim()).filter(s => s.length > 2).map(s => ({ text: s, key: s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, " ").trim() })).filter(s => s.key);
+}
 
 const el = (tag: string, attrs: Array<[string, string]>, children: HtmlNode[]): HtmlNode => ({ type: "element", tag, attrs, children });
 const txt = (text: string): HtmlNode => ({ type: "text", text });

@@ -10,8 +10,15 @@ import type { FilingSpec } from "./recipe.ts";
 import { dueFilings, leafSections, registerFilings, updateFiling, type FilingRow } from "./store.ts";
 
 /** What the session opens with: the filing, and every section it can read. */
-async function opening(db: D1Database, filing: SecFiling, documentIds: string[]): Promise<string> {
+async function opening(db: D1Database, filing: SecFiling, documentIds: string[], profile: FilingProfile): Promise<string> {
   const sections = await leafSections(db, documentIds);
+  // A periodic report opens on its research pack, which the session asks for itself; the outline here is by part only.
+  if (profile.id === "periodic") {
+    const parts = new Map<string, { sections: number; chars: number; changed: number }>();
+    for (const s of sections) { const top = s.path[0] ?? "(untitled)"; const p = parts.get(top) ?? { sections: 0, chars: 0, changed: 0 }; p.sections++; p.chars += s.chars; if (s.change !== "unchanged") p.changed++; parts.set(top, p); }
+    return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber },
+      parts: [...parts].map(([part, p]) => ({ part, sections: p.sections, chars: p.chars, sectionsChanged: p.changed })), first: "Call research_pack." });
+  }
   return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
     sections: sections.map(s => ({ id: s.sectionId, path: s.path.join(" › "), change: s.change, chars: s.chars })) });
 }
@@ -59,7 +66,7 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
     const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: options.requestedBy };
     await updateFiling(db, ticker, row.accession, { status: "running", reason: null, runId }, at);
     await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: options.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
-    await sessions!.start(sessionId, "filing", spec, await opening(db, filing, documentIds), `${sessionId}:report`);
+    await sessions!.start(sessionId, "filing", spec, await opening(db, filing, documentIds, profile), `${sessionId}:report`);
     result.started.push(row.accession);
   };
   for (const row of due) {

@@ -7,7 +7,7 @@ import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.
 import type { FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { AnyTool } from "../tools/registry.ts";
-import { conservativeBlock, safeLayoutBlock, toDocument, type ComposerState, type LadderStep, type TrackedIssue, sameIssue } from "./document.ts";
+import { blockText, conservativeBlock, safeLayoutBlock, sentencesOf, toDocument, type ComposerState, type LadderStep, type TrackedIssue, sameIssue } from "./document.ts";
 import { arbitrate, reviewBlock, type SourceReader } from "./review.ts";
 import { reviewRendering, visualPasses } from "./qa.ts";
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
@@ -38,12 +38,20 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   afterPublish?(state: S): Promise<void>;
   /** A rule of the producer's own the document must meet before review (e.g. quoting an earlier report); the reason when it does not. */
   precheck?(state: S): string | null;
+  /** Registers a source the document cites but the session has not read by name (a fact, a computed figure); false when there is none. */
+  resolve?(id: string, state: S): Promise<boolean>;
+  /** The exact numbers a cited source stands for (a fact's value), when it is one figure and not a text; a cited figure must be one of them. */
+  figure?(id: string, state: S): Promise<number[] | null>;
+  /** The blocks this producer's document must hold beyond the kind's own, checked at finish. */
+  required?(state: S): readonly string[];
   /** Finds passages in the producer's material for names and figures a block uses that its cited sources do not hold, for the review. */
   find?(terms: string[], state: S): Promise<Array<{ id: string; title: string; text: string }>>;
 };
 
-/** The evidence review runs at most this many times in a session; what is still open after the last is settled by the harness (§4.1). */
+/** A block is reviewed at most this many times; what is still open in it after the last is settled by the harness (§4.1). */
 const CONTENT_ROUNDS = 3;
+/** However the blocks are rewritten, a session's reviews end: after this many rounds every open block is settled. */
+const CONTENT_ROUNDS_ALL = 6;
 
 const ok = (observation: string) => ({ observation });
 const fail = (observation: string) => ({ observation, error: true });
@@ -87,19 +95,26 @@ const RENDER_STEP = (level: number) => [
 ][Math.min(level, 3)]!;
 
 export function composerTools<S extends { composer: ComposerState }>(setup: ComposerSetup<S>): AnyTool<S>[] {
-  const requiredOf = (state: S) => ARTIFACT_REQUIRED_BLOCKS[state.composer.artifact.kind];
+  const requiredOf = (state: S) => [...new Set([...ARTIFACT_REQUIRED_BLOCKS[state.composer.artifact.kind], ...setup.required?.(state) ?? []])];
   const block = (state: S, id: string) => state.composer.blocks.find(b => b.id === id);
   const ledger = (state: S) => ({ ticker: state.composer.artifact.ticker, kind: "artifact-review", ...(setup.ledger.runId ? { runId: setup.ledger.runId } : {}) });
 
   async function verify(state: S, id: string, html: string): Promise<{ block?: ArtifactBlock; errors: string[] }> {
     const c = state.composer;
+    // A source cited by an id the session never read by name (a fact, a computed figure) is looked up before the check.
+    if (setup.resolve) for (const m of html.matchAll(/data-(?:ref|source)="([^"]{1,80})"/g)) if (c.sources[m[1]!] === undefined) await setup.resolve(m[1]!, state).catch(() => false);
     const check = checkBlock(html, { sourceUrl: ref => c.sources[ref] === undefined ? undefined : c.sources[ref]!.url, charts: new Set(Object.keys(c.charts)) });
     const errors = [...check.errors, ...await unknownClasses(check.classes)];
     for (const claim of check.claims) {
       const source = await setup.read(claim.kind === "figure" ? claim.ref : claim.source, state);
       if (!source) { errors.push(`${claim.kind === "figure" ? claim.ref : claim.source}: the source's text cannot be read back`); continue; }
       if (claim.kind === "figure") {
-        if (!figureInText(claim.value, source.text)) errors.push(`<data value="${claim.value}" data-ref="${claim.ref}">: ${claim.value} does not appear in ${source.title}. Cite the source that states this figure; a rate or ratio worked out from figures cites the figures source (d…) that states it, or is written as plain text without <data>`);
+        const exact = await setup.figure?.(claim.ref, state) ?? null;
+        if (exact) {
+          if (!figureInText(claim.value, exact.map(String).join(" "))) errors.push(`<data value="${claim.value}" data-ref="${claim.ref}">: ${claim.ref} is ${source.text.slice(0, 200)} — ${claim.value} is not that number in units, thousands, millions or billions. Cite the fact that holds this figure, or compute it`);
+          else if (claim.shown && !shownMatches(claim.value, claim.shown)) errors.push(`<data value="${claim.value}">: the shown text "${claim.shown}" is not this number, even rounded`);
+        }
+        else if (!figureInText(claim.value, source.text)) errors.push(`<data value="${claim.value}" data-ref="${claim.ref}">: ${claim.value} does not appear in ${source.title}. Cite the source that states this figure; a rate or ratio worked out from figures cites the figures source (d…) that states it, or is written as plain text without <data>`);
         else if (claim.shown && !shownMatches(claim.value, claim.shown)) errors.push(`<data value="${claim.value}">: the shown text "${claim.shown}" is not this number, even rounded`);
       } else if (!quoteInText(claim.text, source.text)) errors.push(`<blockquote data-source="${claim.source}">: the quotation is not in ${source.title} word for word`);
     }
@@ -134,16 +149,22 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   /** Reviews the blocks written since their last review and moves each open block up its ladder; true when content is settled. */
   async function settleContent(state: S, force: boolean): Promise<string[]> {
     const c = state.composer;
-    const drafts = c.blocks.filter(b => b.state === "draft");
+    const written = c.blocks.filter(b => b.state === "draft");
     const advice: string[] = [];
     const reader: SourceReader = id => setup.read(id, state);
     const rounds = c.rounds ??= { content: 0, render: 0 };
+    const passed = c.passed ??= {}, reviews = c.reviews ??= {};
+    const openIn = (b: ArtifactBlock) => { const kept = new Set(passed[b.id] ?? []); return sentencesOf(blockText(b.html)).filter(s => !kept.has(s.key)); };
+    // A block whose every sentence an earlier review let stand needs no second one: its words were only moved or laid out again.
+    const drafts = written.filter(b => { if (openIn(b).length) return true; b.state = "passed"; delete c.open[b.id]; return false; });
     if (drafts.length) rounds.content += 1;
-    const last = force || rounds.content >= CONTENT_ROUNDS;
+    for (const b of drafts) reviews[b.id] = (reviews[b.id] ?? 0) + 1;
+    const last = (b: ArtifactBlock) => force || (reviews[b.id] ?? 0) >= CONTENT_ROUNDS || rounds.content >= CONTENT_ROUNDS_ALL;
     // What the other blocks already hold, checked by code at their write: a block that restates it needs no second proof.
     const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
       claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
     const context = (b: ArtifactBlock) => ({
+      passed: new Set(passed[b.id] ?? []),
       established: c.blocks.filter(x => x.id !== b.id).flatMap(x => claims.get(x.id) ?? []),
       ...(setup.find ? { find: (terms: string[]) => setup.find!(terms, state) } : {}),
     });
@@ -152,6 +173,12 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       // A review that could not run leaves the block as written: the write checks already held its figures and quotes.
       // Only major problems hold a block back; minor ones are passed on once as advice and the block stands.
       const issues = reviewed[i] ?? [];
+      // The sentences this review judged and did not fault stand from now on; a fault without a quote faults the whole block.
+      if (reviewed[i] && issues.every(x => x.quote)) {
+        const fold = (s: string) => s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, " ").trim();
+        const faulted = issues.map(x => fold(x.quote!));
+        passed[b.id] = [...new Set([...passed[b.id] ?? [], ...openIn(b).filter(s => !faulted.some(q => s.key.includes(q.slice(0, 80)) || q.includes(s.key))).map(s => s.key)])];
+      }
       const major = issues.filter(x => x.severity !== "minor");
       const minor = issues.filter(x => x.severity === "minor");
       if (minor.length) advice.push(`Block "${b.id}" stands; minor points you may still fix: ${minor.map(x => `${x.quote ? `"${x.quote}" — ` : ""}${x.problem}`).join(" | ")}`);
@@ -164,7 +191,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content");
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
-      if (last || step.level >= 5) {
+      if (last(b) || step.level >= 5) {
         const { empty, ...settled } = conservativeBlock(b, issues);
         delete c.open[b.id];
         c.hidden = c.hidden.filter(h => h !== b.id);
@@ -199,7 +226,10 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
         return [];
       }
       const visualOk = qa.scores === null || visualPasses(qa.scores);
-      const counted = qa.issues.filter(i => i.severity === "blocker" || i.kind === "interaction" || (!visualOk && i.kind === "visual") || (i.kind === "render" && i.severity === "major"));
+      // What was measured holds a block back every time. The design review's remarks do so once, on the first rendering:
+      // after that they are on record, and a score alone does not strip a block's layout.
+      const remarks = !visualOk && (c.rounds?.render ?? 1) <= 1;
+      const counted = qa.issues.filter(i => i.severity === "blocker" || i.kind === "interaction" || (remarks && i.kind === "visual" && i.severity === "major") || (i.kind === "render" && i.severity === "major"));
       // A safe-layout block is held to the measured checks alone.
       const byBlock = new Map<string, TrackedIssue[]>();
       for (const i of counted) {
@@ -244,7 +274,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
-    if (content.length) return fail(`Not published yet. The evidence review found problems (round ${c.rounds?.content ?? 1} of ${CONTENT_ROUNDS}; after the last round the harness removes the sentences still open):\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);
+    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, fix the blocks with write_block, then call finish again.`);
@@ -275,14 +305,20 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const { block: written, errors } = await verify(state, id, str(a.html));
       if (!written) return fail(`Not saved. Fix and write again:\n${errors.map(e => `- ${e}`).join("\n")}`);
       const at = c.blocks.findIndex(b => b.id === id);
+      // The same words laid out again keep the standing the review gave them (§4.2): only a change of text is reviewed.
+      const before = at >= 0 ? c.blocks[at]! : null;
+      const sameWords = !!before && blockText(before.html) === blockText(written.html);
+      if (sameWords && before!.state === "conservative") Object.assign(written, { state: "conservative", ...(before!.note ? { note: before!.note } : {}) });
+      else if (sameWords && before!.state !== "draft") written.state = "passed";
       if (at >= 0) c.blocks[at] = written;
       else {
         const after = c.blocks.findIndex(b => b.id === str(a.after));
         c.blocks.splice(after >= 0 ? after + 1 : c.blocks.length, 0, written);
       }
       c.hidden = c.hidden.filter(h => h !== id);
-      delete c.open[id];
-      return ok(`Saved "${id}" (${written.html.length} chars).`);
+      if (sameWords && c.open[id]) c.open[id] = c.open[id]!.filter(i => i.kind === "content"); else delete c.open[id];
+      if (c.open[id] && !c.open[id]!.length) delete c.open[id];
+      return ok(`Saved "${id}" (${written.html.length} chars).${sameWords ? " The words are unchanged, so the evidence review is not repeated." : ""}`);
     }),
     tool<S>("remove_block", "Remove a block that is not required, with the reason.", { id: { type: "string" }, reason: { type: "string" } }, ["id", "reason"], (a, state) => {
       const c = state.composer, id = str(a.id);
@@ -375,4 +411,4 @@ Markup: shadcn/ui data-display components, written as their HTML with data-slot 
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
 House style: a research report, not a dashboard, read in one column at most 760px wide and on phones. Tables are for figures and short labels; a comparison made in sentences reads better as a list or short headed paragraphs. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.
 Evidence: every block cites the sources it rests on. Write figures as <data value="2876.8" data-ref="SOURCE_ID">$2,876.8m</data>, quotes as <blockquote data-source="SOURCE_ID">exact words</blockquote>, links as <a data-source="SOURCE_ID">text</a>. Write only what the material supports; where it does not settle a question, say what is not disclosed and what to look for next — that is part of the analysis.
-Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. Fix only those blocks and call finish again; the review runs ${CONTENT_ROUNDS} times at most, and after the last the harness removes the sentences still open.`;
+Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. Fix only the sentences it faults and call finish again: a block is reviewed ${CONTENT_ROUNDS} times at most, after which the harness removes the sentences still open, and sentences the review let stand are not judged again. When finish asks for a change of layout, keep the words exactly: the same words laid out again are not reviewed a second time.`;

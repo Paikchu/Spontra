@@ -31,6 +31,8 @@ export const AI_TOOLS = {
   valuation: { label: "估值评估", reasoning: "high", model: "reasoning" },
   /** Every SEC filing's analysis on the one path (filing-analysis/). */
   filing: { label: "文件分析", reasoning: "high", model: "reasoning" },
+  /** The reading pass of a periodic report: every passage read once against the checklist, for notes and leads (filing-analysis/pack.ts). */
+  "filing-read": { label: "文件精读", reasoning: "medium", model: "reasoning" },
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */

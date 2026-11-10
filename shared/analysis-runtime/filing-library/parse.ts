@@ -6,7 +6,7 @@ import { decodeEntities, descendants, nodeText, parseMarkup, type Element } from
 import { tableGrid } from "../financial-data/table-grid.ts";
 
 /** Changing how documents are split re-parses every document; ids of unchanged text survive it. */
-export const LIBRARY_PARSER_VERSION = "filing-library.v4";
+export const LIBRARY_PARSER_VERSION = "filing-library.v5";
 /**
  * A leaf longer than this is split again. A headed section is a unit however short (a one-line product still names a product);
  * only a heading with next to no text under it folds into its parent. A split chunk starts at a bold lead-in once it holds a few hundred characters.

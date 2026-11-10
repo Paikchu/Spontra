@@ -1,5 +1,7 @@
 import type { LibraryDocType } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LIBRARY_PARSER_VERSION, parseFilingDocument } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
+import { buildFactRows } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
+import type { FilingDisclosures } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import { businessHint, compactName } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { treeBusinesses } from "../business-tree/workflow.ts";
 import { disclosureAuditPrefix, type StoredAudit } from "../financial-data/disclosure-audit.ts";
@@ -11,6 +13,9 @@ import {
   libraryPassageHashes, librarySectionHashes, markLibraryDocumentUnreadable, previousLibraryDocument, writeLibraryDocument,
   type LibraryDocumentRow, type StoredPassage, type StoredSection,
 } from "./store.ts";
+
+/** The largest Inline XBRL inventory read for fact rows; a larger filing gets the rows its tables state on their own. */
+const INVENTORY_MAX_BYTES = 25_000_000;
 
 export type FilingLibraryParams = { documentId: string; ticker: string; sha: string };
 
@@ -88,12 +93,22 @@ export async function prepareLibraryDocument(env: AnalysisEnv, p: FilingLibraryP
       structureCheck = { status: missing.length ? "segments_missing" : "ok", missing };
     }
   }
+  // The fact rows: each number the passages show, from the Inline XBRL inventory archived beside the source (§4.11).
+  // A document without an inventory still gets the rows its tables state on their own.
+  // An inventory too large to hold beside the document is left out, and a failure here never costs the document its text.
+  let facts: ReturnType<typeof buildFactRows> = [];
+  try {
+    const stored = record.inventoryKey ? await env.SEC_FILINGS.get(record.inventoryKey) : null;
+    const size = (stored as { size?: number } | null)?.size ?? 0;
+    const inventory = stored && size <= INVENTORY_MAX_BYTES ? JSON.parse(await stored.text()) as Pick<FilingDisclosures, "facts"> : null;
+    facts = buildFactRows(p.documentId, parsed.passages, inventory);
+  } catch (error) { console.error(JSON.stringify({ event: "fact-rows", documentId: p.documentId, ticker: p.ticker, error: error instanceof Error ? error.message : String(error) })); }
   // The rows and the event that announces them commit together.
   const cik = base.cik ? base.cik.padStart(10, "0") : null;
   await writeLibraryDocument(db, { ...base, previousDocumentId, structureCheck }, sections, passages,
-    [outboxStatement(db, { type: "library.prepared", ticker: p.ticker, cik, detail: { form: record.source.form, accession: record.source.accessionNumber }, causeId })]);
+    [outboxStatement(db, { type: "library.prepared", ticker: p.ticker, cik, detail: { form: record.source.form, accession: record.source.accessionNumber }, causeId })], facts);
   return {
     status: "ready", structure: parsed.structure, docType: parsed.docType, sections: sections.length, passages: passages.length,
-    changed: sections.filter(s => s.change !== "unchanged").length, structureCheck: structureCheck.status,
+    changed: sections.filter(s => s.change !== "unchanged").length, structureCheck: structureCheck.status, facts: facts.length,
   };
 }

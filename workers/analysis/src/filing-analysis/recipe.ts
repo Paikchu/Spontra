@@ -16,6 +16,8 @@ import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "
 import { previousSectionOf, recordRunSummary, recordRunTurn, sectionDocuments, updateFiling } from "./store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
 import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } from "../artifact/compose.ts";
+import { PERIODIC_BLOCKS, periodicTools, type PeriodicState } from "./periodic.ts";
+import { PERIODIC_EVIDENCE, PERIODIC_SYSTEM } from "./prompts.ts";
 import { openComposer, registerSource, type ComposerState } from "../artifact/document.ts";
 
 /** What the session is rebuilt from after an eviction. */
@@ -24,7 +26,7 @@ export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling
  * `read`: the sections the session read, in order; they are what a memory item drawn from the report may cite.
  * `data` and `web`: the text of the figures and pages read, so a block citing them can be checked against them.
  */
-type FilingState = WebToolState & { composer: ComposerState; candidates: unknown[]; read?: string[]; data: Record<string, string>; web: Record<string, string>; category?: string };
+type FilingState = WebToolState & { composer: ComposerState; candidates: unknown[]; read?: string[]; data: Record<string, string>; web: Record<string, string>; category?: string; periodic?: PeriodicState };
 
 const ok = (observation: string): HandResult => ({ observation });
 /** DeepSeek sometimes sends a nested argument as a JSON string. */
@@ -97,10 +99,13 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       return [{ id: row.passage_id, title: `${filing.form} ${filing.reportDate || filing.filingDate}, section ${row.section_id}, found for "${terms[i]}"`, text: row.text.slice(0, 1800) }];
     }));
   };
+  // A periodic report is investigated (§4.10, §4.11); a current report keeps the tools it had.
+  const periodic = profile.id === "periodic" ? periodicTools<FilingState>({ env, ticker, filing, runId: spec.sessionId, ...(data ? { flags: data.ledger.flags.slice(0, 12).map(f => ({ rule: f.rule, level: f.level, metric: f.metric, value: f.value })) } : {}) }) : null;
   const summarise = (state: FilingState, status: "published" | "failed") => recordRunSummary(db, {
     runId: spec.sessionId, ticker, accession, profile: profile.id, status, settledBy: state.composer.settledBy ?? null,
     reviewRounds: state.composer.rounds?.content ?? 0, renderRounds: state.composer.rounds?.render ?? 0, sectionsRead: state.read ?? [],
     blocks: state.composer.blocks.length, degraded: state.composer.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id),
+    ...(periodic ? { detail: periodic.detail(state) } : {}),
   }).catch(error => console.error(JSON.stringify({ event: "filing-run-summary", ticker, accession, error: error instanceof Error ? error.message : String(error) })));
   const ids: { type: "object"; properties: Record<string, unknown>; required: string[] } = { type: "object", properties: { sectionIds: { type: "array", items: { type: "string" } } }, required: ["sectionIds"] };
   const own: AnyTool<FilingState>[] = [
@@ -116,9 +121,13 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   ];
   const setup: ComposerSetup<FilingState> = {
     env, chart: data ? { data: data.data, periodEnd: data.periodEnd } : null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns,
-    research: ["read_sections", "read_previous", ...(figures.length ? ["read_series"] : []), "search", "read_web"], previewQuery: `report=${encodeURIComponent(accession)}`,
+    research: periodic ? ["read_sections", "grep", "section_history", "query_facts", "fact_history", "read_transcript", "read_report"] : ["read_sections", "read_previous", ...(figures.length ? ["read_series"] : []), "search", "read_web"],
+    previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
+    ...(periodic ? { resolve: periodic.resolve, figure: periodic.figure, required: () => PERIODIC_BLOCKS, precheck: periodic.precheck } : {}),
     read: async (id, state) => {
+      const held = periodic?.read(id, state);
+      if (held) return held;
       if (state.data[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.data[id]! };
       if (state.web[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.web[id]! };
       const text = state.composer.sources[id] ? await sectionText(id) : null;
@@ -141,20 +150,20 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     },
   };
   const compose = composerTools(setup);
-  const list = [...own, ...figures, ...web, ...compose];
+  const list = [...(periodic ? periodic.tools : own), ...figures, ...web, ...compose];
   return {
-    id: `filing.${spec.profile}.v3`,
+    id: periodic ? "filing.periodic.v4" : `filing.${spec.profile}.v3`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
-    resultChars: RESULT_CHARS,
+    resultChars: periodic ? 90_000 : RESULT_CHARS,
     callsPerTurn: Infinity,
-    system: () => `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${COMPOSER_GUIDE}`,
+    system: () => periodic ? `${PERIODIC_SYSTEM(ticker)}\n\n${COMPOSER_GUIDE}\n${PERIODIC_EVIDENCE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${COMPOSER_GUIDE}`,
     open: () => ({ composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, data: {}, web: {} }),
     tools: () => list,
-    policy: { allow: list.map(t => t.name), post: handPolicy(own).post },
+    policy: { allow: list.map(t => t.name), post: handPolicy(periodic ? periodic.tools : own).post },
     onTurn: (s, turn) => { s.composer.turns = turn; },
     settled: s => s.composer.phase === "published",
     settle: s => s.composer.phase === "published",
-    nudge: "Continue reading and writing blocks, then call finish.",
+    nudge: periodic ? "Continue: work the leads, record what you confirm, write the blocks, then call finish." : "Continue reading and writing blocks, then call finish.",
     budgetLine: (s, left) => `${defaultBudgetLine(left)}${s.composer.blocks.length && s.composer.phase !== "published" && left <= 15 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
     afterRun: async (s) => {
       // A session that ends without publishing still delivers: the harness settles what is open and publishes (§6.5).

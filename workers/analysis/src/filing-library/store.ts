@@ -1,3 +1,4 @@
+import type { FilingFactRow } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
 import type {
   LibraryChange, LibraryDocType, LibraryDocumentSummary, LibraryPassage, LibraryPassageView, LibrarySection, LibrarySectionView, LibraryStructure,
 } from "../../../../shared/analysis-contract/filing-library.ts";
@@ -22,9 +23,10 @@ function chunks<T>(rows: T[], encode: (row: T) => unknown[]): string[] {
   return out;
 }
 
-export async function writeLibraryDocument(db: D1Database, document: LibraryDocumentRow, sections: StoredSection[], passages: StoredPassage[], events: D1PreparedStatement[] = []): Promise<void> {
+export async function writeLibraryDocument(db: D1Database, document: LibraryDocumentRow, sections: StoredSection[], passages: StoredPassage[], events: D1PreparedStatement[] = [], facts: FilingFactRow[] = []): Promise<void> {
   const id = document.documentId;
   const statements: D1PreparedStatement[] = [
+    db.prepare("DELETE FROM sec_fact_rows WHERE document_id = ?").bind(id),
     db.prepare("DELETE FROM sec_passages WHERE document_id = ?").bind(id),
     db.prepare("DELETE FROM sec_sections WHERE document_id = ?").bind(id),
   ];
@@ -41,6 +43,13 @@ export async function writeLibraryDocument(db: D1Database, document: LibraryDocu
   for (const chunk of chunks(passages, p => [p.passageId, p.sectionId, p.ordinal, p.kind, p.text, p.table ? JSON.stringify(p.table) : null, JSON.stringify(p.factRefs), p.chars, p.textHash, p.change])) {
     statements.push(db.prepare(passageSql).bind(id, chunk));
   }
+  const factSql = `INSERT INTO sec_fact_rows (fact_id, document_id, ticker, passage_id, section_id, ordinal, row_index, col_index, label, concept, dimensions, period_start, period_end, period_months, value, shown, unit, tagged)
+    SELECT json_extract(value,'$[0]'), ?1, ?2, json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'), json_extract(value,'$[4]'), json_extract(value,'$[5]'), json_extract(value,'$[6]'),
+      json_extract(value,'$[7]'), json_extract(value,'$[8]'), json_extract(value,'$[9]'), json_extract(value,'$[10]'), json_extract(value,'$[11]'), json_extract(value,'$[12]'), json_extract(value,'$[13]'),
+      json_extract(value,'$[14]'), json_extract(value,'$[15]') FROM json_each(?3)`;
+  for (const chunk of chunks(facts, f => [f.factId, f.passageId, f.sectionId, f.ordinal, f.row, f.col, f.label.slice(0, 300), f.concept, f.dimensions.slice(0, 600), f.periodStart, f.periodEnd, f.periodMonths, f.value, f.shown.slice(0, 60), f.unit, f.tagged ? 1 : 0])) {
+    statements.push(db.prepare(factSql).bind(id, document.ticker, chunk));
+  }
   statements.push(upsertDocument(db, document, { chars: passages.reduce((n, p) => n + p.chars, 0), passages: passages.length, sections: sections.length }), ...events);
   await db.batch(statements);
 }
@@ -48,6 +57,7 @@ export async function writeLibraryDocument(db: D1Database, document: LibraryDocu
 /** A document that could not be split keeps a row, so the sweep does not retry it until the parser or the source changes. */
 export async function markLibraryDocumentUnreadable(db: D1Database, document: LibraryDocumentRow): Promise<void> {
   await db.batch([
+    db.prepare("DELETE FROM sec_fact_rows WHERE document_id = ?").bind(document.documentId),
     db.prepare("DELETE FROM sec_passages WHERE document_id = ?").bind(document.documentId),
     db.prepare("DELETE FROM sec_sections WHERE document_id = ?").bind(document.documentId),
     upsertDocument(db, { ...document, status: "unreadable" }, { chars: 0, passages: 0, sections: 0 }),
