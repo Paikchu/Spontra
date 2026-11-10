@@ -53,6 +53,7 @@ type RouteMatch =
   | { kind: "filings"; ticker: string }
   | { kind: "filing"; ticker: string; accession: string }
   | { kind: "artifact-preview"; token: string }
+  | { kind: "artifact"; ticker: string; artifactKind: "company-analysis" }
   | { kind: "business-flow"; ticker: string }
   | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
@@ -192,6 +193,12 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber).catch(() => null);
       return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
+    case "artifact": {
+      if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      const ticker = route.ticker.trim().toUpperCase();
+      const published = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, route.artifactKind, ticker, ticker);
+      return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+    }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
@@ -302,6 +309,8 @@ function matchRoute(pathname: string): RouteMatch | null {
     const ticker = safeDecode(valuation[1]!);
     return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
   }
+  const artifact = /^\/api\/v1\/companies\/([^/]+)\/artifacts\/(company-analysis)\/?$/.exec(pathname);
+  if (artifact) { const ticker = safeDecode(artifact[1]!); return ticker === null ? null : { kind: "artifact", ticker, artifactKind: "company-analysis" }; }
   const insiders = /^\/api\/v1\/companies\/([^/]+)\/insiders(?:\/([^/]+)\/transactions)?\/?$/.exec(pathname);
   if (insiders) {
     const ticker = safeDecode(insiders[1]!), personKey = insiders[2] === undefined ? undefined : safeDecode(insiders[2]);

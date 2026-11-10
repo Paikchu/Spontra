@@ -15,6 +15,7 @@ import { lensLoader } from "../lens/pi.ts";
 import { analystLoader } from "../analyst/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
 import { businessLoader } from "../company-analysis-workflow.ts";
+import { companyComposeLoader } from "../company-analysis/compose-agent.ts";
 
 type RunRow = { kind: RunKind; id: string; params: string; created_at: number; status: RunStatus; error: string | null; output: string | null };
 /** What a connected client (the admin, a chat) sees of the run, kept current with every wake. */
@@ -54,6 +55,7 @@ export class TaskRunner extends Agent<Env, RunView> {
       analyst: async spec => analystLoader(spec, await env()),
       tree: async spec => treeLoader(spec, await env()),
       business: async spec => businessLoader(spec, await env()),
+      "company-compose": async spec => companyComposeLoader(spec, await env()),
       report: async spec => reportLoader(spec, await env()),
     };
   }

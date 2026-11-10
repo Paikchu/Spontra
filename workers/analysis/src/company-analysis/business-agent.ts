@@ -3,7 +3,9 @@ import { handPolicy, handSearch, handTool } from "../pi/hand-tools.ts";
 import type { SessionRunner } from "../pi/runs.ts";
 import type { Recipe } from "../recipe.ts";
 import type { BusinessDeepDive, CompanyAnalysisOverview } from "../../../../shared/analysis-contract/company-analysis.ts";
-import { normalizeBusinessDeepDive, normalizeCompanyAnalysisOverview } from "./contracts.ts";
+import { normalizeCompanyAnalysisOverview } from "./contracts.ts";
+import { deepDiveFromComposer, researchMaterial, type CompanyComposeSpec } from "./compose-agent.ts";
+import type { ComposerState } from "../artifact/document.ts";
 import { createBusinessResearchTools, researchMemory, type AvailableSecReport, type BusinessResearchTools, type BusinessToolResult, type ResearchMemory } from "./business-tools.ts";
 import type { CompanyAnalysisD1Database } from "./repository.ts";
 import type { WebSearchService } from "../web-search/service.ts";
@@ -85,21 +87,15 @@ export async function runBusinessModelAgent(input: {
   const sources = [...session.state.memory.sources.values()];
   const rounds = session.turns;
   if (!usedSec || !sources.length) throw new Error("Business Agent could not collect the required evidence.");
-  const sourceIds = sources.map((source) => source.id);
-  const draft = await stage("synthesis", () => input.model("business-synthesis", `${SYSTEM}\nWrite a self-contained English breakdown of the company's business. Return JSON {headline,introduction,sections:[{key,title,paragraphs:[{text,sourceIds}]}],limitations:[string]}.
-sections must include business (what it concretely does), mechanics (how the product or industry works), revenue (how customers pay), financials (historical results with period and basis), industry (how the industry is developing), moat (falsifiable competitive advantages), risks (risks and counter-examples) and investment (investment considerations and what to verify). Add customers/economics where this company needs them. Each section has 1–4 paragraphs; each paragraph explains causes and mechanisms, and gives figures only where data was found; every paragraph must cite the given sourceIds and never a source that was not provided. Write headline, introduction, titles, paragraphs and limitations in English. Put missing information in limitations; never present speculation as disclosed fact. Do not restate the source list.`, {
-    ticker: input.ticker, companyName: input.companyName, asOf: input.now,
-    observations, sources: sources, limitations, sourceIds,
-  }));
-  // Provenance is assigned by the tools, never by the model. Invalid or absent references reject
-  // publication instead of silently stripping unsupported claims.
-  const deepDive = normalizeBusinessDeepDive({ ...draft, sources: sources,
-    limitations: [...limitations, ...(Array.isArray(draft.limitations) ? draft.limitations : [])] });
-  const review = await stage("evidence-review", () => input.model("business-evidence-review", `${SYSTEM}\nIndependently check every paragraph of the text: does the cited material actually support the specific company, figures, periods, business mechanisms and causal claims; is a search snippet treated as a complete filing; is industry inference passed off as company disclosure. Do not fill gaps from outside knowledge. Return JSON {approved:boolean,issues:string[]}, with issues in English; reject any major unsourced claim.`, {
-    report: deepDive, observations, sources: sources,
-  }));
-  if (review.approved !== true) throw new Error(`Business evidence review rejected: ${Array.isArray(review.issues) ? review.issues.slice(0, 3).join("; ") : "unsupported claims"}`);
-
+  // The report is composed as an artifact from what the research read (docs/analysis-html-artifact.md, P1): block by
+  // block, each checked against its sources, reviewed, rendered and reviewed for design, then published. What the
+  // findings read is derived from the published blocks.
+  const composeSpec: CompanyComposeSpec = { ticker: input.ticker, companyName: input.companyName, reportDate: input.reportDate, now: input.now,
+    sources, material: researchMaterial(observations, sources), ...(input.runId ? { runId: input.runId } : {}) };
+  const composeOpening = JSON.stringify({ ticker: input.ticker, companyName: input.companyName, asOf: input.now, sources: sources.map(s => ({ id: s.id, title: s.title, kind: s.kind })), limitations });
+  const composed = await input.run<boolean, { composer: ComposerState }>("company-compose", composeSpec, composeOpening, `${input.operationId}:compose`);
+  if (composed.state.composer.phase !== "published") throw new Error("The company analysis could not be composed.");
+  const deepDive = deepDiveFromComposer(composed.state.composer, sources);
   return { overview: overviewFor(deepDive), rounds, observations };
 }
 

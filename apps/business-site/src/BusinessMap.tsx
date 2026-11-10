@@ -50,6 +50,9 @@ import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
+import { ArtifactFrame } from "./ArtifactFrame";
+import { usePreview } from "./FilingReport";
+import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
 import { useMedia, useSideScroll } from "./side-scroll";
@@ -121,7 +124,7 @@ const FilingReport = lazy(() => import("./FilingReport"));
 const LensLoading = () => <div className="lens-doc" aria-busy="true"><i className="lens-loading" aria-hidden="true" /></div>;
 
 /** What the reader has on the map: its own URL-held view, read by the stage agent. */
-export type CompanyView = { periodEnd: string | null; view: "profit" | "cash" | "balance" | "valuation"; business: string | null; finding: string | null; event: string | null; report: string | null; metric: string | null };
+export type CompanyView = { periodEnd: string | null; view: "profit" | "cash" | "balance" | "valuation" | "company"; business: string | null; finding: string | null; event: string | null; report: string | null; metric: string | null };
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -133,9 +136,9 @@ const percent = (v: number | null) => v == null || !Number.isFinite(v) ? "—" :
 const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null });
 /** Chart labels keep about thirteen ems of name; the tooltip carries the full one. */
 const shortName = (name: string) => truncateToWidth(name, 13);
-type View = "profit" | "cash" | "balance" | "valuation";
-type StatementView = Exclude<View, "valuation">;
-const VIEWS: readonly View[] = ["valuation", "profit", "cash", "balance"];
+type View = "profit" | "cash" | "balance" | "valuation" | "company";
+type StatementView = Exclude<View, "valuation" | "company">;
+const VIEWS: readonly View[] = ["valuation", "company", "profit", "cash", "balance"];
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
 const basisWords = (basis: Basis, locale: Locale): CompareBasis & { period: string } => basis === "yoy"
@@ -388,6 +391,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !!valuation && valuation.availability !== "hidden";
+  // The company analysis, composed as an artifact; a preview link shows its draft in its place.
+  const companyArtifact = useCompanyArtifact(ticker);
+  const companyPreview = usePreview("company-analysis", ticker);
+  const companyReport = companyPreview ?? companyArtifact;
   // The page opens on the valuation when a report is published for it; otherwise (hidden, preparing, failed) on the
   // income statement. The opening read settles before the map mounts, so the default is known at first paint.
   const homeView: View = valuationShown && valuation?.report ? "valuation" : "profit";
@@ -397,9 +404,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     // A link to a business, finding, flag, report or event reads on the statements.
     return ["business", "finding", "check", "event", "report", "metric"].some(k => params.has(k)) ? "profit" : homeView;
   });
-  const view: View = chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  const view: View = chosenView === "company" && companyReport ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures under the valuation refer to: the one the reader comes back to.
-  const statementView: StatementView = view === "valuation" ? "profit" : view;
+  const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   useEffect(() => {
@@ -488,9 +495,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const leadShown = lead && lit ? lead : null;
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   // The valuation is the company's own mode: a finding, flag, report or event takes the stage back to the statements.
-  const leaveValuation = () => { if (chosenView === "valuation") setView("profit"); };
+  const leaveValuation = () => { if (chosenView === "valuation" || chosenView === "company") setView("profit"); };
   const pickView = (next: View) => {
-    if (next === "valuation") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); }
+    if (next === "valuation" || next === "company") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); }
     crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
   };
   const showFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setSplit(false); } };
@@ -621,9 +628,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
-  const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
+  const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
       {valuationShown && <ToggleGroupItem value="valuation" data-view-choice="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
+      {companyReport && <ToggleGroupItem value="company" data-view-choice="company" role="radio" aria-checked={view === "company"}>{VIEW_LABEL.company}</ToggleGroupItem>}
       <ToggleGroupItem value="profit" data-view-choice="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
       {cash && <ToggleGroupItem value="cash" data-view-choice="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
       {funding?.balanceSheet && <ToggleGroupItem value="balance" data-view-choice="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
@@ -705,6 +713,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} fallback={lens}
         head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
         <EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
+      : view === "company" && companyReport ? <div className="lens-stage company-report"><ArtifactFrame artifact={companyReport} /></div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary">
@@ -920,4 +929,19 @@ function DossierSection({ section, cite, links }: { section: ExplainerSection; c
   if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{linked(i.claim)}</li>)}</ol>;
   if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{linked(i.claim)}</li>)}</ul>;
   return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{linked(i.claim)}</p>)}</>;
+}
+
+/** The company's published analysis artifact, read once per company; null while loading or when there is none. */
+function useCompanyArtifact(ticker: string): PublishedArtifact | null {
+  const [artifact, setArtifact] = useState<PublishedArtifact | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setArtifact(null);
+    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/company-analysis`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() as Promise<{ artifact?: PublishedArtifact | null }> : null)
+      .then(body => { if (!controller.signal.aborted && body?.artifact) setArtifact(body.artifact); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [ticker]);
+  return artifact;
 }
