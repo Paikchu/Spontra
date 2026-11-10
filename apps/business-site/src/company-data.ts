@@ -87,11 +87,11 @@ export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: st
 }
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
-export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null; dossiers: Record<string, number> };
+export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null; dossiers: Record<string, string> };
 export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<FindingsBundle | null> {
   const response = await companyRequest(companyPath(ticker, "/findings", rev), signal, openingResponse);
   if (!response.ok) throw new CompanyHttpError(response.status);
-  const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null; dossiers?: Record<string, number> };
+  const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null; dossiers?: Record<string, string> };
   return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null, dossiers: body.dossiers ?? {} } : null;
 }
 

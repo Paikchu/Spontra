@@ -67,8 +67,8 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   /** The second panel of a pair: the judgment folded to its first sentence. */
   compact?: boolean;
   onFocusThis?: () => void;
-  /** The finding's dossier artifact: its published version (null when none) and the subject a preview draft carries. */
-  dossier?: { version: number | null; subject: string | null };
+  /** The finding's dossier artifact: when it was published (null when none) and the subject a preview draft carries. */
+  dossier?: { version: string | null; subject: string | null };
 }) {
   const preview = usePreview("dossier", dossier?.subject ?? null);
   // A draft opened for the visual review shows only what the published dossier will: nothing of the finding's older document.

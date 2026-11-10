@@ -118,7 +118,7 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 }
 
 /** The findings with what their lens documents rest on: the quoted passages as the library serves them now, and the peers projection. */
-export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,number>};
+export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,string>};
 const asText=(v:unknown)=>typeof v==="string"?v:null;
 /** A served passage, rebuilt field by field; a malformed one is left out, and a malformed table drops the table alone. */
 function readFindingPassage(value:unknown):FindingPassage|null{
@@ -157,9 +157,9 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,loca
   const findings=body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
   if(!findings)return null;
   const passages=(Array.isArray(body.passages)?body.passages:[]).map(readFindingPassage).filter((p):p is FindingPassage=>p!=null).slice(0,60);
-  // The findings whose analysis is a published dossier artifact, by id with the artifact's version.
+  // The findings whose analysis is a published dossier artifact, by id with when it was published (its read's revision).
   const ids=new Set(findings.findings.map(f=>f.id));
-  const dossiers=Object.fromEntries(Object.entries(body.dossiers&&typeof body.dossiers==="object"?body.dossiers as Record<string,unknown>:{}).filter((e):e is [string,number]=>ids.has(e[0])&&Number.isInteger(e[1])&&(e[1] as number)>0));
+  const dossiers=Object.fromEntries(Object.entries(body.dossiers&&typeof body.dossiers==="object"?body.dossiers as Record<string,unknown>:{}).filter((e):e is [string,string]=>ids.has(e[0])&&typeof e[1]==="string"&&REVISION.test(e[1])));
   return {findings,passages,peers:readPeersPublication(body.peers),dossiers};
  }catch{return null;}
 }

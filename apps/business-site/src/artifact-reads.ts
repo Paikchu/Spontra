@@ -21,18 +21,21 @@ export function usePreview(kind: PublishedArtifact["kind"], subject: string | nu
   return draft;
 }
 
-/** A published artifact read from its company route (e.g. "company-analysis", "dossier/<finding>"); null while loading or when there is none. */
-export function usePublishedArtifact(ticker: string, path: string | null, version?: number | null): PublishedArtifact | null {
+/**
+ * A published artifact read from its company route (e.g. "company-analysis", "dossier/<finding>"); null while loading or
+ * when there is none. `rev` (when it was published) keys the read, so a newer artifact is a new address.
+ */
+export function usePublishedArtifact(ticker: string, path: string | null, rev?: string | null): PublishedArtifact | null {
   const [artifact, setArtifact] = useState<PublishedArtifact | null>(null);
   useEffect(() => {
     setArtifact(null);
     if (!path) return;
     const controller = new AbortController();
-    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${version ? `?v=${version}` : ""}`, { signal: controller.signal })
+    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${rev ? `?rev=${encodeURIComponent(rev)}` : ""}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<{ artifact?: PublishedArtifact | null }> : null)
       .then(body => { if (!controller.signal.aborted && body?.artifact) setArtifact(body.artifact); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [ticker, path, version]);
+  }, [ticker, path, rev]);
   return artifact;
 }

@@ -15,12 +15,12 @@ export const artifactId = (kind: ArtifactKind, ticker: string, subject: string) 
 /** A finding's dossier is bound to the findings publication it was written for: a new publication waits for its own. */
 export const dossierSubject = (findingsFingerprint: string, findingId: string) => `${findingsFingerprint.slice(0, 16)}.${findingId}`;
 
-/** The findings of this publication whose dossier artifact is published, with the published version of each. */
-export async function publishedDossiers(db: D1Database, ticker: string, findingsFingerprint: string): Promise<Record<string, number>> {
+/** The findings of this publication whose dossier artifact is published, with when each was published (the page's cache key). */
+export async function publishedDossiers(db: D1Database, ticker: string, findingsFingerprint: string): Promise<Record<string, string>> {
   const prefix = `${findingsFingerprint.slice(0, 16)}.`;
-  const rows = await db.prepare("SELECT subject, published_version FROM analysis_artifacts WHERE kind = 'dossier' AND ticker = ? AND published_version IS NOT NULL AND substr(subject, 1, ?) = ?")
-    .bind(ticker, prefix.length, prefix).all<{ subject: string; published_version: number }>().catch(() => ({ results: [] as Array<{ subject: string; published_version: number }> }));
-  return Object.fromEntries(rows.results.map(r => [r.subject.slice(prefix.length), r.published_version]));
+  const rows = await db.prepare("SELECT subject, published_at FROM analysis_artifacts WHERE kind = 'dossier' AND ticker = ? AND published_version IS NOT NULL AND substr(subject, 1, ?) = ?")
+    .bind(ticker, prefix.length, prefix).all<{ subject: string; published_at: string }>().catch(() => ({ results: [] as Array<{ subject: string; published_at: string }> }));
+  return Object.fromEntries(rows.results.map(r => [r.subject.slice(prefix.length), r.published_at]));
 }
 const objectKey = (id: string, version: number) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/v${version}.json`;
 
