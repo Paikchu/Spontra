@@ -60,40 +60,56 @@ const el = (tag: string, attrs: Array<[string, string]>, children: HtmlNode[]): 
 const txt = (text: string): HtmlNode => ({ type: "text", text });
 
 /**
- * The conservative version of a block (§6.3, level 5): every paragraph, list item or cell that holds a sentence the
- * review flagged is removed, and the open questions are listed under the content that stands. What remains was not
- * flagged, so the block keeps only what the checks accepted.
+ * Removes the sentence a match falls in from a run of sibling nodes: the text from the end of the previous sentence to
+ * the end of this one, and every element inside or across that span (a figure, a link, a term).
+ */
+function cutSentence(nodes: HtmlNode[], match: RegExp): HtmlNode[] {
+  const texts = nodes.map(n => n.type === "text" ? n.text : nodeText([n]));
+  const all = texts.join("");
+  const found = match.exec(all);
+  if (!found) return nodes;
+  const before = all.slice(0, found.index);
+  const mark = Math.max(...[". ", "; ", "? ", "! ", "。"].map(m => { const at = before.lastIndexOf(m); return at < 0 ? -1 : at + m.length; }));
+  const start = mark < 0 ? 0 : mark;
+  // A quote that already ends its sentence ends the cut; otherwise the cut runs to the end of the sentence.
+  const ended = /[.;!?。]\s*$/.test(found[0]);
+  const tail = ended ? -1 : all.slice(found.index + found[0].length).search(/[.;!?。](\s|$)/);
+  const end = ended ? found.index + found[0].length : tail < 0 ? all.length : found.index + found[0].length + tail + 1;
+  const out: HtmlNode[] = [];
+  let pos = 0;
+  nodes.forEach((node, i) => {
+    const from = pos, to = pos + texts[i]!.length;
+    pos = to;
+    if (to <= start || from >= end) { out.push(node); return; }
+    if (node.type === "text") { const keep = (node.text.slice(0, Math.max(0, start - from)) + node.text.slice(Math.max(0, end - from))).replace(/ {2,}/g, " "); if (keep) out.push({ type: "text", text: keep }); }
+  });
+  return out;
+}
+
+/**
+ * The conservative version of a block (§6.3, level 5): every sentence the review flagged is cut whole, with the
+ * figures, links and terms written inside it; a flagged quotation or table row goes as a unit; a paragraph or item left
+ * empty goes too. The open questions are listed under the content that stands, so the block keeps only what the
+ * checks accepted and nothing is left half-cut.
  */
 export function conservativeBlock(block: ArtifactBlock, issues: TrackedIssue[]): ArtifactBlock {
   const quotes = issues.flatMap(i => i.quote ? [i.quote.replace(/\s+/g, " ").trim()] : []).filter(q => q.length >= 8);
-  const fold = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
-  let removed = 0;
-  // A flagged sentence is cut from its text where it sits whole; a quote that runs across elements takes its paragraph or item.
-  const cutSentence = (text: string): string => {
-    let out = text;
-    for (const q of quotes) {
-      const at = fold(out).indexOf(fold(q));
-      if (at < 0) continue;
-      const start = Math.max(out.lastIndexOf(". ", at) + 1, out.lastIndexOf("; ", at) + 1, 0);
-      const endMark = out.slice(at + q.length).search(/[.;](\s|$)/);
-      const end = endMark < 0 ? out.length : at + q.length + endMark + 1;
-      out = `${out.slice(0, start)}${out.slice(end)}`.replace(/\s{2,}/g, " ");
-      removed++;
-    }
-    return out;
-  };
+  const pattern = (q: string) => new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*"), "i");
+  const holds = (text: string, q: string) => pattern(q).test(text);
   const prune = (nodes: HtmlNode[]): HtmlNode[] => nodes.flatMap((node): HtmlNode[] => {
-    if (node.type === "text") return [{ type: "text", text: cutSentence(node.text) }];
-    // Headings stay: the open point is listed under the content instead.
-    if (/^h[234]$/.test(node.tag)) return [node];
-    const before = removed;
-    const children = prune(node.children);
-    const whole = fold(nodeText([node]));
-    if (removed === before && /^(p|li|blockquote|dd|tr)$/.test(node.tag) && quotes.some(q => whole.includes(fold(q)))) { removed++; return []; }
-    if (/^(p|li)$/.test(node.tag) && !nodeText(children).trim()) return [];
+    if (node.type === "text" || /^h[234]$/.test(node.tag)) return [node];
+    const here = quotes.filter(q => holds(nodeText([node]), q));
+    if (!here.length) return [node];
+    // A quotation or a table row is not cut inside; it goes as a unit.
+    if (/^(blockquote|tr)$/.test(node.tag)) return [];
+    // A sentence that lies inside one child is cut there; one that runs across this node's children is cut here.
+    let children = prune(node.children);
+    const across = here.filter(q => !node.children.some(c => c.type === "element" && holds(nodeText([c]), q)));
+    for (const q of across) children = cutSentence(children, pattern(q));
+    if (/^(p|li|dd)$/.test(node.tag) && nodeText(children).replace(/[\s.,;:()—–-]+/g, "").length < 12) return [];
     return [{ ...node, children }];
   });
-  const kept = prune(parseHtml(block.html).nodes);
+  const kept = prune([el("div", [], parseHtml(block.html).nodes)]).flatMap(n => n.type === "element" ? n.children : [n]);
   const heading = parseHtml(block.html).nodes.find(n => n.type === "element" && /^h[23]$/.test(n.tag));
   const body = nodeText(kept).replace(heading ? nodeText([heading]) : "", "").trim().length > 40 ? kept : heading ? [heading] : [el("h2", [], [txt(block.title || block.id)])];
   // The open questions sit under the content that stands, folded away: a reader sees what is established first.
