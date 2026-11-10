@@ -122,10 +122,19 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   /** The run's state and what each of its agent sessions did, turn by turn. */
   async report() {
-    // Reading a run also checks, in a wake of its own, for a session that ended while the object was replaced.
-    if (this.pi.sessionsReport().some(s => s.active)) await this.schedule(1, "recoverPiSessions");
+    // Reading a run with an open session also repairs its wake: an alarm killed mid-run (a deploy) is retried and then
+    // dropped, which leaves pi and the schedule with nothing to wake them; a check of its own settles a session that ended.
+    let alarm: { at: number | null; rearmed: boolean } | null = null;
+    if (this.pi.sessionsReport().some(s => s.active)) {
+      await this.schedule(1, "recoverPiSessions");
+      const at = await this.ctx.storage.getAlarm();
+      const rearm = at === null || at < Date.now() - 60_000;
+      if (rearm) await this.ctx.storage.setAlarm(Date.now() + 1000);
+      alarm = { at, rearmed: rearm };
+      if (rearm) console.warn(JSON.stringify({ event: "run-alarm-rearmed", name: this.name, was: at }));
+    }
     const row = this.row();
-    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport() };
+    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport(), alarm };
   }
 
   /** Scheduled by a read: settles and delivers the sessions whose run ended unsettled (pi/host.ts recoverEnded). */
