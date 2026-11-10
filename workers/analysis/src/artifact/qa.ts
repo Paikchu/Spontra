@@ -131,7 +131,12 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     await page.evaluateOnNewDocument(`try { localStorage.setItem("business-map-theme", ${JSON.stringify(viewport.dark ? "dark" : "light")}); } catch (e) {}`);
     // The drawn frame is what the review waits for; other parts of the page may keep loading (pictures, scripts).
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_MS });
-    const found = await artifactFrame(page);
+    const found = await artifactFrame(page).catch(async (error: unknown) => {
+      // What the page showed instead, so a frame that never drew says why.
+      const seen = await page.evaluate(`(() => ({ lens: !!document.querySelector("section.lens"), frames: document.querySelectorAll("iframe[data-artifact-frame]").length, rendered: document.querySelectorAll("iframe[data-artifact-frame][data-rendered]").length, path: location.pathname + location.search.replace(/artifact-preview=[^&]+/, "artifact-preview=…"), text: (document.body.innerText || "").replace(/\\s+/g, " ").slice(0, 160) }))()`).catch(() => null);
+      console.log(JSON.stringify({ event: "artifact-qa-page", viewport: viewport.name, url, seen, errors: errors.slice(-3) }));
+      throw new Error(`${error instanceof Error ? error.message.slice(0, 80) : String(error)}; page: ${JSON.stringify(seen)}`);
+    });
     if (!found) throw new Error("the artifact frame never drew");
     await found.frame.evaluate(axeSource).catch(() => undefined);
     const measured = await found.frame.evaluate(MEASURE) as Measured;
@@ -179,7 +184,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
       catch (error) { errors.push(`${viewport.name}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300)); }
     }
   } finally { browser.disconnect(); }
-  if (!passes.length) return { issues: [], scores: null, unavailable: errors.join("; ").slice(0, 500) || "the page never drew", shots: 0 };
+  if (!passes.length) return { issues: [], scores: null, unavailable: errors.join("; ").slice(0, 1500) || "the page never drew", shots: 0 };
   const known = new Set(blocks);
   const issues: TrackedIssue[] = [];
   const seen = new Set<string>();
