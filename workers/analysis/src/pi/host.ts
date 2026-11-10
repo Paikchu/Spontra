@@ -81,6 +81,7 @@ const parseArgs = (args: unknown): unknown => {
 const WEB_SEARCH = "web_search";
 /** How long a check waits for an ended run to resolve before it looks again on a later wake. */
 const POLL_WAIT_MS = 20_000;
+const PI_TURN_LIMIT = 400;
 
 export class PiHost {
   readonly registry = createRegistry();
@@ -89,22 +90,31 @@ export class PiHost {
   private restored = false;
   private tables = false;
   private readonly starting = new Map<string, Promise<void>>();
+  /** Sessions whose afterRun hook is running in this instance; recovery leaves them to it. */
+  private readonly ending = new Set<string>();
+  private recoveryPending = false;
 
   private readonly traces = new PiTurnTraces((turn) => this.recordTurn(turn));
   private traceFlushPending = false;
 
   constructor(private readonly agent: HostAgent, private readonly loaders: Record<string, PiLoader>,
-    private readonly options: { models: () => string[]; isStopped?: () => boolean; onSettled?: (operationId: string) => void; /** Ask for `flushTraces` to run in an invocation of its own. */ scheduleTraceFlush?: () => Promise<unknown> }) {
+    private readonly options: { models: () => string[]; isStopped?: () => boolean; onSettled?: (operationId: string) => void; /** Ask for `flushTraces` to run in an invocation of its own. */ scheduleTraceFlush?: () => Promise<unknown>;
+      /** Ask for `recoverEnded` to run in an invocation of its own. */ scheduleRecovery?: () => Promise<unknown> }) {
     this.harness = new PiHarness({
       harness: async ({ storage, context, onWake }) => {
         await this.restore();
         return Harness.open(storage, {
-          models: piModels(this.env, options.models()), registry: this.registry, onWake,
+          models: piModels(this.env, options.models()), registry: this.registry,
+          // Pi idle while a session is still open means its run ended without an answer (a turn limit, a failure), which
+          // runs no afterRun hook: the session is settled by recovery instead of waiting for someone to read it.
+          onWake: (wake) => { onWake?.(wake); if (!wake.active) this.noticeIdle(); },
           // One call at a time, as the loop ran them; a failed run is withdrawn so its result reads unanswered.
           settings: { toolExecution: "sequential", afterFailedRun: "withdraw" },
         }, context);
       },
-      defaults: { model: { provider: PI_PROVIDER, id: options.models()[0]! }, maxTurns: 64 },
+      // Every recipe's own budget ends its run first (the last round); pi's limit only backstops a budget that fails, so it
+      // sits above the largest budget (a periodic filing's 100 turns). A run pi cuts off at its limit runs no afterRun hook.
+      defaults: { model: { provider: PI_PROVIDER, id: options.models()[0]! }, maxTurns: PI_TURN_LIMIT },
     });
   }
 
@@ -263,8 +273,10 @@ export class PiHost {
    */
   async recoverEnded(): Promise<Array<{ operationId: string; state: string }>> {
     const out: Array<{ operationId: string; state: string }> = [];
+    this.recoveryPending = false;
     for (const row of this.db().exec<Row>("SELECT * FROM pi_bindings WHERE active = 1").toArray()) {
       if (row.startup) { out.push({ operationId: row.operation_id, state: "starting" }); continue; }
+      if (this.ending.has(row.conversation)) { out.push({ operationId: row.operation_id, state: "ending" }); continue; }
       const pending = await this.harness.pending({ session: row.session }).catch(() => null);
       if (!pending) { out.push({ operationId: row.operation_id, state: "unknown" }); continue; }
       const held = pending.find(p => p.operationId === row.operation_id);
@@ -280,6 +292,14 @@ export class PiHost {
       out.push({ operationId: row.operation_id, state: "recovered" });
     }
     return out;
+  }
+
+  /** Pi has nothing running: a session still open here ended unsettled, so recovery is asked for once. */
+  private noticeIdle() {
+    if (this.recoveryPending || !this.options.scheduleRecovery) return;
+    if (!this.db().exec<{ n: number }>("SELECT COUNT(*) n FROM pi_bindings WHERE active = 1 AND startup IS NULL").toArray()[0]?.n) return;
+    this.recoveryPending = true;
+    void this.options.scheduleRecovery().catch(() => { this.recoveryPending = false; });
   }
 
   async abort(operationId: string): Promise<void> {
@@ -421,7 +441,11 @@ export class PiHost {
           if (b) {
             // A recipe with its own ending has nobody coming to settle it, so its session closes here.
             // What the ending did to the state (a document the harness delivered) is kept for whoever settles the run.
-            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.persist(b); await this.close(b); }
+            if (b.loaded.recipe.afterRun) {
+              this.ending.add(b.conversation);
+              try { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.persist(b); await this.close(b); }
+              finally { this.ending.delete(b.conversation); }
+            }
             this.options.onSettled?.(b.operationId);
           }
           return undefined;

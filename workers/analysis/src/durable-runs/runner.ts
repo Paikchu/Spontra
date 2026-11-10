@@ -42,6 +42,7 @@ export class TaskRunner extends Agent<Env, RunView> {
     // A session that ended wakes the run, which is waiting on it, without waiting for its next check.
     onSettled: () => { void this.wake(Date.now()); },
     scheduleTraceFlush: () => this.schedule(new Date(Date.now() + 1000), "flushPiTraces"),
+    scheduleRecovery: () => this.schedule(1, "recoverPiSessions"),
   });
   private readonly piInstalled = this.lifecycle.use(this.pi.harness);
 
@@ -126,8 +127,9 @@ export class TaskRunner extends Agent<Env, RunView> {
     // dropped, which leaves pi and the schedule with nothing to wake them; a check of its own settles a session that ended.
     let alarm: { at: number | null; rearmed: boolean } | null = null;
     if (this.pi.sessionsReport().some(s => s.active)) {
-      await this.schedule(1, "recoverPiSessions");
+      // Read before the recovery below is scheduled, which arms an alarm of its own.
       const at = await this.ctx.storage.getAlarm();
+      await this.schedule(1, "recoverPiSessions");
       const rearm = at === null || at < Date.now() - 60_000;
       if (rearm) await this.ctx.storage.setAlarm(Date.now() + 1000);
       alarm = { at, rearmed: rearm };
