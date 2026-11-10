@@ -108,6 +108,14 @@ function carousels(root: Element) {
 }
 
 function tables(root: Element) {
+  // Every table sits in a container that scrolls sideways on a narrow column.
+  for (const table of [...root.querySelectorAll("table")]) {
+    if (table.closest('[data-slot="table-container"]')) continue;
+    const box = document.createElement("div");
+    box.setAttribute("data-slot", "table-container");
+    table.replaceWith(box);
+    box.appendChild(table);
+  }
   for (const th of [...root.querySelectorAll("th[data-sort]")] as HTMLTableCellElement[]) {
     th.tabIndex = 0;
     const sort = () => {

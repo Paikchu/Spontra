@@ -77,7 +77,7 @@ const ANALYST_TOOLS: AgentClientTool[] = [
 ];
 
 /** Turns the composing takes beyond the research budget: writing the blocks, checking them, and the fixes finish asks for. */
-const COMPOSE_TURNS = 14;
+const COMPOSE_TURNS = 20;
 
 type AnalystMaterial = FindingMaterial & { passage: FindingPassage };
 /** Everything one finding's session has learned: the passages read, the figures read, the spend, the hits, and the document. */
