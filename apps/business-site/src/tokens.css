@@ -1,0 +1,96 @@
+/* The map's design tokens and fonts. The page imports them through style.css; the artifact frame imports them too, so a
+   report drawn in the sandbox uses the same colours and type as the page around it. */
+@font-face { font-family: "Geist"; src: url("../../../packages/web/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("../../../packages/web/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Newsreader"; src: url("../../../packages/web/fonts/Newsreader-Variable.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  /* Black theme: true black paper, neutral greys for surfaces, and hairlines rather than shadows to separate them. */
+  --background: #000000;
+  --surface: #0d0d0d;
+  --surface-raised: #161616;
+  --border: #2a2a2a;
+  --hairline: #ffffff14;
+  --foreground: #ededed;
+  --muted-foreground: #a1a1a1;
+  /* Secondary text. 5.3:1 on --surface-raised, 6.1:1 on --background. */
+  --faint: #8b8b8b;
+  /* Chart axis and grid. 3.4:1 on --surface, 3.7:1 on --background. */
+  --grid: #666666;
+  --fill: #141414;
+  --card: #0d0d0d;
+  --brand: #eff457;
+  --sp-accent: #eff457;
+  --focus-ring: #eff457;
+  --up: #79d9cd;
+  --loss: #f08e83;
+  --chart-1: #93b799;
+  --chart-2: #79d9cd;
+  --chart-3: #e8b777;
+  --chart-4: #96aeca;
+  --flow-revenue: #d6d6d6;
+  --flow-profit: #79d9cd;
+  --flow-expense: #e8b777;
+  /* Business slots, validated as a set against the dark surface (CVD ΔE ≥ 10, normal ≥ 17). */
+  --biz-0: #7d8f88;
+  --biz-1: #4489e0;
+  --biz-2: #d2578c;
+  --biz-3: #8a7ae8;
+  --biz-4: #2ea6b8;
+  --stream-tint: #fff;
+  /* Home revenue bars: the brand hue, dimmed so seventeen cards of bars do not glare on black. */
+  --spark: #a9ae4f;
+  --shadow-overlay: 0 18px 50px #000a, 0 0 0 1px #ffffff0a;
+  --sans: "Geist", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+  --display: "Newsreader", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --rail-w: 336px;
+  --rail-collapsed-w: 60px;
+  --inset: 12px;
+  --rail-radius: 20px;
+  --rail-shadow: 0 12px 36px #000a, 0 0 0 1px #ffffff08;
+  font-family: var(--sans);
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+:root.light {
+  color-scheme: light;
+  --background: #f3f5f2;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #dbe3dd;
+  --hairline: #0b1f1a12;
+  --foreground: #13231f;
+  --muted-foreground: #55685f;
+  /* 4.63:1 on --fill, 4.93:1 on --background (was #84958d, 2.87:1 and 3.15:1 on white). */
+  --faint: #606d68;
+  /* 3.66:1 on --background (was --border #dbe3dd at 1.19:1). */
+  --grid: #74827c;
+  --fill: #e9efea;
+  --card: #ffffff;
+  --brand: #5e6510;
+  --sp-accent: #5e6510;
+  --focus-ring: #0e8b7c;
+  /* Positive and negative figures. Darkened so 12px text stays ≥4.5:1 on a tinted row (#e3e5e4): up was #0b7a6d at 4.13:1, loss was #b2453b at 4.36:1. */
+  --up: #096b5f;
+  --loss: #a33d34;
+  --chart-1: #637f9e;
+  --chart-2: #0e8b7c;
+  --chart-3: #b96a26;
+  --chart-4: #68875d;
+  --flow-revenue: #33443f;
+  --flow-profit: #0e8b7c;
+  --flow-expense: #c07a35;
+  --biz-0: #8a9a93;
+  --biz-1: #2a78d6;
+  --biz-2: #c44b80;
+  --biz-3: #6a58d0;
+  --biz-4: #1a8cab;
+  --stream-tint: #fff;
+  --spark: #5e6510;
+  --shadow-overlay: 0 18px 50px #0b1f1a1f, 0 2px 8px #0b1f1a14;
+  --rail-shadow: 0 12px 32px #0b1f1a14, 0 1px 3px #0b1f1a0f;
+}

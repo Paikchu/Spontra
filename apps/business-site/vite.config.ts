@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       // The desktop app runs on the system webview only: WKWebView on macOS and WebView2 on Windows.
       ...(desktop ? { target: ["safari17", "chrome120"], modulePreload: { polyfill: false } } : {}),
-      rollupOptions: { input: { main: local("./index.html"), lens: local("./lens-frame.html") } },
+      rollupOptions: { input: { main: local("./index.html"), lens: local("./lens-frame.html"), artifact: local("./artifact-frame.html") } },
     },
     server: { host: "127.0.0.1", port: 4188, proxy: { "/api": { target: process.env.BUSINESS_SITE_API ?? "http://127.0.0.1:8788", changeOrigin: true } } },
     css: { postcss: { plugins: [] } },

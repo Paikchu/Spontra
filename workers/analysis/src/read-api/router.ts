@@ -28,6 +28,7 @@ import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
+import { readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -51,6 +52,7 @@ const MAX_QUERY_PARAMETERS = 8;
 type RouteMatch =
   | { kind: "filings"; ticker: string }
   | { kind: "filing"; ticker: string; accession: string }
+  | { kind: "artifact-preview"; token: string }
   | { kind: "business-flow"; ticker: string }
   | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
@@ -113,6 +115,11 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
     if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
     if (route.kind === "home") return await home(request, env.DB);
     if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
+    // An artifact draft opened by the visual review through its signed, short-lived link; never cached.
+    if (route.kind === "artifact-preview") {
+      const draft = await readPreview(env as unknown as ArtifactStoreEnv, route.token);
+      return draft ? dataResponse(request, { schemaVersion: "artifact-preview.v1", artifact: draft }, "no-store") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+    }
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
@@ -144,7 +151,7 @@ async function home(request: Request, database: D1Database): Promise<Response> {
   return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote.
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, ticker.trim().toUpperCase(), feature);
   const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
@@ -181,7 +188,9 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
       if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
-      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
+      // The filing's report as an artifact, when the filing path composed one (docs/analysis-html-artifact.md); the summary stays for older readers.
+      const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber).catch(() => null);
+      return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
@@ -284,6 +293,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
+  const preview = /^\/api\/v1\/artifact-preview\/([A-Za-z0-9_.-]{20,1000})\/?$/.exec(pathname);
+  if (preview) return { kind: "artifact-preview", token: preview[1]! };
   const named = /^\/api\/v1\/tickers\/([^/]+)\/?$/.exec(pathname);
   if (named) { const ticker = safeDecode(named[1]!); return ticker === null ? null : { kind: "ticker", ticker }; }
   const valuation = /^\/api\/v1\/companies\/([^/]+)\/valuation(?:\/(versions)(?:\/([0-9a-f]{8,64})(?:\/evidence\/(e[0-9a-f]{6,20}))?)?)?\/?$/.exec(pathname);

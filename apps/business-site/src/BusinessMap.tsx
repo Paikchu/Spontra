@@ -329,6 +329,8 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const { filter: eventFilter, fallback: eventFallback } = defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now);
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
+  // The visual review opens a report draft through a preview link before the filing has a published report.
+  const [previewing] = useState(() => new URLSearchParams(location.search).has("artifact-preview"));
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -697,7 +699,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
-      : focusedReport?.hasReport ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot}
+      : focusedReport && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot}
         head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
       : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} fallback={lens}

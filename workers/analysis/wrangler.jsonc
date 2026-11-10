@@ -2,6 +2,9 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "spontra-analysis",
   "main": "src/index.ts",
+  // Stylesheets are bundled as text: analysis artifacts are compiled with the site's Tailwind theme (src/artifact/theme.ts),
+  // and the browser checks inject axe-core into the rendered artifact.
+  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js"], "fallthrough": true }],
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "limits": { "cpu_ms": 300000 },
@@ -18,7 +21,9 @@
     "ANALYST_ENABLED": "true",
     "TRANSCRIPT_DAILY_CALLS": "25",
     "TRANSCRIPTS_ENABLED": "true",
-    "TRANSLATION_ENABLED": "true"
+    "TRANSLATION_ENABLED": "true",
+    // Where the visual review opens an artifact draft in the real stage (src/artifact/qa.ts).
+    "BUSINESS_SITE_ORIGIN": "https://spontra-business-map.max-zhangyuchen.workers.dev"
   },
   "r2_buckets": [
     {

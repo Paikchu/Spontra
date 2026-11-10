@@ -1,0 +1,83 @@
+/*
+ * The artifact frame (docs/analysis-html-artifact.md §8): the map's own tokens and fonts, the shadcn names an artifact's
+ * classes use mapped onto them, the report's default typography (what a block written without classes, or in the safe
+ * layout, looks like), and the states the component script sets. The artifact's own compiled CSS arrives with it.
+ */
+@import "../tokens.css";
+
+:root, :root.light {
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand);
+  --primary-foreground: var(--background);
+  --secondary: var(--fill);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--fill);
+  --accent: var(--fill);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--loss);
+  --input: var(--border);
+  --ring: var(--focus-ring);
+  --chart-5: var(--biz-0);
+  --gain: var(--up);
+  --gain-soft: color-mix(in srgb, var(--up) 16%, transparent);
+  --loss-soft: color-mix(in srgb, var(--loss) 16%, transparent);
+  --caution: var(--chart-3);
+  --caution-soft: color-mix(in srgb, var(--chart-3) 16%, transparent);
+  --brand-soft: color-mix(in srgb, var(--brand) 16%, transparent);
+  --sp-accent-soft: color-mix(in srgb, var(--sp-accent) 20%, transparent);
+  --radius: 10px;
+  --font-sans: var(--sans);
+}
+
+html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+* { box-sizing: border-box; }
+body { color: var(--foreground); font: 15px/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
+
+/* The report's defaults sit below the artifact's own utilities, so a class always wins over a default. */
+@layer base {
+article[data-artifact] { container-type: inline-size; display: flex; flex-direction: column; gap: 28px; padding: 4px 2px 24px; }
+article[data-artifact] > section { min-width: 0; }
+article[data-artifact] > section + section { border-top: 1px solid var(--hairline); padding-top: 24px; }
+article[data-artifact] h2 { font: 600 20px/1.3 var(--sans); letter-spacing: -0.01em; margin: 0 0 10px; }
+article[data-artifact] h3 { font: 600 16px/1.4 var(--sans); margin: 18px 0 6px; }
+article[data-artifact] h4 { font: 600 14px/1.4 var(--sans); margin: 14px 0 4px; color: var(--muted-foreground); }
+article[data-artifact] p { margin: 0 0 10px; max-width: 72ch; }
+article[data-artifact] ul, article[data-artifact] ol { margin: 0 0 10px; padding-left: 1.25em; }
+article[data-artifact] li + li { margin-top: 4px; }
+article[data-artifact] a { color: var(--foreground); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+article[data-artifact] a:hover { text-decoration-color: var(--foreground); }
+article[data-artifact] blockquote { margin: 10px 0; padding-left: 14px; border-left: 2px solid var(--border); color: var(--muted-foreground); }
+article[data-artifact] data, article[data-artifact] td, article[data-artifact] th { font-variant-numeric: tabular-nums; }
+article[data-artifact] table { width: 100%; border-collapse: collapse; font-size: 14px; }
+article[data-artifact] th { text-align: left; font-weight: 500; color: var(--muted-foreground); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+article[data-artifact] td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+article[data-artifact] [data-slot="table-container"] { overflow-x: auto; margin: 8px 0 12px; }
+article[data-artifact] figure { margin: 12px 0; }
+article[data-artifact] figure svg { width: 100%; height: auto; }
+article[data-artifact] figcaption { font-size: 13px; color: var(--muted-foreground); margin-top: 6px; }
+article[data-artifact] [data-slot="separator"] { height: 1px; background: var(--hairline); margin: 16px 0; }
+:where(article[data-artifact] button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+
+[data-slot="tabs-list"] { display: flex; gap: 4px; border-bottom: 1px solid var(--hairline); margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
+[data-slot="tabs-trigger"] { padding: 6px 10px; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+[data-slot="tabs-trigger"][aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--foreground); }
+[data-slot="accordion-item"] { border-bottom: 1px solid var(--hairline); }
+[data-slot="accordion-trigger"], [data-slot="collapsible-trigger"] { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 10px 0; font-weight: 500; }
+[data-slot="accordion-trigger"]::after, [data-slot="collapsible-trigger"]::after { content: "+"; color: var(--muted-foreground); }
+[data-slot="accordion-trigger"][aria-expanded="true"]::after, [data-slot="collapsible-trigger"][aria-expanded="true"]::after { content: "−"; }
+[data-slot="tooltip"], [data-slot="hover-card"] { text-decoration: underline dotted var(--muted-foreground); text-underline-offset: 3px; cursor: help; }
+[data-slot="progress"] { position: relative; height: 6px; border-radius: 999px; background: var(--fill); overflow: hidden; }
+[data-slot="carousel"] { position: relative; }
+[data-slot="carousel-content"] { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 12px; }
+[data-slot="carousel-item"] { flex: 0 0 100%; scroll-snap-align: start; min-width: 0; }
+th[data-sort] { cursor: pointer; user-select: none; }
+th[data-sort][aria-sort="ascending"]::after { content: " ↑"; }
+th[data-sort][aria-sort="descending"]::after { content: " ↓"; }
+}
+
+/* States the component script sets: they hold whatever the classes say. */
+[data-slot="tabs-content"][hidden], [data-slot="accordion-content"][hidden], [data-slot="collapsible-content"][hidden] { display: none; }
+[data-artifact-popup] { position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 24px)); padding: 8px 10px; border-radius: 8px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); font-size: 13px; line-height: 1.5; pointer-events: none; }
+[data-slot="progress"] > [data-artifact-progress] { position: absolute; inset: 0 auto 0 0; background: var(--foreground); border-radius: inherit; }

@@ -15,90 +15,129 @@ import type { LibraryPassageView } from "../../../../shared/analysis-contract/fi
 import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "./profiles.ts";
 import { previousSectionOf, sectionDocuments, updateFiling } from "./store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
+import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } from "../artifact/compose.ts";
+import { openComposer, registerSource, type ComposerState } from "../artifact/document.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual" };
-/** `read`: the sections the session read, in order; they are what a memory item drawn from the report may cite. */
-type FilingState = WebToolState & { published: boolean; candidates: unknown[]; read?: string[] };
+/**
+ * `read`: the sections the session read, in order; they are what a memory item drawn from the report may cite.
+ * `data` and `web`: the text of the figures and pages read, so a block citing them can be checked against them.
+ */
+type FilingState = WebToolState & { composer: ComposerState; candidates: unknown[]; read?: string[]; data: Record<string, string>; web: Record<string, string>; category?: string };
 
 const ok = (observation: string): HandResult => ({ observation });
-const fail = (observation: string): HandResult => ({ observation, error: true });
 /** DeepSeek sometimes sends a nested argument as a JSON string. */
 const parsed = (value: unknown): unknown => {
   if (typeof value !== "string" || !/^\s*[[{]/.test(value)) return value;
   try { return JSON.parse(value); } catch { return value; }
 };
 const idsOf = (value: unknown) => (Array.isArray(parsed(value)) ? parsed(value) as unknown[] : []).map(String).filter(Boolean);
-const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const passageText = (p: LibraryPassageView) => p.table ? renderTable(p.table, []) : p.text;
 const RESULT_CHARS = 60_000;
+const CATEGORIES = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"] as const;
 
 function job(spec: FilingSpec, status: "complete" | "failed", at: string, errorDetail?: string) {
   return { jobId: spec.jobId, ticker: spec.ticker, accessionNumber: spec.filing.accessionNumber, analysisVersion: spec.jobVersion, attempt: 1, requestedBy: spec.requestedBy, workflowInstanceId: spec.sessionId,
     status, currentStage: status === "complete" ? "published" : "analysis", updatedAt: at, completedAt: at, ...(errorDetail ? { errorCode: "analysis_failed", errorDetail } : {}) };
 }
 
-/** The report as the model wrote it, in the shape the filings list stores. */
-export function filingSummary(filing: SecFiling, args: Record<string, unknown>, at: string): SecFilingSummary {
-  return { ticker: filing.ticker, form: filing.form, filingDate: filing.filingDate, accessionNumber: filing.accessionNumber, headline: text(args.headline), bullets: [], analystView: "", report: text(args.report),
-    ...(text(args.eventCategory) ? { eventCategory: text(args.eventCategory) as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: "claude", generatedBy: "pi", generatedAt: at };
+/** The report as the filings list and the readers before artifacts store it: the summary block's title and the document's text. */
+export function filingSummary(filing: SecFiling, report: { headline: string; text: string; category?: string }, at: string): SecFilingSummary {
+  return { ticker: filing.ticker, form: filing.form, filingDate: filing.filingDate, accessionNumber: filing.accessionNumber, headline: report.headline, bullets: [], analystView: "", report: report.text,
+    ...(report.category ? { eventCategory: report.category as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: "deepseek", generatedBy: "pi", generatedAt: at };
 }
+
+const openState = (spec: FilingSpec): ComposerState => openComposer({ kind: "filing-report", ticker: spec.ticker, subject: spec.filing.accessionNumber, title: `${spec.ticker} ${spec.filing.form} ${spec.filing.reportDate || spec.filing.filingDate}`, lang: "en" });
 
 function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, data: StageData | null): Recipe<FilingSpec, boolean, FilingState> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;
   const accession = filing.accessionNumber;
-  const figures = data ? stageTools({ data, locale: "en", scene: [], view: null }).filter(t => ["company_overview", "read_series"].includes(t.name)) as unknown as AnyTool<FilingState>[] : [];
-  const web = webTools<FilingState>({ env, ticker, now: new Date().toISOString(), periodEnd: filing.reportDate, budget: { searches: 8, webReads: 8 }, register: (state) => `w${state.used.webReads}` });
-  const read = async (sectionIds: string[], state?: FilingState) => {
+  // The figures the session reads are sources a block may cite; their text is kept so a cited figure can be checked.
+  const figures = (data ? stageTools({ data, locale: "en", scene: [], view: null }).filter(t => ["company_overview", "read_series"].includes(t.name)) as unknown as AnyTool<FilingState>[] : []).map((t): AnyTool<FilingState> => ({
+    ...t, observe: (args: unknown, value: unknown, state: FilingState) => {
+      const text = t.observe(args, value, state);
+      const id = `d${Object.keys(state.data).length + 1}`;
+      state.data[id] = text.slice(0, 30_000);
+      registerSource(state.composer, id, { title: `Figures read with ${t.name}`, url: null, kind: "data" });
+      return `[source ${id}]\n${text}`;
+    },
+  }));
+  const web = webTools<FilingState>({ env, ticker, now: new Date().toISOString(), periodEnd: filing.reportDate, budget: { searches: 8, webReads: 8 }, register: (state, passage) => {
+    const id = `w${state.used.webReads}`;
+    state.web[id] = passage.text.slice(0, 30_000);
+    registerSource(state.composer, id, { title: passage.title, url: /^https:\/\//.test(passage.url) ? passage.url : null, kind: "web" });
+    return id;
+  } });
+  const sectionText = async (sectionId: string) => {
+    const [pair] = await sectionDocuments(db, [sectionId]);
+    return pair ? (await librarySectionPassages(db, pair[1], [sectionId])).map(passageText).join("\n\n") : null;
+  };
+  const read = async (sectionIds: string[], state: FilingState, earlier: boolean) => {
     const out: string[] = [];
     for (const [sectionId, documentId] of await sectionDocuments(db, sectionIds)) {
-      if (state) state.read = [...new Set([...(state.read ?? []), sectionId])];
-      out.push(`## ${sectionId}\n${(await librarySectionPassages(db, documentId, [sectionId])).map(passageText).join("\n\n") || "(no text)"}`);
+      state.read = [...new Set([...(state.read ?? []), sectionId])];
+      registerSource(state.composer, sectionId, { title: `${earlier ? "Earlier filing" : `${filing.form} ${filing.reportDate || filing.filingDate}`}, section ${sectionId}`, url: earlier ? null : (/^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null), kind: "sec" });
+      out.push(`## ${sectionId} [source ${sectionId}]\n${(await librarySectionPassages(db, documentId, [sectionId])).map(passageText).join("\n\n") || "(no text)"}`);
     }
     return out.join("\n\n") || "No such section.";
   };
   const ids: { type: "object"; properties: Record<string, unknown>; required: string[] } = { type: "object", properties: { sectionIds: { type: "array", items: { type: "string" } } }, required: ["sectionIds"] };
   const own: AnyTool<FilingState>[] = [
-    handTool<FilingState>({ name: "read_sections", description: "Read sections of this filing whole, tables included, by the ids the first message lists. Send several ids at once.", input_schema: ids },
-      async (args, state) => ok(await read(idsOf(args.sectionIds), state))),
-    handTool<FilingState>({ name: "read_previous", description: "Read the same sections in the earlier filing.", input_schema: ids },
+    handTool<FilingState>({ name: "read_sections", description: "Read sections of this filing whole, tables included, by the ids the first message lists. Send several ids at once. Each section is a source a block can cite by its id.", input_schema: ids },
+      async (args, state) => ok(await read(idsOf(args.sectionIds), state, false))),
+    handTool<FilingState>({ name: "read_previous", description: "Read the same sections in the earlier filing; each becomes a source under its own id.", input_schema: ids },
       async (args, state) => {
         const earlier = (await Promise.all(idsOf(args.sectionIds).map(id => previousSectionOf(db, id)))).flatMap(s => s ? [s.sectionId] : []);
-        return ok(earlier.length ? await read(earlier, state) : "The earlier filing has no such section.");
+        return ok(earlier.length ? await read(earlier, state, true) : "The earlier filing has no such section.");
       }),
-    handTool<FilingState>({ name: "publish_report", description: "Publish the report and end the session: headline (one line), report (the report in Markdown), and eventCategory for an 8-K or 6-K (earnings_update, guidance, m&a, executive, legal or other).",
-      input_schema: { type: "object", properties: { headline: { type: "string" }, report: { type: "string" }, eventCategory: { type: "string" } }, required: ["headline", "report"] } },
-      async (args, state) => {
-        const now = new Date().toISOString();
-        const summary = filingSummary(filing, args, now);
-        if (!summary.headline || !summary.report) return fail("headline and report are both needed.");
-        // A periodic report is also the company memory's source: the memory job is published with the report.
-        const memory = profile.id === "periodic" ? await filingMemoryStatements(env, { filing, summary, sessionId: spec.sessionId, readSectionIds: state.read ?? [] }) : [];
-        await repository.setSummary({ ticker, accessionNumber: accession, form: filing.form }, summary, memory);
-        const spent = await db.prepare("SELECT SUM(input_tokens - COALESCE(cached_tokens, 0) + output_tokens) n FROM ai_usage WHERE run_id = ?").bind(spec.sessionId).first<{ n: number | null }>();
-        await updateFiling(db, ticker, accession, { status: "published", reason: null, tokens: spent?.n ?? 0, publishedAt: now }, now);
-        await repository.upsertAnalysisJob(job(spec, "complete", now));
-        state.published = true;
-        return ok("Published.");
-      }),
+    ...(profile.id === "current" ? [handTool<FilingState>({ name: "set_category", description: `What kind of current report this is: ${CATEGORIES.join(", ")}.`, input_schema: { type: "object", properties: { category: { type: "string", enum: [...CATEGORIES] } }, required: ["category"] } },
+      (args, state) => { state.category = CATEGORIES.includes(args.category as never) ? String(args.category) : "other"; return ok(`Category: ${state.category}.`); })] : []),
   ];
-  const list = [...own, ...figures, ...web];
+  const setup: ComposerSetup<FilingState> = {
+    env, chart: data ? { data: data.data, periodEnd: data.periodEnd } : null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns,
+    research: ["read_sections", "read_previous", ...(figures.length ? ["read_series"] : []), "search", "read_web"], previewQuery: `report=${encodeURIComponent(accession)}`,
+    read: async (id, state) => {
+      if (state.data[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.data[id]! };
+      if (state.web[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.web[id]! };
+      const text = state.composer.sources[id] ? await sectionText(id) : null;
+      return text === null ? null : { title: state.composer.sources[id]!.title, text };
+    },
+    onPublish: async (state, published) => {
+      const now = new Date().toISOString();
+      const headline = state.composer.blocks.find(b => b.id === "summary")?.title || state.composer.artifact.title;
+      const summary = filingSummary(filing, { headline, text: published.text, ...(state.category ? { category: state.category } : {}) }, now);
+      // A periodic report is also the company memory's source: the memory job is published with the report.
+      const memory = profile.id === "periodic" ? await filingMemoryStatements(env, { filing, summary, sessionId: spec.sessionId, readSectionIds: state.read ?? [] }) : [];
+      return repository.summaryStatements({ ticker, accessionNumber: accession, form: filing.form }, summary, memory) as unknown as D1PreparedStatement[];
+    },
+    afterPublish: async () => {
+      const now = new Date().toISOString();
+      const spent = await db.prepare("SELECT SUM(input_tokens - COALESCE(cached_tokens, 0) + output_tokens) n FROM ai_usage WHERE run_id = ?").bind(spec.sessionId).first<{ n: number | null }>();
+      await updateFiling(db, ticker, accession, { status: "published", reason: null, tokens: spent?.n ?? 0, publishedAt: now }, now);
+      await repository.upsertAnalysisJob(job(spec, "complete", now));
+    },
+  };
+  const compose = composerTools(setup);
+  const list = [...own, ...figures, ...web, ...compose];
   return {
-    id: `filing.${spec.profile}.v2`,
+    id: `filing.${spec.profile}.v3`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: RESULT_CHARS,
     callsPerTurn: Infinity,
-    system: () => `${FILING_SYSTEM(ticker)}\n${profile.prompt}`,
-    open: () => ({ published: false, candidates: [], hits: [], used: { searches: 0, webReads: 0 } }),
+    system: () => `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${COMPOSER_GUIDE}`,
+    open: () => ({ composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, data: {}, web: {} }),
     tools: () => list,
     policy: { allow: list.map(t => t.name), post: handPolicy(own).post },
-    settled: s => s.published,
-    settle: s => s.published,
-    nudge: "Continue reading if you need to, then call publish_report.",
+    onTurn: (s, turn) => { s.composer.turns = turn; },
+    settled: s => s.composer.phase === "published",
+    settle: s => s.composer.phase === "published",
+    nudge: "Continue reading and writing blocks, then call finish.",
     afterRun: async (s) => {
-      if (s.published) return;
+      // A session that ends without publishing still delivers: the harness settles what is open and publishes (§6.5).
+      if (await deliverComposer(s, setup).catch(error => { console.error(JSON.stringify({ event: "artifact-deliver", ticker, accession, error: error instanceof Error ? error.message : String(error) })); return false; })) return;
       const now = new Date().toISOString();
       await updateFiling(db, ticker, accession, { status: "failed", reason: "the session ended without a report" }, now);
       await repository.upsertAnalysisJob(job(spec, "failed", now, "the session ended without a report"));
@@ -110,5 +149,9 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
 export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<PiLoaded> {
   const profile = profileById(spec.profile);
   const data = await loadStageData(env, spec.ticker, { findings: false }).catch(() => null);
-  return { recipe: filingRecipe(env, spec, profile, data), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId } };
+  return {
+    recipe: filingRecipe(env, spec, profile, data), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    // A session started before artifacts has no document yet; it continues with an empty one.
+    hydrate: (state: FilingState) => { state.composer ??= openState(spec); state.data ??= {}; state.web ??= {}; },
+  };
 }

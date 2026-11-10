@@ -113,6 +113,12 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_USER_AGENT: string;
   /** Every model call and web search goes to DeepSeek's Anthropic-format API with this key. */
   DEEPSEEK_API_KEY?: string;
+  /** Anthropic's API, for the artifact arbiter and visual review (artifact/anthropic.ts). */
+  ANTHROPIC_API_KEY?: string;
+  /** The business map's public origin, where the visual review loads an artifact draft in the real stage. */
+  BUSINESS_SITE_ORIGIN?: string;
+  /** Signs artifact preview links; the admin password's secret doubles as the key material. */
+  REPORT_ADMIN_PASSWORD?: string;
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;

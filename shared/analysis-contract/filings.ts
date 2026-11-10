@@ -80,6 +80,8 @@ export type PublicFilingDetail = {
   ticker: string;
   company: PublicFilingCompany | null;
   filing: PublicSecFiling;
+  /** The filing's report as a composed artifact, when there is one (docs/analysis-html-artifact.md). */
+  artifact?: import("./artifact.ts").PublishedArtifact | null;
 };
 
 /** Bounds the backend enforces on a filing page request. Published so consumers can page safely. */

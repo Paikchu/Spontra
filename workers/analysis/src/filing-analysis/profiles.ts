@@ -6,7 +6,7 @@ export type ProfileId = "periodic" | "current";
 export type FilingProfile = { id: ProfileId; match(form: string): boolean; turns: number; wallMs: number; reasoning: "low" | "medium" | "high"; prompt: string };
 
 const MINUTE = 60_000;
-const REPORT_SHAPE = "Finish with publish_report: a one-line headline and the report in Markdown. The report is all a reader gets for this filing, so it opens with the conclusions and holds everything worth saying; there is no separate summary.";
+const REPORT_SHAPE = "Write the report as a document of blocks and call finish. The first block, \"summary\", is required: its h2 is the report's one-line headline and its text opens with the conclusions. The report is all a reader gets for this filing, so it holds everything worth saying; there is no separate summary.";
 
 const PROFILES: readonly FilingProfile[] = [
   {

@@ -240,7 +240,8 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
   if(!response.ok)throw new Error("Filing detail source unavailable");
   const detail=await response.json() as PublicFilingDetail;
   if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
-  return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing};
+  const artifact=detail.artifact&&typeof detail.artifact.html==="string"&&typeof detail.artifact.css==="string"?detail.artifact:null;
+  return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing,artifact};
 }
 
 /** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
@@ -412,6 +413,14 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);if(!response.ok){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
   const moduleJson=(body:unknown)=>{const response=json(body,readFailureStatus||200);if(readFailureStatus===429)response.headers.set("retry-after",readRetryAfter??"60");return response;};
   if(!fetcher)return json({error:"Read service unavailable"},503);
+  // An analysis draft opened by the visual review through its signed, short-lived link (docs/analysis-html-artifact.md §7.1).
+  const preview=url.pathname.match(/^\/api\/business\/v1\/artifact-preview\/([A-Za-z0-9_.-]{20,1000})$/);
+  if(preview){
+   if(request.method!=="GET")return json({error:"Method not allowed"},405);
+   try{const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/artifact-preview/${preview[1]}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+    const out=response.ok?json(await response.json()):json({error:"Not found"},404);out.headers.set("cache-control","no-store");return out;}
+   catch{return json({error:"Preview unavailable"},503);}
+  }
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
   if(url.pathname==="/api/business/v1/home"){
    if(request.method!=="GET")return json({error:"Method not allowed"},405);

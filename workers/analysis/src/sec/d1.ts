@@ -114,10 +114,17 @@ export class D1SecRepository implements SecRepository {
 
   /** `also`: statements that must commit with the summary, such as the memory job a periodic report starts. */
   async setSummary(filing: Pick<SecFiling, "ticker" | "accessionNumber" | "form">, summary: SecFilingSummary, also: D1ResultStatement[] = []): Promise<void> {
+    const statements = [...this.summaryStatements(filing, summary, also)];
+    if (this.database.batch) await this.database.batch(statements);
+    else for (const statement of statements) await statement.run();
+  }
+
+  /** The statements that publish a summary and announce it, for a caller committing them with its own. */
+  summaryStatements(filing: Pick<SecFiling, "ticker" | "accessionNumber" | "form">, summary: SecFilingSummary, also: D1ResultStatement[] = []): D1ResultStatement[] {
     if (summary.ticker !== filing.ticker || summary.accessionNumber !== filing.accessionNumber || summary.form !== filing.form) {
       throw new Error("SEC summary does not match the filing it is being published against");
     }
-    const statements = [
+    return [
       this.database.prepare(`
         INSERT INTO sec_filing_summaries (ticker, accession_number, generated_at, payload)
         VALUES (?, ?, ?, ?)
@@ -128,8 +135,6 @@ export class D1SecRepository implements SecRepository {
       ...also,
       reportPublished(this.database, summary),
     ];
-    if (this.database.batch) await this.database.batch(statements);
-    else for (const statement of statements) await statement.run();
   }
 
   async upsertFilingIndex(filing: SecFiling): Promise<void> {
