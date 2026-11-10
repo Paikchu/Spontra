@@ -6,7 +6,8 @@ import type { WebSearchService } from "../web-search/service.ts";
 import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type BusinessSource = BusinessDeepDive["sources"][number];
-export type AvailableSecReport = { periodId: string; periodEnd: string; periodScope: string; reportVersion: string };
+/** `accession`: set for a report the filing path published (its version is the publication time); unset for a legacy structured report. */
+export type AvailableSecReport = { periodId: string; periodEnd: string; periodScope: string; reportVersion: string; accession?: string };
 export type BusinessToolResult = { sourceId: string | null; observation: unknown };
 
 export interface BusinessResearchTools {
@@ -33,9 +34,33 @@ export function createBusinessResearchTools(input: {
   const { sources, searchHits } = memory;
   const scope = { scope: `spontra:business:${input.ticker}`, maxAgeMs: 6 * 60 * 60_000 };
   const resultSources = () => [...sources.values()];
+  /** A report the filing path published: its headline and Markdown, cited as the filing it analyses. */
+  const readFilingReport = async (frozen: AvailableSecReport, accession: string): Promise<BusinessToolResult> => {
+    const summary = await reports.getSummary(input.ticker, accession);
+    if (!summary?.report) return { sourceId: null, observation: { error: "SEC report is not available for this company and period" } };
+    if (summary.generatedAt !== frozen.reportVersion) throw new Error("SEC published report changed during the business analysis.");
+    const filing = await input.database.prepare("SELECT form, filing_date AS filingDate, report_date AS reportDate, index_url AS indexUrl FROM sec_filings WHERE ticker = ? AND accession_number = ? LIMIT 1")
+      .bind(input.ticker, accession).first<{ form: string; filingDate: string; reportDate: string; indexUrl: string }>();
+    if (!filing || !isSecUrl(filing.indexUrl)) return { sourceId: null, observation: { error: "SEC published report has no verified filing URL" } };
+    const id = `sec-${accession}`;
+    sources.set(id, {
+      id, title: `${input.ticker} ${filing.form} (${filing.reportDate || filing.filingDate})`,
+      url: filing.indexUrl, kind: "sec", publishedAt: isoDate(filing.filingDate), retrievedAt: input.now,
+    });
+    return { sourceId: id, observation: { sourceId: id, periodEnd: filing.reportDate, form: filing.form, headline: summary.headline, report: summary.report.slice(0, 24_000) } };
+  };
   return {
     async availableReports() {
       if (memory.available) return memory.available;
+      // The filing path's reports first: one per period, the newest publication. Legacy structured reports fill the periods it has not reached.
+      const filed = await input.database.prepare(`
+        SELECT m.period_id AS periodId, p.end_date AS periodEnd, p.period_scope AS periodScope, s.generated_at AS reportVersion, s.accession_number AS accession
+        FROM sec_filing_summaries s
+        JOIN sec_filing_periods m ON m.filing_id = s.accession_number AND m.role = 'primary'
+        JOIN sec_periods p ON p.period_id = m.period_id AND p.ticker = s.ticker
+        WHERE s.ticker = ? AND p.end_date <= ? AND json_extract(s.payload, '$.generatedBy') = 'pi' AND length(json_extract(s.payload, '$.report')) > 0
+        ORDER BY p.end_date DESC, s.generated_at DESC LIMIT 16
+      `).bind(input.ticker, input.reportDate).all<AvailableSecReport>();
       const rows = await input.database.prepare(`
         SELECT r.period_id AS periodId, p.end_date AS periodEnd, p.period_scope AS periodScope, r.report_version AS reportVersion
         FROM sec_published_reports r JOIN sec_periods p ON r.period_id = p.period_id AND r.ticker = p.ticker
@@ -43,8 +68,9 @@ export function createBusinessResearchTools(input: {
         ORDER BY p.end_date DESC, r.generated_at DESC, r.rowid DESC LIMIT 16
       `).bind(input.ticker, input.reportDate).all<AvailableSecReport>();
       const byPeriod = new Map<string, AvailableSecReport>();
+      for (const row of filed.results) if (!byPeriod.has(row.periodId)) byPeriod.set(row.periodId, row);
       for (const row of rows.results) if (!byPeriod.has(row.periodId)) byPeriod.set(row.periodId, row);
-      memory.available = [...byPeriod.values()].slice(0, 4);
+      memory.available = [...byPeriod.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, 4);
       return memory.available;
     },
     async readSecReport(periodId) {
@@ -52,6 +78,7 @@ export function createBusinessResearchTools(input: {
       if (!frozen) {
         return { sourceId: null, observation: { error: "SEC report is not available for this company and period" } };
       }
+      if (frozen.accession) return readFilingReport(frozen, frozen.accession);
       const report = await reports.getPublishedReport(input.ticker, periodId);
       if (report && report.reportVersion !== frozen.reportVersion) {
         throw new Error("SEC published report changed during the business analysis.");

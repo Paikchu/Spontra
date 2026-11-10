@@ -153,7 +153,7 @@ export type ManagerReview = {
 type SecComparisonType = "qoq" | "yoy" | "guidance_revision" | "disclosure_change";
 
 export function buildPeriodIdentity(ticker: string, form: string, reportDate: string): { periodId: string; periodScope: "quarter" | "annual" } {
-  const periodScope = form.startsWith("10-K") || form.startsWith("20-F") ? "annual" : "quarter";
+  const periodScope = form.startsWith("10-K") || form.startsWith("20-F") || form.startsWith("40-F") ? "annual" : "quarter";
   return {
     periodId: `${ticker}:${reportDate}:${periodScope}`,
     periodScope,

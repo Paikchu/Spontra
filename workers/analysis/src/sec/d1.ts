@@ -3,7 +3,7 @@ import { SecAnalysisJobRepository } from "./d1-jobs.ts";
 import { loadReportContinuity } from "./continuity.ts";
 import { inReportingCurrency } from "./history.ts";
 import { SecMemoryRepository } from "./d1-memory.ts";
-import { parseJson, hashJson, type D1Like } from "./d1-support.ts";
+import { parseJson, hashJson, type D1Like, type D1ResultStatement } from "./d1-support.ts";
 import { outboxInsert } from "../pipeline/outbox.ts";
 export { SEC_ANALYSIS_JOB_LEASE_MS } from "./d1-jobs.ts";
 
@@ -112,7 +112,8 @@ export class D1SecRepository implements SecRepository {
     }
   }
 
-  async setSummary(filing: Pick<SecFiling, "ticker" | "accessionNumber" | "form">, summary: SecFilingSummary): Promise<void> {
+  /** `also`: statements that must commit with the summary, such as the memory job a periodic report starts. */
+  async setSummary(filing: Pick<SecFiling, "ticker" | "accessionNumber" | "form">, summary: SecFilingSummary, also: D1ResultStatement[] = []): Promise<void> {
     if (summary.ticker !== filing.ticker || summary.accessionNumber !== filing.accessionNumber || summary.form !== filing.form) {
       throw new Error("SEC summary does not match the filing it is being published against");
     }
@@ -124,6 +125,7 @@ export class D1SecRepository implements SecRepository {
           generated_at = excluded.generated_at,
           payload = excluded.payload
       `).bind(summary.ticker, summary.accessionNumber, summary.generatedAt, JSON.stringify(summary)),
+      ...also,
       reportPublished(this.database, summary),
     ];
     if (this.database.batch) await this.database.batch(statements);

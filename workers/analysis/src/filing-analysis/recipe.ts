@@ -14,10 +14,12 @@ import type { AnyTool } from "../tools/registry.ts";
 import type { LibraryPassageView } from "../../../../shared/analysis-contract/filing-library.ts";
 import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "./profiles.ts";
 import { previousSectionOf, sectionDocuments, updateFiling } from "./store.ts";
+import { filingMemoryStatements } from "./memory-source.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual" };
-type FilingState = WebToolState & { published: boolean; candidates: unknown[] };
+/** `read`: the sections the session read, in order; they are what a memory item drawn from the report may cite. */
+type FilingState = WebToolState & { published: boolean; candidates: unknown[]; read?: string[] };
 
 const ok = (observation: string): HandResult => ({ observation });
 const fail = (observation: string): HandResult => ({ observation, error: true });
@@ -49,19 +51,22 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   const accession = filing.accessionNumber;
   const figures = data ? stageTools({ data, locale: "en", scene: [], view: null }).filter(t => ["company_overview", "read_series"].includes(t.name)) as unknown as AnyTool<FilingState>[] : [];
   const web = webTools<FilingState>({ env, ticker, now: new Date().toISOString(), periodEnd: filing.reportDate, budget: { searches: 8, webReads: 8 }, register: (state) => `w${state.used.webReads}` });
-  const read = async (sectionIds: string[]) => {
+  const read = async (sectionIds: string[], state?: FilingState) => {
     const out: string[] = [];
-    for (const [sectionId, documentId] of await sectionDocuments(db, sectionIds)) out.push(`## ${sectionId}\n${(await librarySectionPassages(db, documentId, [sectionId])).map(passageText).join("\n\n") || "(no text)"}`);
+    for (const [sectionId, documentId] of await sectionDocuments(db, sectionIds)) {
+      if (state) state.read = [...new Set([...(state.read ?? []), sectionId])];
+      out.push(`## ${sectionId}\n${(await librarySectionPassages(db, documentId, [sectionId])).map(passageText).join("\n\n") || "(no text)"}`);
+    }
     return out.join("\n\n") || "No such section.";
   };
   const ids: { type: "object"; properties: Record<string, unknown>; required: string[] } = { type: "object", properties: { sectionIds: { type: "array", items: { type: "string" } } }, required: ["sectionIds"] };
   const own: AnyTool<FilingState>[] = [
     handTool<FilingState>({ name: "read_sections", description: "Read sections of this filing whole, tables included, by the ids the first message lists. Send several ids at once.", input_schema: ids },
-      async (args) => ok(await read(idsOf(args.sectionIds)))),
+      async (args, state) => ok(await read(idsOf(args.sectionIds), state))),
     handTool<FilingState>({ name: "read_previous", description: "Read the same sections in the earlier filing.", input_schema: ids },
-      async (args) => {
+      async (args, state) => {
         const earlier = (await Promise.all(idsOf(args.sectionIds).map(id => previousSectionOf(db, id)))).flatMap(s => s ? [s.sectionId] : []);
-        return ok(earlier.length ? await read(earlier) : "The earlier filing has no such section.");
+        return ok(earlier.length ? await read(earlier, state) : "The earlier filing has no such section.");
       }),
     handTool<FilingState>({ name: "publish_report", description: "Publish the report and end the session: headline (one line), report (the report in Markdown), and eventCategory for an 8-K or 6-K (earnings_update, guidance, m&a, executive, legal or other).",
       input_schema: { type: "object", properties: { headline: { type: "string" }, report: { type: "string" }, eventCategory: { type: "string" } }, required: ["headline", "report"] } },
@@ -69,7 +74,9 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
         const now = new Date().toISOString();
         const summary = filingSummary(filing, args, now);
         if (!summary.headline || !summary.report) return fail("headline and report are both needed.");
-        await repository.setSummary({ ticker, accessionNumber: accession, form: filing.form }, summary);
+        // A periodic report is also the company memory's source: the memory job is published with the report.
+        const memory = profile.id === "periodic" ? await filingMemoryStatements(env, { filing, summary, sessionId: spec.sessionId, readSectionIds: state.read ?? [] }) : [];
+        await repository.setSummary({ ticker, accessionNumber: accession, form: filing.form }, summary, memory);
         const spent = await db.prepare("SELECT SUM(input_tokens - COALESCE(cached_tokens, 0) + output_tokens) n FROM ai_usage WHERE run_id = ?").bind(spec.sessionId).first<{ n: number | null }>();
         await updateFiling(db, ticker, accession, { status: "published", reason: null, tokens: spent?.n ?? 0, publishedAt: now }, now);
         await repository.upsertAnalysisJob(job(spec, "complete", now));

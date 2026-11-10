@@ -154,8 +154,8 @@ export const AI_TASKS = {
   },
 
   /**
-   * Starts report memory for a published periodic report. The report Workflow usually starts it already; this picks
-   * up a job that was never started or whose run died, once its lease has expired.
+   * Starts report memory for a published periodic report: the filing session publishes the memory job with the report
+   * (filing-analysis/memory-source.ts), and this starts it; it also picks up a job whose run died, once its lease has expired.
    */
   memory: {
     version: "memory.v1",

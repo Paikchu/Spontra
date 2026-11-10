@@ -110,7 +110,8 @@ export const RUN_TASKS: Record<RunKind, Task> = {
   },
   async SEC_MEMORY_WORKFLOW(params: SecMemoryWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
-    assertFeatureTicker(env, "findings", params.ticker);
+    // Memory is layer 2 (filings); the company analysis it starts checks the findings layer itself.
+    assertFeatureTicker(env, "filings", params.ticker);
     return executeSecMemoryWorkflow(params, id, durableSteps(step, env, id), env);
   },
   async COMPANY_ANALYSIS_WORKFLOW(params: CompanyAnalysisWorkflowParams, { env: raw, step, id, timestamp }) {
