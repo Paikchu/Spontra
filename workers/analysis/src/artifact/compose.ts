@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ARTIFACT_BLOCK_ID, ARTIFACT_MAX_BLOCKS, ARTIFACT_REQUIRED_BLOCKS, type ArtifactBlock } from "../../../../shared/analysis-contract/artifact.ts";
 import type { LensChart } from "../../../../shared/analysis-contract/lens.ts";
-import { checkBlock, figureInText, quoteInText, shownMatches } from "../../../../shared/analysis-runtime/artifact/html.ts";
+import { checkBlock, figureInText, parseHtml, quoteInText, serializeHtml, shownMatches } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { chartHeight, compileChart } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import type { FindingData } from "../../../../shared/analysis-runtime/findings.ts";
@@ -208,7 +208,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       }
       if (step.level === 3 && !c.hidden.includes(b.id)) c.hidden.push(b.id);
       log(c, b.id, "content", step.level, issues.map(i => i.problem).join(" | "));
-      notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
+      notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.replacement ? ` Correction: ${/^delete\.?$/i.test(i.replacement) ? "remove the sentence" : i.replacement}` : i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
     }
     return notes.length ? [...notes, ...advice] : [];
   }
@@ -276,11 +276,35 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
-    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);
+    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nAccept the review's corrections with apply_fixes, or change the faulted sentences with edit_block, then call finish again.`);
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
-    if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, fix the blocks with write_block, then call finish again.`);
+    if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, change the layout with edit_block keeping the words exactly, then call finish again.`);
     return publish(state);
+  }
+
+  /** Checks a block's HTML and saves it; the same words laid out again keep the standing the review gave them (§4.2). */
+  async function save(state: S, id: string, html: string, afterId: string): Promise<Result> {
+    const c = state.composer;
+    if (!ARTIFACT_BLOCK_ID.test(id)) return fail(`Block ids are lowercase slugs such as "revenue" or "risks-2".`);
+    if (c.phase === "published") return fail("The document is published.");
+    if (!block(state, id) && c.blocks.length >= ARTIFACT_MAX_BLOCKS) return fail(`A document holds at most ${ARTIFACT_MAX_BLOCKS} blocks.`);
+    const { block: written, errors } = await verify(state, id, html);
+    if (!written) return fail(`"${id}" not saved. Fix and write again:\n${errors.map(e => `- ${e}`).join("\n")}`);
+    const at = c.blocks.findIndex(b => b.id === id);
+    const before = at >= 0 ? c.blocks[at]! : null;
+    const sameWords = !!before && blockText(before.html) === blockText(written.html);
+    if (sameWords && before!.state === "conservative") Object.assign(written, { state: "conservative", ...(before!.note ? { note: before!.note } : {}) });
+    else if (sameWords && before!.state !== "draft") written.state = "passed";
+    if (at >= 0) c.blocks[at] = written;
+    else {
+      const after = c.blocks.findIndex(b => b.id === afterId);
+      c.blocks.splice(after >= 0 ? after + 1 : c.blocks.length, 0, written);
+    }
+    c.hidden = c.hidden.filter(h => h !== id);
+    if (sameWords && c.open[id]) c.open[id] = c.open[id]!.filter(i => i.kind === "content"); else delete c.open[id];
+    if (c.open[id] && !c.open[id]!.length) delete c.open[id];
+    return ok(`Saved "${id}" (${written.html.length} chars).${sameWords ? " The words are unchanged, so the evidence review is not repeated." : ""}`);
   }
 
   return [
@@ -296,31 +320,65 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       if (state.composer.hidden.includes(b.id)) return ok(`Block "${b.id}" ("${b.title}") is being rewritten from scratch; its earlier wording is withdrawn.`);
       return ok(b.html);
     }),
-    tool<S>("write_block", "Create or replace one block: its id (lowercase slug) and inner HTML. The HTML is checked against the component rules, the theme's classes and the sources before it is saved; the reply lists every problem.", {
-      id: { type: "string" }, html: { type: "string" }, after: { type: "string", description: "Place the new block after this block id; omit to keep its place or append." },
-    }, ["id", "html"], async (a, state) => {
-      const c = state.composer;
-      const id = str(a.id).trim();
-      if (!ARTIFACT_BLOCK_ID.test(id)) return fail(`Block ids are lowercase slugs such as "revenue" or "risks-2".`);
-      if (c.phase === "published") return fail("The document is published.");
-      if (!block(state, id) && c.blocks.length >= ARTIFACT_MAX_BLOCKS) return fail(`A document holds at most ${ARTIFACT_MAX_BLOCKS} blocks.`);
-      const { block: written, errors } = await verify(state, id, str(a.html));
-      if (!written) return fail(`Not saved. Fix and write again:\n${errors.map(e => `- ${e}`).join("\n")}`);
-      const at = c.blocks.findIndex(b => b.id === id);
-      // The same words laid out again keep the standing the review gave them (§4.2): only a change of text is reviewed.
-      const before = at >= 0 ? c.blocks[at]! : null;
-      const sameWords = !!before && blockText(before.html) === blockText(written.html);
-      if (sameWords && before!.state === "conservative") Object.assign(written, { state: "conservative", ...(before!.note ? { note: before!.note } : {}) });
-      else if (sameWords && before!.state !== "draft") written.state = "passed";
-      if (at >= 0) c.blocks[at] = written;
-      else {
-        const after = c.blocks.findIndex(b => b.id === str(a.after));
-        c.blocks.splice(after >= 0 ? after + 1 : c.blocks.length, 0, written);
+    tool<S>("write_blocks", "Create or replace blocks, several at once: each with its id (lowercase slug) and inner HTML, and optionally the block id it goes after. Each is checked against the component rules, the theme's classes and the sources before it is saved; the reply lists every problem, block by block. To change part of a block that exists, use edit_block instead.", {
+      blocks: { type: "array", items: { type: "object", properties: { id: { type: "string" }, html: { type: "string" }, after: { type: "string", description: "Place a new block after this block id; omit to keep its place or append." } }, required: ["id", "html"] } },
+    }, ["blocks"], async (a, state) => {
+      const list = Array.isArray(parsed(a.blocks)) ? parsed(a.blocks) as Array<Record<string, unknown>> : [];
+      if (!list.length) return fail("write_blocks needs blocks: [{id, html}].");
+      const out: Result[] = [];
+      for (const item of list) out.push(await save(state, str(item?.id).trim(), str(item?.html), str(item?.after)));
+      return { observation: out.map(r => r.observation).join("\n"), ...(out.every(r => r.error) ? { error: true } : {}) };
+    }, 3 * 60_000),
+    tool<S>("edit_block", "Change parts of one block and keep the rest: each edit replaces a piece of the block's HTML (old, copied exactly from read_block, long enough to occur once) with new HTML. The sentences you do not touch keep the review they passed. Send several edits at once.", {
+      id: { type: "string" }, edits: { type: "array", items: { type: "object", properties: { old: { type: "string" }, new: { type: "string" } }, required: ["old", "new"] } },
+    }, ["id", "edits"], async (a, state) => {
+      const b = block(state, str(a.id));
+      if (!b) return fail(`No block "${str(a.id)}".`);
+      if (state.composer.hidden.includes(b.id)) return fail(`Block "${b.id}" is being rewritten from scratch; write it whole with write_blocks.`);
+      const edits = Array.isArray(parsed(a.edits)) ? parsed(a.edits) as Array<Record<string, unknown>> : [];
+      if (!edits.length) return fail("edit_block needs edits: [{old, new}].");
+      let html = b.html;
+      for (const [n, edit] of edits.entries()) {
+        const old = str(edit?.old), next = str(edit?.new);
+        if (!old) return fail(`Edit ${n + 1}: old is empty.`);
+        const count = html.split(old).length - 1;
+        if (count === 1) { html = html.replace(old, () => next); continue; }
+        if (count > 1) return fail(`Edit ${n + 1}: old occurs ${count} times in the block; copy more of the HTML around it. Nothing was saved.`);
+        // The same piece with its spacing written differently is still the piece meant.
+        const loose = new RegExp(old.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"));
+        const found = loose.exec(html);
+        if (!found) { const head = old.trim().slice(0, 24), near = html.indexOf(head); return fail(`Edit ${n + 1}: old is not in the block${near >= 0 ? `; the nearest piece reads: ${html.slice(Math.max(0, near - 40), near + 200)}` : "; read_block shows its current HTML"}. Nothing was saved.`); }
+        html = html.slice(0, found.index) + next + html.slice(found.index + found[0].length);
       }
-      c.hidden = c.hidden.filter(h => h !== id);
-      if (sameWords && c.open[id]) c.open[id] = c.open[id]!.filter(i => i.kind === "content"); else delete c.open[id];
-      if (c.open[id] && !c.open[id]!.length) delete c.open[id];
-      return ok(`Saved "${id}" (${written.html.length} chars).${sameWords ? " The words are unchanged, so the evidence review is not repeated." : ""}`);
+      return save(state, b.id, html, "");
+    }),
+    tool<S>("apply_fixes", "Accept the review's own corrections for a block: the numbers of its open problems (from finish or view_issue). A problem whose correction is to remove the sentence has it removed; one with a replacement sentence has it put in, when the faulted words stand alone in the block's HTML. A problem it cannot apply is named, for you to change with edit_block.", {
+      id: { type: "string" }, numbers: { type: "array", items: { type: "number" } },
+    }, ["id", "numbers"], async (a, state) => {
+      const c = state.composer, b = block(state, str(a.id));
+      const issues = c.open[str(a.id)] ?? [];
+      if (!b || !issues.length) return fail("No open problems on that block; see view_issue.");
+      const numbers = (Array.isArray(parsed(a.numbers)) ? parsed(a.numbers) as unknown[] : [a.numbers]).map(Number).filter(n => Number.isInteger(n) && issues[n - 1]);
+      if (!numbers.length) return fail("Give the numbers of the problems to accept, as view_issue lists them.");
+      let html = b.html;
+      const done: string[] = [], left: string[] = [];
+      for (const n of numbers) {
+        const issue = issues[n - 1]!;
+        const replacement = issue.replacement?.trim();
+        if (issue.kind !== "content" || !issue.quote || !replacement) { left.push(`${n}: the review gave no correction to apply`); continue; }
+        if (/^delete\.?$/i.test(replacement)) {
+          const cut = conservativeBlock({ ...b, html }, [issue]);
+          if (cut.empty) { left.push(`${n}: removing it would leave the block empty`); continue; }
+          html = serializeHtml(parseHtml(cut.html).nodes.slice(0, -1));
+          done.push(`${n}: sentence removed`);
+        } else if (html.split(issue.quote).length - 1 === 1 && !/[<>]/.test(replacement)) {
+          html = html.replace(issue.quote, () => replacement.replace(/&/g, "&amp;"));
+          done.push(`${n}: replaced`);
+        } else left.push(`${n}: the faulted words carry figures or links, so the replacement is yours to write with edit_block: ${replacement.slice(0, 300)}`);
+      }
+      if (!done.length) return fail(`Nothing applied.\n${left.join("\n")}`);
+      const saved = await save(state, b.id, html, "");
+      return { observation: `${saved.observation}\n${[...done, ...left].join("\n")}`, ...(saved.error ? { error: true } : {}) };
     }),
     tool<S>("remove_block", "Remove a block that is not required, with the reason.", { id: { type: "string" }, reason: { type: "string" } }, ["id", "reason"], (a, state) => {
       const c = state.composer, id = str(a.id);
@@ -408,7 +466,7 @@ async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R
 const blockTextOf = (html: string) => checkBlock(html, { sourceUrl: () => null, charts: new Set() }).text;
 
 /** What the composing session is told about the document it builds (docs/analysis-html-artifact.md §4). */
-export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_block, remove_block, move_block, view_issue, contest_issue and finish.
+export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_blocks, edit_block, apply_fixes, remove_block, move_block, view_issue, contest_issue and finish. The document is a file you edit: write several blocks in one write_blocks call, and change a block that exists with edit_block rather than writing it again.
 Markup: shadcn/ui data-display components, written as their HTML with data-slot and Tailwind classes. Use whatever makes the point clearest: headings (h2 for the block title, h3 inside), paragraphs, lists, tables (<div data-slot="table-container"><table data-slot="table"><thead data-slot="table-header"><tr data-slot="table-row"><th data-slot="table-head">…), charts (<figure data-chart="id"></figure> after add_chart), tabs (<div data-slot="tabs"><div data-slot="tabs-list"><button data-slot="tabs-trigger" data-value="a">…</button></div><div data-slot="tabs-content" data-value="a">…</div></div>), accordions (accordion, accordion-item, accordion-trigger as a button, accordion-content), collapsible, tooltip (<span data-slot="tooltip" data-content="plain text">term</span>), progress (<div data-slot="progress" data-value="62" data-max="100"></div>), badge, alert, item, card, separator.
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
 House style: a research report, not a dashboard, read in one column at most 760px wide and on phones. Tables are for figures and short labels; a comparison made in sentences reads better as a list or short headed paragraphs. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.

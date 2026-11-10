@@ -2,7 +2,8 @@ import { ARTIFACT_SCHEMA, ARTIFACT_SLOTS, type ArtifactBlock, type ArtifactChart
 import { nodeText, parseHtml, serializeHtml, type HtmlNode } from "../../../../shared/analysis-runtime/artifact/html.ts";
 
 /** A problem held against a block until it is fixed, contested or settled by the harness. */
-export type TrackedIssue = ArtifactIssue & { key: string; quote?: string; contested?: boolean };
+/** `replacement`: the review's own correction, a rewritten sentence or DELETE, that apply_fixes can put in. */
+export type TrackedIssue = ArtifactIssue & { key: string; quote?: string; contested?: boolean; replacement?: string };
 /** Where a block stands on its ladder (docs/analysis-html-artifact.md §6.3, §7.6). */
 export type LadderStep = { level: number; attempts: number; keys: string[] };
 

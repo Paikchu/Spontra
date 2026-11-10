@@ -15,7 +15,7 @@ A sentence marked "passed" was checked before and stands: it is context only, do
 - major: it is wrong in a way that would mislead a holder of the stock. That means a wrong figure; a wrong period, basis or unit; a figure attributed to the wrong item or entity; figures compared across different periods or bases without saying so; a cause stated as fact that the evidence does not state; or the author's inference presented as something the company disclosed.
 - minor: it could be worded more precisely, but a reader would not be misled.
 Do not report style, tone, length or what the block leaves out, and do not ask for evidence of something the block does not claim. A sentence that restates something in "established" is supported. When none of the evidence you were given covers a sentence at all, do not treat that as proof it is wrong: report it as minor and begin the problem with "not covered".
-Return JSON {"issues":[{"quote":"the exact words from the block that are wrong","problem":"what is wrong, in one sentence","suggestion":"the sentence rewritten so the evidence supports it, or what material would be needed","severity":"major|minor"}]}. An empty list means the block stands. Quote the block exactly.`;
+Return JSON {"issues":[{"quote":"the exact words from the block that are wrong","problem":"what is wrong, in one sentence","replacement":"for a major: the quoted words rewritten so the evidence supports them, as plain text that can take their place, or the single word DELETE when nothing in them can be supported","suggestion":"what material would settle it, when a replacement cannot","severity":"major|minor"}]}. An empty list means the block stands. Quote the block exactly, and keep each quote to the words that are wrong.`;
 
 /** What a review sees beyond the block's own sources (docs/filing-analysis-optimization.md §4.1). */
 export type ReviewContext = {
@@ -79,7 +79,8 @@ export async function reviewBlock(env: AnalysisEnv, block: ArtifactBlock, read: 
     if (!problem) return [];
     const quote = typeof item.quote === "string" && quoteInText(item.quote, text) ? item.quote.trim().slice(0, 600) : undefined;
     return [{ block: block.id, kind: "content", severity: item.severity === "minor" ? "minor" : "major", problem, key: issueKey(block.id, problem, quote),
-      ...(quote ? { quote } : {}), ...(typeof item.suggestion === "string" && item.suggestion.trim() ? { suggestion: item.suggestion.trim().slice(0, 600) } : {}) }];
+      ...(quote ? { quote } : {}), ...(typeof item.suggestion === "string" && item.suggestion.trim() ? { suggestion: item.suggestion.trim().slice(0, 600) } : {}),
+      ...(typeof item.replacement === "string" && item.replacement.trim() ? { replacement: item.replacement.trim().slice(0, 800) } : {}) }];
   }).slice(0, 12);
 }
 

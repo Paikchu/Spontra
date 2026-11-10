@@ -44,6 +44,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   read(id: string, state: S): { title: string; text: string } | null;
   precheck(state: S): string | null;
   detail(state: S): Record<string, unknown>;
+  /** What every tool result ends with: where the two ledgers stand, so they are in view however much of the conversation was summarised (§4.3). */
+  standing(state: S): string;
 } {
   const db = deps.env.DB!;
   const { ticker, filing } = deps;
@@ -289,6 +291,12 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       if (!s.packed) return "call research_pack and work its leads before finishing";
       const open = s.leads.filter(l => l.priority === "high" && !l.verdict);
       return open.length ? `these high-priority leads are not closed: ${open.map(l => l.id).join(", ")}. Close each with close_lead (highlight, risk, nothing unusual, or open with what is missing)` : null;
+    },
+    standing: (state) => {
+      const s = p(state);
+      if (!s.packed) return "";
+      const open = s.leads.filter(l => !l.verdict);
+      return ` Notes on file: ${s.evidence.length} (read_evidence), results computed: ${Object.keys(s.computed).length}. Leads not closed: ${open.length ? open.slice(0, 12).map(l => `${l.id}${l.priority === "high" ? "!" : ""}`).join(", ") + (open.length > 12 ? "…" : "") : "none"}.`;
     },
     detail: (state) => {
       const s = p(state);

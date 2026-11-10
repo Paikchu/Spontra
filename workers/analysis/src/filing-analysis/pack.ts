@@ -42,17 +42,20 @@ async function documentPassages(db: D1Database, documents: string[]): Promise<Pa
 
 const hashChunks = (hashes: string[]) => { const out: string[][] = []; for (let i = 0; i < hashes.length; i += 400) out.push(hashes.slice(i, i + 400)); return out; };
 /** The passages of this text already read under the current checklist, and the notes that reading left. */
-async function carried(db: D1Database, ticker: string, hashes: string[]): Promise<{ read: Set<string>; notes: Map<string, Array<{ statement: string; quote: string }>> }> {
-  const read = new Set<string>(), notes = new Map<string, Array<{ statement: string; quote: string }>>();
+type CarriedLead = { question: string; why: string; priority: string; item: string };
+async function carried(db: D1Database, ticker: string, hashes: string[]): Promise<{ read: Set<string>; notes: Map<string, Array<{ statement: string; quote: string }>>; leads: Map<string, CarriedLead[]> }> {
+  const read = new Set<string>(), notes = new Map<string, Array<{ statement: string; quote: string }>>(), leads = new Map<string, CarriedLead[]>();
   for (const chunk of hashChunks([...new Set(hashes)])) {
-    const [seen, kept] = await db.batch<Record<string, string>>([
+    const [seen, kept, raised] = await db.batch<Record<string, string>>([
       db.prepare("SELECT text_sha256 FROM filing_read_passages WHERE ticker = ? AND reader_version = ? AND text_sha256 IN (SELECT value FROM json_each(?))").bind(ticker, READER_VERSION, JSON.stringify(chunk)),
       db.prepare("SELECT text_sha256, statement, quote FROM filing_evidence WHERE ticker = ? AND reader_version = ? AND text_sha256 IN (SELECT value FROM json_each(?)) ORDER BY id").bind(ticker, READER_VERSION, JSON.stringify(chunk)),
+      db.prepare("SELECT text_sha256, question, why, priority, item FROM filing_read_leads WHERE ticker = ? AND reader_version = ? AND text_sha256 IN (SELECT value FROM json_each(?)) ORDER BY id").bind(ticker, READER_VERSION, JSON.stringify(chunk)),
     ]);
+    for (const r of raised!.results) leads.set(r.text_sha256!, [...leads.get(r.text_sha256!) ?? [], { question: r.question!, why: r.why!, priority: r.priority!, item: r.item! }]);
     for (const r of seen!.results) read.add(r.text_sha256!);
     for (const r of kept!.results) notes.set(r.text_sha256!, [...notes.get(r.text_sha256!) ?? [], { statement: r.statement!, quote: r.quote! }]);
   }
-  return { read, notes };
+  return { read, notes, leads };
 }
 
 async function pooled<T, R>(items: T[], size: number, work: (item: T, index: number) => Promise<R>): Promise<R[]> {
@@ -109,6 +112,11 @@ export async function buildPack(env: AnalysisEnv, input: { ticker: string; filin
     if (before0.read.has(p.textHash)) evidence.push({ id: `E${evidence.length + 1}`, section: p.sectionId, ordinal: p.ordinal, statement: note.statement, quote: note.quote, facts: [], origin: "reading" });
   }
   const carriedNotes = evidence.length;
+  // A lead is carried with a passage that is new to this filing: one a later filing merely repeats was worked when it was new.
+  for (const p of all) if (before0.read.has(p.textHash) && p.change !== "unchanged") for (const l of before0.leads.get(p.textHash) ?? []) {
+    leads.push({ id: "", source: "reading", priority: l.priority === "high" ? "high" : "normal", question: l.question, why: l.why, refs: [`¶${p.ordinal}`], ...(l.item ? { item: l.item } : {}) });
+  }
+  const carriedLeads = leads.length;
   const failures: string[] = [];
   const answers = await pooled(batches, 8, async (batch, index) => {
     const shown = batch.passages.map(p => {
@@ -151,6 +159,11 @@ export async function buildPack(env: AnalysisEnv, input: { ticker: string; filin
     await db.prepare("INSERT INTO filing_evidence (ticker, text_sha256, reader_version, statement, quote, created_at) SELECT ?1, json_extract(value,'$[0]'), ?2, json_extract(value,'$[1]'), json_extract(value,'$[2]'), ?3 FROM json_each(?4)")
       .bind(ticker, READER_VERSION, now, JSON.stringify(rows)).run().catch(() => undefined);
   }
+
+  // The leads this reading raised are kept with the passage each first names.
+  const raisedNow = leads.slice(carriedLeads).flatMap(l => { const n = Number((l.refs[0] ?? "").replace(/\D/g, "")); const hash = byOrdinal.get(n)?.textHash; return hash ? [[hash, l.question, l.why, l.priority, l.item ?? ""]] : []; });
+  if (raisedNow.length) await db.prepare("INSERT INTO filing_read_leads (ticker, text_sha256, reader_version, question, why, priority, item, created_at) SELECT ?1, json_extract(value,'$[0]'), ?2, json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'), json_extract(value,'$[4]'), ?3 FROM json_each(?4)")
+    .bind(ticker, READER_VERSION, now, JSON.stringify(raisedNow)).run().catch(() => undefined);
 
   // --- Figures against their own comparatives: each statement line this period against the same line a year earlier.
   const statementFacts = all.filter(p => p.canonical === "financial_statements").flatMap(p => facts.get(p.passageId) ?? []).filter(f => f.tagged && f.concept && !f.dimensions && f.unit === "USD" && f.periodEnd);
@@ -199,6 +212,6 @@ export async function buildPack(env: AnalysisEnv, input: { ticker: string; filin
   return {
     text: out, leads, evidence, sections: [...new Set(all.map(p => p.sectionId))],
     coverage: { first, groups: batches.length, failed: failures.length, passages: all.length, changedPassages: changed.length, changedChars: changed.reduce((n, p) => n + p.chars, 0),
-      readPassages: readNow.length, readChars: readNow.reduce((n, p) => n + p.chars, 0), carriedPassages: all.length - toRead.length, carriedNotes, notes: evidence.length, wordingChanges: wording.length, movers: movers.length },
+      readPassages: readNow.length, readChars: readNow.reduce((n, p) => n + p.chars, 0), carriedPassages: all.length - toRead.length, carriedNotes, carriedLeads, notes: evidence.length, wordingChanges: wording.length, movers: movers.length },
   };
 }

@@ -4,7 +4,7 @@
  * profiles.ts.
  */
 /** Changing the checklist or the reader's instructions changes what a reading would have found, so passages are read again. */
-export const READER_VERSION = "reader.v1";
+export const READER_VERSION = "reader.v2";
 
 export const CHECKLIST = `## What to check
 
@@ -57,7 +57,7 @@ evidence: every fact in these passages that an analysis of this filing could nee
   - statement: the fact in one plain sentence, with its period
   - facts: the fact ids (f…) of the figures it uses, when the passage shows them
   - quote: the words that state it, copied exactly from that passage, at most 40 words. For a table row, copy the row's label.
-Prefer completeness here: a fact you leave out is one the analyst will not see. Keep each entry short, give at most 60, and when there are more put those a holder would care about first. Do not record boilerplate, definitions or a table's every cell; a table's totals and the lines that moved are enough.
+Prefer completeness here: a fact you leave out is one the analyst will not see. Keep each entry short, give at most 30, and when there are more put those a holder would care about first. Do not record boilerplate, definitions or a table's every cell; a table's totals and the lines that moved are enough.
 
 leads: what an analyst should look into. One entry per lead:
   - question: what needs answering, in one sentence
@@ -65,7 +65,7 @@ leads: what an analyst should look into. One entry per lead:
   - passages: the passage numbers
   - item: the checklist item it falls under
   - priority: "high" when it could change the company's obligations, earnings quality, liquidity or control, or when it contradicts something stated elsewhere or earlier; otherwise "normal"
-A lead is something unusual, new, removed, inconsistent, or larger than its wording suggests. A date or amount rolled forward with no change of substance is not a lead. If this part raises nothing, return an empty list; do not invent leads to fill it.
+A lead is something unusual, new, removed, inconsistent, or larger than its wording suggests. A date or amount rolled forward with no change of substance is not a lead, and neither is a risk the company has always described. Give at most five leads, the ones most worth an analyst's hour, and mark at most two of them high. Most parts of a filing raise one or two; if this part raises nothing, return an empty list rather than fill it.
 
 Return JSON: {"evidence": [...], "leads": [...]}.`;
 
