@@ -158,8 +158,11 @@ function render(m: Extract<ArtifactFrameMessage, { type: "artifact:render" }>) {
   });
   new ResizeObserver(() => post({ type: "artifact:size", height: height() })).observe(document.documentElement);
   rendered = true;
-  // Fonts and the charts settle before the first height is reported.
-  void document.fonts.ready.then(() => requestAnimationFrame(() => post({ type: "artifact:rendered", height: height() })));
+  // Fonts and the charts settle before the first height is reported. A frame below the fold gets no animation frames
+  // (the browser pauses them in off-screen cross-origin frames), so a timer reports too; the first one counts.
+  let reported = false;
+  const report = () => { if (reported) return; reported = true; post({ type: "artifact:rendered", height: height() }); };
+  void document.fonts.ready.then(() => { requestAnimationFrame(report); setTimeout(report, 120); });
 }
 
 window.addEventListener("message", (event: MessageEvent<ArtifactFrameMessage>) => {

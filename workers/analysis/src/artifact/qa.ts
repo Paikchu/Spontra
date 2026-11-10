@@ -114,6 +114,9 @@ async function openBrowser(binding: BrowserWorker): Promise<Browser> {
 }
 
 async function artifactFrame(page: Page): Promise<{ frame: Frame; rect: { x: number; y: number; width: number; height: number } } | null> {
+  // The frame is brought into view first: a browser paints an off-screen cross-origin frame late or not at all.
+  await page.waitForSelector("iframe[data-artifact-frame]", { timeout: LOAD_MS });
+  await page.$eval("iframe[data-artifact-frame]", el => el.scrollIntoView({ block: "start" }));
   await page.waitForSelector("iframe[data-artifact-frame][data-rendered]", { timeout: LOAD_MS });
   const rect = await page.$eval("iframe[data-artifact-frame][data-rendered]", el => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; });
   const frame = page.frames().find(f => f.url().includes("/artifact-frame"));
@@ -145,6 +148,9 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
       const y = found.rect.y + k * viewport.height;
       if (y >= found.rect.y + found.rect.height) break;
       const height = Math.min(viewport.height, found.rect.y + found.rect.height - y);
+      // Each part is shot while it is on screen, so the frame has painted it.
+      await page.evaluate(`window.scrollTo(0, ${Math.max(0, Math.round(y))})`);
+      await new Promise(resolve => setTimeout(resolve, 200));
       const data = await page.screenshot({ type: "jpeg", quality: 65, encoding: "base64", clip: { x: found.rect.x, y, width: found.rect.width, height }, captureBeyondViewport: true }) as string;
       shots.push({ y: y - found.rect.y, height, image: { mediaType: "image/jpeg", base64: data } });
     }
