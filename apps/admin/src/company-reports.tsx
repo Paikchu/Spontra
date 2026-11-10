@@ -80,6 +80,8 @@ function RunProcess({ process }: { process: ReportRunProcess | 'loading' | 'erro
   if (process === 'error') return <p className="ra-error" role="alert">运行记录读取失败</p>;
   return <div>
     <p className="bm-usage-caption">{process.status ?? '—'}{process.step ? ` · ${process.step}` : ''}{process.updatedAt ? ` · ${process.updatedAt}` : ''}{process.error?.message ? ` · ${process.error.message}` : ''}</p>
+    {process.summary && <p className="bm-usage-caption">{process.summary.settledBy === 'harness' ? '引擎结算' : process.summary.settledBy === 'agent' ? 'Agent 结算' : '未结算'} · 复核 {process.summary.reviewRounds} 轮 · 渲染 {process.summary.renderRounds} 轮 · 读 {process.summary.sectionsRead} 节 {process.summary.charsRead.toLocaleString('en-US')} 字 · 压缩 {process.summary.compactions} 次 · {process.summary.blocks} 块{process.summary.degraded.length ? ` · 降级 ${process.summary.degraded.join(', ')}` : ''}</p>}
+    {process.summary && <p className="bm-usage-caption ra-mono">{Object.entries(process.summary.tools).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name} ${n}`).join(' · ')}</p>}
     {process.sessions.map(session => <div key={session.operationId}>
       <p className="bm-usage-caption">{session.kind} · {session.turns} 轮 · {session.spent.toLocaleString('en-US')} Token（未缓存输入与输出）{session.active ? ' · 运行中' : ''}</p>
       {session.trail.map((entry, index) => <details key={index}>

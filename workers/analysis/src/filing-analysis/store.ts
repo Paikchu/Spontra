@@ -23,6 +23,30 @@ export const updateFiling = (db: D1Database, ticker: string, accession: string, 
   db.prepare("UPDATE filing_analyses SET status = ?, reason = ?, run_id = COALESCE(?, run_id), tokens = COALESCE(?, tokens), published_at = COALESCE(?, published_at), updated_at = ? WHERE ticker = ? AND accession_number = ?")
     .bind(update.status, update.reason?.slice(0, 900) ?? null, update.runId ?? null, update.tokens ?? null, update.publishedAt ?? null, now, ticker, accession).run();
 
+/** One call of a session, as its trail recorded it (docs/filing-analysis-optimization.md §4.9). A lost row never fails the session. */
+export const recordRunTurn = (db: D1Database, runId: string, entry: { turn: number; action: string; input: string; failed?: boolean }) =>
+  db.prepare("INSERT INTO filing_run_turns (run_id, turn, action, input, failed, at) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(runId, entry.turn, entry.action.slice(0, 60), entry.input.slice(0, 2000), entry.failed ? 1 : 0, new Date().toISOString()).run().then(() => undefined, () => undefined);
+
+export type RunSummary = { runId: string; ticker: string; accession: string; profile: string; status: "published" | "failed"; settledBy: string | null;
+  reviewRounds: number; renderRounds: number; sectionsRead: string[]; blocks: number; degraded: string[]; detail?: Record<string, unknown> };
+/** The summary of a session, written when it publishes and again when its run ends, from the turns recorded and the state it ended with. */
+export async function recordRunSummary(db: D1Database, summary: RunSummary): Promise<void> {
+  const turns = await db.prepare("SELECT action, COUNT(*) n, MAX(turn) turn, MIN(at) first FROM filing_run_turns WHERE run_id = ? GROUP BY action").bind(summary.runId).all<{ action: string; n: number; turn: number; first: string }>();
+  const read = summary.sectionsRead.length
+    ? await db.prepare("SELECT COALESCE(SUM(chars), 0) chars FROM sec_sections WHERE section_id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(summary.sectionsRead)).first<{ chars: number }>()
+    : { chars: 0 };
+  const tools = Object.fromEntries(turns.results.map(r => [r.action, r.n]));
+  const started = turns.results.map(r => r.first).sort()[0] ?? null;
+  await db.prepare(`INSERT INTO filing_run_summary (run_id, ticker, accession_number, profile, status, settled_by, started_at, ended_at, turns, tools, review_rounds, render_rounds, sections_read, chars_read, compactions, blocks, degraded, detail)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id) DO UPDATE SET status = excluded.status, settled_by = excluded.settled_by, started_at = excluded.started_at, ended_at = excluded.ended_at, turns = excluded.turns, tools = excluded.tools,
+      review_rounds = excluded.review_rounds, render_rounds = excluded.render_rounds, sections_read = excluded.sections_read, chars_read = excluded.chars_read, compactions = excluded.compactions,
+      blocks = excluded.blocks, degraded = excluded.degraded, detail = excluded.detail`)
+    .bind(summary.runId, summary.ticker, summary.accession, summary.profile, summary.status, summary.settledBy, started, new Date().toISOString(), Math.max(0, ...turns.results.map(r => r.turn)), JSON.stringify(tools),
+      summary.reviewRounds, summary.renderRounds, summary.sectionsRead.length, read?.chars ?? 0, tools.compaction ?? 0, summary.blocks, JSON.stringify(summary.degraded), JSON.stringify(summary.detail ?? {})).run();
+}
+
 type SectionRow = { document_id: string; section_id: string; path: string; change: string; chars: number };
 /** Every leaf section of these documents, in document order. */
 export async function leafSections(db: D1Database, documentIds: string[]): Promise<SectionFacts[]> {

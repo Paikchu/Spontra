@@ -147,7 +147,13 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
     const owned = await env.DB.prepare("SELECT 1 AS ok FROM sec_analysis_jobs WHERE ticker = ? AND accession_number = ? AND workflow_instance_id = ? LIMIT 1").bind(ticker, accession, runId).first();
     const sessions = filingSessions(env);
     if (!owned || !sessions) return json({ error: "运行记录不存在。" }, 404);
-    try { return json(await sessions.report(runId)); }
+    try {
+      const row = await env.DB.prepare("SELECT * FROM filing_run_summary WHERE run_id = ?").bind(runId).first<Record<string, unknown>>().catch(() => null);
+      const parse = <T,>(value: unknown, fallback: T): T => { try { return JSON.parse(String(value)) as T; } catch { return fallback; } };
+      const summary = row ? { status: row.status, settledBy: row.settled_by, startedAt: row.started_at, endedAt: row.ended_at, turns: row.turns, tools: parse(row.tools, {}), reviewRounds: row.review_rounds, renderRounds: row.render_rounds,
+        sectionsRead: row.sections_read, charsRead: row.chars_read, compactions: row.compactions, blocks: row.blocks, degraded: parse(row.degraded, []), detail: parse(row.detail, {}) } : null;
+      return json({ ...(await sessions.report(runId) as object), summary });
+    }
     catch { return json({ error: "运行记录暂时不可读。" }, 503); }
   }
   const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate))?$/.exec(url.pathname);

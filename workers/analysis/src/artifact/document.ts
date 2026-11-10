@@ -21,11 +21,15 @@ export type ComposerState = {
   phase: "compose" | "content" | "render" | "published";
   turns: number;
   published: { version: number; hash: string } | null;
+  /** How many times the evidence review and the rendering review have run; the content review is capped (§4.1). */
+  rounds?: { content: number; render: number };
+  /** Who settled the document: the session calling finish itself, or the harness delivering what it left. */
+  settledBy?: "agent" | "harness";
   log: Array<{ at: string; block: string; phase: string; level: number; note: string }>;
 };
 
 export function openComposer(artifact: ComposerState["artifact"]): ComposerState {
-  return { artifact, blocks: [], charts: {}, sources: {}, open: {}, ladder: {}, hidden: [], phase: "compose", turns: 0, published: null, log: [] };
+  return { artifact, blocks: [], charts: {}, sources: {}, open: {}, ladder: {}, hidden: [], phase: "compose", turns: 0, published: null, rounds: { content: 0, render: 0 }, log: [] };
 }
 
 export const registerSource = (state: ComposerState, id: string, source: ComposerState["sources"][string]) => { state.sources[id] = source; };

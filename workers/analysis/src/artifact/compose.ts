@@ -38,7 +38,12 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   afterPublish?(state: S): Promise<void>;
   /** A rule of the producer's own the document must meet before review (e.g. quoting an earlier report); the reason when it does not. */
   precheck?(state: S): string | null;
+  /** Finds passages in the producer's material for names and figures a block uses that its cited sources do not hold, for the review. */
+  find?(terms: string[], state: S): Promise<Array<{ id: string; title: string; text: string }>>;
 };
+
+/** The evidence review runs at most this many times in a session; what is still open after the last is settled by the harness (§4.1). */
+const CONTENT_ROUNDS = 3;
 
 const ok = (observation: string) => ({ observation });
 const fail = (observation: string) => ({ observation, error: true });
@@ -132,7 +137,17 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const drafts = c.blocks.filter(b => b.state === "draft");
     const advice: string[] = [];
     const reader: SourceReader = id => setup.read(id, state);
-    const reviewed = await pool(drafts, 4, b => reviewBlock(setup.env, b, reader, ledger(state)).catch(() => null));
+    const rounds = c.rounds ??= { content: 0, render: 0 };
+    if (drafts.length) rounds.content += 1;
+    const last = force || rounds.content >= CONTENT_ROUNDS;
+    // What the other blocks already hold, checked by code at their write: a block that restates it needs no second proof.
+    const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
+      claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
+    const context = (b: ArtifactBlock) => ({
+      established: c.blocks.filter(x => x.id !== b.id).flatMap(x => claims.get(x.id) ?? []),
+      ...(setup.find ? { find: (terms: string[]) => setup.find!(terms, state) } : {}),
+    });
+    const reviewed = await pool(drafts, 8, b => reviewBlock(setup.env, b, reader, ledger(state), context(b)).catch(() => null));
     drafts.forEach((b, i) => {
       // A review that could not run leaves the block as written: the write checks already held its figures and quotes.
       // Only major problems hold a block back; minor ones are passed on once as advice and the block stands.
@@ -149,7 +164,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content");
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
-      if (force || step.level >= 5) {
+      if (last || step.level >= 5) {
         const { empty, ...settled } = conservativeBlock(b, issues);
         delete c.open[b.id];
         c.hidden = c.hidden.filter(h => h !== b.id);
@@ -174,6 +189,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   async function settleRendering(state: S, force: boolean): Promise<string[]> {
     const c = state.composer;
     for (let pass = 0; pass < 3; pass++) {
+      (c.rounds ??= { content: 0, render: 0 }).render += 1;
       const draft = await saveVersion(setup.env, toDocument(c, 0), await compileArtifactCss(c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes)), "draft", setup.ledger.runId ?? null);
       const qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
       await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, issues: qa.issues });
@@ -220,6 +236,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   async function finish(state: S): Promise<Result> {
     const c = state.composer;
     if (c.phase === "published") return ok("Already published.");
+    c.settledBy ??= "agent";
     const missing = requiredOf(state).filter(id => !block(state, id));
     if (missing.length && !lowBudget(state)) return fail(`Write the required blocks first: ${missing.join(", ")}.`);
     const unmet = lowBudget(state) ? null : setup.precheck?.(state) ?? null;
@@ -227,7 +244,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
-    if (content.length) return fail(`Not published yet. The evidence review found problems:\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);
+    if (content.length) return fail(`Not published yet. The evidence review found problems (round ${c.rounds?.content ?? 1} of ${CONTENT_ROUNDS}; after the last round the harness removes the sentences still open):\n\n${content.join("\n\n")}\n\nFix them with write_block, then call finish again.`);
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, fix the blocks with write_block, then call finish again.`);
@@ -295,13 +312,6 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       state.composer.charts[spec.id] = { id: spec.id, title: result.chart.title ?? spec.title ?? "", svg, points: [] };
       return ok(`Chart "${spec.id}" compiled${result.notes.length ? ` (${result.notes.join("; ")})` : ""}. Place it with <figure data-chart="${spec.id}"></figure>.`);
     })] : []),
-    tool<S>("check_block", "Run the evidence review on one block now, to fix it before finish.", { id: { type: "string" } }, ["id"], async (a, state) => {
-      const b = block(state, str(a.id));
-      if (!b) return fail(`No block "${str(a.id)}".`);
-      const issues = await reviewBlock(setup.env, b, id => setup.read(id, state), ledger(state));
-      if (!issues.length) { if (b.state === "draft") b.state = "passed"; return ok(`"${b.id}" stands.`); }
-      return ok(`"${b.id}":\n${issues.map((i, n) => `${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
-    }, 6 * 60_000),
     tool<S>("view_issue", "Show the open problems of one block, with the viewport and design scores where they came from the rendering.", { id: { type: "string" } }, ["id"], (a, state) => {
       const issues = state.composer.open[str(a.id)] ?? [];
       return ok(issues.length ? issues.map((i, n) => `${n + 1}. [${i.kind}, ${i.severity}${i.viewport ? `, ${i.viewport}` : ""}] ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n") : "No open problems.");
@@ -345,6 +355,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
 export async function deliverComposer<S extends { composer: ComposerState }>(state: S, setup: ComposerSetup<S>): Promise<boolean> {
   if (state.composer.phase === "published" || !state.composer.blocks.length) return state.composer.phase === "published";
   state.composer.turns = Number.MAX_SAFE_INTEGER;
+  state.composer.settledBy = "harness";
   const finish = composerTools(setup).find(t => t.name === "finish")!;
   const result = await finish.execute({}, { state, signal: new AbortController().signal, recipe: "artifact", stage: (_n: string, work: () => Promise<unknown>) => work() } as never) as Result;
   return (state.composer.phase as string) === "published" && !result.error;
@@ -359,9 +370,9 @@ async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R
 const blockTextOf = (html: string) => checkBlock(html, { sourceUrl: () => null, charts: new Set() }).text;
 
 /** What the composing session is told about the document it builds (docs/analysis-html-artifact.md §4). */
-export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_block, remove_block, move_block, check_block, view_issue, contest_issue and finish.
+export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_block, remove_block, move_block, view_issue, contest_issue and finish.
 Markup: shadcn/ui data-display components, written as their HTML with data-slot and Tailwind classes. Use whatever makes the point clearest: headings (h2 for the block title, h3 inside), paragraphs, lists, tables (<div data-slot="table-container"><table data-slot="table"><thead data-slot="table-header"><tr data-slot="table-row"><th data-slot="table-head">…), charts (<figure data-chart="id"></figure> after add_chart), tabs (<div data-slot="tabs"><div data-slot="tabs-list"><button data-slot="tabs-trigger" data-value="a">…</button></div><div data-slot="tabs-content" data-value="a">…</div></div>), accordions (accordion, accordion-item, accordion-trigger as a button, accordion-content), collapsible, tooltip (<span data-slot="tooltip" data-content="plain text">term</span>), progress (<div data-slot="progress" data-value="62" data-max="100"></div>), badge, alert, item, card, separator.
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
 House style: a research report, not a dashboard, read in one column at most 760px wide and on phones. Tables are for figures and short labels; a comparison made in sentences reads better as a list or short headed paragraphs. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.
 Evidence: every block cites the sources it rests on. Write figures as <data value="2876.8" data-ref="SOURCE_ID">$2,876.8m</data>, quotes as <blockquote data-source="SOURCE_ID">exact words</blockquote>, links as <a data-source="SOURCE_ID">text</a>. Write only what the material supports; where it does not settle a question, say what is not disclosed and what to look for next — that is part of the analysis.
-Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, and check it with check_block. Call finish as soon as every block is written, leaving turns for the fixes it may ask for; it returns any problems block by block, and you fix only those blocks.`;
+Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. Fix only those blocks and call finish again; the review runs ${CONTENT_ROUNDS} times at most, and after the last the harness removes the sentences still open.`;

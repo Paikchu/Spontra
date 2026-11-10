@@ -22,4 +22,11 @@ export type ReportRunTurn = { turn: number; thought: string; action: string; inp
 export type ReportRunProcess = {
   status: string | null; error: { message?: string } | null; step: string | null; updatedAt: string | null;
   sessions: Array<{ operationId: string; kind: string; turns: number; spent: number; active: boolean; trail: ReportRunTurn[] }>;
+  /** The run's summary row, once it has one (docs/filing-analysis-optimization.md §4.9). */
+  summary?: ReportRunSummary | null;
+};
+export type ReportRunSummary = {
+  status: string; settledBy: string | null; startedAt: string | null; endedAt: string; turns: number; tools: Record<string, number>;
+  reviewRounds: number; renderRounds: number; sectionsRead: number; charsRead: number; compactions: number; blocks: number; degraded: string[];
+  detail: Record<string, unknown>;
 };
