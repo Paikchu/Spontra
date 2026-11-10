@@ -15,6 +15,7 @@ import { LensBlocks } from "../LensPanel";
 import { LensFrame } from "../LensFrame";
 import { SeverityIcon } from "../SeverityIcon";
 import { trendChart, type StageState } from "./stage-model";
+import { ArtifactFrame } from "../ArtifactFrame";
 
 export const NOTICE: Record<NoticeCode, string> = labels({
   "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
@@ -96,13 +97,19 @@ function ReportBlock({ ticker, reportId, data }: { ticker: string; reportId: str
     return () => c.abort();
   }, [reportId]);
   const verified = useMemo(() => {
-    if (!report || report === "failed") return null;
+    if (!report || report === "failed" || "artifact" in report) return null;
     const facts: FindingData = { ...data, passages: [...(data.passages ?? []), ...report.passages] };
     const finding = verifyFindings({ schemaVersion: "findings.v1", ticker, periodEnd: report.periodEnd, generatedAt: report.createdAt, model: "stage-report", findings: [report.finding], sources: report.sources }, facts).verified[0] ?? null;
     return finding ? { finding, facts } : null;
   }, [report, data, ticker]);
   if (report === "failed") return <p className="scene-notice">{m.unavailable}</p>;
   if (!report) return <div className="scene-progress" aria-busy="true"><i aria-hidden="true" /></div>;
+  // A report composed as an artifact was checked before it was saved; it renders as written.
+  if ("artifact" in report) return <section className="lens scene-lens scene-report">
+    <header className="lens-head"><div className="lens-title"><b className="lens-kind">{m.report}</b>
+      <h2 lang={langOf(report.question)}>{report.question}</h2></div></header>
+    <ArtifactFrame artifact={report.artifact} />
+  </section>;
   if (!verified) return <p className="scene-notice">{m.unavailable}</p>;
   const layout = report.finding.lens.type === "document" ? report.finding.lens.document : undefined;
   return <section className="lens scene-lens scene-report" data-kind={verified.finding.kind}>

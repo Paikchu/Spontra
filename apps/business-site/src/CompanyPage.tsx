@@ -71,7 +71,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
           capital={capital}
-          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null}
+          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null} dossiers={findings?.dossiers ?? null}
           fundamentals={fundamentals}
           events={events}
           filings={filings}

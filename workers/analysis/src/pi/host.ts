@@ -394,7 +394,8 @@ export class PiHost {
           const b = this.bindings.get(String(api.conversationId));
           if (b) {
             // A recipe with its own ending has nobody coming to settle it, so its session closes here.
-            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); await this.close(b); }
+            // What the ending did to the state (a document the harness delivered) is kept for whoever settles the run.
+            if (b.loaded.recipe.afterRun) { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.persist(b); await this.close(b); }
             this.options.onSettled?.(b.operationId);
           }
           return undefined;

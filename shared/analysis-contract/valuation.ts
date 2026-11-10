@@ -1,3 +1,4 @@
+import type { PublishedArtifact } from "./artifact.ts";
 import type { ValuationPriceGuide } from "./price-guide.ts";
 
 /**
@@ -441,6 +442,8 @@ export type ValuationPublication = {
   gaps: ValuationGap[];
   /** Content hash of the publication without generatedAt; the version id. */
   versionId: string;
+  /** The written report composed as an artifact (docs/analysis-html-artifact.md, P4); `sections` are read back from it. */
+  artifact?: { subject: string; version: number };
 };
 
 export type ValuationAvailability = "hidden" | "preparing" | "ready" | "insufficient" | "failed";
@@ -462,4 +465,6 @@ export type ValuationResponse = {
   latestAttempt: ValuationAttempt | null;
   outdated: boolean;
   versions: Array<{ versionId: string; generatedAt: string; researchAsOf: string; reportStatus: ReportStatus; weightedScore: number | null; verdict: ValuationVerdict }>;
+  /** The report's published artifact, when the report names one. */
+  artifact?: PublishedArtifact | null;
 };

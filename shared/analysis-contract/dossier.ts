@@ -16,6 +16,9 @@ export type DossierPublication = {
   fingerprint: string;
   generatedAt: string;
   model: string;
+  /** Lens documents of dossiers written before artifacts; read until the analyst writes the finding again. */
   documents: Record<string, LensDocument>;
+  /** Each finding's dossier artifact (docs/analysis-html-artifact.md, P3): its subject, published version and the blocks the harness settled. */
+  artifacts?: Record<string, { subject: string; version: number; degraded: string[] }>;
   materials: FindingMaterial[];
 };

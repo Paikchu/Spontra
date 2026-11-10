@@ -5,7 +5,7 @@ import { requireDb } from "../core.ts";
 import { findingPassages, readServedFindings } from "../findings/read.ts";
 import { readPeriodExtract } from "../extract/period-extract.ts";
 import type { Ledger } from "../findings/ledger.ts";
-import { lensCatalogue, type LensCatalogueRow } from "../lens/agent.ts";
+import { seriesCatalogue, type CatalogueRow } from "../findings/catalogue.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
 
@@ -19,7 +19,7 @@ export type StageData = {
   periodEnd: string;
   data: FindingData;
   ledger: Ledger;
-  catalogue: LensCatalogueRow[];
+  catalogue: CatalogueRow[];
   publication: FindingsPublication | null;
   findings: VerifiedFinding[];
   basis: MapRevisions;
@@ -34,5 +34,5 @@ export async function loadStageData(env: AnalysisEnv, ticker: string, options: {
   const data: FindingData = { ...input.data, passages };
   const periodEnd = input.ledger.periodEnd;
   const findings = publication ? verifyFindings(publication, data).verified : [];
-  return { ticker, periodEnd, data, ledger: input.ledger, catalogue: lensCatalogue(input.ledger, data, periodEnd), publication, findings, basis };
+  return { ticker, periodEnd, data, ledger: input.ledger, catalogue: seriesCatalogue(input.ledger, data, periodEnd), publication, findings, basis };
 }

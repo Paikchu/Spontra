@@ -5,6 +5,7 @@ import type { Recipe, TurnRecord } from "../recipe.ts";
 import type { PiLoaded } from "../pi/host.ts";
 import { runRecipeSession } from "../pi/runs.ts";
 import { packState, unpackState } from "../pi/state.ts";
+import { sectionsFromReport, type ReportState, type ValuationReportSpec } from "./report-artifact.ts";
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { sha256 } from "../sha256.ts";
 import { requireDb } from "../core.ts";
@@ -255,6 +256,21 @@ async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
   return outcome.reason === "interrupted" ? "failed" : outcome.reason;
 }
 
+/** The report session (valuation/report-artifact.ts); once its artifact is published, the sections are read back from it. */
+async function composeReportArtifact(env: AnalysisEnv, step: WorkflowStepLike, state: ValuationState, generation: number, turns: TurnRecord[], runId?: string): Promise<"finished" | "budget" | "failed" | "cancelled"> {
+  const spec: ValuationReportSpec = { state: packState(state), opening: openingCompose(state).replace(/\n\nCall compose_valuation\.$/, ""), generation, runId: runId ?? null };
+  const outcome = await runRecipeSession<ReportState, ReportState>(env, step, "valuation-report", spec, openingCompose(state).replace("Call compose_valuation.", "Write the report's blocks, call set_judgement, then finish."), `${runId ?? "valuation"}:valuation-report`);
+  turns.push(...outcome.trail);
+  const s = outcome.state;
+  if (s.cancelled) { state.cancelled = true; return "cancelled"; }
+  if (s.composer?.published) {
+    state.composed = { sections: sectionsFromReport(s.composer), coreLogicFailed: !!s.judgement?.coreLogicFailed, decisiveCounterEvidence: !!s.judgement?.decisiveCounterEvidence };
+    state.artifact = { subject: s.composer.artifact.subject, version: s.composer.published.version };
+    return "finished";
+  }
+  return outcome.reason === "interrupted" ? "failed" : outcome.reason;
+}
+
 async function stillEligible(env: AnalysisEnv, ticker: string, store: ValuationStore, generation: number): Promise<boolean> {
   const db = requireDb(env);
   const row = await db.prepare("SELECT generate FROM business_feature_settings WHERE ticker = ? AND feature = 'valuation'").bind(ticker).first<{ generate: number | null }>().catch(() => null);
@@ -336,6 +352,7 @@ async function assemblePublication(state: ValuationState, now: string, methodVer
     researchAsOf: state.researchAsOf, financialPeriodEnd: state.input.financialPeriodEnd, methodVersion, calculatorVersion: CALCULATOR_VERSION,
     baseInputFingerprint: state.input.fingerprint, evidenceSetHash, reportStatus, verdict, weightedScore: score, confidence, dimensions, quote: state.quote, model: calc,
     facts: state.input.facts, diagnostics: state.input.diagnostics, distributions: state.input.distributions, sections, evidence, gaps,
+    ...(state.artifact ? { artifact: state.artifact } : {}),
   };
   const versionId = (await sha256(JSON.stringify(body))).slice(0, 32);
   return { publication: { ...body, generatedAt: now, versionId }, evidence };
@@ -397,6 +414,13 @@ export async function researchValuation({ input, market, now, step, env, mode, g
   if (assume === "cancelled") return null;
   if (assume !== "finished") return finish({ research, assumptions: assume, composition: "not_run" });
   state.redTeam = await redTeam(env, step, state, fetcher, runId);
+  // A live run writes the report as an artifact; a historical reconstruction, and a live run whose report session
+  // wrote nothing, writes the sections directly.
+  if (generation !== null) {
+    const written = await composeReportArtifact(env, step, state, generation, turns, runId);
+    if (written === "cancelled") return null;
+    if (state.composed) return finish({ research, assumptions: assume, composition: written });
+  }
   const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
   if (compose === "cancelled") return null;
   return finish({ research, assumptions: assume, composition: compose });

@@ -226,20 +226,22 @@ function ValuationView({ report }: { report: ValuationPublication }) {
     <ol>{report.evidence.map(e => <li key={e.evidenceId}><code>{e.evidenceId}</code> {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}{e.path ? ` › ${e.path}` : ""}</li>)}</ol>
   </div>;
 }
-/** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and what the review took out. */
+/** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and the artifact it published. */
 type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
-  analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };
+  artifacts?: Record<string, { subject: string; version: number; degraded: string[] }>;
+  analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document?: unknown; artifact?: { subject: string; version: number; degraded: string[] } | null; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review?: string[] }> } };
 const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", margin_mix: "利润率与结构", peers: "同业" };
 const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
 function AnalystView({ dossier }: { dossier: DossierRecord }) {
   const outcomes = dossier.analystTrace?.findings ?? [];
   const blocks = (id: string) => dossier.documents[id]?.rows.flatMap(r => r.cells.flat()) ?? [];
-  return <div className="ai-cards"><p className="ai-muted">模型 {dossier.model} · 要点指纹 {dossier.findingsFingerprint.slice(0, 8)} · {Object.keys(dossier.documents).length} 份案卷 · {dossier.materials.length} 条引用材料</p>
-    {outcomes.map(o => <article key={o.id} className="ai-card" data-kind={o.document ? "strength" : "watch"}>
-      <header><span className="ra-badge" data-status={o.document ? "reviewed" : "processing"}>{o.document ? "已采用" : o.tier === "light" ? "轻量" : "未采用"}</span><strong>{o.id}</strong><small>{TIER_LABEL[o.tier] ?? o.tier} · {o.lines.map(l => LINE_LABEL[l] ?? l).join("、") || "无追问线"}</small></header>
+  return <div className="ai-cards"><p className="ai-muted">模型 {dossier.model} · 要点指纹 {dossier.findingsFingerprint.slice(0, 8)} · {Object.keys(dossier.artifacts ?? {}).length || Object.keys(dossier.documents).length} 份案卷 · {dossier.materials.length} 条引用材料</p>
+    {outcomes.map(o => <article key={o.id} className="ai-card" data-kind={o.document || o.artifact ? "strength" : "watch"}>
+      <header><span className="ra-badge" data-status={o.document || o.artifact ? "reviewed" : "processing"}>{o.document || o.artifact ? "已采用" : o.tier === "light" ? "轻量" : "未采用"}</span><strong>{o.id}</strong><small>{TIER_LABEL[o.tier] ?? o.tier} · {o.lines.map(l => LINE_LABEL[l] ?? l).join("、") || "无追问线"}</small></header>
+      {o.artifact ? <small>HTML 案卷 v{o.artifact.version}{o.artifact.degraded.length ? ` · 由程序收口：${o.artifact.degraded.join("、")}` : ""}</small> : null}
       {o.document ? <small>{dossier.documents[o.id]?.rows.length ?? 0} 行 · 引文 {blocks(o.id).filter(b => b.kind === "quote").length} · 表格 {blocks(o.id).filter(b => b.kind === "table").length} · 图 {blocks(o.id).filter(b => b.kind === "chart").length} · 段落 {blocks(o.id).filter(b => b.kind === "prose").length}</small> : null}
       {o.warnings.length > 0 && <ul className="ai-lens-warnings">{o.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
-      {o.review.length > 0 && <ul className="ai-lens-warnings">{o.review.map((w, i) => <li key={i}>审校移除：{w}</li>)}</ul>}
+      {(o.review?.length ?? 0) > 0 && <ul className="ai-lens-warnings">{o.review!.map((w, i) => <li key={i}>审校移除：{w}</li>)}</ul>}
       {o.turns.length > 0 && <details className="ai-raw"><summary>研究过程 · {o.turns.length} 轮</summary><ol className="ai-tree-steps">{o.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input.slice(0, 1200)}</code><pre>{s.observation}</pre></li>)}</ol></details>}
     </article>)}</div>;
 }

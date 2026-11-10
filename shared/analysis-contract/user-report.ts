@@ -1,12 +1,12 @@
+import type { PublishedArtifact } from "./artifact.ts";
 import type { ComposedAnalysis } from "./findings.ts";
 
 /**
- * A report a reader asked the stage for. It has the shape of a finding — a judgment
- * whose every number its evidence produces, and a lens document laid out from charts, quotes and prose — so the page
- * verifies it with the finding page's own verifiers. The passages it quotes travel with it, as read when it was
- * written: a reader's report does not change when the library does.
+ * A report a reader asked the stage for: an artifact composed and checked like every analysis
+ * (docs/analysis-html-artifact.md), carried whole so a reader's report does not change when the library does. Reports
+ * written before artifacts have the shape of a finding and are verified with the finding page's own verifiers.
  */
-export type UserReport = ComposedAnalysis & {
+export type UserReport = (ComposedAnalysis | { artifact: PublishedArtifact }) & {
   schemaVersion: "user-report.v1";
   id: string;
   ticker: string;

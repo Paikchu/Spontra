@@ -4,7 +4,7 @@ import type { CapitalResponse } from '../../../../shared/analysis-contract/capit
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
-import { readFindingsResponse } from "../findings/read.ts";
+import { readFindingsResponse, readStoredFindings } from "../findings/read.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
@@ -28,7 +28,7 @@ import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
-import { readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { dossierSubject, readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -54,6 +54,7 @@ type RouteMatch =
   | { kind: "filing"; ticker: string; accession: string }
   | { kind: "artifact-preview"; token: string }
   | { kind: "artifact"; ticker: string; artifactKind: "company-analysis" }
+  | { kind: "dossier-artifact"; ticker: string; findingId: string }
   | { kind: "business-flow"; ticker: string }
   | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
@@ -199,6 +200,13 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const published = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, route.artifactKind, ticker, ticker);
       return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     }
+    case "dossier-artifact": {
+      if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      const ticker = route.ticker.trim().toUpperCase();
+      const findings = await readStoredFindings(database, ticker).catch(() => null);
+      const published = findings?.fingerprint ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, dossierSubject(findings.fingerprint, route.findingId)) : null;
+      return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+    }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
@@ -275,6 +283,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
         return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId) }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       }
       const payload = await readValuationResponse(database, ticker, { hidden: off });
+      // The written report's artifact, when the report was composed as one; English until artifacts are translated.
+      if (payload.report?.artifact) payload.artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "valuation-report", ticker, payload.report.artifact.subject).catch(() => null);
       if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
@@ -309,6 +319,8 @@ function matchRoute(pathname: string): RouteMatch | null {
     const ticker = safeDecode(valuation[1]!);
     return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
   }
+  const dossier = /^\/api\/v1\/companies\/([^/]+)\/artifacts\/dossier\/([a-z0-9][a-z0-9-]{0,79})\/?$/.exec(pathname);
+  if (dossier) { const ticker = safeDecode(dossier[1]!); return ticker === null ? null : { kind: "dossier-artifact", ticker, findingId: dossier[2]! }; }
   const artifact = /^\/api\/v1\/companies\/([^/]+)\/artifacts\/(company-analysis)\/?$/.exec(pathname);
   if (artifact) { const ticker = safeDecode(artifact[1]!); return ticker === null ? null : { kind: "artifact", ticker, artifactKind: "company-analysis" }; }
   const insiders = /^\/api\/v1\/companies\/([^/]+)\/insiders(?:\/([^/]+)\/transactions)?\/?$/.exec(pathname);

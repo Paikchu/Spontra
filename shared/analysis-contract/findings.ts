@@ -192,4 +192,6 @@ export type FindingsResponse = {
   passages?: FindingPassage[];
   /** The peers projection the page resolves peer references against. */
   peers?: PeersPublication | null;
+  /** The findings whose analysis is published as a dossier artifact for this publication, with each artifact's version. */
+  dossiers?: Record<string, number>;
 };

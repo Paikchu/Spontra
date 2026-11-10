@@ -51,7 +51,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
 import { ArtifactFrame } from "./ArtifactFrame";
-import { usePreview } from "./FilingReport";
+import { usePreview, usePublishedArtifact } from "./artifact-reads";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
@@ -279,7 +279,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with its version. */ dossiers?: Record<string, number> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -392,9 +392,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
-  const companyArtifact = useCompanyArtifact(ticker);
+  const companyArtifact = usePublishedArtifact(ticker, "company-analysis");
   const companyPreview = usePreview("company-analysis", ticker);
   const companyReport = companyPreview ?? companyArtifact;
+  // A reader's report drafted for the visual review opens on the stage by itself.
+  const stageDraft = usePreview("stage-report", "*");
   // The page opens on the valuation when a report is published for it; otherwise (hidden, preparing, failed) on the
   // income statement. The opening read settles before the map mounts, so the default is known at first paint.
   const homeView: View = valuationShown && valuation?.report ? "valuation" : "profit";
@@ -700,8 +702,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
           switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
       {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
-      {stageOverride ? stageOverride : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+      {stageDraft ? <div className="lens-stage company-report"><ArtifactFrame artifact={stageDraft} /></div>
+      : stageOverride ? stageOverride : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
+          dossier={{ version: dossiers?.[focused.id] ?? null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${focused.id}` : null }}
           onPair={() => setSplit(v => !v)} onClose={() => focusFinding(null)} />
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
@@ -929,19 +933,4 @@ function DossierSection({ section, cite, links }: { section: ExplainerSection; c
   if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{linked(i.claim)}</li>)}</ol>;
   if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{linked(i.claim)}</li>)}</ul>;
   return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{linked(i.claim)}</p>)}</>;
-}
-
-/** The company's published analysis artifact, read once per company; null while loading or when there is none. */
-function useCompanyArtifact(ticker: string): PublishedArtifact | null {
-  const [artifact, setArtifact] = useState<PublishedArtifact | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    setArtifact(null);
-    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/company-analysis`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() as Promise<{ artifact?: PublishedArtifact | null }> : null)
-      .then(body => { if (!controller.signal.aborted && body?.artifact) setArtifact(body.artifact); })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [ticker]);
-  return artifact;
 }

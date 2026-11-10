@@ -4,6 +4,7 @@ import { citedPeers, peersFor } from "../../../../shared/analysis-runtime/peers.
 import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import { dossierCacheKey } from "../analyst/workflow.ts";
+import { publishedDossiers } from "../artifact/store.ts";
 import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
@@ -64,6 +65,8 @@ export async function readFindingsResponse(db: D1Database, rawTicker: string, op
   if (!findings) return { schemaVersion: "findings-response.v1", status: "preparing", findings: null };
   // Quoted passages and the peers the publication cites ride with it; neither is required for it to serve. Only the cited
   // peers, so another company's new quarter leaves this answer, and this company's revision, as they were.
-  const [passages, peers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null)]);
-  return { schemaVersion: "findings-response.v1", status: "ready", findings, passages, peers };
+  // The findings whose dossier the analyst published as an artifact for this very publication.
+  const [passages, peers, dossiers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null),
+    findings.fingerprint ? publishedDossiers(db, ticker, findings.fingerprint) : Promise.resolve({})]);
+  return { schemaVersion: "findings-response.v1", status: "ready", findings, passages, peers, dossiers };
 }

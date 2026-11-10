@@ -15,6 +15,8 @@ import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon } from "./SeverityIcon";
 import { LensFrame } from "./LensFrame";
 import { HtmlFrame } from "./HtmlFrame";
+import { ArtifactFrame } from "./ArtifactFrame";
+import { usePreview, usePublishedArtifact } from "./artifact-reads";
 
 const m = messages({
   finding: (title: string) => `Finding: ${title}`, report: (period: string) => `${period} report`,
@@ -44,11 +46,11 @@ const LIBRARY_PASSAGE = /^p[0-9a-f]{14,32}$/;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /**
- * The finding in focus, holding the whole stage: its lens document (charts in frames, the judgment,
- * the figures, what to watch, the sources) as the agent laid it out, verified against the same data
- * the stage draws. Findings written before the agent are laid out the standard way from their chart.
+ * The finding in focus, holding the whole stage: the finding as verified against the data the stage draws (its
+ * judgment, figures and what to watch), then the analyst's dossier artifact when one is published for this
+ * publication. Without a dossier the finding's own document stands, laid out from its chart.
  */
-export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, onPair, onClose, split = false, compact = false, onFocusThis }: {
+export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, onPair, onClose, split = false, compact = false, onFocusThis, dossier }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
@@ -65,7 +67,14 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   /** The second panel of a pair: the judgment folded to its first sentence. */
   compact?: boolean;
   onFocusThis?: () => void;
+  /** The finding's dossier artifact: its published version (null when none) and the subject a preview draft carries. */
+  dossier?: { version: number | null; subject: string | null };
 }) {
+  const preview = usePreview("dossier", dossier?.subject ?? null);
+  const published = usePublishedArtifact(ticker, !compact && dossier?.version ? `dossier/${finding.id}` : null, dossier?.version);
+  const artifact = compact ? null : preview ?? published;
+  // With a dossier the finding shows only its verified core above the analysis; the analysis is the artifact.
+  const core = useMemo<LensDocumentShape | null>(() => artifact || (!compact && dossier?.version) ? { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }, ...(finding.watch ? [{ kind: "watch" as const }] : []), ...(record?.length ? [{ kind: "record" as const }] : [])]] }] } : null, [artifact, compact, dossier?.version, finding.watch, record?.length]);
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
@@ -80,7 +89,9 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
         </>}
       </div>
     </header>
-    <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
+    <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} {...core ? { layout: core } : {}}>
+      {artifact && <ArtifactFrame artifact={artifact} />}
+    </LensBlocks>
   </section>;
 }
 

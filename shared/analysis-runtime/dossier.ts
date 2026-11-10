@@ -7,6 +7,7 @@ import { TICKER_PATTERN } from "./financial-data/policy.ts";
 const dossierSchema = z.object({
   schemaVersion: z.literal("dossier.v1"), ticker: z.string().regex(TICKER_PATTERN), findingsFingerprint: z.string().min(1).max(128), fingerprint: z.string().min(1).max(128),
   generatedAt: z.string().max(40), model: z.string().min(1).max(80), documents: z.record(z.string().max(80), z.unknown()), materials: z.array(findingsMaterialSchema).max(120),
+  artifacts: z.record(z.string().max(80), z.object({ subject: z.string().max(200), version: z.number().int().positive(), degraded: z.array(z.string().max(40)).max(40) })).optional(),
 });
 
 /** A dossier through the contract: each document is read on its own, so one malformed document does not void the rest. */
@@ -15,7 +16,7 @@ export function readDossierPublication(value: unknown, ticker: string): DossierP
   if (!parsed.success || parsed.data.ticker !== ticker) return null;
   const documents: DossierPublication["documents"] = {};
   for (const [id, doc] of Object.entries(parsed.data.documents)) { const read = readLensDocument(doc); if (read) documents[id] = read; }
-  return Object.keys(documents).length ? { ...parsed.data, documents } : null;
+  return Object.keys(documents).length || Object.keys(parsed.data.artifacts ?? {}).length ? { ...parsed.data, documents } : null;
 }
 
 /**

@@ -29,8 +29,6 @@ export const AI_TOOLS = {
   "valuation-research": { label: "估值研究", reasoning: "medium", model: "reasoning" },
   /** The valuation's assumptions and composition: three coherent scenarios and the written case, over calculated figures. */
   valuation: { label: "估值评估", reasoning: "high", model: "reasoning" },
-  /** The lens agent chooses charts and layout from an already-computed observation. */
-  lens: { label: "要点图表", reasoning: "low", model: "reasoning" },
   /** Every SEC filing's analysis on the one path (filing-analysis/). */
   filing: { label: "文件分析", reasoning: "high", model: "reasoning" },
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */

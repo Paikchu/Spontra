@@ -118,7 +118,7 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 }
 
 /** The findings with what their lens documents rest on: the quoted passages as the library serves them now, and the peers projection. */
-export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null};
+export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,number>};
 const asText=(v:unknown)=>typeof v==="string"?v:null;
 /** A served passage, rebuilt field by field; a malformed one is left out, and a malformed table drops the table alone. */
 function readFindingPassage(value:unknown):FindingPassage|null{
@@ -153,11 +153,14 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,loca
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown};
+  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown;dossiers?:unknown};
   const findings=body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
   if(!findings)return null;
   const passages=(Array.isArray(body.passages)?body.passages:[]).map(readFindingPassage).filter((p):p is FindingPassage=>p!=null).slice(0,60);
-  return {findings,passages,peers:readPeersPublication(body.peers)};
+  // The findings whose analysis is a published dossier artifact, by id with the artifact's version.
+  const ids=new Set(findings.findings.map(f=>f.id));
+  const dossiers=Object.fromEntries(Object.entries(body.dossiers&&typeof body.dossiers==="object"?body.dossiers as Record<string,unknown>:{}).filter((e):e is [string,number]=>ids.has(e[0])&&Number.isInteger(e[1])&&(e[1] as number)>0));
+  return {findings,passages,peers:readPeersPublication(body.peers),dossiers};
  }catch{return null;}
 }
 
@@ -330,7 +333,10 @@ export async function loadValuation(ticker:string,path:string,params:URLSearchPa
   if(path==="/valuation"){
    if(body.schemaVersion!=="valuation-response.v1"||typeof body.availability!=="string")return null;
    const report=readValuationPublication(body.report,ticker);
-   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
+   // The report's artifact passes only when it is the one the report names.
+   const art=body.artifact&&typeof body.artifact==="object"?body.artifact as {ticker?:unknown;subject?:unknown;html?:unknown}:null;
+   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[],
+    artifact:report?.artifact&&art&&art.ticker===ticker&&art.subject===report.artifact.subject&&typeof art.html==="string"?art:null};
   }
   if(path==="/valuation/versions")return body.schemaVersion==="valuation-versions.v1"?{schemaVersion:"valuation-versions.v1",ticker,items:Array.isArray(body.items)?body.items.slice(0,50):[],nextCursor:typeof body.nextCursor==="string"?body.nextCursor:null}:null;
   if(path.includes("/evidence/"))return body.schemaVersion==="valuation-evidence.v1"&&body.evidence&&typeof body.evidence==="object"?{schemaVersion:"valuation-evidence.v1",ticker,evidence:body.evidence}:null;
@@ -470,7 +476,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/artifacts\/dossier\/[a-z0-9][a-z0-9-]{0,79}|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
@@ -509,10 +515,11 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{}});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    // The company analysis composed as an artifact (docs/analysis-html-artifact.md); English until artifacts are translated.
    if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher));
+   if(match[2].startsWith("/artifacts/dossier/"))return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher));
    if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
    if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));

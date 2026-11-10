@@ -11,6 +11,7 @@ import { refund, reserve } from "./budget.ts";
 import { loadStageData } from "./data.ts";
 import { sha256 } from "../sha256.ts";
 import { reportDocuments, reportOpening, reportRecipe, type ReportInput, type ReportState } from "./report.ts";
+import { readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
 
 export type ReportParams = { userId: string; address: string | null; conversationId: string; ticker: string; question: string; locale: Locale };
 export type ReportOutcome = { runId: string; reportId: string | null; reason: string };
@@ -23,7 +24,7 @@ export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<
   const data = await loadStageData(env, params.ticker);
   if (!data) throw new Error(`report: no stage data for ${params.ticker}`);
   const { documents, earlierAvailable } = await reportDocuments(env, params.ticker, data.periodEnd);
-  const input: ReportInput = { env, data, question: params.question, locale: params.locale, documents, now: spec.now, earlierAvailable };
+  const input: ReportInput = { env, data, question: params.question, locale: params.locale, documents, now: spec.now, earlierAvailable, runId: spec.runId };
   return {
     recipe: reportRecipe(input), input, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
     ledger: { kind: "stage-report", ticker: params.ticker, runId: spec.runId, userHash: spec.userHash, conversationId: params.conversationId },
@@ -66,11 +67,12 @@ export async function executeReportWorkflow(params: ReportParams, steps: Workflo
   const userHash = await sha256(params.userId);
   const spec: ReportSpec = { params, now, runId, userHash };
   const opening = await steps.do("report-opening", async () => reportOpening((await reportLoader(spec, env)).input as ReportInput));
-  const outcome = await runRecipeSession<UserReport | null>(env, steps, "report", spec, opening, `${runId}:report`);
-  const report = outcome.output;
-  if (!report) return finish(null, `${outcome.reason}:${outcome.turns}`);
+  const outcome = await runRecipeSession<boolean, ReportState>(env, steps, "report", spec, opening, `${runId}:report`);
+  // The report is the artifact the session published (or the harness delivered when it ended); the reader's copy carries it whole.
+  const artifact = outcome.state?.composer?.published ? await steps.do("report-artifact", () => readPublishedArtifact(env as unknown as ArtifactStoreEnv, "stage-report", params.ticker, runId)) : null;
+  if (!artifact) return finish(null, `${outcome.reason}:${outcome.turns}`);
   await steps.do("report-save", async () => {
-    const body: UserReport = { ...report, id: runId };
+    const body: UserReport = { schemaVersion: "user-report.v1", id: runId, ticker: params.ticker, question: params.question, periodEnd: (await loadStageData(env, params.ticker))?.periodEnd ?? "", createdAt: now, locale: params.locale, artifact };
     const json = JSON.stringify(body);
     await db.prepare("INSERT OR REPLACE INTO user_reports (user_id, id, parent_id, conversation_id, ticker, locale, question, body, content_hash, run_id, created_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(params.userId, runId, params.conversationId, params.ticker, params.locale, params.question, json, await sha256(json), runId, now).run();

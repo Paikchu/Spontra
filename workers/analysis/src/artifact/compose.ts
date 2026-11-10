@@ -36,6 +36,8 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   onPublish(state: S, published: { version: number; hash: string; text: string; degraded: string[] }): Promise<D1PreparedStatement[]>;
   /** Runs once the publication has committed. */
   afterPublish?(state: S): Promise<void>;
+  /** A rule of the producer's own the document must meet before review (e.g. quoting an earlier report); the reason when it does not. */
+  precheck?(state: S): string | null;
 };
 
 const ok = (observation: string) => ({ observation });
@@ -213,6 +215,8 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     if (c.phase === "published") return ok("Already published.");
     const missing = requiredOf(state).filter(id => !block(state, id));
     if (missing.length && !lowBudget(state)) return fail(`Write the required blocks first: ${missing.join(", ")}.`);
+    const unmet = lowBudget(state) ? null : setup.precheck?.(state) ?? null;
+    if (unmet) return fail(`Not published yet: ${unmet}`);
     for (const id of missing) c.blocks.push(conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]));
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));

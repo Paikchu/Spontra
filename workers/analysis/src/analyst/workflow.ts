@@ -14,32 +14,30 @@ import { readLinks } from "../filing-library/links.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";
 import { readStoredFindings } from "../findings/read.ts";
-import { lensCatalogue } from "../lens/agent.ts";
-import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
+import { seriesCatalogue } from "../findings/catalogue.ts";
+import type { AnalysisEnv } from "../operations.ts";
 import type { PiLoaded } from "../pi/host.ts";
 import { sessionRunner, type SessionRunner } from "../pi/runs.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { analystRecipe, runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput, type AnalystSpec, type AnalystState } from "./agent.ts";
+import { analystRecipe, hydrateAnalyst, runAnalyst, type AnalystOutcome, type AnalystRunInput, type AnalystSpec, type AnalystState } from "./agent.ts";
+import { loadStageData } from "../stage/data.ts";
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v7";
+export const ANALYST_VERSION = "analyst.artifact.v1";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 /** The input of the last run that composed nothing; the same input is not researched again until it changes. */
 export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 /** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed errors at once. */
-export type AnalystDeps = { model?: AnalystModel; run?: SessionRunner; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void>; runId?: string };
+export type AnalystDeps = { run?: SessionRunner; sleep?: (name: string, ms: number) => Promise<void>; runId?: string };
 /** A model provider outage: no researched finding got an answer. The run waits and tries again, longer each time. */
 const OUTAGE_WAITS_MS = [30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
 /** Model turns per UTC day across all companies; a cap, not a target. */
 const DEFAULT_DAILY_TURNS = 300;
-/** A composing turn reasons at length and then writes a long document; the first runs lost documents mid-chart to a shorter budget. */
-const MODEL_BUDGET_MS = 10 * 60_000;
 
 export type AnalystTrace = { version: string; generatedAt: string; findings: AnalystOutcome[] };
 
@@ -76,21 +74,18 @@ function background(f: VerifiedFinding, previous: FindingsPublication | null, da
 }
 
 /**
- * The accepted documents and the materials their quotes rest on, under ids unique across the dossier. A filing
- * material's id (m<n>) counts within one finding, so it takes the finding's id as a prefix; a web material's id is
- * drawn from its URL, already unique and within the contract's length, and stays as read so a paragraph citing it
- * through sourceIds still finds it.
+ * The published dossier artifacts by finding, and the materials they cite under ids unique across the dossier: a
+ * filing material's id (m<n>) counts within one finding, so it takes the finding's id as a prefix; a web material's id
+ * is drawn from its URL and stays as read.
  */
-function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "documents" | "materials"> {
-  const documents: DossierPublication["documents"] = {};
+function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "artifacts" | "materials"> {
+  const artifacts: NonNullable<DossierPublication["artifacts"]> = {};
   const materials = new Map<string, DossierPublication["materials"][number]>();
-  for (const o of outcomes) if (o.document) {
-    const web = new Set(o.materials.filter(m => m.kind === "web").map(m => m.id));
-    const idOf = (id: string) => web.has(id) ? id : `${o.id}:${id}`;
-    documents[o.id] = { rows: o.document.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => b.kind === "quote" ? { ...b, materialId: idOf(b.materialId) } : b)) })) };
-    for (const m of o.materials) materials.set(idOf(m.id), { ...m, id: idOf(m.id) });
+  for (const o of outcomes) if (o.artifact) {
+    artifacts[o.id] = { subject: o.artifact.subject, version: o.artifact.version, degraded: o.artifact.degraded };
+    for (const m of o.materials) { const id = m.kind === "web" ? m.id : `${o.id}:${m.id}`; materials.set(id, { ...m, id }); }
   }
-  return { documents, materials: [...materials.values()] };
+  return { artifacts, materials: [...materials.values()].slice(0, 120) };
 }
 
 /** Atomic daily counter on the feature_budget table; false once the cap is reached. */
@@ -103,7 +98,8 @@ async function reserveTurn(env: AnalysisEnv, now: string): Promise<boolean> {
 
 /** One finding's session, rebuilt from its spec; each model call is reserved against the day's allowance. */
 export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promise<PiLoaded<AnalystState>> {
-  return { recipe: analystRecipe(spec, env), input: spec, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
+  const stage = await loadStageData(env, spec.ticker, { findings: false }).catch(() => null);
+  return { recipe: analystRecipe(spec, env, stage), input: spec, hydrate: hydrateAnalyst(spec), model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
     ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: (_state, now) => reserveTurn(env, new Date(now).toISOString()),
     refund: async (_state, reservedAt) => {
       await requireDb(env).prepare("UPDATE feature_budget SET units=max(0,units-1) WHERE day=? AND feature='analyst-turns'")
@@ -118,13 +114,12 @@ export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promis
  */
 function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[]): boolean {
   const unanswered = (r: PromiseSettledResult<AnalystOutcome>) => r.status === "rejected"
-    || (!r.value.document && r.value.turns.length > 0 && r.value.turns.every(t => t.action === "invalid" && !t.thought));
+    || (!r.value.artifact && r.value.turns.length > 0 && r.value.turns.every(t => t.action === "invalid" && !t.thought));
   return researched.length > 0 && researched.every(unanswered);
 }
 
 export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: AnalystDeps = {}) {
   assertFeatureTicker(env, "findings", params.ticker);
-  const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "analyst");
   const now = await step.do("analyst-time", async () => new Date().toISOString());
   const input = await step.do("analyst-input", () => readInput(env, params.ticker));
@@ -138,14 +133,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const previous = await store.versions("findings", params.ticker).then(async v => { for (const item of v) { const stored = await store.version("findings", params.ticker, item.id).catch(() => null); const p = stored ? readFindingsPublication(stored.publication, params.ticker) : null; if (p && p.generatedAt !== input.findings.generatedAt && p.periodEnd < input.findings.periodEnd) return p; } return null; }).catch(() => null);
   const { verified } = verifyFindings(input.findings, data);
   const categories = [...new Set((await readLinks(db, { ticker: params.ticker }).catch(() => [])).filter(l => (l.status === "verified" || l.status === "confirmed") && l.industryCategory).map(l => l.industryCategory!))];
-  const catalogue = lensCatalogue(input.ledger, data, input.findings.periodEnd);
-  const tuning = { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "analyst" };
-  const model: AnalystModel = deps.model ?? {
-    judge: async (stage, system, payload) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, tuning); }
-      catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
-    },
-  };
+  const catalogue = seriesCatalogue(input.ledger, data, input.findings.periodEnd);
   const run = deps.run ?? sessionRunner(env, step);
   // Peers by business tags when the tags have paired the company, else by shared category.
   const comparable = comparablePeers(peers, params.ticker)?.filter(c => c.pair.tier !== "adjacent") ?? null;
@@ -160,8 +148,8 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     const prefix = attempt ? `r${attempt}-` : "";
     settled = await Promise.allSettled(verified.map(async f => {
       const plan = planFinding(f, data, peerTickers);
-      if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
-      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, record: input.findings.record ?? [], peerUnits, model, run, operationId: `${deps.runId ?? params.fingerprint.slice(0, 16)}:analyst-${prefix}${f.id}`, ...(deps.runId ? { runId: deps.runId } : {}), stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), now, background: background(f, previous, data, input.context) });
+      if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], artifact: null, materials: [], turns: [], warnings: ["light tier: not researched"] } satisfies AnalystOutcome;
+      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, record: input.findings.record ?? [], peerUnits, run, findingsFingerprint: input.findings.fingerprint!, operationId: `${deps.runId ?? params.fingerprint.slice(0, 16)}:analyst-${prefix}${f.id}`, ...(deps.runId ? { runId: deps.runId } : {}), stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), now, background: background(f, previous, data, input.context) });
     }));
     const researched = settled.filter((_, k) => planFinding(verified[k]!, data, peerTickers).tier !== "light");
     const outage = providerOutage(researched);
@@ -170,18 +158,19 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     if (!outage) break;
     await deps.sleep!(`analyst-model-wait-${attempt + 1}`, OUTAGE_WAITS_MS[attempt]!);
   }
-  settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], document: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`], review: [] }));
-  const { documents, materials } = dossierContent(outcomes);
+  settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], artifact: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`] }));
+  const { artifacts, materials } = dossierContent(outcomes);
   const trace: AnalystTrace = { version: ANALYST_VERSION, generatedAt: now, findings: outcomes };
-  if (!Object.keys(documents).length) {
+  if (!Object.keys(artifacts ?? {}).length) {
     await step.do("analyst-trace", async () => {
-      await new AiRunStore(db).saveVersion("analyst", params.ticker, { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, materials: [], analystTrace: trace }, now);
+      await new AiRunStore(db).saveVersion("analyst", params.ticker, { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, artifacts: {}, materials: [], analystTrace: trace }, now);
       // Every finding light: the same input would end the same way.
       await new D1SecRepository(db).setCache(emptyDossierKey(params.ticker), { fingerprint: params.fingerprint }, now);
     });
     return { status: "empty" as const, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, turns: o.turns.length, warnings: o.warnings })) };
   }
-  const dossier: DossierPublication = { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint!, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents, materials };
+  // The documents are the artifacts now; the dossier record names them for the operator and binds them to the publication.
+  const dossier: DossierPublication = { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint!, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, artifacts, materials };
   if (!readDossierPublication(dossier, params.ticker)) throw new Error("The dossier failed its own contract.");
   await step.do("analyst-publish", async () => {
     const record = { ...dossier, analystTrace: trace };
@@ -192,5 +181,5 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     ]);
     await new AiRunStore(db).saveVersion("analyst", params.ticker, record, now);
   });
-  return { status: "ready" as const, documents: Object.keys(documents).length, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, lines: o.lines, turns: o.turns.length, composed: !!o.document, warnings: o.warnings.length, review: o.review.length })) };
+  return { status: "ready" as const, artifacts: Object.keys(artifacts ?? {}).length, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, lines: o.lines, turns: o.turns.length, composed: !!o.artifact, degraded: o.artifact?.degraded.length ?? 0, warnings: o.warnings.length })) };
 }

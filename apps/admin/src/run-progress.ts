@@ -31,9 +31,9 @@ export const PLANS: Record<FeatureRunProgress['kind'], Plan> = {
     ],
   },
   findings: {
-    phases: ['读取资料', '撰写要点', '绘制图表', '要点数字', '发布'],
-    rules: [[/^findings-(time|input)$/, 0], [/^findings-(write|repair)$/, 1], [/^findings-lens-/, 2], [/^findings-highlights$/, 3], [/^findings-publish$/, 4]],
-    step: [[/^findings-repair$/, () => '修正未通过项'], [/^findings-lens-.*draw-/, () => '渲染图表'], [/^findings-lens-/, m => { const t = TURN.exec(m.input); return t ? `图表 · ${turnLabel(t)}` : '绘制图表'; }]],
+    phases: ['读取资料', '撰写要点', '要点数字', '发布'],
+    rules: [[/^findings-(time|input)$/, 0], [/^findings-(write|repair)$/, 1], [/^findings-highlights$/, 2], [/^findings-publish$/, 3]],
+    step: [[/^findings-repair$/, () => '修正未通过项']],
   },
   analyst: {
     phases: ['读取资料', '逐条研究', '发布'],

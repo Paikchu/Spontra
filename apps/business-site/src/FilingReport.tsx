@@ -7,6 +7,7 @@ import { filingPresentation } from "@/packages/web/src/report-client";
 import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { ArtifactFrame } from "./ArtifactFrame";
+import { usePreview } from "./artifact-reads";
 import "katex/dist/katex.min.css";
 import "@/packages/web/src/styles/earning-report.css";
 import "@/packages/web/src/report/report-blocks/report-content.css";
@@ -67,23 +68,4 @@ export default function FilingReport({ accession, snapshot, head, ticker, onClos
         : <p className="lens-empty">{m.loading}</p>}
     </div>
   </section>;
-}
-
-/**
- * A draft the visual review opened through its signed preview link (`?artifact-preview=`): it takes the published
- * report's place for this one subject, so the review sees the draft in the real stage.
- */
-export function usePreview(kind: PublishedArtifact["kind"], subject: string): PublishedArtifact | null {
-  const [token] = useState(() => new URLSearchParams(location.search).get("artifact-preview"));
-  const [draft, setDraft] = useState<PublishedArtifact | null>(null);
-  useEffect(() => {
-    if (!token) return;
-    const controller = new AbortController();
-    fetch(`/api/business/v1/artifact-preview/${encodeURIComponent(token)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() as Promise<{ artifact: PublishedArtifact }> : null)
-      .then(body => { if (body?.artifact && body.artifact.kind === kind && body.artifact.subject === subject) setDraft(body.artifact); })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [token, kind, subject]);
-  return draft;
 }

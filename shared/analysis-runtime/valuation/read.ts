@@ -97,6 +97,7 @@ const publication = z.object({
   diagnostics: z.array(z.object({ key: z.string(), label: z.string(), value: nullableFinite, unit: z.enum(DIAGNOSTIC_UNITS), periodEnd: z.string().nullable(), note: z.string().nullable() })),
   distributions: z.array(z.object({ factor: z.string(), periods: z.array(z.object({ periodEnd: z.string(), value: finite })), min: finite, p25: finite, median: finite, p75: finite, max: finite })),
   sections, evidence: z.array(evidence), gaps: z.array(gap), versionId: z.string(),
+  artifact: z.object({ subject: z.string().max(200), version: z.number().int().positive() }).optional(),
 }) satisfies z.ZodType<ValuationPublication>;
 
 /** A stored report for the ticker, or null when it does not match the contract. */

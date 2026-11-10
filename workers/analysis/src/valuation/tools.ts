@@ -67,6 +67,8 @@ export type ValuationState = {
   assumptionsDone: boolean;
   redTeam: RedTeam | null;
   composed: { sections: ValuationSections; coreLogicFailed: boolean; decisiveCounterEvidence: boolean } | null;
+  /** The written report's artifact, when the report was composed as one (docs/analysis-html-artifact.md, P4). */
+  artifact?: { subject: string; version: number };
   cancelled: boolean;
 };
 

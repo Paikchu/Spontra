@@ -8,7 +8,8 @@ export const STAGE_LIMITS = {
   "stage-says": { reader: 20, address: 60, global: null },
   "stage-calls": { reader: 120, address: 400, global: 300 },
   "stage-reports": { reader: 1, address: 3, global: 10 },
-  "stage-report-calls": { reader: 20, address: 60, global: 200 },
+  // A report is composed block by block and fixed where its checks ask (stage/report.ts, 28 turns): one report a day fits.
+  "stage-report-calls": { reader: 30, address: 90, global: 300 },
 } as const;
 export type StageFeature = keyof typeof STAGE_LIMITS;
 

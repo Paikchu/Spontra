@@ -373,6 +373,18 @@ sequenceDiagram
 
 每个阶段上线后，旧格式的产物保留读取，直到被新产物替换。
 
+实现位置：
+
+| 阶段 | 产物 | 编排会话 | 前端位置 |
+|---|---|---|---|
+| P1 | `company-analysis`，主体为代码 | `company-analysis/compose-agent.ts`（研究会话之后） | 舞台“公司分析”视图 |
+| P2 | `filing-report`，主体为 accession | `filing-analysis/recipe.ts` | 文件报告 |
+| P3 | `dossier`，主体为“要点发布指纹前 16 位.要点 id” | `analyst/agent.ts` | 要点面板：要点本身（判断、数字、观察）在上，卷宗在下 |
+| P4 | `valuation-report`，主体为 `g<代次>` | `valuation/report-artifact.ts`（实时运行；历史回放仍写分段） | 估值页“报告”部分，记录的取值依据留在其下 |
+| P4 | `stage-report`，主体为运行 id | `stage/report.ts` | 读者报告，整份存入读者自己的报告 |
+
+估值发布的分段（`sections`）从已发布的块读回，供判定与旧读者使用。
+
 ### 10.1 Lens 的去留
 
 所有产物都改为沙箱中的 HTML 文档后，Lens 不再作为一个独立概念存在。现有代码按用途分别处理：
@@ -380,9 +392,9 @@ sequenceDiagram
 | 现有部分 | 位置 | 去向 |
 |---|---|---|
 | 图表规格与编译器 | `LensChart`、`shared/analysis-runtime/lens/compile.ts` | 保留，作为 `add_chart` 的规格和编译器，P0 起改名为图表模块 |
-| 浏览器渲染与测量 | `workers/analysis/src/lens/draw.ts` | 保留，成为视觉验收程序检查的基础 |
+| 浏览器渲染与测量 | `workers/analysis/src/lens/draw.ts` | 做法并入 `artifact/qa.ts` 后删除 |
 | 沙箱页面与消息协议 | `/html-frame`、`HtmlFrame.tsx`、`HtmlFrameMessage` | 由 `/artifact-frame` 取代，做法沿用 |
-| 要点图表 Agent | `workers/analysis/src/lens/agent.ts`、`lens/pi.ts`，AI 工具 `lens` | P3 删除：图表由编排 Agent 在文档中直接生成，不再单独开会话 |
+| 要点图表 Agent | `workers/analysis/src/lens/agent.ts`、`lens/pi.ts`，AI 工具 `lens` | P3 已删除：要点保留写入时的图表，分析由卷宗产物承担；要点指纹中的 `lens.agent.v6` 保留，避免所有公司的要点因此重写 |
 | 前端舞台面板 | `LensPanel`、`ReportLens`、`EventLens`、`.lens*` 样式 | P1 起承载沙箱文档；全部产物迁移完成后改名为舞台容器 |
 
 P3 之前要点图表 Agent 仍在线上运行，不能提前删除。

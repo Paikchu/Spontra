@@ -15,18 +15,18 @@ import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
-import { writeLensDocuments, type LensRunner, type LensTrace } from "../lens/agent.ts";
-import { piLensRunner } from "../lens/pi.ts";
-import { browserRenderer } from "../lens/draw.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
 export const FINDINGS_VERSION = "findings.writer.v11";
-/** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
+/**
+ * Part of the findings fingerprint since findings had their own chart agent. Each finding's analysis is now the analyst's
+ * dossier artifact; the value stays so that removing the agent does not rewrite every company's findings.
+ */
 export const LENS_VERSION = "lens.agent.v6";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
-export type FindingsDeps = { model?: FindingsModel; runLens?: LensRunner; fetcher?: typeof fetch };
+export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
 /** The model reasons at length before it writes, and the provider counts that against the output limit; the default limit leaves room. */
 const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
@@ -106,11 +106,8 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, filings: input.filings, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage,
   });
-  // Each verified finding's lens document, composed by the agent at low reasoning through its tools, one Pi session each.
-  const runLens = deps.runLens ?? piLensRunner(env, step, params.ticker);
-  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, run: runLens, version: LENS_VERSION, now, stage, render: env.BROWSER ? browserRenderer(env.BROWSER) : undefined }).catch(() => null) : null;
-  const outcome = lensed ? { ...draft, publication: lensed.publication } : draft;
-  const lensTrace: LensTrace | null = lensed?.trace ?? null;
+  // Each finding keeps the chart it was written with; the analyst composes its full analysis as a dossier artifact.
+  const outcome = draft;
   // The headline figures of each statement view for this report; a failed call publishes the findings without them.
   const periodEnd = input.ledger.periodEnd;
   const written = await writeHighlights({
@@ -133,7 +130,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     if (!publication) return false;
     // Earlier publications' watches, oldest first, so the page can score each against the data as it stands now.
     const store = new AiRunStore(db);
-    const record = { ...publication, record: await priorWatches(store, params.ticker, previous, publication), ...(lensTrace ? { lensTrace } : {}) };
+    const record = { ...publication, record: await priorWatches(store, params.ticker, previous, publication) };
     // The publication and its event commit together.
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
@@ -145,5 +142,5 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   });
   if (!published) return { status: "empty" as const, withheld: outcome.withheld };
   return { status: "ready" as const, findings: outcome.publication?.findings.length ?? 0, findingsFallback: !outcome.publication, withheld: outcome.withheld,
-    lenses: lensTrace ? { composed: lensTrace.findings.filter(f => f.document).length, kept: lensTrace.findings.filter(f => !f.document).length, turns: lensTrace.findings.reduce((n, f) => n + f.turns.length, 0) } : null, highlights: written.highlights ? { cash: written.highlights.cash.length, profit: written.highlights.profit.length, balance: written.highlights.balance.length } : null, highlightsWithheld: written.withheld.length };
+    highlights: written.highlights ? { cash: written.highlights.cash.length, profit: written.highlights.profit.length, balance: written.highlights.balance.length } : null, highlightsWithheld: written.withheld.length };
 }

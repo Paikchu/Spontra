@@ -12,6 +12,16 @@ export type ArtifactStoreEnv = { DB?: D1Database; SEC_FILINGS: Bucket; REPORT_AD
 type Stored = { document: ArtifactDocument; html: string; css: string; hash: string; degraded: string[] };
 
 export const artifactId = (kind: ArtifactKind, ticker: string, subject: string) => `${kind}:${ticker}:${subject}`;
+/** A finding's dossier is bound to the findings publication it was written for: a new publication waits for its own. */
+export const dossierSubject = (findingsFingerprint: string, findingId: string) => `${findingsFingerprint.slice(0, 16)}.${findingId}`;
+
+/** The findings of this publication whose dossier artifact is published, with the published version of each. */
+export async function publishedDossiers(db: D1Database, ticker: string, findingsFingerprint: string): Promise<Record<string, number>> {
+  const prefix = `${findingsFingerprint.slice(0, 16)}.`;
+  const rows = await db.prepare("SELECT subject, published_version FROM analysis_artifacts WHERE kind = 'dossier' AND ticker = ? AND published_version IS NOT NULL AND substr(subject, 1, ?) = ?")
+    .bind(ticker, prefix.length, prefix).all<{ subject: string; published_version: number }>().catch(() => ({ results: [] as Array<{ subject: string; published_version: number }> }));
+  return Object.fromEntries(rows.results.map(r => [r.subject.slice(prefix.length), r.published_version]));
+}
 const objectKey = (id: string, version: number) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/v${version}.json`;
 
 /** Saves a version and returns its number and hash; the same HTML and CSS saved again is the same version. */

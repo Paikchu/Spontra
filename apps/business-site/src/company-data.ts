@@ -87,12 +87,12 @@ export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: st
 }
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
-export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null };
+export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null; dossiers: Record<string, number> };
 export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<FindingsBundle | null> {
   const response = await companyRequest(companyPath(ticker, "/findings", rev), signal, openingResponse);
   if (!response.ok) throw new CompanyHttpError(response.status);
-  const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
-  return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;
+  const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null; dossiers?: Record<string, number> };
+  return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null, dossiers: body.dossiers ?? {} } : null;
 }
 
 /** The valuation assessment in every state it answers with (hidden, preparing, ready, insufficient, failed); null only when the read failed. */

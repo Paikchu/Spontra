@@ -7,7 +7,7 @@ import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { assignIds, readSceneDraft } from "../../../../shared/analysis-runtime/scene/schema.ts";
 import { describeScene, verifyScene, type VerifiedScene } from "../../../../shared/analysis-runtime/scene/verify.ts";
 import type { Recipe } from "../recipe.ts";
-import { lensEvidence } from "../lens/agent.ts";
+import { evidenceRows } from "../findings/catalogue.ts";
 import { defineTool, type AnyTool, type ToolPolicy } from "../tools/registry.ts";
 
 const tool = defineTool<StageTurn>();
@@ -83,7 +83,7 @@ export function stageTools(input: StageInput): AnyTool<StageTurn>[] {
       },
       observe: (_a, v) => JSON.stringify(v).slice(0, 14_000) }),
     tool({ name: "findings", description: "The published findings: id, kind, severity, title, judgment and the figures each rests on.", parameters: z.object({}), concurrencySafe: true,
-      execute: (_a, ctx) => { register(ctx.state, d.findings.flatMap(f => f.resolved)); return d.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, judgment: f.judgment.text, view: f.anchors.view, evidence: lensEvidence(f.resolved) })); },
+      execute: (_a, ctx) => { register(ctx.state, d.findings.flatMap(f => f.resolved)); return d.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, judgment: f.judgment.text, view: f.anchors.view, evidence: evidenceRows(f.resolved) })); },
       observe: (_a, v) => JSON.stringify(v).slice(0, 12_000) }),
     tool({ name: "read_series", description: "Values of up to six references over the periods ending at the report, each with its year-over-year change.", parameters: z.object({ refs: z.array(findingRefSchema).min(1).max(6), span: z.enum(["quarter", "fiscal_year"]), periods: z.number().int().min(1).max(12) }), concurrencySafe: true,
       // The reference grammar is larger than a strict schema may be; the harness checks each reference.
