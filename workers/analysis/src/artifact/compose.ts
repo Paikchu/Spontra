@@ -274,6 +274,14 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const unmet = lowBudget(state) ? null : setup.precheck?.(state) ?? null;
     if (unmet) return fail(`Not published yet: ${unmet}`);
     for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
+    // A recipe that names its sections names their order too: the blocks are read in that order however they were
+    // written, and a block the recipe does not name stays behind the one it followed.
+    const declared = [...setup.required?.(state) ?? []];
+    if (declared.length) {
+      let rank = -1;
+      const ranks = new Map(c.blocks.map(b => { const at = declared.indexOf(b.id); if (at >= 0) rank = at; return [b.id, at >= 0 ? at : rank] as const; }));
+      c.blocks = c.blocks.map((b, i) => ({ b, i })).sort((x, y) => ranks.get(x.b.id)! - ranks.get(y.b.id)! || x.i - y.i).map(x => x.b);
+    }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
     if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nAccept the review's corrections with apply_fixes, or change the faulted sentences with edit_block, then call finish again.`);
