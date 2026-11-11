@@ -1,6 +1,5 @@
 import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "./outbox.ts";
-import { scheduledAnalysisOn } from "./scheduled-analysis.ts";
 import { TASK_NAMES, type TaskName } from "./registry.ts";
 import { TASK_IMPLEMENTATIONS } from "./tasks.ts";
 
@@ -10,14 +9,14 @@ type Stored = { payload: string; deployed_at: string };
  * Announces every task whose version changed since the code that last ran: one `task.version_changed` per task,
  * written with the new version record in one batch. One primary-key read when nothing changed. Versions only move
  * forward: while a deployment rolls out, an invocation of the older code finds a newer record and leaves it alone.
- * While scheduled analysis is off the record stays behind, so the re-runs are announced once it is on again.
+ * The router leaves a held run for each company whose scheduled analysis is off, which goes out once it is on again.
  */
 export async function announceTaskVersions(env: AnalysisEnv): Promise<TaskName[]> {
   if (!env.DB) return [];
   const current = Object.fromEntries(TASK_NAMES.map(task => [task, TASK_IMPLEMENTATIONS[task].version])) as Record<TaskName, string>;
   const payload = JSON.stringify(current);
   const stored = await env.DB.prepare("SELECT payload, deployed_at FROM pipeline_versions WHERE id = 'tasks'").first<Stored>();
-  if (stored?.payload === payload || !await scheduledAnalysisOn(env.DB)) return [];
+  if (stored?.payload === payload) return [];
   const deployedAt = env.CF_VERSION_METADATA?.timestamp ?? new Date(0).toISOString();
   if (stored && Date.parse(stored.deployed_at) > Date.parse(deployedAt)) return [];
   let previous: Partial<Record<TaskName, string>> = {};

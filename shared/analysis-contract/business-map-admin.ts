@@ -18,6 +18,8 @@ export type CompanyLayerStatusCode = keyof typeof COMPANY_LAYER_STATUS_LABELS;
 export type CompanyLayerStatus = { code: CompanyLayerStatusCode; label: typeof COMPANY_LAYER_STATUS_LABELS[CompanyLayerStatusCode] };
 export type BusinessMapCompany = FinancialMaintenanceCompany & {
   layerStatuses: Record<Layer, CompanyLayerStatus>;
+  /** Whether new filings and new task versions start this company's analysis on their own. */
+  scheduledAnalysis: boolean;
   task: FinancialMaintenanceTask | null;
   collection: { status: string; reasons: string[]; updatedAt: string; completed: number; total: number } | null;
   history: { completed: number; total: number } | null;
@@ -50,6 +52,7 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
 /**
  * `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags).
  * `scheduledAnalysis`: whether new filings and new task versions start analysis on their own; manual runs ignore it.
+ * A company's own `scheduledAnalysis` is what applies to it: its own switch where it has one, the project's otherwise.
  */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; scheduledAnalysis: boolean; generation: Record<Feature, boolean> };
 /** One issuer of EDGAR's exchange directory on the companies page: its first-listed class, the others, and its five layer switches. */

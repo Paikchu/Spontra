@@ -10,7 +10,7 @@ Worker `spontra-analysis`: SEC discovery and archiving, deterministic financial 
 | `StageGateway` | Business map, Service Binding `SPONTRA_STAGE` | The stage: identities, conversations, `StageAgent` sockets |
 | `AdminGateway` | Admin, Service Binding `SPONTRA_ANALYSIS` | `/admin/*` routes with a fresh admin session per request |
 | Default `fetch` | Public internet | Read API; `/admin/*` needs a signed session |
-| `scheduled` (`*/10`) | Cron | SEC discovery and reference closes only. The admin's 定时分析 switch (companies page) silences discovery's events and task-version re-runs and holds runs already queued; all of it goes out once it is on again, and admin actions ignore it |
+| `scheduled` (`*/10`) | Cron | SEC discovery and reference closes only. The admin's 定时分析 switches (companies page: the column head for every company, each row for one company, whose own switch decides for it) silence discovery's events and task-version re-runs and hold runs already queued for the companies that are off; all of it goes out once a company is on again, and admin actions ignore it |
 | `queue` | `spontra-pipeline-events`, `-tasks`, `-dlq` | Every other task |
 
 A named entrypoint is unreachable from the public internet, so the binding is the credential.

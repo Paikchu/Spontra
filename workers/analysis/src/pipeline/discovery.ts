@@ -8,7 +8,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
 import { outboxStatement } from "./outbox.ts";
 import { scopeTickers } from "./router.ts";
-import { scheduledAnalysisOn } from "./scheduled-analysis.ts";
+import { scheduledAnalysisPauses } from "./scheduled-analysis.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
 export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
@@ -56,22 +56,24 @@ function annualForm(payload: unknown): string | null {
  * the new state. A company seen for the first time only records its baseline; one the pipeline has never collected
  * also has its first collection requested (`company.added`, `collection.requested`). Writes a heartbeat when done, and
  * fails the invocation when no company could be read, so an outage raises the Worker's error notification.
- * While scheduled analysis is off the listings stay current for manual runs, but no event is written and the accessions
- * seen stay as they were, so the first sweep after it is on again announces what was filed meanwhile; a company without
- * a baseline waits for that sweep too.
+ * While scheduled analysis is off for a company its listings stay current for manual runs, but no event is written and
+ * the accessions seen stay as they were, so the first sweep after it is on again announces what was filed meanwhile; a
+ * company without a baseline waits for that sweep too.
  */
 export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch) {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const listings = edgarListings(env, { fetcher });
-  const announcing = await scheduledAnalysisOn(db);
-  const result = { paused: !announcing, checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
+  const pauses = await scheduledAnalysisPauses(db);
+  const result = { paused: [] as string[], checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
   // The two reference directories (catalog/issuer-directory.ts) are read here at most once a day; every other reader
   // uses the stored copies. EDGAR's names the CIK of a company the pipeline has not collected yet.
   let directory: Promise<Record<string, string>> | null = null;
   const ciks = () => directory ??= issuerDirectory(db, listings, now).then(entries => Object.fromEntries(entries.filter(e => e[3]).map(e => [e[0], e[3]])));
   await Promise.all([ciks().catch(() => undefined), refreshListings(db, fetcher, now).catch(() => undefined)]);
   for (const ticker of await scopeTickers(env, "map")) {
+    const announcing = pauses.at(ticker) === null;
+    if (!announcing) result.paused.push(ticker);
     let cik = await knownCik(db, ticker);
     let bootstrap = false;
     // A company on the data list the pipeline has never collected: its CIK comes from EDGAR's issuer directory, and
