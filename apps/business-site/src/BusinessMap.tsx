@@ -711,7 +711,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
-      : focusedReport && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot}
+      : focusedReport && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot} revision={focusedReport.generatedAt}
         head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
       : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} fallback={lens}

@@ -29,8 +29,10 @@ export type FilingReportHead = { kind: string; title: string; titleLang?: string
  * the row keeps when the filing turns out to have no report. Loaded on demand so the map's bundle does not carry the
  * report's styles and renderer until one is opened.
  */
-export default function FilingReport({ accession, snapshot, head, ticker, onClose, fallback }: {
+export default function FilingReport({ accession, snapshot, revision, head, ticker, onClose, fallback }: {
   accession: string;
+  /** Changes when the report is published again, so an open report is read again. */
+  revision?: string | null;
   snapshot?: { reportDate: string; reportVersion: string } | null;
   head: FilingReportHead;
   ticker: string;
@@ -49,7 +51,7 @@ export default function FilingReport({ accession, snapshot, head, ticker, onClos
       .then(body => { if (!controller.signal.aborted) setDetail(body); })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [ticker, accession, reportDate, reportVersion]);
+  }, [ticker, accession, reportDate, reportVersion, revision]);
   const artifact = preview ?? detail?.artifact ?? null;
   if (fallback && !artifact && (failed || detail && !detail.filing.summary?.report)) return <>{fallback}</>;
   return <section className="lens report-lens" aria-label={m.report(head.title)}>

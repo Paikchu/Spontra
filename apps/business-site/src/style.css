@@ -1207,6 +1207,8 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 /* A filing's one report on the stage: the report page's document inside its own styles. */
 .report-document { min-height: 0; overflow-y: auto; padding: 8px 4px 32px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .report-document .lens-empty { padding: 60px 0; }
+/* The report shares the header's measure and centre; the frame alone would start at the stage's left edge. */
+.report-lens .report-document > .artifact-frame { width: min(100%, var(--lens-measure)); margin-inline: auto; }
 
 /* ---------- Live updates ---------- */
 /* A newer read is waiting: a pill over the stage's top edge, centred on the stage beside the rail. */
