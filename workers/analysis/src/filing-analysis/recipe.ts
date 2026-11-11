@@ -164,7 +164,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     settled: s => s.composer.phase === "published",
     settle: s => s.composer.phase === "published",
     nudge: periodic ? "Continue: work the leads, record what you confirm, write the blocks, then call finish." : "Continue reading and writing blocks, then call finish.",
-    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.blocks.length && s.composer.phase !== "published" && left <= 15 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
+    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && left <= profile.turns * 0.45 ? " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && left <= profile.turns * 0.3 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
     afterRun: async (s) => {
       // A session that ends without publishing still delivers: the harness settles what is open and publishes (§6.5).
       // The summary is written again here: the calls of the last round are on record only once the run has ended.

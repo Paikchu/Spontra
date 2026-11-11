@@ -284,7 +284,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
-    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nAccept the review's corrections with apply_fixes, or change the faulted sentences with edit_block, then call finish again.`);
+    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nCall apply_fixes with no arguments to accept every correction at once, change what it could not apply with edit_block, then call finish again.`);
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, change the layout with edit_block keeping the words exactly, then call finish again.`);
@@ -360,33 +360,41 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       }
       return save(state, b.id, html, "");
     }),
-    tool<S>("apply_fixes", "Accept the review's own corrections for a block: the numbers of its open problems (from finish or view_issue). A problem whose correction is to remove the sentence has it removed; one with a replacement sentence has it put in, when the faulted words stand alone in the block's HTML. A problem it cannot apply is named, for you to change with edit_block.", {
+    tool<S>("apply_fixes", "Accept the review's own corrections. With no arguments, every correction of every block is applied in this one call; with id (and optionally numbers, as finish or view_issue list them), only those of one block. A problem whose correction is to remove the sentence has it removed; one with a replacement sentence has it put in, when the faulted words stand alone in the block's HTML. A problem it cannot apply is named, for you to change with edit_block.", {
       id: { type: "string" }, numbers: { type: "array", items: { type: "number" } },
-    }, ["id", "numbers"], async (a, state) => {
-      const c = state.composer, b = block(state, str(a.id));
-      const issues = c.open[str(a.id)] ?? [];
-      if (!b || !issues.length) return fail("No open problems on that block; see view_issue.");
-      const numbers = (Array.isArray(parsed(a.numbers)) ? parsed(a.numbers) as unknown[] : [a.numbers]).map(Number).filter(n => Number.isInteger(n) && issues[n - 1]);
-      if (!numbers.length) return fail("Give the numbers of the problems to accept, as view_issue lists them.");
-      let html = b.html;
-      const done: string[] = [], left: string[] = [];
-      for (const n of numbers) {
-        const issue = issues[n - 1]!;
-        const replacement = issue.replacement?.trim();
-        if (issue.kind !== "content" || !issue.quote || !replacement) { left.push(`${n}: the review gave no correction to apply`); continue; }
-        if (/^delete\.?$/i.test(replacement)) {
-          const cut = conservativeBlock({ ...b, html }, [issue]);
-          if (cut.empty) { left.push(`${n}: removing it would leave the block empty`); continue; }
-          html = serializeHtml(parseHtml(cut.html).nodes.slice(0, -1));
-          done.push(`${n}: sentence removed`);
-        } else if (html.split(issue.quote).length - 1 === 1 && !/[<>]/.test(replacement)) {
-          html = html.replace(issue.quote, () => replacement.replace(/&/g, "&amp;"));
-          done.push(`${n}: replaced`);
-        } else left.push(`${n}: the faulted words carry figures or links, so the replacement is yours to write with edit_block: ${replacement.slice(0, 300)}`);
+    }, [], async (a, state) => {
+      const c = state.composer;
+      const ids = str(a.id) ? [str(a.id)] : c.blocks.map(b => b.id).filter(id => c.open[id]?.some(i => i.kind === "content"));
+      if (!ids.length) return fail("No open problems to correct; see view_issue.");
+      const lines: string[] = [];
+      let applied = 0, failed = false;
+      for (const id of ids) {
+        const b = block(state, id), issues = c.open[id] ?? [];
+        if (!b || !issues.length) { lines.push(`"${id}": no open problems; see view_issue.`); continue; }
+        const given = a.numbers === undefined ? [] : (Array.isArray(parsed(a.numbers)) ? parsed(a.numbers) as unknown[] : [a.numbers]).map(Number);
+        const numbers = (given.length ? given : issues.map((_, i) => i + 1)).filter(n => Number.isInteger(n) && issues[n - 1]);
+        let html = b.html;
+        const done: string[] = [], left: string[] = [];
+        for (const n of numbers) {
+          const issue = issues[n - 1]!;
+          const replacement = issue.replacement?.trim();
+          if (issue.kind !== "content" || !issue.quote || !replacement) { left.push(`${n}: the review gave no correction to apply`); continue; }
+          if (/^delete\.?$/i.test(replacement)) {
+            const cut = conservativeBlock({ ...b, html }, [issue]);
+            if (cut.empty) { left.push(`${n}: removing it would leave the block empty`); continue; }
+            html = serializeHtml(parseHtml(cut.html).nodes.slice(0, -1));
+            done.push(`${n}: sentence removed`);
+          } else if (html.split(issue.quote).length - 1 === 1 && !/[<>]/.test(replacement)) {
+            html = html.replace(issue.quote, () => replacement.replace(/&/g, "&amp;"));
+            done.push(`${n}: replaced`);
+          } else left.push(`${n}: the faulted words carry figures or links, so the replacement is yours to write with edit_block: ${replacement.slice(0, 300)}`);
+        }
+        if (!done.length) { lines.push(`"${id}": nothing applied.\n${left.join("\n")}`); continue; }
+        const saved = await save(state, b.id, html, "");
+        if (saved.error) failed = true; else applied += done.length;
+        lines.push(`${saved.observation}\n${[...done, ...left].join("\n")}`);
       }
-      if (!done.length) return fail(`Nothing applied.\n${left.join("\n")}`);
-      const saved = await save(state, b.id, html, "");
-      return { observation: `${saved.observation}\n${[...done, ...left].join("\n")}`, ...(saved.error ? { error: true } : {}) };
+      return { observation: lines.join("\n\n"), ...(failed || !applied ? { error: true } : {}) };
     }),
     tool<S>("remove_block", "Remove a block that is not required, with the reason.", { id: { type: "string" }, reason: { type: "string" } }, ["id", "reason"], (a, state) => {
       const c = state.composer, id = str(a.id);
