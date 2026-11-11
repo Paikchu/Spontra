@@ -1,3 +1,4 @@
+import { recheckFiling } from "../filing-analysis/recheck.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
 import { startFilingRuns } from "../filing-analysis/start.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -156,7 +157,7 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
     }
     catch { return json({ error: "运行记录暂时不可读。" }, 503); }
   }
-  const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate))?$/.exec(url.pathname);
+  const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate|revise|recheck))?$/.exec(url.pathname);
   if (!match) return json({ error: "Not found" }, 404);
   let ticker: string | null, accession: string;
   try { ticker = normalizeTicker(decodeURIComponent(match[1]!)); accession = cleanSecAccession(decodeURIComponent(match[2]!)); }
@@ -182,6 +183,11 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       await repository.setCache(reviewKey(ticker, accession, identity), { version: identity, reviewedAt: new Date(now).toISOString() }, new Date(now).toISOString());
       return json({ status: "reviewed", reviewedAt: new Date(now).toISOString() });
     }
+    if (action === "recheck") {
+      // The published report read against its sources again, by code: no model call, no new version.
+      const result = await recheckFiling(env as unknown as Parameters<typeof recheckFiling>[0], ticker, accession);
+      return result ? json(result) : json({ error: "这份文件还没有已发布的报告。" }, 404);
+    }
     if (!trackedTickersFor(env).includes(ticker)) return json({ error: "该公司未启用 AI 财报分析。" }, 403);
     const requestId = request.headers.get("idempotency-key") ?? "";
     if (!/^[a-f0-9-]{36}$/.test(requestId)) return json({ error: "操作标识无效。" }, 400);
@@ -197,7 +203,7 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
       ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at
       WHERE sec_cache.fetched_at < ?`).bind(`admin:generate-lock:${ticker}:${accession}`, JSON.stringify({ workflowId }), new Date(now).toISOString(), new Date(now - 60_000).toISOString()).run();
     if (!lock.meta.changes) return json({ error: "这份报告正在提交生成任务，请稍后刷新。" }, 409);
-    try { await startFilingRuns(env as unknown as AnalysisEnv, ticker, { requestedBy: "manual", accession: accession, runId: workflowId }); }
+    try { await startFilingRuns(env as unknown as AnalysisEnv, ticker, { requestedBy: "manual", accession: accession, runId: workflowId, mode: action === "revise" ? "revise" : "rewrite" }); }
     catch { await repository.upsertAnalysisJob({ jobId, ticker, accessionNumber: accession, analysisVersion: jobAnalysisVersionFor(filing.form), status: "failed", currentStage: "queued", attempt: 1, requestedBy: "manual", workflowInstanceId: workflowId, updatedAt: new Date(now).toISOString(), errorCode: "workflow_dispatch_failed", completedAt: new Date(now).toISOString() }); return json({ error: "生成任务未能提交，请稍后重试。" }, 503); }
     return json({ status: "queued", jobId: workflowId, ticker, accessionNumber: accession }, 202);
   } catch {

@@ -36,7 +36,7 @@ export const ARTIFACT_VOID_ELEMENTS = ["br", "hr"] as const;
 
 /** Attributes a block may use, per element ("*" for every element). Event handlers, `style`, `id` and `aria-*` are never allowed. */
 export const ARTIFACT_ATTRIBUTES: Record<string, readonly string[]> = {
-  "*": ["class", "data-slot", "data-orientation", "data-side", "data-align", "lang", "title"],
+  "*": ["class", "data-slot", "data-pattern", "data-orientation", "data-side", "data-align", "lang", "title"],
   a: ["href", "data-source"],
   data: ["value", "data-ref", "data-unit"],
   blockquote: ["data-source"],
@@ -80,6 +80,21 @@ export const ARTIFACT_SLOTS: Record<string, ArtifactSlot> = {
   "carousel-item": { interactive: true, parent: "carousel" }, "carousel-previous": { interactive: true, parent: "carousel" },
   "carousel-next": { interactive: true, parent: "carousel" },
 };
+
+/**
+ * Layouts the theme owns (docs/filing-analysis-optimization.md §4.7): a block names one with `data-pattern` on the
+ * element given here and writes plain children; spacing, columns and type come from the frame's stylesheet at every width.
+ */
+export const ARTIFACT_PATTERNS: Record<string, { on: readonly string[]; markup: string }> = {
+  "metrics": { on: ["dl"], markup: '<dl data-pattern="metrics"><div><dt>label</dt><dd>figure</dd><dd>change or note</dd></div>…</dl> — two to six key figures in a row' },
+  "compare": { on: ["div"], markup: '<div data-slot="table-container" data-pattern="compare"><table data-slot="table">…</table></div> — a table of figures: first column labels, the rest right-aligned numbers' },
+  "figure-note": { on: ["div"], markup: '<div data-pattern="figure-note"><figure data-chart="id"></figure><div><p>what the chart shows…</p></div></div> — a chart with its reading beside it' },
+  "timeline": { on: ["ol"], markup: '<ol data-pattern="timeline"><li><strong>date or period</strong><p>what happened</p></li>…</ol> — dated events in order' },
+  "qa": { on: ["dl"], markup: '<dl data-pattern="qa"><dt>question or item to check</dt><dd>answer, level to watch, what it would mean</dd>…</dl> — questions with answers, or items with their reading' },
+};
+
+/** What code can tell about a layout before it is drawn; a block past one of these is not saved. */
+export const ARTIFACT_LAYOUT_LIMITS = { headingChars: 130, subheadingChars: 100, tableColumns: 6, cellChars: 260, wordChars: 40, cards: 4, badges: 6 } as const;
 
 /**
  * Class rules. Responsive styles use container queries, because the stage is narrower than the viewport; colours come

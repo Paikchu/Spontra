@@ -12,6 +12,8 @@ export type Recipe<I, O, S> = {
   resultChars?: number;
   /** Tool calls one reply may make; the default when unset is `CALLS_PER_TURN`. */
   callsPerTurn?: number;
+  /** Tools that only read: calls to them standing next to each other in one turn run together. */
+  concurrent?: readonly string[];
   system(input: I): string;
   open(input: I): S;
   tools(state: S): AnyTool<S>[];

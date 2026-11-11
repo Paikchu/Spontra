@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ARTIFACT_BLOCK_ID, ARTIFACT_MAX_BLOCKS, ARTIFACT_REQUIRED_BLOCKS, type ArtifactBlock } from "../../../../shared/analysis-contract/artifact.ts";
+import { ARTIFACT_BLOCK_ID, ARTIFACT_LAYOUT_LIMITS, ARTIFACT_MAX_BLOCKS, ARTIFACT_PATTERNS, ARTIFACT_REQUIRED_BLOCKS, type ArtifactBlock } from "../../../../shared/analysis-contract/artifact.ts";
 import type { LensChart } from "../../../../shared/analysis-contract/lens.ts";
 import { checkBlock, figureInText, parseHtml, quoteInText, serializeHtml, shownMatches } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { chartHeight, compileChart } from "../../../../shared/analysis-runtime/lens/compile.ts";
@@ -11,7 +11,7 @@ import { blockText, conservativeBlock, safeLayoutBlock, sentencesOf, toDocument,
 import { arbitrate, reviewBlock, type SourceReader } from "./review.ts";
 import { reviewRendering, visualPasses } from "./qa.ts";
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
-import { previewToken, publishStatements, recordCheck, saveVersion } from "./store.ts";
+import { previewToken, publishStatements, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
 import { judge, AnthropicUnavailable } from "./anthropic.ts";
 
 /**
@@ -134,7 +134,13 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const classes = c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes);
     const css = await compileArtifactCss(classes);
     const doc = toDocument(c, 0);
+    // What this version changes against the published one, by block: the note a reader of versions starts from (§4.6).
+    const prior = await readPublishedDocument(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject).catch(() => null);
+    const before = new Map((prior?.blocks ?? []).map(b => [b.id, b.html]));
+    c.changes = { from: prior?.version ?? null, added: c.blocks.filter(b => !before.has(b.id)).map(b => b.id), changed: c.blocks.filter(b => before.has(b.id) && before.get(b.id) !== b.html).map(b => b.id),
+      removed: [...before.keys()].filter(id => !c.blocks.some(b => b.id === id)), unchanged: c.blocks.filter(b => before.get(b.id) === b.html).map(b => b.id) };
     const saved = await saveVersion(setup.env, doc, css, "published", setup.ledger.runId ?? null);
+    await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, "changes", 0, c.changes);
     const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id);
     const at = new Date().toISOString();
     const text = c.blocks.map(b => `## ${b.title}\n${blockTextOf(b.html)}`).join("\n\n");
@@ -221,31 +227,28 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       let qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
       // A rendering that could not be looked at is asked for once more before the blocks give up their layout for it.
       if (qa.unavailable) { await new Promise(resolve => setTimeout(resolve, 5000)); qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger); }
-      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, issues: qa.issues, errors: qa.errors ?? [] });
+      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, covered: qa.covered ?? {}, issues: qa.issues, errors: qa.errors ?? [] });
       if (qa.unavailable) {
         // Without a rendering to look at, every block takes the layout that is known to pass (§6.5).
         for (const b of c.blocks) if (b.state !== "safe-layout") { Object.assign(b, safeLayoutBlock(b)); log(c, b.id, "render", 4, `safe layout: review unavailable (${qa.unavailable})`); }
         return [];
       }
       const visualOk = qa.scores === null || visualPasses(qa.scores);
-      // What was measured holds a block back every time. The design review's remarks do so once, on the first rendering:
-      // after that they are on record, and a score alone does not strip a block's layout.
-      const remarks = !visualOk && (c.rounds?.render ?? 1) <= 1;
-      const counted = qa.issues.filter(i => i.severity === "blocker" || i.kind === "interaction" || (remarks && i.kind === "visual" && i.severity === "major") || (i.kind === "render" && i.severity === "major"));
-      // A safe-layout block is held to the measured checks alone.
+      // What was measured holds a block back every time and, unrepaired for two rounds, costs it its layout. The design
+      // review only advises (§4.7): its remarks are handed over once, on the first rendering, and never strip a layout.
+      const remarks = !force && !visualOk && (c.rounds?.render ?? 1) <= 1;
+      const measured = qa.issues.filter(i => i.kind !== "visual" && (i.severity === "blocker" || i.kind === "interaction" || i.severity === "major"));
+      const advice = remarks ? qa.issues.filter(i => i.kind === "visual" && i.severity === "major" && block(state, i.block) && block(state, i.block)!.state !== "safe-layout") : [];
       const byBlock = new Map<string, TrackedIssue[]>();
-      for (const i of counted) {
-        const b = block(state, i.block);
-        if (!b || (b.state === "safe-layout" && i.kind === "visual")) continue;
-        byBlock.set(i.block, [...byBlock.get(i.block) ?? [], i]);
-      }
-      if (!byBlock.size) return [];
+      for (const i of measured) if (block(state, i.block)) byBlock.set(i.block, [...byBlock.get(i.block) ?? [], i]);
+      const adviceNotes = [...new Set(advice.map(i => i.block))].map(id => `Block "${id}": the design review suggests, once (change the layout with edit_block if you agree, keeping the words; it will not be raised again):\n${advice.filter(i => i.block === id).map((i, n) => `  ${n + 1}. [${i.viewport ?? ""}] ${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
+      if (!byBlock.size) return adviceNotes.length ? [...adviceNotes, ...(qa.scores ? [`Design scores: ${Object.entries(qa.scores).map(([k, v]) => `${k} ${v}`).join(", ")}`] : [])] : [];
       const notes: string[] = [];
       let settled = false;
       for (const [id, issues] of byBlock) {
         const b = block(state, id)!;
         const step = climb(c, `render:${id}`, issues);
-        if (force || step.level >= 4 || b.state === "safe-layout") {
+        if (force || step.level >= 3 || b.state === "safe-layout") {
           if (b.state !== "safe-layout") { Object.assign(b, safeLayoutBlock(b)); settled = true; }
           delete c.open[id];
           log(c, id, "render", 4, `safe layout: ${issues.map(i => i.problem).join(" | ")}`);
@@ -255,7 +258,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
         log(c, id, "render", step.level, issues.map(i => i.problem).join(" | "));
         notes.push(`Block "${id}" (layout step ${step.level}): ${RENDER_STEP(step.level)}\n${issues.map((i, n) => `  ${n + 1}. [${i.kind}${i.viewport ? `, ${i.viewport}` : ""}] ${i.problem}${i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}${qa.scores ? `\n  Design scores: ${Object.entries(qa.scores).map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}`);
       }
-      if (notes.length) return notes;
+      if (notes.length) return [...notes, ...adviceNotes];
       if (!settled) return [];
       // Blocks just moved to the safe layout are rendered again before publishing, so what is published was looked at.
     }
@@ -292,7 +295,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   }
 
   /** Checks a block's HTML and saves it; the same words laid out again keep the standing the review gave them (§4.2). */
-  async function save(state: S, id: string, html: string, afterId: string): Promise<Result> {
+  async function save(state: S, id: string, html: string, afterId: string, via: string): Promise<Result> {
     const c = state.composer;
     if (!ARTIFACT_BLOCK_ID.test(id)) return fail(`Block ids are lowercase slugs such as "revenue" or "risks-2".`);
     if (c.phase === "published") return fail("The document is published.");
@@ -304,6 +307,9 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const sameWords = !!before && blockText(before.html) === blockText(written.html);
     if (sameWords && before!.state === "conservative") Object.assign(written, { state: "conservative", ...(before!.note ? { note: before!.note } : {}) });
     else if (sameWords && before!.state !== "draft") written.state = "passed";
+    // Every edit that lands is on record: the tool, the block, and what it held before and after (§4.6).
+    const mark = (text: string) => { let h = 5381; for (let i = 0; i < text.length; i++) h = (h * 33 ^ text.charCodeAt(i)) >>> 0; return `${h.toString(16)}/${text.length}`; };
+    log(c, id, "edit", 0, `${via}: ${before ? mark(before.html) : "new"} -> ${mark(written.html)}`);
     if (at >= 0) c.blocks[at] = written;
     else {
       const after = c.blocks.findIndex(b => b.id === afterId);
@@ -334,7 +340,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const list = Array.isArray(parsed(a.blocks)) ? parsed(a.blocks) as Array<Record<string, unknown>> : [];
       if (!list.length) return fail("write_blocks needs blocks: [{id, html}].");
       const out: Result[] = [];
-      for (const item of list) out.push(await save(state, str(item?.id).trim(), str(item?.html), str(item?.after)));
+      for (const item of list) out.push(await save(state, str(item?.id).trim(), str(item?.html), str(item?.after), "write_blocks"));
       return { observation: out.map(r => r.observation).join("\n"), ...(out.every(r => r.error) ? { error: true } : {}) };
     }, 3 * 60_000),
     tool<S>("edit_block", "Change parts of one block and keep the rest: each edit replaces a piece of the block's HTML (old, copied exactly from read_block, long enough to occur once) with new HTML. The sentences you do not touch keep the review they passed. Send several edits at once.", {
@@ -358,7 +364,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
         if (!found) { const head = old.trim().slice(0, 24), near = html.indexOf(head); return fail(`Edit ${n + 1}: old is not in the block${near >= 0 ? `; the nearest piece reads: ${html.slice(Math.max(0, near - 40), near + 200)}` : "; read_block shows its current HTML"}. Nothing was saved.`); }
         html = html.slice(0, found.index) + next + html.slice(found.index + found[0].length);
       }
-      return save(state, b.id, html, "");
+      return save(state, b.id, html, "", "edit_block");
     }),
     tool<S>("apply_fixes", "Accept the review's own corrections. With no arguments, every correction of every block is applied in this one call; with id (and optionally numbers, as finish or view_issue list them), only those of one block. A problem whose correction is to remove the sentence has it removed; one with a replacement sentence has it put in, when the faulted words stand alone in the block's HTML. A problem it cannot apply is named, for you to change with edit_block.", {
       id: { type: "string" }, numbers: { type: "array", items: { type: "number" } },
@@ -390,7 +396,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
           } else left.push(`${n}: the faulted words carry figures or links, so the replacement is yours to write with edit_block: ${replacement.slice(0, 300)}`);
         }
         if (!done.length) { lines.push(`"${id}": nothing applied.\n${left.join("\n")}`); continue; }
-        const saved = await save(state, b.id, html, "");
+        const saved = await save(state, b.id, html, "", "apply_fixes");
         if (saved.error) failed = true; else applied += done.length;
         lines.push(`${saved.observation}\n${[...done, ...left].join("\n")}`);
       }
@@ -485,6 +491,8 @@ const blockTextOf = (html: string) => checkBlock(html, { sourceUrl: () => null, 
 export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_blocks, edit_block, apply_fixes, remove_block, move_block, view_issue, contest_issue and finish. The document is a file you edit: write several blocks in one write_blocks call, and change a block that exists with edit_block rather than writing it again.
 Markup: shadcn/ui data-display components, written as their HTML with data-slot and Tailwind classes. Use whatever makes the point clearest: headings (h2 for the block title, h3 inside), paragraphs, lists, tables (<div data-slot="table-container"><table data-slot="table"><thead data-slot="table-header"><tr data-slot="table-row"><th data-slot="table-head">…), charts (<figure data-chart="id"></figure> after add_chart), tabs (<div data-slot="tabs"><div data-slot="tabs-list"><button data-slot="tabs-trigger" data-value="a">…</button></div><div data-slot="tabs-content" data-value="a">…</div></div>), accordions (accordion, accordion-item, accordion-trigger as a button, accordion-content), collapsible, tooltip (<span data-slot="tooltip" data-content="plain text">term</span>), progress (<div data-slot="progress" data-value="62" data-max="100"></div>), badge, alert, item, card, separator.
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
+Layouts: where one fits, use a layout the theme styles at every width instead of arranging classes yourself — ${Object.entries(ARTIFACT_PATTERNS).map(([name, p]) => `${name}: ${p.markup}`).join("; ")}. A report reads best with its key figures in a metrics row near the top, figures compared in a compare table, and things to check as a qa list.
+Limits checked when a block is saved: an h2 under ${ARTIFACT_LAYOUT_LIMITS.headingChars} characters, at most ${ARTIFACT_LAYOUT_LIMITS.tableColumns} table columns, table cells under ${ARTIFACT_LAYOUT_LIMITS.cellChars} characters (prose goes in a qa list or paragraphs, not a table), at most ${ARTIFACT_LAYOUT_LIMITS.cards} cards and ${ARTIFACT_LAYOUT_LIMITS.badges} badges, no card inside a card.
 House style: a research report, not a dashboard, read in one column at most 760px wide and on phones. Tables are for figures and short labels; a comparison made in sentences reads better as a list or short headed paragraphs. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.
 Evidence: every block cites the sources it rests on. Write figures as <data value="2876.8" data-ref="SOURCE_ID">$2,876.8m</data>, quotes as <blockquote data-source="SOURCE_ID">exact words</blockquote>, links as <a data-source="SOURCE_ID">text</a>. Write only what the material supports; where it does not settle a question, say what is not disclosed and what to look for next — that is part of the analysis.
 Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. Fix only the sentences it faults and call finish again: a block is reviewed ${CONTENT_ROUNDS} times at most, after which the harness removes the sentences still open, and sentences the review let stand are not judged again. When finish asks for a change of layout, keep the words exactly: the same words laid out again are not reviewed a second time.`;

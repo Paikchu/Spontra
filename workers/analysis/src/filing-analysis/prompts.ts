@@ -132,5 +132,7 @@ ${CHECKLIST}`;
 export const PERIODIC_EVIDENCE = `Figures and sources in this session:
 - A figure from a fact: <data value="168.7" data-ref="f1a2b3c4d5e6f7">$168.7m</data>. value is the number as you show it (168.7 for $168.7m); it is checked against the fact, in units, thousands, millions or billions.
 - A figure you computed: <data value="39.2" data-ref="c3">39.2%</data>.
-- A figure that exists only in a sentence of the filing: cite the section, <data value="10.7" data-ref="SECTION_ID">$10.7m</data>.
-- A quotation: <blockquote data-source="SECTION_ID">exact words</blockquote>. An earlier report or a call you read is cited by the source id its read gave.`;
+- A figure that exists only in a sentence of the filing: cite its paragraph, <data value="10.7" data-ref="SECTION_ID#412">$10.7m</data> (the section id, #, the ¶ number).
+- A quotation: <blockquote data-source="SECTION_ID#412">exact words</blockquote>. Cite the paragraph, not the whole section, wherever you know it: notes and reads give the ¶ number.
+- A chart: chart_facts draws the company's own filed figures through its earlier filings (a line through eight quarters, or rates you computed per period). One or two charts where a trend carries the point — the main growth line, a margin, a balance that moved — each beside the sentence that reads it, <div data-pattern="figure-note">.
+- Reads do not depend on each other: send several read_sections, grep, query_facts, fact_history calls in one turn and they run together. An earlier report or a call you read is cited by the source id its read gave.`;

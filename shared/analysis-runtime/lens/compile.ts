@@ -3,7 +3,7 @@ import { LENS_ASPECT, type LensChart, type LensColorToken, type LensMark, type L
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
 import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { formatDelta, formatResolved, periodLabel, tickLabel } from "./format.ts";
+import { formatDelta, formatFigure, formatResolved, periodLabel, tickLabel } from "./format.ts";
 import { shortPeriod } from "../locale.ts";
 import { qoqLabel, yoyLabel, type Locale } from "../locale.ts";
 
@@ -190,6 +190,39 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
       focus: { periods: focusPeriods, series: chart.focus?.series ?? drawn.map(s => s.id) }, periodNote: chart.periodNote ?? null, aspect: chart.aspect, span: chart.span, periods, series, marks: chart.marks.map(m => ({ type: m.type, series: m.series })),
       axes: { left: left.axis, right: right.axis }, annotations, bands, periodLabels: chart.periodLabels ?? "all", legend: chart.legend ?? (drawn.length > 1 ? "top" : "none"), summary,
     }, errors, notes,
+  };
+}
+
+export type PointSeries = { id: string; label: string; unit: ValueUnit; currency: string | null; points: Array<{ end: string; value: number }> };
+/**
+ * A chart of figures given point by point (docs/filing-analysis-optimization.md §4.5): a filing's own facts through its
+ * earlier filings, or figures worked out from them. The periods are the points' own period ends, oldest first.
+ */
+export function compilePoints(chart: { id: string; title: string; aspect: keyof typeof LENS_ASPECT; span: FindingSpan; mark: "bar" | "line"; series: PointSeries[] }, locale: Locale = "en"): CompileResult {
+  const errors: string[] = [];
+  const ends = [...new Set(chart.series.flatMap(s => s.points.map(p => p.end)))].sort();
+  if (!chart.series.length) errors.push("a chart needs at least one series");
+  if (ends.length < 2) errors.push("a chart needs at least two periods");
+  if (ends.length > 16) errors.push("a chart draws at most 16 periods");
+  if (new Set(chart.series.map(s => s.unit)).size > 1) errors.push(`the series are in different units (${[...new Set(chart.series.map(s => s.unit))].join(", ")}); draw one unit per chart`);
+  if (errors.length) return { chart: null, errors, notes: [] };
+  const tokens = ["biz-3", "biz-4", "biz-2", "biz-0", "biz-1"] as const;
+  const series: CompiledSeries[] = chart.series.map((s, i) => {
+    const at = new Map(s.points.map(p => [p.end, p.value]));
+    const values = ends.map(end => at.get(end) ?? null);
+    return { id: s.id, label: s.label, unit: s.unit, currency: s.currency, color: chart.series.length === 1 ? TOKEN_VAR.revenue : TOKEN_VAR[tokens[i % tokens.length]!], axis: "left", values, text: values.map(v => v == null ? null : formatFigure(v, s.unit, s.currency, undefined, locale)) };
+  });
+  const marks: LensMark[] = [{ type: chart.mark, series: series.map(s => s.id) }];
+  const left = axisFor(series, marks, new Map(), locale);
+  if (left.error || !left.axis) return { chart: null, errors: [left.error ?? "no value to draw"], notes: [] };
+  const periods = ends.map((end, i) => ({ end, label: periodLabel(end, chart.span, locale), current: i === ends.length - 1 }));
+  const latest = periods.length - 1;
+  return {
+    chart: {
+      id: chart.id, title: chart.title, subtitle: null, focus: { periods: [latest], series: series.map(s => s.id) }, periodNote: null, aspect: chart.aspect, span: chart.span, periods, series,
+      marks: marks.map(m => ({ type: m.type, series: m.series })), axes: { left: left.axis, right: null }, annotations: [], bands: [], periodLabels: periods.length > 8 ? "sparse" : "all", legend: series.length > 1 ? "top" : "none",
+      summary: `${chart.title} over ${periods.length} periods to ${periods[latest]!.label}: ${series.map(s => `${s.label} ${s.text[latest] ?? "not disclosed"}`).join("; ")}.`,
+    }, errors: [], notes: [],
   };
 }
 

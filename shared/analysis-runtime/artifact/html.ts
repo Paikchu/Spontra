@@ -1,4 +1,4 @@
-import { ARTIFACT_ATTRIBUTES, ARTIFACT_CLASS_RULES, ARTIFACT_ELEMENTS, ARTIFACT_MAX_BLOCK_CHARS, ARTIFACT_SLOTS, ARTIFACT_VOID_ELEMENTS } from "../../analysis-contract/artifact.ts";
+import { ARTIFACT_ATTRIBUTES, ARTIFACT_CLASS_RULES, ARTIFACT_ELEMENTS, ARTIFACT_LAYOUT_LIMITS, ARTIFACT_MAX_BLOCK_CHARS, ARTIFACT_PATTERNS, ARTIFACT_SLOTS, ARTIFACT_VOID_ELEMENTS } from "../../analysis-contract/artifact.ts";
 
 /**
  * A strict parser for artifact blocks (docs/analysis-html-artifact.md §4): elements, double- or single-quoted
@@ -129,6 +129,41 @@ export function classProblems(cls: string): string | null {
 }
 
 /**
+ * What code can tell about a layout before it is drawn (docs/filing-analysis-optimization.md §4.7): headings that will
+ * wrap into a paragraph, tables too wide or holding prose, words that cannot break, and boxes piled on boxes. Each
+ * problem says what to write instead.
+ */
+export function layoutProblems(nodes: HtmlNode[]): string[] {
+  const L = ARTIFACT_LAYOUT_LIMITS, out: string[] = [];
+  let cards = 0, badges = 0;
+  const walk = (list: HtmlNode[], inCard: boolean) => {
+    for (const node of list) {
+      if (node.type === "text") {
+        const long = node.text.split(/[\s\-\/–—]+/).find(w => w.length > L.wordChars);
+        if (long) out.push(`"${long.slice(0, 30)}…" is ${long.length} characters with no place to break; it will run past a phone's width. Shorten it or put spaces in it`);
+        continue;
+      }
+      const text = () => nodeText(node.children).replace(/\s+/g, " ").trim();
+      if (node.tag === "h2" && text().length > L.headingChars) out.push(`the <h2> is ${text().length} characters; keep a heading under ${L.headingChars} and put the rest in the first sentence`);
+      if ((node.tag === "h3" || node.tag === "h4") && text().length > L.subheadingChars) out.push(`an <${node.tag}> is ${text().length} characters; keep it under ${L.subheadingChars}`);
+      if (node.tag === "tr") {
+        const columns = node.children.reduce((n, c) => n + (c.type === "element" && (c.tag === "td" || c.tag === "th") ? Number(attr(c, "colspan")) || 1 : 0), 0);
+        if (columns > L.tableColumns) out.push(`a table row has ${columns} columns; ${L.tableColumns} is the most a phone can show. Split the table, or put the periods in tabs`);
+      }
+      if (node.tag === "td" && text().length > L.cellChars) out.push(`a table cell holds ${text().length} characters of prose ("${text().slice(0, 40)}…"); a table is for figures and short labels. Write this as <dl data-pattern="qa"> or headed paragraphs`);
+      const slot = attr(node, "data-slot");
+      if (slot === "card") { cards += 1; if (inCard) out.push("a card sits inside a card; use headings and rules to separate, not nested boxes"); }
+      if (slot === "badge") badges += 1;
+      walk(node.children, inCard || slot === "card");
+    }
+  };
+  walk(nodes, false);
+  if (cards > L.cards) out.push(`the block has ${cards} cards; a report is read as text. Keep at most ${L.cards}, and use <dl data-pattern="metrics"> for a row of figures`);
+  if (badges > L.badges) out.push(`the block has ${badges} badges; keep at most ${L.badges}`);
+  return [...new Set(out)];
+}
+
+/**
  * Checks one block's inner HTML against the specification and the run's materials, and returns it in canonical form:
  * links get their registered URL, charts are placeholders the harness fills, and every class is listed for the
  * compiler. Errors name the element and say what to write instead.
@@ -151,6 +186,12 @@ export function checkBlock(source: string, ctx: BlockContext): BlockCheck {
       for (const [name, value] of node.attrs) {
         if (!allowed.has(name)) { errors.push(`<${tag} ${name}>: attribute not allowed${name === "style" ? "; use classes" : name.startsWith("on") ? "" : name.startsWith("aria-") ? "; the component script sets ARIA attributes" : ""}`); continue; }
         if (name === "class") for (const cls of value.split(/\s+/).filter(Boolean)) { const problem = classProblems(cls); if (problem) errors.push(problem); else classes.add(cls); }
+      }
+      const pattern = attr(node, "data-pattern");
+      if (pattern !== undefined) {
+        const spec = ARTIFACT_PATTERNS[pattern];
+        if (!spec) errors.push(`data-pattern="${pattern}" is not a layout; the layouts are ${Object.keys(ARTIFACT_PATTERNS).join(", ")}`);
+        else if (!spec.on.includes(tag)) errors.push(`data-pattern="${pattern}" goes on <${spec.on.join("> or <")}>: ${spec.markup}`);
       }
       const slot = attr(node, "data-slot");
       if (slot !== undefined) {
@@ -200,6 +241,7 @@ export function checkBlock(source: string, ctx: BlockContext): BlockCheck {
     }
   };
   walk(parsed.nodes, []);
+  errors.push(...layoutProblems(parsed.nodes));
   for (const t of tabs) {
     if (!t.triggers.length || t.triggers.some(v => !v) || t.contents.some(v => !v)) errors.push(`tabs: every tabs-trigger and tabs-content needs data-value`);
     else if (t.triggers.join() !== t.contents.join()) errors.push(`tabs: triggers (${t.triggers.join(", ")}) and contents (${t.contents.join(", ")}) must match one to one, in order`);

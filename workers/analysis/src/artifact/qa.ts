@@ -9,18 +9,25 @@ import { issueKey, type TrackedIssue } from "./document.ts";
  * checks find what can be measured; the interactive components are exercised; screenshots go to Claude Haiku 5.5 for
  * the design review. Every finding names a block, so the composer fixes only that block.
  */
-export type Viewport = { name: string; width: number; height: number; dark: boolean; mobile?: boolean; shots: number };
+/** `parts`: how many screenshots a tall block may take at this width, each `SLICE` pixels at most. */
+export type Viewport = { name: string; width: number; height: number; dark: boolean; mobile?: boolean; parts: number };
 export const VIEWPORTS: Viewport[] = [
-  { name: "1440x900 light", width: 1440, height: 900, dark: false, shots: 2 },
-  { name: "1280x800 dark", width: 1280, height: 800, dark: true, shots: 1 },
-  { name: "390x844 light", width: 390, height: 844, dark: false, mobile: true, shots: 2 },
+  { name: "1440x900 light", width: 1440, height: 900, dark: false, parts: 2 },
+  { name: "390x844 light", width: 390, height: 844, dark: false, mobile: true, parts: 2 },
+  { name: "1280x800 dark", width: 1280, height: 800, dark: true, parts: 1 },
 ];
+/** A block is shot whole, in parts no taller than this: no screenshot edge falls inside a block shorter than it. */
+const SLICE = 1500;
+/** The most screenshots one design review reads; every width covers every block before a second part of any is taken. */
+const MAX_IMAGES = 20;
 export type QaResult = {
   issues: TrackedIssue[];
   scores: Record<string, number> | null;
   /** The review could not run (no browser, or the page never drew); the caller settles with the safe layout. */
   unavailable: string | null;
   shots: number;
+  /** The blocks the design review saw, by width. */
+  covered?: Record<string, string[]>;
   /** Widths that could not be looked at while others could: the page's fault or the browser's, not a block's. */
   errors?: string[];
 };
@@ -125,7 +132,7 @@ async function artifactFrame(page: Page): Promise<{ frame: Frame; rect: { x: num
   return frame ? { frame, rect } : null;
 }
 
-type Pass = { viewport: Viewport; measured: Measured; frameRect: { x: number; y: number; width: number; height: number }; shots: Array<{ y: number; height: number; image: ImageInput }> };
+type Pass = { viewport: Viewport; measured: Measured; frameRect: { x: number; y: number; width: number; height: number }; shots: Array<{ block: string; part: number; height: number; image: ImageInput }> };
 
 async function renderPass(browser: Browser, url: string, viewport: Viewport, errors: string[]): Promise<Pass> {
   const page = await browser.newPage();
@@ -146,24 +153,25 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     await found.frame.evaluate(axeSource).catch(() => undefined);
     const measured = await found.frame.evaluate(MEASURE) as Measured;
     const shots: Pass["shots"] = [];
-    for (let k = 0; k < viewport.shots; k++) {
-      const y = found.rect.y + k * viewport.height;
-      if (y >= found.rect.y + found.rect.height) break;
-      const height = Math.min(viewport.height, found.rect.y + found.rect.height - y);
+    // Every block is shot by itself (§4.7), so the review sees each one whole and names the one it is looking at.
+    for (const b of measured.blocks) for (let k = 0; k < viewport.parts; k++) {
+      const top = b.y + k * SLICE;
+      if (b.width < 8 || top >= b.y + b.height - 8) break;
+      const height = Math.min(SLICE, b.y + b.height - top), y = found.rect.y + top;
       // Each part is shot while it is on screen, so the frame has painted it.
       await page.evaluate(`window.scrollTo(0, ${Math.max(0, Math.round(y))})`);
-      await new Promise(resolve => setTimeout(resolve, 200));
-      const data = await page.screenshot({ type: "jpeg", quality: 65, encoding: "base64", clip: { x: found.rect.x, y, width: found.rect.width, height }, captureBeyondViewport: true }) as string;
-      shots.push({ y: y - found.rect.y, height, image: { mediaType: "image/jpeg", base64: data } });
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const data = await page.screenshot({ type: "jpeg", quality: 65, encoding: "base64", clip: { x: found.rect.x + b.x, y, width: b.width, height }, captureBeyondViewport: true }) as string;
+      shots.push({ block: b.id, part: k + 1, height, image: { mediaType: "image/jpeg", base64: data } });
     }
     return { viewport, measured, frameRect: found.rect, shots };
   } finally { await page.close().catch(() => undefined); }
 }
 
-const VISUAL_SYSTEM = `You are the design reviewer of an equity research platform. You see screenshots of one research report as readers see it, rendered at several widths. Judge the design only, never the investment view or the figures.
+const VISUAL_SYSTEM = `You are the design reviewer of an equity research platform. You see screenshots of one research report as readers see it, rendered at several widths: each screenshot is one section (block) of the report at one width, or one part of a tall section, and the map names the block and width of every screenshot. Judge the design only, never the investment view or the figures.
 The house style: a research report, not a dashboard. Sections are separated by headings, body text, thin rules and space; data is shown with tables, charts, tabs and other components wherever they make the point clearer. Avoid piles of rounded, bordered boxes, decorative badges, gradients and large colour fills; the highlight colour and gain/loss colours are used sparingly.
 Score each dimension from 0 to 10: layout (grid, alignment, white space, balance), hierarchy (headings, key figures and charts read in the right order), density (neither cramped nor wasteful), consistency (house style: components serve the content, few bordered boxes, restrained colour), readability (type size, line length, contrast).
-List concrete problems, each tied to the block id where it appears (the block map gives every block's position in each screenshot), with a fix that can be made with the report's components and classes, such as "show these four figures as one two-column table" or "drop the border around these paragraphs". Do not report a problem you cannot point to.`;
+List concrete problems, each tied to the block id of the screenshot where it appears, with a fix that can be made with the report's components and classes, such as "show these four figures as one two-column table" or "drop the border around these paragraphs". Do not report a problem you cannot point to.`;
 const VISUAL_SCHEMA = {
   type: "object", additionalProperties: false, required: ["scores", "issues"],
   properties: {
@@ -211,12 +219,13 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
   }
   // A width that never drew is on record but is held against no block: what was seen at the other widths is what is judged.
   let scores: Record<string, number> | null = null;
-  const images = passes.flatMap(p => p.shots.map(s => ({ ...s, viewport: p.viewport.name, blocks: p.measured.blocks })));
+  // First parts before second parts, so every width shows every block before the limit is reached.
+  const images = passes.flatMap((p, order) => p.shots.map(s => ({ ...s, viewport: p.viewport.name, order }))).sort((a, b) => a.part - b.part || a.order - b.order).slice(0, MAX_IMAGES);
   if (anthropicConfigured(env) && images.length) {
-    const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, blocks: s.blocks.filter(b => b.y + b.height > s.y && b.y < s.y + s.height).map(b => ({ id: b.id, top: Math.round(b.y - s.y), height: Math.round(b.height) })) }));
+    const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {
-        stage: "artifact-visual", system: VISUAL_SYSTEM, schema: VISUAL_SCHEMA, effort: "medium", images: images.slice(0, 8).map(s => s.image),
+        stage: "artifact-visual", system: VISUAL_SYSTEM, schema: VISUAL_SCHEMA, effort: "medium", images: images.map(s => s.image),
         text: JSON.stringify({ blockMap: map, measuredProblems: issues.slice(0, 20).map(i => ({ block: i.block, problem: i.problem })) }),
         ledger: { kind: "artifact-visual", ticker: ledger.ticker, ...(ledger.runId ? { runId: ledger.runId } : {}) },
       });
@@ -230,5 +239,5 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
       if (!(error instanceof AnthropicUnavailable)) throw error;
     }
   }
-  return { issues, scores, unavailable: null, shots: images.length, ...(errors.length ? { errors } : {}) };
+  return { issues, scores, unavailable: null, shots: images.length, covered: Object.fromEntries(passes.map(p => [p.viewport.name, [...new Set(images.filter(s => s.viewport === p.viewport.name).map(s => s.block))]])), ...(errors.length ? { errors } : {}) };
 }

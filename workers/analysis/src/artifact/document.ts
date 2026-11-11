@@ -28,6 +28,8 @@ export type ComposerState = {
   passed?: Record<string, string[]>;
   /** How many times each block has been reviewed; a block is settled by the harness after its third. */
   reviews?: Record<string, number>;
+  /** How the published version differs from the one before it, block by block (§4.6). */
+  changes?: { from: number | null; added: string[]; changed: string[]; removed: string[]; unchanged: string[] };
   /** Who settled the document: the session calling finish itself, or the harness delivering what it left. */
   settledBy?: "agent" | "harness";
   log: Array<{ at: string; block: string; phase: string; level: number; note: string }>;

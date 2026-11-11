@@ -18,10 +18,16 @@ import { filingMemoryStatements } from "./memory-source.ts";
 import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } from "../artifact/compose.ts";
 import { PERIODIC_BLOCKS, periodicTools, type PeriodicState } from "./periodic.ts";
 import { PERIODIC_EVIDENCE, PERIODIC_SYSTEM } from "./prompts.ts";
-import { openComposer, registerSource, type ComposerState } from "../artifact/document.ts";
+import { blockText, openComposer, registerSource, sentencesOf, type ComposerState } from "../artifact/document.ts";
+import { readPublishedDocument, readWorkState, saveWorkState } from "../artifact/store.ts";
+import type { ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
 
 /** What the session is rebuilt from after an eviction. */
-export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual" };
+export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual";
+  /** "revise": open on the published report and change it; otherwise start from an empty document (docs/filing-analysis-optimization.md §4.6). */
+  mode?: "revise" | "rewrite" };
+/** What a session keeps beside the published document, for the session that revises it and for a recheck. */
+export type FilingWork = { periodic?: PeriodicState; data: Record<string, string>; web: Record<string, string>; read: string[] };
 /**
  * `read`: the sections the session read, in order; they are what a memory item drawn from the report may cite.
  * `data` and `web`: the text of the figures and pages read, so a block citing them can be checked against them.
@@ -52,7 +58,7 @@ export function filingSummary(filing: SecFiling, report: { headline: string; tex
 
 const openState = (spec: FilingSpec): ComposerState => openComposer({ kind: "filing-report", ticker: spec.ticker, subject: spec.filing.accessionNumber, title: `${spec.ticker} ${spec.filing.form} ${spec.filing.reportDate || spec.filing.filingDate}`, lang: "en" });
 
-function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, data: StageData | null): Recipe<FilingSpec, boolean, FilingState> {
+function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, data: StageData | null, base: { document: ArtifactDocument; work: FilingWork | null } | null): Recipe<FilingSpec, boolean, FilingState> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;
@@ -105,7 +111,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     runId: spec.sessionId, ticker, accession, profile: profile.id, status, settledBy: state.composer.settledBy ?? null,
     reviewRounds: state.composer.rounds?.content ?? 0, renderRounds: state.composer.rounds?.render ?? 0, sectionsRead: state.read ?? [],
     blocks: state.composer.blocks.length, degraded: state.composer.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id),
-    ...(periodic ? { detail: periodic.detail(state) } : {}),
+    detail: { ...(periodic ? periodic.detail(state) : {}), mode: base ? "revise" : "rewrite", ...(state.composer.changes ? { changes: state.composer.changes } : {}), edits: state.composer.log.filter(l => l.phase === "edit").length },
   }).catch(error => console.error(JSON.stringify({ event: "filing-run-summary", ticker, accession, error: error instanceof Error ? error.message : String(error) })));
   const ids: { type: "object"; properties: Record<string, unknown>; required: string[] } = { type: "object", properties: { sectionIds: { type: "array", items: { type: "string" } } }, required: ["sectionIds"] };
   const own: AnyTool<FilingState>[] = [
@@ -126,7 +132,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     find: terms => find(terms),
     ...(periodic ? { resolve: periodic.resolve, figure: periodic.figure, required: () => PERIODIC_BLOCKS, precheck: periodic.precheck } : {}),
     read: async (id, state) => {
-      const held = periodic?.read(id, state);
+      // A fact or paragraph named by a report opened for revision is read again the first time it is needed.
+      const held = periodic?.read(id, state) ?? (periodic && await periodic.resolve(id, state).catch(() => false) ? periodic.read(id, state) : null);
       if (held) return held;
       if (state.data[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.data[id]! };
       if (state.web[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.web[id]! };
@@ -146,18 +153,33 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       const spent = await db.prepare("SELECT SUM(input_tokens - COALESCE(cached_tokens, 0) + output_tokens) n FROM ai_usage WHERE run_id = ?").bind(spec.sessionId).first<{ n: number | null }>();
       await updateFiling(db, ticker, accession, { status: "published", reason: null, tokens: spent?.n ?? 0, publishedAt: now }, now);
       await repository.upsertAnalysisJob(job(spec, "complete", now));
+      await saveWorkState(env, "filing-report", ticker, accession, { ...(state.periodic ? { periodic: state.periodic } : {}), data: state.data, web: state.web, read: state.read ?? [] } satisfies FilingWork)
+        .catch(error => console.error(JSON.stringify({ event: "filing-work-state", ticker, accession, error: error instanceof Error ? error.message : String(error) })));
       await summarise(state, "published");
     },
   };
   const compose = composerTools(setup);
   const list = [...(periodic ? periodic.tools : own), ...figures, ...web, ...compose];
   return {
-    id: periodic ? "filing.periodic.v4" : `filing.${spec.profile}.v3`,
+    id: periodic ? "filing.periodic.v5" : `filing.${spec.profile}.v3`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: periodic ? 90_000 : RESULT_CHARS,
     callsPerTurn: Infinity,
+    concurrent: ["read_sections", "read_previous", "grep", "section_history", "query_facts", "fact_history", "read_report", "read_transcript", "read_evidence", "list_leads", "read_series", "company_overview", "read_block", "outline", "view_issue"],
     system: () => periodic ? `${PERIODIC_SYSTEM(ticker)}\n\n${COMPOSER_GUIDE}\n${PERIODIC_EVIDENCE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${COMPOSER_GUIDE}`,
-    open: () => ({ composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, data: {}, web: {} }),
+    open: () => {
+      const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, data: {}, web: {} };
+      if (!base) return state;
+      // The published report is the document the session opens on: its blocks stand as they were reviewed, and only
+      // what the session changes is reviewed again.
+      const c = state.composer;
+      c.blocks = base.document.blocks.map(b => ({ ...b }));
+      c.charts = Object.fromEntries(base.document.charts.map(chart => [chart.id, chart]));
+      c.sources = Object.fromEntries(base.document.sources.map(({ id, ...source }) => [id, source]));
+      c.passed = Object.fromEntries(c.blocks.map(b => [b.id, sentencesOf(blockText(b.html)).map(s => s.key)]));
+      if (base.work) { state.data = base.work.data ?? {}; state.web = base.work.web ?? {}; state.read = base.work.read ?? []; if (base.work.periodic) state.periodic = base.work.periodic; }
+      return state;
+    },
     tools: () => list,
     policy: { allow: list.map(t => t.name), post: handPolicy(periodic ? periodic.tools : own).post },
     onTurn: (s, turn) => { s.composer.turns = turn; },
@@ -181,8 +203,11 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
 export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<PiLoaded> {
   const profile = profileById(spec.profile);
   const data = await loadStageData(env, spec.ticker, { findings: false }).catch(() => null);
+  const store = env as unknown as Parameters<typeof readPublishedDocument>[0];
+  const document = spec.mode === "revise" && profile.id === "periodic" ? await readPublishedDocument(store, "filing-report", spec.ticker, spec.filing.accessionNumber).catch(() => null) : null;
+  const base = document ? { document, work: await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) } : null;
   return {
-    recipe: filingRecipe(env, spec, profile, data), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    recipe: filingRecipe(env, spec, profile, data, base), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
     // A session started before artifacts has no document yet; it continues with an empty one.
     hydrate: (state: FilingState) => { state.composer ??= openState(spec); state.data ??= {}; state.web ??= {}; },
     record: entry => { void recordRunTurn(env.DB!, spec.sessionId, entry); },

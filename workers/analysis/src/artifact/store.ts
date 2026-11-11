@@ -72,6 +72,27 @@ export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: Artifac
   return stored ? toPublished(id, stored, row.published_at) : null;
 }
 
+/** The published document itself, blocks and sources, for a session that revises it or a check that reads it again. */
+export async function readPublishedDocument(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string): Promise<ArtifactDocument | null> {
+  const id = artifactId(kind, ticker, subject);
+  const row = await env.DB!.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(id).first<{ published_version: number }>().catch(() => null);
+  return row ? (await readVersion(env, id, row.published_version))?.document ?? null : null;
+}
+
+const workKey = (id: string) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/work.json`;
+/**
+ * What the session that wrote the published version held beyond the document (docs/filing-analysis-optimization.md
+ * §4.6): its notes, leads, computed figures and the texts of the sources it read, so the next session can revise the
+ * report and a recheck can read every source back without a model.
+ */
+export async function saveWorkState(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string, work: unknown): Promise<void> {
+  await env.SEC_FILINGS.put(workKey(artifactId(kind, ticker, subject)), JSON.stringify(work), { httpMetadata: { contentType: "application/json" } });
+}
+export async function readWorkState<T>(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string): Promise<T | null> {
+  const object = await env.SEC_FILINGS.get(workKey(artifactId(kind, ticker, subject))).catch(() => null);
+  try { return object ? JSON.parse(await object.text()) as T : null; } catch { return null; }
+}
+
 const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
   id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version, title: s.document.title,
   html: s.html, css: s.css, hash: s.hash, publishedAt: at, degraded: s.degraded,

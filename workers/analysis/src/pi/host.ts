@@ -541,19 +541,35 @@ export class PiHost {
   private async runRound(b: Binding, signal: AbortSignal, own?: { id: string; args: unknown }): Promise<Map<string, ToolOutcome>> {
     const stored = new Map(this.db().exec<{ call_id: string; outcome: string }>("SELECT call_id, outcome FROM pi_calls WHERE conversation = ?", b.conversation)
       .toArray().map((r) => [r.call_id, JSON.parse(r.outcome) as ToolOutcome]));
+    // Calls that only read may run together (docs/filing-analysis-optimization.md §4.4): a run of them next to each
+    // other in the round starts at once, and each is still recorded in the round's order.
+    const together = new Set(b.loaded.recipe.concurrent ?? []);
+    const limit = b.loaded.recipe.callsPerTurn ?? CALLS_PER_TURN;
+    const started = new Map<string, Promise<ToolOutcome>>();
+    const run = (call: { id: string; name: string }, args: unknown) => {
+      b.loaded.onToolStart?.(call.name, args);
+      return this.traces.tool(b, call.name, call.id, () => call.name === WEB_SEARCH ? this.search(b, args, signal)
+        : runTool(b.tools, b.loaded.recipe.policy, { name: call.name, input: args }, { state: b.state, signal, recipe: b.loaded.recipe.id, stage: (_n, work) => work() }));
+    };
     for (const [index, call] of b.round.entries()) {
       this.assertRunning();
       signal.throwIfAborted();
       if (stored.has(call.id)) continue;
       const args = own?.id === call.id ? own.args : call.args;
+      if (!b.finished && together.has(call.name) && !started.has(call.id)) {
+        for (let k = index; k < b.round.length && k < limit && together.has(b.round[k]!.name); k++) {
+          const next = b.round[k]!;
+          if (stored.has(next.id) || started.has(next.id)) continue;
+          const work = run(next, own?.id === next.id ? own.args : next.args);
+          work.catch(() => undefined);
+          started.set(next.id, work);
+        }
+      }
       let outcome: ToolOutcome;
       if (b.finished) outcome = { observation: "Not run: the analysis is already settled." };
       else if (index >= (b.loaded.recipe.callsPerTurn ?? CALLS_PER_TURN)) outcome = { observation: `Not run: at most ${b.loaded.recipe.callsPerTurn ?? CALLS_PER_TURN} calls run per turn; call it again.`, error: true };
-      else {
-        b.loaded.onToolStart?.(call.name, args);
-        outcome = await this.traces.tool(b, call.name, call.id, () => call.name === WEB_SEARCH ? this.search(b, args, signal)
-          : runTool(b.tools, b.loaded.recipe.policy, { name: call.name, input: args }, { state: b.state, signal, recipe: b.loaded.recipe.id, stage: (_n, work) => work() }));
-      }
+      else if (started.has(call.id)) outcome = await started.get(call.id)!;
+      else outcome = await run(call, args);
       if (outcome.asked) { b.asked = outcome.asked; outcome = { observation: "Waiting for the reader to confirm." }; }
       if (b.asked || b.loaded.recipe.settled(b.state)) b.finished = true;
       b.quiet = 0;

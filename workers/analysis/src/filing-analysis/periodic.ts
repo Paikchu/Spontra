@@ -1,4 +1,8 @@
 import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
+import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
+import type { ValueUnit } from "../../../../shared/analysis-runtime/findings.ts";
+import { chartHeight, compilePoints, type PointSeries } from "../../../../shared/analysis-runtime/lens/compile.ts";
+import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import { factText, periodText } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
 import { librarySectionPassages } from "../filing-library/store.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -23,6 +27,8 @@ export type PeriodicState = {
   /** Earlier reports and calls read, by source id. */
   texts: Record<string, string>;
   packed?: boolean; coverage?: Record<string, unknown>;
+  /** Charts drawn from fact rows and computed results. */
+  charted?: string[];
 };
 export const openPeriodic = (): PeriodicState => ({ leads: [], evidence: [], computed: {}, facts: {}, texts: {} });
 type State = { composer: ComposerState; read?: string[]; periodic?: PeriodicState };
@@ -70,12 +76,26 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     if (own) state.read = [...new Set([...(state.read ?? []), s.section_id])];
   };
   const resolve = async (id: string, state: S): Promise<boolean> => {
-    if (state.composer.sources[id] !== undefined) return true;
+    // A source carried over from a published report is known by name but may not be held yet: a fact or a paragraph is read again.
+    const held = p(state).facts[id] !== undefined || p(state).texts[id] !== undefined;
+    if (state.composer.sources[id] !== undefined && (held || !(FACT_ID.test(id) || /#\d+$/.test(id)))) return true;
     if (FACT_ID.test(id)) {
       const [fact] = await factsById(db, [id]);
       if (!fact) return false;
       p(state).facts[id] = { text: factSourceText(fact), value: fact.value };
       registerSource(state.composer, id, { title: `${fact.label}, ${periodText(fact)}`, url: publicUrl, kind: "data" });
+      return true;
+    }
+    // One paragraph of a section, cited as SECTION#¶ (§4.4): the claim is then checked against that paragraph alone.
+    const part = /^(.+)#(\d+)$/.exec(id);
+    if (part) {
+      const [section] = await sectionsOf([part[1]!]);
+      const passage = section ? (await librarySectionPassages(db, section.document_id, [section.section_id])).find(x => x.ordinal === Number(part[2])) : null;
+      if (!section || !passage) return false;
+      const own = section.accession_number === accession;
+      p(state).texts[id] = passage.text;
+      registerSource(state.composer, id, { title: `${section.form} ${section.report_date || section.filed_at}${own ? "" : " (earlier filing)"}, ${(JSON.parse(section.path) as string[]).slice(-2).join(" › ")}, ¶${passage.ordinal}`, url: own ? publicUrl : null, kind: "sec" });
+      if (own) state.read = [...new Set([...(state.read ?? []), section.section_id])];
       return true;
     }
     // A section the pack or a search named, cited without a read of its own.
@@ -109,7 +129,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         for (const section of await sectionsOf(pack.sections)) register(state, section);
         return ok(pack.text);
       }),
-    handTool<S>({ name: "read_sections", description: "Read this filing or an earlier one. Give paragraphs, a list of ¶ numbers of this filing (as the pack and grep give them), to read those paragraphs with the ones around them; or sectionIds, to read whole sections of any of the company's filings. Each paragraph is numbered ¶n; a table shows its merged columns with their periods and each number's fact id (f…). from and to narrow a section to a range of ¶ numbers. Each section read becomes a source a block can cite by its id, shown as [source …].",
+    handTool<S>({ name: "read_sections", description: "Read this filing or an earlier one. Give paragraphs, a list of ¶ numbers of this filing (as the pack and grep give them), to read those paragraphs with the ones around them; or sectionIds, to read whole sections of any of the company's filings. Each paragraph is numbered ¶n; a table shows its merged columns with their periods and each number's fact id (f…). from and to narrow a section to a range of ¶ numbers. Each section read becomes a source a block can cite by its id, shown as [source …]; cite one paragraph of it as SECTION_ID#n (n the ¶ number), which is checked against that paragraph alone and is the better citation. Several reads sent in one turn run together.",
       input_schema: object({ paragraphs: { type: "array", items: { type: "number" } }, sectionIds: strings, from: { type: "number" }, to: { type: "number" } }) },
       async (args, state) => {
         const wanted = list(args.paragraphs).map(v => Number(String(v).replace(/[^\d]/g, ""))).filter(Number.isInteger).slice(0, 40);
@@ -195,6 +215,61 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         registerSource(state.composer, id, { title: `Computed: ${label}`, url: null, kind: "data" });
         return ok(`${id} = ${Number(value.toPrecision(8))} ${s.computed[id]!.unit} (${label}). Cite it as data-ref="${id}".`);
       }),
+    handTool<S>({ name: "chart_facts", description: "Draw a chart from this company's own filed figures. Each series is either factId, a tagged fact followed through the earlier filings (same line, same period length; up to `periods` of them, 8 by default), or points, a list of {period: \"YYYY-MM-DD\", ref} where ref is a fact id or a result of compute (a margin or growth rate per period). All series of one chart share a unit. type is bar (amounts) or line (rates, trends). On success place it in a block with <figure data-chart=\"id\"></figure>; the reply lists every point drawn, which you may quote as figures citing the same fact or result ids.",
+      input_schema: object({ id: { type: "string" }, title: { type: "string" }, type: { type: "string", enum: ["bar", "line"] }, aspect: { type: "string", enum: ["wide", "square"] },
+        series: { type: "array", items: object({ label: { type: "string" }, factId: { type: "string" }, periods: { type: "number" }, points: { type: "array", items: object({ period: { type: "string" }, ref: { type: "string" } }, ["ref"]) } }, ["label"]) } }, ["id", "title", "series"]) },
+      async (args, state) => {
+        const id = str(args.id), title = str(args.title).slice(0, 120);
+        if (!ARTIFACT_BLOCK_ID.test(id) || !title) return fail("A chart needs an id (lowercase slug) and a title.");
+        const unitOf = (unit: string): ValueUnit | null => unit === "USD" ? "USD" : unit === "shares" ? "shares" : unit === "USD/shares" ? "per_share" : unit === "percent" ? "percent" : unit === "ratio" || unit === "x" ? "ratio" : null;
+        const s = p(state);
+        const series: PointSeries[] = [], lines: string[] = [];
+        let months: number | null = null;
+        for (const [i, raw] of (list(args.series) as Array<Record<string, unknown>>).slice(0, 5).entries()) {
+          const label = str(raw?.label).slice(0, 60) || `Series ${i + 1}`;
+          const points: PointSeries["points"] = [];
+          let unit: ValueUnit | null = null;
+          if (str(raw?.factId)) {
+            const [fact] = await factsById(db, [str(raw.factId)]);
+            if (!fact) return fail(`${label}: no such fact; ids come from read_sections and query_facts.`);
+            if (!fact.tagged || !fact.periodEnd) return fail(`${label}: ${fact.factId} is not tagged, so it cannot be followed through earlier filings; give points instead.`);
+            unit = fact.unit === "percent" || fact.unit === "ratio" ? null : unitOf(fact.unit);
+            if (!unit) return fail(`${label}: a ${fact.unit} fact cannot be charted from its history; compute the rate per period and give points.`);
+            months ??= fact.periodMonths;
+            const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)));
+            for (const h of history) {
+              s.facts[h.factId] = { text: factSourceText(h), value: h.value };
+              registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" });
+              points.push({ end: h.periodEnd!, value: h.value });
+              lines.push(`${label} | ${h.periodEnd} | ${factText(h)} | ${h.factId}`);
+            }
+          } else {
+            for (const point of (list(raw?.points) as Array<Record<string, unknown>>).slice(0, 16)) {
+              const ref = str(point?.ref);
+              const value = await valueOf(ref, state);
+              if (value === undefined) return fail(`${label}: "${ref}" is not a fact or a result of this session.`);
+              const computed = s.computed[ref];
+              const fact = computed ? null : (await factsById(db, [ref]))[0] ?? null;
+              const end = /^\d{4}-\d{2}-\d{2}$/.test(str(point?.period)) ? str(point.period) : fact?.periodEnd ?? "";
+              if (!end) return fail(`${label}: the point ${ref} needs its period, as YYYY-MM-DD.`);
+              const pointUnit = unitOf(computed ? computed.unit : fact?.unit ?? "");
+              if (!pointUnit) return fail(`${label}: ${ref} is in ${computed ? computed.unit : fact?.unit}, which a chart cannot draw; use USD, shares, percent, ratio or x.`);
+              if (unit && unit !== pointUnit) return fail(`${label}: its points are in different units (${unit}, ${pointUnit}).`);
+              unit = pointUnit;
+              points.push({ end, value });
+              lines.push(`${label} | ${end} | ${Number(value.toPrecision(6))} ${computed ? computed.unit : fact?.unit ?? ""} | ${ref}`);
+            }
+          }
+          if (points.length < 2 || !unit) return fail(`${label}: fewer than two periods could be drawn${str(raw?.factId) ? "; the earlier filings do not report this line the same way" : ""}.`);
+          series.push({ id: `s${i + 1}`, label, unit, currency: unit === "USD" || unit === "per_share" ? "USD" : null, points });
+        }
+        const result = compilePoints({ id, title, aspect: args.aspect === "square" ? "square" : "wide", span: months === 12 ? "fiscal_year" : "quarter", mark: args.type === "line" ? "line" : "bar", series });
+        if (!result.chart) return fail(`The chart did not compile:\n${result.errors.map(e => `- ${e}`).join("\n")}`);
+        const width = 720;
+        state.composer.charts[id] = { id, title: result.chart.title ?? title, svg: renderChartSvg(result.chart, { width, height: chartHeight(width, result.chart.aspect) }, { still: true }), points: [] };
+        (s.charted ??= []).push(id);
+        return ok(`Chart "${id}" compiled. Place it with <figure data-chart="${id}"></figure>. Points drawn (series | period | value | cite as):\n${lines.join("\n")}`);
+      }),
     handTool<S>({ name: "read_report", description: "The reports written on the company's earlier filings. Without an accession: the list, newest first. With one: that report's text, which becomes a source you can cite.",
       input_schema: object({ accession: { type: "string" } }) },
       async (args, state) => {
@@ -257,7 +332,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const out: string[] = [];
         for (const raw of list(args.entries) as Array<Record<string, unknown>>) {
           const section = str(raw?.section), quote = str(raw?.quote).slice(0, 600), statement = str(raw?.statement).slice(0, 400);
-          const known = s.texts[section] ?? (state.composer.sources[section] ? await sectionText(section) : null);
+          const known = s.texts[section] ?? (/#\d+$/.test(section) && await resolve(section, state) ? s.texts[section] : state.composer.sources[section] ? await sectionText(section) : null);
           if (!known) { out.push(`"${statement.slice(0, 40)}…": ${section || "the section"} is not a source you have read`); continue; }
           if (!quoteInText(quote, known)) { out.push(`"${statement.slice(0, 40)}…": the quote is not in ${section} word for word`); continue; }
           const entry: Evidence = { id: `E${s.evidence.length + 1}`, section, ordinal: -1, statement, quote, facts: list(raw?.facts).map(String).filter(f => FACT_ID.test(f)).slice(0, 8), origin: "session" };
@@ -271,7 +346,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const s = p(state);
         const ids = new Set(list(args.ids).map(String)), word = str(args.search).toLowerCase();
         const found = s.evidence.filter(e => ids.size ? ids.has(e.id) : word ? `${e.statement} ${e.quote}`.toLowerCase().includes(word) : true).slice(0, 60);
-        return ok(found.length ? found.map(e => `${e.id} [section ${e.section}${e.ordinal >= 0 ? ` ¶${e.ordinal}` : ""}] ${e.statement}\n  "${e.quote}"${e.facts.length ? `\n  facts: ${e.facts.join(", ")}` : ""}`).join("\n") : "No note matches.");
+        return ok(found.length ? found.map(e => `${e.id} [cite as ${e.section}${e.ordinal >= 0 ? `#${e.ordinal}` : ""}] ${e.statement}\n  "${e.quote}"${e.facts.length ? `\n  facts: ${e.facts.join(", ")}` : ""}`).join("\n") : "No note matches.");
       }),
   ];
 
@@ -305,7 +380,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       const sources: Record<string, number> = {};
       for (const l of s.leads) sources[l.source] = (sources[l.source] ?? 0) + 1;
       return { reading: s.coverage ?? null, leads: { total: s.leads.length, high: s.leads.filter(l => l.priority === "high").length, highOpen: s.leads.filter(l => l.priority === "high" && !l.verdict).length, verdicts, sources },
-        notes: { total: s.evidence.length, session: s.evidence.filter(e => e.origin === "session").length }, computed: Object.keys(s.computed).length, factsCited: Object.keys(s.facts).length };
+        notes: { total: s.evidence.length, session: s.evidence.filter(e => e.origin === "session").length }, computed: Object.keys(s.computed).length, factsCited: Object.keys(s.facts).length, charts: s.charted ?? [] };
     },
   };
 }
