@@ -477,7 +477,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang","rev"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
