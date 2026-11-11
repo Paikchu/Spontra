@@ -12,14 +12,30 @@ import { issueKey, type TrackedIssue } from "./document.ts";
 /** `parts`: how many screenshots a tall block may take at this width, each `SLICE` pixels at most. */
 export type Viewport = { name: string; width: number; height: number; dark: boolean; mobile?: boolean; parts: number };
 export const VIEWPORTS: Viewport[] = [
-  { name: "1440x900 light", width: 1440, height: 900, dark: false, parts: 2 },
-  { name: "390x844 light", width: 390, height: 844, dark: false, mobile: true, parts: 2 },
+  { name: "1440x900 light", width: 1440, height: 900, dark: false, parts: 3 },
+  { name: "390x844 light", width: 390, height: 844, dark: false, mobile: true, parts: 3 },
   { name: "1280x800 dark", width: 1280, height: 800, dark: true, parts: 1 },
 ];
 /** A block is shot whole, in parts no taller than this: no screenshot edge falls inside a block shorter than it. */
 const SLICE = 1500;
+/**
+ * Runs in the page: brings a point `offset` pixels down the artifact frame to the top of what scrolls it, and returns
+ * where the frame then stands in the window and where the visible part of the report ends.
+ */
+const SCROLL_TO = `(offset) => {
+  var frame = document.querySelector("iframe[data-artifact-frame]");
+  var box = frame.parentElement;
+  while (box && box !== document.body) { var cs = getComputedStyle(box); if (/(auto|scroll)/.test(cs.overflowY) && box.scrollHeight > box.clientHeight + 4) break; box = box.parentElement; }
+  var scroller = box && box !== document.body ? box : null;
+  var before = frame.getBoundingClientRect();
+  if (scroller) { var edge = scroller.getBoundingClientRect().top; scroller.scrollTop += before.top + offset - edge; }
+  else window.scrollBy(0, before.top + offset);
+  var r = frame.getBoundingClientRect();
+  var bottom = scroller ? Math.min(window.innerHeight, scroller.getBoundingClientRect().bottom) : window.innerHeight;
+  return { left: r.left, top: r.top, bottom: bottom };
+}`;
 /** The most screenshots one design review reads; every width covers every block before a second part of any is taken. */
-const MAX_IMAGES = 20;
+const MAX_IMAGES = 24;
 export type QaResult = {
   issues: TrackedIssue[];
   scores: Record<string, number> | null;
@@ -57,12 +73,14 @@ const MEASURE = `(async () => {
   });
   // Overlapping text: two text boxes, neither inside the other, drawn over each other.
   var texts = all.filter(function (el) { return /^(P|LI|H2|H3|H4|TD|TH|DT|DD|FIGCAPTION|BLOCKQUOTE|SPAN|STRONG|DATA)$/.test(el.tagName) && el.textContent.trim() && el.getClientRects().length; }).slice(0, 400);
-  var rects = texts.map(function (el) { return el.getBoundingClientRect(); });
+  // An inline element that wraps is judged by its line boxes: its bounding box covers the lines between, where other text rightly sits.
+  var rects = texts.map(function (el) { return Array.prototype.slice.call(el.getClientRects()); });
+  var bounds = texts.map(function (el) { return el.getBoundingClientRect(); });
+  var crosses = function (a, b) { return Math.min(a.right, b.right) - Math.max(a.left, b.left) > 4 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4; };
   for (var i = 0; i < texts.length; i++) for (var j = i + 1; j < texts.length; j++) {
     if (texts[i].contains(texts[j]) || texts[j].contains(texts[i])) continue;
-    var a = rects[i], b = rects[j];
-    var w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-    if (w > 4 && h > 4) { push(texts[i], "blocker", "render", "\\"" + texts[i].textContent.trim().slice(0, 40) + "\\" overlaps \\"" + texts[j].textContent.trim().slice(0, 40) + "\\""); break; }
+    if (!crosses(bounds[i], bounds[j])) continue;
+    if (rects[i].some(function (a) { return rects[j].some(function (b) { return crosses(a, b); }); })) { push(texts[i], "blocker", "render", "\\"" + texts[i].textContent.trim().slice(0, 40) + "\\" overlaps \\"" + texts[j].textContent.trim().slice(0, 40) + "\\""); break; }
   }
   // Charts: every figure the harness filled has a drawn picture.
   Array.prototype.slice.call(article.querySelectorAll("figure[data-chart]")).forEach(function (f) { var svg = f.querySelector("svg"); var r = svg && svg.getBoundingClientRect(); if (!r || r.width < 40 || r.height < 40) push(f, "blocker", "render", "a chart did not draw"); });
@@ -154,14 +172,17 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     const measured = await found.frame.evaluate(MEASURE) as Measured;
     const shots: Pass["shots"] = [];
     // Every block is shot by itself (§4.7), so the review sees each one whole and names the one it is looking at.
+    const slice = Math.min(SLICE, viewport.height - 80);
     for (const b of measured.blocks) for (let k = 0; k < viewport.parts; k++) {
-      const top = b.y + k * SLICE;
+      const top = b.y + k * slice;
       if (b.width < 8 || top >= b.y + b.height - 8) break;
-      const height = Math.min(SLICE, b.y + b.height - top), y = found.rect.y + top;
-      // Each part is shot while it is on screen, so the frame has painted it.
-      await page.evaluate(`window.scrollTo(0, ${Math.max(0, Math.round(y))})`);
+      // The part is scrolled to the top of whatever scrolls the report (the stage's own column, or the window), and
+      // shot where it then stands on screen: only what is on screen has been painted.
+      const at = await page.evaluate(`(${SCROLL_TO})(${Math.round(top)})`) as { left: number; top: number; bottom: number };
       await new Promise(resolve => setTimeout(resolve, 150));
-      const data = await page.screenshot({ type: "jpeg", quality: 65, encoding: "base64", clip: { x: found.rect.x + b.x, y, width: b.width, height }, captureBeyondViewport: true }) as string;
+      const y = Math.max(0, at.top + top), height = Math.min(slice, b.y + b.height - top, at.bottom - y);
+      if (height < 24) break;
+      const data = await page.screenshot({ type: "jpeg", quality: 65, encoding: "base64", clip: { x: at.left + b.x, y, width: b.width, height } }) as string;
       shots.push({ block: b.id, part: k + 1, height, image: { mediaType: "image/jpeg", base64: data } });
     }
     return { viewport, measured, frameRect: found.rect, shots };
