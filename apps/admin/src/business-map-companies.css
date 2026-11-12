@@ -51,7 +51,6 @@
 .bm-admin-toggle:hover { background: var(--fill-strong); color: var(--ink); }
 .bm-admin-toggle svg { transition: transform 260ms var(--sp-ease); }
 .bm-admin-toggle[aria-expanded=true] svg { transform: rotate(90deg); }
-.bm-admin-muted { color: var(--ink-muted); }
 .bm-admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 
 /* Details: the periods and the map's own preparation across the top, then one row of eight columns split by rules. */

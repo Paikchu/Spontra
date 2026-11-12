@@ -108,9 +108,6 @@ export function range(low: string, high: string, locale: Locale = "en"): string 
 
 /* ---------- Unified display forms (U23) ---------- */
 
-/** The one money form: three significant digits with the mathematical minus. An alias for {@link compactMoney}. */
-export const formatMoney = compactMoney;
-
 /**
  * A percentage with one decimal and the mathematical minus: "−3.1%", or "+8.1%" when `signed`.
  * A value that rounds to zero (and "−0") is a plain "0%" without a sign; null/undefined is "—".

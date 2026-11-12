@@ -207,12 +207,6 @@ function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEve
   return maximum;
 }
 
-/** A director's or officer's open-market purchase. Grants and exercises are not purchases. */
-export const isOpenMarketBuy = (event: CompanyEvent) => {
-  const insider = event.insider;
-  return event.class === "insider" && !!insider?.bought && insider.bought.shares > 0 && (insider.isDirector || insider.isOfficer);
-};
-
 /** Deterministic importance; insider materiality uses the owner's full 30-day window. */
 export function eventImportance(event: CompanyEvent, events?: readonly CompanyEvent[]): EventImportance {
   if (event.class === "insider") {

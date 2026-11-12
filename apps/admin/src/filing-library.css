@@ -55,7 +55,7 @@
 .fl-placeholder > small { color: var(--ink-muted); font-size: 12px; }
 .fl-placeholder .fl-stats { justify-content: center; gap: var(--space-7); margin-bottom: var(--space-2); }
 .fl-placeholder .fl-stats strong { font-size: 28px; }
-.fl-filing-head small, .fl-header h2, .fl-passage small { font-family: var(--mono); }
+.fl-header h2, .fl-passage small { font-family: var(--mono); }
 
 /* ---------- One filing ---------- */
 .fl-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); }

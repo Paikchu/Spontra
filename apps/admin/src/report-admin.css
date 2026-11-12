@@ -80,10 +80,6 @@ html body:has(.report-admin) { padding: 0; }
 .ra-error { color: var(--danger); font-size: 13px; }
 .ra-error-banner { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); padding: 10px 14px; border-radius: var(--sp-radius-sm); background: var(--danger-soft); }
 .ra-error-banner button { margin-left: auto; border: 0; background: transparent; color: inherit; text-decoration: underline; }
-.ra-muted { color: var(--ink-muted); font-size: 13px; }
-
-/* ---------- Login ---------- */
-
 /* ---------- Dialog ---------- */
 .ra-dialog { width: min(460px, calc(100vw - 32px)); margin: auto; padding: var(--space-7); border: 0; border-radius: var(--sp-radius-lg); background: var(--surface-raised); color: var(--ink); box-shadow: 0 0 0 1px var(--line), var(--shadow-overlay); }
 .ra-dialog::backdrop { background: var(--scrim); }

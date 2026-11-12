@@ -20,8 +20,6 @@
 .fm-add-company { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 14px 7px 0; padding: 10px; color: var(--ink-muted); border: 1px dashed var(--line-strong); border-radius: var(--sp-radius-sm); background: var(--surface); font-size: 13px !important; }
 .fm-add-company:hover { background: var(--fill); }
 .fm-detail { min-width: 0; padding: 26px 30px 40px; }
-.fm-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 0 24px; margin-bottom: 25px; border-bottom: 1px solid var(--fm-line); }
-.fm-page-heading h1 { color: var(--fm-ink); font-size: 29px; line-height: 1.25; letter-spacing: -.7px; margin: 0 0 9px; font-weight: 700; }
 .fm-company-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
 .fm-company-header h2 { margin: 0 0 7px; font-size: clamp(21px, 1.7vw, 28px); line-height: 1.35; letter-spacing: -.5px; font-weight: 650; }
 .fm-company-header h2 > span { display: inline-block; margin-left: 12px; font-size: 15px; color: var(--fm-muted); letter-spacing: 0; font-weight: 500; }
@@ -86,8 +84,6 @@
  .fm-company-copy strong { font-size: 13px; }
  .fm-company-copy small { font-size: 10px; }
  .fm-detail { padding: 24px 16px 32px; }
- .fm-page-heading { padding-bottom: 19px; margin-bottom: 20px; }
- .fm-page-heading h1 { font-size: 25px; }
  .fm-company-header h2 { font-size: 22px; }
  .fm-company-header { gap: 15px; }
  .fm-actions { width: 100%; }
@@ -97,6 +93,3 @@
  .fm-history-dialog { padding: 24px 19px; }
 }
 @media (prefers-reduced-motion: reduce) { .fm-summary > summary svg { transition: none; } }
-
-.fm-mobile-logout { display: none; }
-@media (max-width: 768px) { .fm-mobile-logout { display: inline-flex; } }
