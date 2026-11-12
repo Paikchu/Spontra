@@ -111,7 +111,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
         if (!readme) return ok("The README is not ready yet.");
         const sourceId = previous ? `readme:${target}` : "readme";
         state.read = [...new Set([...(state.read ?? []), sourceId])];
-        registerSource(state.composer, sourceId, { title: `${readme.form} ${readme.reportDate} README`, url: /^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null, kind: "sec" });
+        const link = /^https:\/\//.test(readme.url) ? readme.url : /^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null;
+        registerSource(state.composer, sourceId, { title: `${readme.form} ${readme.reportDate} README`, url: link, kind: "sec" });
         const page = readmePage(readme.markdown, offset);
         return ok(`[source ${sourceId}] ${readme.form} ${readme.reportDate}\n${page.text}`);
       }),

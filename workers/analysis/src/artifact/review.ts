@@ -29,6 +29,39 @@ export type ReviewContext = {
 
 const SOURCE_CHARS = 40_000, SOURCES_CHARS = 160_000, ESTABLISHED_CHARS = 8000, FOUND_CHARS = 24_000, REVIEW_TOKENS = 40_000;
 
+/** A long source as the reviewer reads it: the opening, then an equal window around each quotation and figure the block uses, including ones past the opening. Quote checks still read the whole source. */
+function sourceExcerpt(text: string, focus: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const place = (needle: string) => {
+    const parts = needle.toLowerCase().split(/\s+/).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).filter(p => p.length >= 3).slice(0, 8);
+    if (parts.length < 2) return text.toLowerCase().indexOf(needle.toLowerCase().slice(0, 40));
+    return text.search(new RegExp(parts.join("\\s+"), "i"));
+  };
+  const hits: number[] = [];
+  for (const sentence of focus.split(/(?<=[.!?])\s+/)) if (sentence.length >= 24) {
+    const at = place(sentence.slice(0, 160));
+    if (at >= 0) hits.push(at);
+  }
+  for (const match of focus.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
+    if (match[0].replace(/\D/g, "").length < 2) continue;
+    const at = text.indexOf(match[0]);
+    if (at >= 0) hits.push(at);
+  }
+  const head = text.slice(0, Math.min(2_000, Math.floor(limit / 6)));
+  const later = [...new Set(hits)].filter(at => at >= head.length).sort((a, b) => a - b);
+  if (!later.length) return text.slice(0, limit);
+  const share = Math.max(400, Math.floor((limit - head.length) / later.length));
+  const pieces = [head];
+  let used = head.length;
+  for (const at of later) {
+    if (used + share > limit) break;
+    const start = Math.max(head.length, at - Math.floor(share / 3));
+    pieces.push(text.slice(start, start + share));
+    used += share + 2;
+  }
+  return pieces.join("\n…\n").slice(0, limit);
+}
+
 /** The names and figures of a text that none of the given material holds: what a review would call unsupported for want of a source. */
 export function uncoveredTerms(text: string, material: string[]): string[] {
   const all = material.join("\n");
@@ -54,7 +87,7 @@ export async function reviewBlock(env: AnalysisEnv, block: ArtifactBlock, read: 
   if (sentences.length && sentences.every(s => "passed" in s)) return [];
   const open = sentences.filter(s => !("passed" in s)).map(s => s.text).join(" ");
   // Each cited source whole, within a total the request can carry; the largest are cut first.
-  const cited = (await Promise.all(block.sources.map(async id => ({ id, source: await read(id) })))).flatMap(({ id, source }) => source ? [{ id, title: source.title, text: source.text.slice(0, SOURCE_CHARS) }] : []);
+  const cited = (await Promise.all(block.sources.map(async id => ({ id, source: await read(id) })))).flatMap(({ id, source }) => source ? [{ id, title: source.title, text: sourceExcerpt(source.text, text, SOURCE_CHARS) }] : []);
   let room = SOURCES_CHARS;
   const sources = cited.map((s, i) => { const share = Math.max(2000, Math.floor(room / (cited.length - i))); const kept = s.text.slice(0, share); room -= kept.length; return { ...s, text: kept }; });
   const established = [];

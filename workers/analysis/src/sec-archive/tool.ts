@@ -45,7 +45,7 @@ export function secFilingTools<S extends SecToolState>(input: SecToolInput<S>): 
           if (!readme) return { missing: "README not ready" } as const;
           const passage: FindingPassage = {
             passageId: `readme:${ticker}:${accession}`, documentId: accession, title: `${ticker} ${readme.form} ${readme.reportDate}`,
-            form: readme.form, filedAt: readme.filedAt, url: "", path: ["README"], text: "", table: null,
+            form: readme.form, filedAt: readme.filedAt, url: readme.url, path: ["README"], text: "", table: null,
           };
           return { readme, passage };
         });

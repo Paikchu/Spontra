@@ -70,6 +70,22 @@ export function reportRecipe(input: ReportInput): Recipe<ReportInput, boolean, R
   const setup: ComposerSetup<ReportState> = {
     env: input.env, chart: { data: input.data.data, periodEnd: input.data.periodEnd }, ledger: { ticker: input.data.ticker, runId: input.runId }, budgetTurns: REPORT_BUDGET.turns,
     research: RESEARCH.filter(n => n !== "search"), previewQuery: "draft=stage-report",
+    find: async (terms, s) => {
+      const hits: Array<{ id: string; title: string; text: string }> = [];
+      for (const material of s.materials) {
+        if (material.kind !== "sec" || hits.length >= 8) continue;
+        const ref = readmePassage(material.passage.passageId);
+        const body = ref ? (await readFilingReadme(input.env, ref.ticker, ref.accession))?.markdown ?? "" : passageText(material.passage);
+        const lower = body.toLowerCase();
+        for (const term of terms) {
+          const at = lower.indexOf(term.toLowerCase());
+          if (at < 0) continue;
+          hits.push({ id: material.id, title: material.title, text: body.slice(Math.max(0, at - 500), at + 1_500) });
+          if (hits.length >= 8) break;
+        }
+      }
+      return hits;
+    },
     read: async (id, s) => {
       if (s.figures[id] !== undefined) return { title: s.composer.sources[id]?.title ?? id, text: s.figures[id]! };
       const m = s.materials.find(x => x.id === id);

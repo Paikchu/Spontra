@@ -151,15 +151,21 @@ export async function writeFilingReadme(env: Pick<AnalysisEnv, "DB" | "SEC_FILIN
   return { chars: markdown.length, passages: passageCount };
 }
 
-export type FilingReadme = { ticker: string; accession: string; form: string; reportDate: string; filedAt: string; chars: number; passages: number; markdown: string };
+export type FilingReadme = { ticker: string; accession: string; form: string; reportDate: string; filedAt: string; url: string; chars: number; passages: number; markdown: string };
+type ReadmeReader = { DB?: D1Database; SEC_FILINGS: { get(key: string): Promise<{ text(): Promise<string> } | null> } };
 
-export async function readFilingReadme(env: Pick<AnalysisEnv, "DB" | "SEC_FILINGS">, ticker: string, accession: string): Promise<FilingReadme | null> {
-  const row = await env.DB!.prepare("SELECT form, report_date, filed_at, r2_key, chars, passages FROM sec_filing_readmes WHERE ticker = ? AND accession_number = ?")
+export async function readFilingReadme(env: ReadmeReader, ticker: string, accession: string): Promise<FilingReadme | null> {
+  const db = env.DB!;
+  const row = await db.prepare("SELECT form, report_date, filed_at, r2_key, chars, passages FROM sec_filing_readmes WHERE ticker = ? AND accession_number = ?")
     .bind(ticker, accession).first<{ form: string; report_date: string; filed_at: string; r2_key: string; chars: number; passages: number }>();
   if (!row) return null;
-  const object = await env.SEC_FILINGS.get(row.r2_key);
+  const [object, source] = await Promise.all([
+    env.SEC_FILINGS.get(row.r2_key),
+    db.prepare(`SELECT document_url FROM sec_documents WHERE ticker = ? AND accession_number = ? AND status = 'ready'
+      ORDER BY CASE doc_type WHEN 'primary' THEN 0 WHEN 'press_release' THEN 1 ELSE 2 END, chars DESC LIMIT 1`).bind(ticker, accession).first<{ document_url: string }>(),
+  ]);
   if (!object) return null;
-  return { ticker, accession, form: row.form, reportDate: row.report_date, filedAt: row.filed_at, chars: row.chars, passages: row.passages, markdown: await object.text() };
+  return { ticker, accession, form: row.form, reportDate: row.report_date, filedAt: row.filed_at, url: source?.document_url ?? "", chars: row.chars, passages: row.passages, markdown: await object.text() };
 }
 
 export async function listFilingReadmes(db: D1Database, ticker: string, options: { forms?: string[]; limit?: number } = {}): Promise<Array<{ accession: string; form: string; reportDate: string; filedAt: string; chars: number; passages: number }>> {
