@@ -7,7 +7,7 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
     ...options, cache: "no-store", credentials: "same-origin",
     headers: { "content-type": "application/json", ...options.headers },
   });
-  const payload = await response.json().catch(() => ({ error: "服务不可用" })) as T & { error?: string };
+  const payload = await response.json() as T & { error?: string };
   if (!response.ok) throw new AdminApiError(payload.error ?? "操作失败", response.status);
   return payload;
 }

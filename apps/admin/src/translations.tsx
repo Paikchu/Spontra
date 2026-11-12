@@ -25,7 +25,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
   useEffect(() => { unauthorized.current = onUnauthorized; }, [onUnauthorized]);
   useEffect(() => {
     const c = new AbortController();
-    void adminApi<TranslationsAdmin>(`ai/companies/${ticker}/translations`, { signal: c.signal }).then(r => { setData(r); setError(""); })
+    void adminApi<TranslationsAdmin>(`ai/companies/${ticker}/translations`, { signal: c.signal }).then(r => { if (!c.signal.aborted) { setData(r); setError(""); } })
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError((e as Error).message); });
     return () => c.abort();
   }, [ticker, refresh]);
