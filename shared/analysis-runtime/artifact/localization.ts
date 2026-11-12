@@ -34,6 +34,7 @@ function inlineStructure(text: string): string | null {
   return `${parents.sort().join("|")} / ${stack.join("|")} / ${external.join("|")}`;
 }
 const needsTranslation = (text: string, ticker: string) => {
+  if (/^Item\s*(?:\{x\d+\}\s*)+$/i.test(text)) return false;
   const words = prose(text).trim();
   return /[A-Za-z]{2,}/.test(words) && words !== ticker && !ORIGINAL_TERMS.has(words.toLowerCase()) && !/^(?:Q|FY)(?:\s+(?:Q|FY))*$/.test(words);
 };
