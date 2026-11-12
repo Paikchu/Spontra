@@ -468,14 +468,6 @@
 
 /* Standalone SEC surface */
 
-/* Stock-level analysis workspace: fundamentals and SEC remain independent
-   data surfaces while sharing one reading canvas. Color/type tokens now live
-   in :root (site-wide); this block only holds this page's own layout, like
-   the wider shell and the compact header variant. */
-/* 1600px of content inside a 72px gutter on each side, per the redesign: the
-   shell carries the gutter as padding so the header rule and both columns share
-   one margin instead of the page bleeding to the window edge. */
-
 /* A compact editorial overview, sized to its column rather than the window.
    Long paragraphs disclose inline; titles and all four judgments stay visible. */
 /* The column width is a container query away, but how much text has to fit in it is not, so the
@@ -547,15 +539,6 @@
 
 
 }
-
-/* Match the portfolio canvas and type scale, retaining the report reading layout. */
-
-/* Embedded in position details without claiming a full-page canvas. */
-
-/* Unified stock detail: one company header and six shadcn tab panels. */
-/* A full-width tab uses document scrolling rather than the legacy sidebar rail. */
-
-/* Keep the reference's compact holdings table scrollable on small screens. */
 
 /* Model composition controls structure only. The host theme owns every visual token.
    Scoped to SEC documents so the company dashboard retains its existing layout. */

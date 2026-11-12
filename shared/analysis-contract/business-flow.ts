@@ -86,7 +86,7 @@ export type BusinessFlowQuarter = {
 
   sources: FlowSource[];
 } & Partial<FiscalPeriodFields>;
-/** Optional published company-analysis resource; no personal portfolio information. */
+/** Optional published company-analysis resource. */
 export type PublicBusinessFlow = {
   schemaVersion: "business-flow.v1";
   ticker: string;

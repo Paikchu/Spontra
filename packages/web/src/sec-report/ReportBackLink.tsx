@@ -7,7 +7,7 @@ const m = messages({ back: (ticker: string) => `← ${ticker} filings and events
 
 export function ReportBackLink({ ticker }: { ticker: string }) {
   const reportReturnPath = useReportReturnPath();
-  return <a className="back-link" href={reportReturnPath ?? `/positions/${encodeURIComponent(ticker)}#sec-filings`}>
+  return <a className="back-link" href={reportReturnPath ?? `/companies/${encodeURIComponent(ticker)}`}>
     {m.back(ticker)}
   </a>;
 }

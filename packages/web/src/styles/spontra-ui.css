@@ -63,8 +63,6 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 
 /* ---------- Ticker ---------- */
 
-/* ---------- Holdings table ---------- */
-
 /* ---------- Card (default / accent / brand) ---------- */
 
 /* ---------- Callout ---------- */
@@ -79,11 +77,6 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 
 
 /* ---------- Search field ---------- */
-
-/* ---------- Heatmap (column treemap: group width ∝ weight, tile height ∝ weight) ---------- */
-
-/* ---------- Allocation bar ---------- */
-@keyframes sp-grow { from { transform: scaleX(0); } }
 
 /* ==========================================================================
    shadcn/ui primitives → Spontra shapes. Unlayered, so these win over the
@@ -162,26 +155,11 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 
 /* Card heading helpers used by page code */
 
-/* ==========================================================================
-   Today (/)
-   ========================================================================== */
-
-/* ==========================================================================
-   Investment ledger (/ledger)
-   Net value = highlighter card; supporting metrics = ink cards; the ledger
-   itself sits in one ink card with pill tabs.
-   ========================================================================== */
 .company-logo { border-radius: 50%; border-color: var(--line); background: var(--fill-strong); }
 .company-logo[data-size="lg"] { border-radius: 50%; }
 
-/* 仓位构成 tab: allocation + heatmap as two ink cards */
-
 /* ==========================================================================
    Report search (/analysis) — the most brand-like product page.
-   ========================================================================== */
-
-/* ==========================================================================
-   Stock detail (/positions/[ticker])
    ========================================================================== */
 
 /* ==========================================================================

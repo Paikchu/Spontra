@@ -55,13 +55,6 @@
   --flat: var(--sp-ink-muted);
   --danger: #b91c1c;
   --danger-soft: #fbe9e7;
-  --heat-down-3: #f2a8a4;
-  --heat-down-2: #f7cbc8;
-  --heat-down-1: #fbe5e3;
-  --heat-flat: #e9ecea;
-  --heat-up-1: #dcf1e3;
-  --heat-up-2: #bde5c9;
-  --heat-up-3: #92d4a8;
   --scrim: rgba(15, 26, 26, 0.40);
   --shadow-overlay: 0 8px 24px rgba(15, 26, 26, 0.10);
   --shadow-press: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
@@ -97,8 +90,6 @@
   --color-loss: var(--loss);
   --color-profit: var(--gain);
   --color-neutral: var(--ink-muted);
-  --daily-gain: var(--gain);
-  --daily-loss: var(--loss);
   --vermilion: var(--color-loss);
   --sage: var(--color-profit);
   --serif: var(--sans);
@@ -209,7 +200,6 @@ h2:not([data-slot]) {
   display: grid;
   gap: 2px;
 }
-#portfolio-title, #ledger-title { scroll-margin-top: 24px; }
 
 button:disabled { cursor: not-allowed; opacity: .45; }
 
@@ -237,7 +227,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 .search-field input::placeholder { color: var(--ink-muted); }
 
-/* Single-line holdings ledger; narrow screens scroll within the table. */
 .company-logo {
   position: relative;
   width: 26px;
@@ -275,13 +264,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   height: calc(100% - 10px);
 }
 .company-logo[data-size="lg"] .company-logo-fallback { font-size: 11px; }
-
-/* Option contracts are child rows of their ticker: same ten columns, one step quieter. */
-/* Expanding a group must not repaint the parent row; hover and selection still own that. */
-
-/* One contract reads as instrument, obligation and clock; colour stays reserved for P&L. */
-
-/* Only the ledger indents the chip, where it hangs off the ticker's spine. */
 
 .symbol {
   flex: 0 0 auto;
@@ -406,7 +388,6 @@ td { font-size: 14px; }
 .sec-report-source p { grid-column: 1 / -1; margin: 12px 0 0; color: var(--ink-muted); font-size: 11px; }
 
 @media (max-width: 620px) {
-  /* Bound contract content so it cannot widen the sticky ticker column. */
   .back-link { margin-bottom: 18px; }
   .sec-report-shell { width: calc(100% - 24px); padding-top: 16px; }
   .sec-report-header { min-height: 0; padding: 32px 0 24px; grid-template-columns: 1fr; gap: 26px; }
@@ -485,13 +466,6 @@ td { font-size: 14px; }
   --flat: var(--sp-ink-muted);
   --danger: #f87171;
   --danger-soft: #3a1f20;
-  --heat-down-3: #7f1d1d;
-  --heat-down-2: #5c2227;
-  --heat-down-1: #3a2426;
-  --heat-flat: #243031;
-  --heat-up-1: #1f3528;
-  --heat-up-2: #1f4a30;
-  --heat-up-3: #1d6038;
   --scrim: rgba(5, 10, 11, 0.72);
   --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-press: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
@@ -534,23 +508,12 @@ td { font-size: 14px; }
   }
 }
 
-/* Keep the treemap geometry and metrics identical across display modes. */
-
-/* Keep prefetched plans mounted without exposing an inactive panel to focus. */
-
-@keyframes ledger-tab-enter {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-
 @media (max-width: 1024px) {
   body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
 
 /* Small, interruptible transitions; no page shell or layout-size animation. */
 @keyframes content-spin { to { transform: rotate(360deg); } }
-@keyframes stock-tab-enter { from { opacity: 0; } to { opacity: 1; } }
 a[data-navigation-loading="true"] { position: relative; }
 a[data-navigation-loading="true"]::after { content: ""; position: absolute; right: 2px; bottom: 2px; width: 12px; height: 12px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: content-spin 800ms linear infinite; }
 @media (prefers-reduced-motion: reduce) {
@@ -559,7 +522,7 @@ a[data-navigation-loading="true"]::after { content: ""; position: absolute; righ
 @keyframes navigation-pulse { 50% { opacity: .55; } }
 
 /* Shared fluid content rail: desktop uses the body's 10% side gutters.
-   Stock/search workspaces and articles must not add a fixed-width cap or inner gutter. */
+   Articles must not add a fixed-width cap or inner gutter. */
 :root { --content-rail-width: calc(100% - 40px); }
 @media (min-width: 1025px) { :root { --content-rail-width: 100%; } }
 @media (max-width: 820px) { :root { --content-rail-width: calc(100% - 32px); } }
