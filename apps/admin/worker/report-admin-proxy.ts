@@ -7,7 +7,7 @@ const MAX_VALUATION_INPUTS_BODY = 65536;
 const valuationInputs = /^companies\/[A-Z][A-Z0-9.-]{0,11}\/valuation-inputs$/;
 type ProxyEnv = Record<string, unknown>;
 const FEATURE = `(?:${FEATURES.join("|")})`;
-const companyWrite = new RegExp(`^companies\\/[A-Z][A-Z0-9.-]{0,11}(?:\\/presentation|\\/features\\/${FEATURE})?$`);
+const companyWrite = new RegExp(`^companies\\/[A-Z][A-Z0-9.-]{0,11}(?:\\/presentation|\\/stage|\\/features\\/${FEATURE})?$`);
 const featureWrite = new RegExp(`^features\\/${FEATURE}$`);
 const json = (body: unknown, status: number) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 
@@ -17,7 +17,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
-    const write = request.method === "POST" && (route === "messages/read" || route === "scheduled-analysis" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
+    const write = request.method === "POST" && (route === "messages/read" || route === "scheduled-analysis" || route === "stage" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {

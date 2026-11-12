@@ -1,5 +1,6 @@
 import type { PublicBusinessFlow } from './business-flow.ts';
 import type { RevenueHistory } from './revenue-history.ts';
+import type { Layer } from './business-features.ts';
 export type CompleteFlowReason = 'MISSING_TWO_QUARTERS'|'INCOMPARABLE_QUARTERS'|'MISSING_DISCLOSURE'|'INVALID_SOURCE'|'UNBALANCED_STATEMENT'|'UNSUPPORTED_INDUSTRY'|'SIGNED_LAYOUT_UNSUPPORTED'|'INVALID_PAYLOAD'|'LATEST_PERIOD_NOT_COLLECTED'|'RESTATEMENT_REVIEW_REQUIRED';
 export type CompleteFlowCheck={complete:boolean;reasons:CompleteFlowReason[]};
 export type CompleteFlowPublication={schemaVersion:'complete-business-flow.v1';status:'ready'|'preparing'|'unavailable';flow:PublicBusinessFlow|null;reasons:(CompleteFlowReason|'PREPARING'|'SOURCE_TEMPORARILY_UNAVAILABLE'|'DATA_POLICY_DENIED')[];outdated:boolean;lastAttemptAt:string|null;
@@ -7,6 +8,10 @@ export type CompleteFlowPublication={schemaVersion:'complete-business-flow.v1';s
  history?:RevenueHistory|null;
  /** Independently audited quarterly statements from the last two years; latest pair remains the publication gate. */
  reports?:PublicBusinessFlow|null;
+ /** The five reader-facing layers, resolved from the admin's display choices and their prerequisites. */
+ layers?:Record<Layer,boolean>;
+ /** Whether this company is available to the reader's stage conversation. */
+ stageEnabled?:boolean;
  /** The issuer's fiscal calendar and the name readers know it by; null fields where neither its submissions nor its annual reports say; `annualForm` is its latest annual report's form. */
  issuer?:{fiscalYearEndMonth:number|null;name:string|null;annualForm?:string|null}};
 export type FinancialIssuer={cik:string;tickers:string[];name:string;industry:'standard'|'financial'|'insurance'|'unknown'};

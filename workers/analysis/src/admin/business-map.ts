@@ -129,6 +129,8 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     if (path === '/admin/business-map/companies' && request.method === 'GET') {
       const list = await listFinancialCompanies(env);
+      const stageRows = await db.prepare('SELECT ticker, enabled FROM stage_settings').all<{ticker:string;enabled:number}>();
+      const stage = new Map(stageRows.results.map(row=>[row.ticker,!!row.enabled]));
       const rows = await db.prepare(`WITH companies AS (
         SELECT json_extract(value,'$.ticker') ticker,json_extract(value,'$.cik') cik FROM json_each(?)
       ) SELECT c.ticker companyTicker,m.*,j.status collectionStatus,j.reasons_json collectionReasons,j.updated_at collectionUpdatedAt,json_extract(j.cursor_json,'$.index') collectionCompleted,json_array_length(j.cursor_json,'$.documents') collectionTotal,
@@ -171,7 +173,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
           // A failure switched the feature off; switched on again, it is being retried and no longer the state.
           return [feature,{on,publishedAt:published[feature].get(company.ticker)??null,run:runs.get(key)?.state??null,progress:runs.get(key)?.progress??[],failure:!on&&last?.outcome==='failed'?{at:last.updatedAt,detail:last.detail}:null}];
         })) as BusinessMapCompany['features'];
-        const current: Omit<BusinessMapCompany, 'layerStatuses'> = {...company,scheduledAnalysis:pauses.at(company.ticker)===null,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
+        const current: Omit<BusinessMapCompany, 'layerStatuses'> = {...company,stageEnabled:company.dataEnabled&&(stage.get(company.ticker)??true),scheduledAnalysis:pauses.at(company.ticker)===null,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
           collection:row.collectionStatus?{status:row.collectionStatus,reasons,updatedAt:row.collectionUpdatedAt!,completed:row.collectionCompleted??0,total:row.collectionTotal??0}
             :row.discovery?{status:'unavailable',reasons:[JSON.parse(row.discovery).reason],updatedAt:row.discoveryAt!,completed:0,total:0}:null,
           publication:{status:flow?'ready':invalid||row.collectionStatus==='unavailable'?'unavailable':'preparing',
@@ -179,7 +181,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
             reasons:invalid?['INVALID_PAYLOAD']:reasons.length?reasons:flow?[]:['MISSING_TWO_QUARTERS'],periods:flow?.quarters.map(q=>q.periodEnd)??[],revenueCoverage:flow?.quarters.map(q=>({period:q.periodEnd,status:q.segmentDisclosure==='single_reportable_segment'?'single_segment' as const:q.segments.some(s=>s.id==='reported-company-total')?'unverified' as const:'verified' as const,segments:q.segments.length,adjustments:q.revenueAdjustments?.length??0}))??[]}};
         return {...current, layerStatuses:companyLayerStatuses(current, {automaticCollection:list.environment.dataCollectionEnabled,generation})};
       });
-      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,scheduledAnalysis:pauses.global===null,generation} satisfies BusinessMapCompanies);
+      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,scheduledAnalysis:pauses.global===null,stageEnabled:stage.get('*')??true,generation} satisfies BusinessMapCompanies);
     }
     const usage = /^\/admin\/business-map\/companies\/([^/]+)\/usage$/.exec(path);
     if (usage && request.method === 'GET') {
@@ -206,6 +208,19 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       const flow = publication.flow;
       const profit = flow ? {...flow, quarters: [...new Map([...(derived?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))} : null;
       return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
+    }
+    // Questions run on demand, outside the five analysis layers. Their existing settings table keeps explicit choices.
+    const stageSwitch = /^\/admin\/business-map\/(?:companies\/([^/]+)\/)?stage$/.exec(path);
+    if (stageSwitch && request.method === 'POST') {
+      const ticker = stageSwitch[1] ? normalizeTicker(decodeURIComponent(stageSwitch[1])) : '*';
+      const body = await request.json() as {on?:boolean};
+      if (!ticker || typeof body.on !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
+      if (body.on && ticker !== '*' && !dataTickersFor(await companyPolicyEnvironment(env)).includes(ticker)) return json({error:'请先开启该公司的财务报表。'},409);
+      await db.prepare(`INSERT INTO stage_settings(ticker,enabled,updated_at) VALUES(?,?,?)
+        ON CONFLICT(ticker) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`)
+        .bind(ticker,Number(body.on),new Date().toISOString()).run();
+      await emit(env,[{type:'feature.settings',ticker}]);
+      return json({ticker,on:body.on});
     }
     // The feature switches, applied by company-policy.ts. Per company, one
     if (path === '/admin/business-map/scheduled-analysis' && request.method === 'POST') {
@@ -329,8 +344,9 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     if(saved?.ticker!==ticker||saved.enabled!==Number(body.enabled))return json({error:'操作标识已用于不同请求。'},409);
     // Layer 1 off closes every layer above it (the ladder); what they wrote stays stored.
     if(!body.enabled){
-      const policy=await companyPolicyEnvironment(env);
-      const closed=FEATURES.filter(f=>featureCompaniesFor(policy,f).includes(ticker));
+      // The updated whitelist already removes this company from resolved feature lists. Close every stored
+      // display choice directly, including content kept visible after a failed run.
+      const closed=FEATURES;
       for(const f of closed)await writeFeatureSetting(db,ticker,f,false,now);
       const cik=await knownCik(db,ticker);
       await emit(env,[{type:'feature.settings' as const,ticker,cik,detail:{feature:'map' as const}},...closed.map(f=>({type:'feature.settings' as const,ticker,cik,detail:{feature:f}}))]);

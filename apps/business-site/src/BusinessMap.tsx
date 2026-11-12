@@ -1,4 +1,5 @@
 import { ModuleFailure } from "./ModuleFailure";
+import type { Layer } from "@/shared/analysis-contract/business-features";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import { CompanyDetailsSkeleton } from "./CompanySkeleton";
 import { Button } from "@/packages/web/src/ui/button";
@@ -279,8 +280,10 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   revisions?: MapRevisions;
+  /** Display choices for the current analysis layers. */
+  layers?: Record<Layer, boolean>;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -393,8 +396,8 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
-  const companyArtifact = usePublishedArtifact(ticker, "company-analysis", revisions.company);
-  const companyPreview = usePreview("company-analysis", ticker);
+  const companyArtifact = usePublishedArtifact(ticker, layers?.findings === false ? null : "company-analysis", revisions.company);
+  const companyPreview = usePreview("company-analysis", layers?.findings === false ? null : ticker);
   const companyReport = companyPreview ?? companyArtifact;
   // A reader's report drafted for the visual review opens on the stage by itself.
   const stageDraft = usePreview("stage-report", "*");
@@ -683,7 +686,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           })}
         </div></div>
       </section>
-      {moduleErrors.filter(r => ["findings", "events", "filings"].includes(r)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}
+      {moduleErrors.filter(r => ["findings", "events", "filings"].includes(r) && (r !== "findings" || layers?.findings !== false)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
         focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
@@ -713,12 +716,12 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
-      : focusedReport && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot} revision={revisions.filings ?? focusedReport.generatedAt}
+      : focusedReport && layers?.filings !== false && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot} revision={revisions.filings ?? focusedReport.generatedAt}
         head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
-      : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
+      : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens}
         head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
-        <EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
+        <EventLens event={focusedEvent} publication={events} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
       : view === "company" && companyReport ? <div className="lens-stage company-report"><ArtifactFrame artifact={companyReport} /></div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
@@ -753,7 +756,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           </span>
         </ToggleGroup>}
         </div>
-        <div className="module-failures">{moduleErrors.filter(r => ["capital", "fundamentals", "valuation"].includes(r)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}</div>
+        <div className="module-failures">{moduleErrors.filter(r => ["capital", "fundamentals", "valuation"].includes(r) && (r !== "valuation" || layers?.valuation !== false)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}</div>
       </header>
 
       <div className="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>

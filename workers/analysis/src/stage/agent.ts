@@ -12,6 +12,7 @@ import { refund, reserve, type Spender } from "./budget.ts";
 import { loadStageData } from "./data.ts";
 import { sha256 } from "../sha256.ts";
 import { STAGE_BUDGET, stageRecipeFor, type StageOutcome, type StageTurn, type StageView } from "./recipe.ts";
+import { stageAvailable } from "./access.ts";
 
 /**
  * One reader's conversation with the stage, an Agents SDK Agent and so a Durable
@@ -105,6 +106,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     const owner = this.owner();
     const reader = ctx.request.headers.get("x-spontra-reader");
     if (!owner || reader !== owner.user_id) { connection.close(4403, "forbidden"); return; }
+    if (!await stageAvailable(this.env as StageEnv, owner.ticker)) { connection.close(4403, "unavailable"); return; }
     connection.setState({ address: ctx.request.headers.get("x-spontra-address") });
     const entries = this.sql<{ entry: string }>`SELECT entry FROM transcript ORDER BY seq DESC LIMIT ${TRANSCRIPT_SENT}`.map(r => JSON.parse(r.entry) as TranscriptEntry).reverse();
     this.sendTo(connection, { type: "stage:transcript", entries, replace: true });
@@ -115,6 +117,15 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     if (typeof message !== "string") return;
     let command: StageCommand;
     try { command = JSON.parse(message) as StageCommand; } catch { return; }
+    // An open socket can outlive a switch change; new questions and confirmed reports check it again.
+    if (command.type === "say" || command.type === "answer") {
+      const owner = this.owner();
+      if (!owner || !await stageAvailable(this.env as StageEnv, owner.ticker)) {
+        this.running?.abort();
+        connection.close(4403, "unavailable");
+        return;
+      }
+    }
     const address = (connection.state as { address?: string | null } | null)?.address ?? null;
     switch (command.type) {
       case "say": if (typeof command.text === "string" && command.text.trim()) await this.keepAliveWhile(() => this.turn(command.text.trim().slice(0, MAX_TEXT), address)); return;
@@ -147,6 +158,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   private async turn(text: string, address: string | null): Promise<void> {
     const owner = this.owner();
     if (!owner) return;
+    if (!await stageAvailable(this.env as StageEnv, owner.ticker)) return;
     if (this.running) return;
     // A turn Pi resumed after an eviction still holds the conversation's session; a new one waits for it to settle.
     if (this.completions.size) return;
@@ -273,6 +285,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   private async loadStage(spec: StageSpec): Promise<PiLoaded<StageTurn>> {
     const owner = this.owner();
     if (!owner) throw new Error("stage: no owner");
+    if (!await stageAvailable(this.env as StageEnv, owner.ticker)) throw new Error("stage: unavailable");
     const env = await companyPolicyEnvironment(this.env as StageEnv);
     const data = await loadStageData(env, owner.ticker);
     if (!data) throw new Error("stage data unavailable");
@@ -285,6 +298,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       model: modelFor(env, "stage"), effort: reasoningFor(env, "stage"),
       ledger: { kind: "stage", ticker: owner.ticker, runId: spec.turnId, userHash: spec.userHash, conversationId: this.name },
       reserve: async (_state, now) => {
+        if (!await stageAvailable(this.env as StageEnv, owner.ticker)) return false;
         const r = await reserve(env.DB!, "stage-calls", who, 1, now).catch(() => ({ ok: false as const, which: "global" as const }));
         if (!r.ok) this.capHits.set(spec.turnId, r.which);
         return r.ok;

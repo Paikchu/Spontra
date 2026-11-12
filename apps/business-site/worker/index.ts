@@ -6,6 +6,7 @@ import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
+import {LAYERS,type Layer} from "@/shared/analysis-contract/business-features";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
 import {readCapitalStructure} from "@/shared/analysis-runtime/financial-data/capital-structure";
@@ -73,10 +74,17 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,lo
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
  // The issuer's fiscal calendar labels every period on the page; kept only in its own shape.
  const issuer=publicIssuer(publication.issuer);
- if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt,...(issuer?{issuer}:{})};
+ const layers=publicLayers(publication.layers);
+ const controls={...(layers?{layers}:{}),...(typeof publication.stageEnabled==="boolean"?{stageEnabled:publication.stageEnabled}:{})};
+ if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt,...controls,...(issuer?{issuer}:{})};
  const flow=newestPair(selectFlow(publication.flow??undefined,null,ticker));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(issuer?{issuer}:{})};
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...controls,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(issuer?{issuer}:{})};
+}
+function publicLayers(value:unknown):Record<Layer,boolean>|null{
+ if(!value||typeof value!=="object")return null;
+ const layers=value as Record<string,unknown>;
+ return LAYERS.every(layer=>typeof layers[layer]==="boolean")?Object.fromEntries(LAYERS.map(layer=>[layer,layers[layer]])) as Record<Layer,boolean>:null;
 }
 function publicIssuer(value:unknown):CompleteFlowPublication["issuer"]|null{
  if(!value||typeof value!=="object")return null;
@@ -410,6 +418,15 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
 }
 
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
+ const companyRead=new URL(request.url).pathname.startsWith("/api/business/v1/companies/");
+ // A retained URL or revision must obey today's switches. Company reads bypass edge copies and browser storage.
+ const response=await handleRequest(request,env,ctx,upstream,companyRead?undefined:cache);
+ if(!companyRead)return response;
+ const out=new Response(response.body,response);
+ out.headers.set("cache-control","private, no-store");
+ return out;
+}
+async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
@@ -479,6 +496,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
   const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang","rev","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
+  allowed.add("schema");
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
@@ -486,7 +504,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
   const schema=url.searchParams.get("schema");
-  if(schema!=null&&schema!=="artifact-i18n-v1")return json({error:"Not found"},404);
+  if(schema!=null&&schema!=="artifact-i18n-v1"&&schema!=="artifact-i18n-v2-layers")return json({error:"Not found"},404);
   const locale:Locale|null=isLocale(lang)&&lang!=="en"?lang:null;
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
@@ -534,7 +552,9 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
-  try{const [flow,explainer,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,tree});
+  try{const flow=await loadPublicFlow(match[1],fetcher,locale);
+   const [explainer,tree]=flow.layers?.tree===false||flow.layers?.map===false?[null,null]:await Promise.all([loadExplainer(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);
+   const response=moduleJson({...flow,explainer,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours (public, max-age=14400).
    const cacheable=flow.status==="ready"&&!readFailureStatus;
    if(!cacheable)response.headers.set("cache-control","no-store");

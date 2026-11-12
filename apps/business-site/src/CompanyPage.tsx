@@ -47,15 +47,17 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
   const [arrival] = useState(face);
-  const shown = usePageTurning() ? arrival : face;
+  const turning = usePageTurning();
+  const policyDenied = publication?.layers?.map === false || publication?.reasons.includes("DATA_POLICY_DENIED");
+  const shown = policyDenied ? "state" : turning ? arrival : face;
   const fault = shown === "failed" || shown === "state" ? companyFault({
     httpStatus: shown === "failed" ? httpStatus : null,
     reasons: publication?.reasons ?? [],
-    covered,
+    covered: policyDenied ? false : covered,
     attempted: Boolean(publication?.lastAttemptAt),
     preparing: publication?.status === "preparing",
   }) : null;
-  if (fault && !moduleErrors.length)
+  if (fault && (policyDenied || !moduleErrors.length))
     return <ErrorState kind={fault.kind} code={fault.code} ticker={ticker} companies={companies} onHome={onHome} onRetry={retry} onSearch={onSearch} restoredTitle={`${ticker} · ${m.title}`} />;
   if ((shown === "map" && flow) || (ready && moduleErrors.length > 0))
     return (
@@ -68,6 +70,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           tools={tools}
           flow={flow ?? { schemaVersion: "business-flow.v1", ticker, fetchedAt: null, quarters: [] }}
           revenueHistory={publication?.history ?? null}
+          layers={publication?.layers}
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
           capital={capital}

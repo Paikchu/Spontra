@@ -7,18 +7,19 @@ import { fetchItemAnalysis } from "./company-data";
 import { LensBlocks } from "./LensPanel";
 
 /** The analysis of the rail row in focus: undefined while it loads, null when the row has none. Read again after an update or a language switch. */
-export function useItemAnalysis(ticker: string, id: string, updates: number): ItemAnalysis | null | undefined {
+export function useItemAnalysis(ticker: string, id: string, updates: number, enabled = true): ItemAnalysis | null | undefined {
   const [read, setRead] = useState<{ key: string; analysis: ItemAnalysis | null } | null>(null);
   const locale = useLocale();
   const key = `${ticker}:${id}:${updates}:${locale}`;
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     fetchItemAnalysis(ticker, id, controller.signal)
       .then(analysis => { if (!controller.signal.aborted) setRead({ key, analysis }); })
       .catch(() => { if (!controller.signal.aborted) setRead({ key, analysis: null }); });
     return () => controller.abort();
-  }, [ticker, id, key]);
-  return read?.key === key ? read.analysis : undefined;
+  }, [ticker, id, key, enabled]);
+  return !enabled ? null : read?.key === key ? read.analysis : undefined;
 }
 
 /**

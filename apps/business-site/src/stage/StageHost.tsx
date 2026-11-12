@@ -58,6 +58,7 @@ export type StageHost = {
  * untouched while the stage is closed or unreachable, and the reader's own picks on the map always win.
  */
 export function useStageHost(ticker: string, data: CompanyData): StageHost {
+  const enabled = data.publication?.stageEnabled !== false;
   const [open, setOpen] = useState<{ open: boolean; reader: boolean } | null>(null);
   const [state, dispatch] = useReducer(overlay, new URLSearchParams(location.search).has("c") || reopening() ? "open" : "closed");
   const [StageRuntime, reloadRuntime] = useReducer(freshRuntime, undefined, freshRuntime);
@@ -71,19 +72,28 @@ export function useStageHost(ticker: string, data: CompanyData): StageHost {
   const [pending, setPending] = useState<{ text: string; asked: number } | null>(null);
   const movedSinceSay = useRef(false);
   useEffect(() => {
+    if (enabled) return;
+    setOpen(null);
+    setOnStage(false);
+    setScene(null);
+    setPending(null);
+    setActivity(NO_ACTIVITY);
+  }, [enabled]);
+  useEffect(() => {
+    if (!enabled) return;
     const c = new AbortController();
     fetch(`/agents/status?ticker=${encodeURIComponent(ticker)}`, { signal: c.signal, headers: { accept: "application/json" } })
       .then(r => r.ok ? r.json() as Promise<{ open: boolean; reader: boolean }> : null).then(v => { if (v) setOpen(v); }).catch(() => {});
     return () => c.abort();
-  }, [ticker]);
+  }, [ticker, enabled]);
   const send = useCallback((event: OverlayEvent) => dispatch(event), []);
   // ⌘J / Ctrl+J opens and closes the overlay; `/` stays the search shortcut.
   useEffect(() => {
-    if (!open?.open) return;
+    if (!enabled || !open?.open) return;
     const key = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); dispatch({ type: "toggle" }); } };
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
-  }, [open?.open]);
+  }, [enabled, open?.open]);
   const onNavigate = useCallback(() => { movedSinceSay.current = true; setOnStage(v => shown(v, { type: "navigate" })); }, []);
   const onView = useCallback((next: CompanyView) => setView(next), []);
   const onScene = useCallback((next: StageState, committed: boolean) => {
@@ -98,16 +108,16 @@ export function useStageHost(ticker: string, data: CompanyData): StageHost {
     dispatch({ type: "sent" });
   }, [activity.entries]);
   // The renderer loads with the overlay, so the stage is ready by the time the reader has asked.
-  useEffect(() => { if (state !== "closed") void import("./StageBoard").catch(() => {}); }, [state]);
+  useEffect(() => { if (enabled && state !== "closed") void import("./StageBoard").catch(() => {}); }, [enabled, state]);
   // Anywhere outside the console sends it away, in whatever state it is; the page under the click still gets it.
   useEffect(() => {
-    if (state !== "open" && state !== "busy" && state !== "disconnected") return;
+    if (!enabled || (state !== "open" && state !== "busy" && state !== "disconnected")) return;
     const outside = (e: PointerEvent) => { if (!(e.target instanceof Element && e.target.closest(".ask, .ask-entry"))) dispatch({ type: "stage-click" }); };
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
-  }, [state]);
+  }, [enabled, state]);
   const openFinding = useCallback((finding: string) => { setOnStage(false); setFocusRequest({ finding, nonce: Date.now() }); }, []);
-  if (!open?.open) return { railFoot: null, stageOverride: null, onNavigate, onView, focusRequest };
+  if (!enabled || !open?.open) return { railFoot: null, stageOverride: null, onNavigate, onView, focusRequest: null };
   const asked = activity.entries.filter(e => e.role === "user").length;
   const result: StageResult | null = pending && asked <= pending.asked ? { kind: "loading", question: pending.text, phase: "thinking" } : stageResult(activity.entries, activity.turn);
   const hasScene = !!scene && !isDefaultScene(scene.scene.rows);

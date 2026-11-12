@@ -1,4 +1,4 @@
-import { featureShown, shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
+import { featureShown, shownLayers, shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { readMapDerived } from '../financial-data/derived.ts';
 import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
@@ -29,6 +29,7 @@ import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 import { dossierSubject, readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { stageAvailable } from "../stage/access.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -154,8 +155,18 @@ async function home(request: Request, database: D1Database): Promise<Response> {
 }
 
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" }>): Promise<Response> {
+  const ticker = normalizeTicker(route.ticker);
+  if (!ticker) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  const layers = route.kind === "revisions" ? null : await shownLayers(database, ticker);
+  if (layers && !layers.map) {
+    if (route.kind === "business-flow") return dataResponse(request, {
+      schemaVersion: "complete-business-flow.v1", status: "unavailable", flow: null, reasons: ["DATA_POLICY_DENIED"],
+      outdated: false, lastAttemptAt: null, layers, stageEnabled: false,
+    }, "no-store");
+    return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+  }
   // The admin's switch for one feature of this company: off hides what the feature wrote.
-  const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, ticker.trim().toUpperCase(), feature);
+  const hidden = async (feature: Feature, company = route.ticker) => normalizeTicker(company) === ticker ? !layers![feature] : !await featureShown(database, normalizeTicker(company), feature);
   const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
@@ -188,7 +199,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
       const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
-      if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
+      if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, artifact: null, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
       // The filing's report as an artifact, when the filing path composed one (docs/analysis-html-artifact.md); the summary stays for older readers.
       const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber, locale);
@@ -209,6 +220,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
+      payload.layers = layers!;
+      payload.stageEnabled = await stageAvailable({ DB: database }, ticker);
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
       if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
       if(payload.flow){const flow=await translated("flow",{flow:payload.flow,reports:payload.reports??null});payload.flow=flow.flow;payload.reports=flow.reports;}
@@ -287,6 +300,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
     case "passage": {
+      if (await hidden("filings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       const payload = await readPublicPassage(database, route.ticker, route.passageId);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }

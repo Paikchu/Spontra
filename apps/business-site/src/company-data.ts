@@ -13,7 +13,7 @@ import type { InsiderTransactionsPage, InsidersPublication } from "@/shared/anal
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
 import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
-import { companyPath as pathForLocale } from "./company-opening";
+import { companyPath as pathForLocale, COMPANY_READ_SCHEMA } from "./company-opening";
 
 export { fetchRevisions } from "./company-opening";
 
@@ -123,8 +123,8 @@ export async function fetchInsiders(ticker: string, signal: AbortSignal): Promis
 /** One page of a person's Form 4 lines, newest first; `cursor` continues from the previous page. Null when the read failed. */
 export async function fetchInsiderHistory(ticker: string, personKey: string, cursor: string | null, signal: AbortSignal): Promise<InsiderTransactionsPage | null> {
   // The figures are the filings' own, so the page is read without a locale; only the cursor keys it.
-  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-  const response = await fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/insiders/${encodeURIComponent(personKey)}/transactions${query}`, { signal });
+  const query = new URLSearchParams({ schema: COMPANY_READ_SCHEMA, ...(cursor ? { cursor } : {}) });
+  const response = await fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/insiders/${encodeURIComponent(personKey)}/transactions?${query}`, { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string; transactions?: InsiderTransactionsPage | null };
   return body.status === "ready" && body.transactions ? body.transactions : null;

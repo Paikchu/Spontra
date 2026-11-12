@@ -8,6 +8,7 @@ import type { Ledger } from "../findings/ledger.ts";
 import { seriesCatalogue, type CatalogueRow } from "../findings/catalogue.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
+import { featureShown } from "../admin/feature-settings.ts";
 
 /**
  * What a stage turn reads, from layer 2's per-period extract (no SEC fetch, no model call): the
@@ -28,7 +29,12 @@ export type StageData = {
 /** `findings: false` for a layer-2 reader (the filing analyses), which must not read the findings above it. */
 export async function loadStageData(env: AnalysisEnv, ticker: string, options: { findings?: boolean } = {}): Promise<StageData | null> {
   const db = requireDb(env);
-  const [input, publication, basis] = await Promise.all([readPeriodExtract(db, ticker), options.findings === false ? null : readServedFindings(db, ticker).catch(() => null), readRevisions(db, ticker).catch(() => ({}))]);
+  const [input, publication, basis] = await Promise.all([
+    readPeriodExtract(db, ticker),
+    options.findings === false ? null : featureShown(db, ticker, "findings")
+      .then(shown => shown ? readServedFindings(db, ticker).catch(() => null) : null),
+    readRevisions(db, ticker).catch(() => ({})),
+  ]);
   if (!input) return null;
   const passages = publication ? await findingPassages(db, ticker, publication).catch(() => []) : [];
   const data: FindingData = { ...input.data, passages };

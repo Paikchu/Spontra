@@ -55,7 +55,7 @@ const errors: Record<string,string> = {
 const active = new Set(['queued','running','cancel_requested']);
 /** The five analysis layers, lowest first (docs/spontra-architecture-upgrade.md). */
 const LAYER_LABEL: Record<Layer,string> = {map:'财务报表',filings:'财报',findings:'要点',tree:'公司业务',valuation:'估值评估'};
-const LAYER_LOCATION: Record<Layer,string> = {map:'利润、现金流\n资产负债表',filings:'侧栏财报',findings:'侧栏要点',tree:'营收构成\n业务详情',valuation:'公司页估值评估'};
+const LAYER_LOCATION: Record<Layer,string> = {map:'利润、现金流、资产负债表与原始文件',filings:'侧栏财报的摘要、解读与报告',findings:'侧栏要点、公司分析与分析师文章',tree:'业务脑图与业务详情；营收金额来自财务报表',valuation:'公司页估值评估'};
 const FEATURE_LABEL: Record<Feature,string> = LAYER_LABEL;
 /** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
 function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {
@@ -81,6 +81,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   const [loadError,setLoadError]=useState('');
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(''),[refresh,setRefresh]=useState(0);
   const lock=useRef(false),pending=useRef(new Set<string>()),switched=useRef(0),callbacks=useRef({onUnauthorized,onAuthenticated});
+  const pendingCompanies=useRef(new Set<string>());
   // Messages float over the page and leave on their own, so nothing below them moves.
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2500);return()=>clearTimeout(timer);},[notice]);
   useEffect(()=>{if(!error)return;const timer=setTimeout(()=>setError(''),6000);return()=>clearTimeout(timer);},[error]);
@@ -110,9 +111,9 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   useOnReturn(()=>{if(!lock.current&&!pending.current.size)setRefresh(n=>n+1);});
   /** Layer 1 (the whitelist) on or off for a company, or its financial map prepared again (enabled undefined). */
   async function mutate(symbol:string,enabled?:boolean) {
-    if(lock.current)return;
+    if(lock.current||pendingCompanies.current.has(symbol))return;
     if(enabled===false&&!window.confirm(`关闭 ${symbol} 的财务报表？财报、要点、公司业务与估值评估也将关闭。`))return;
-    lock.current=true;setBusy(symbol);setError('');setNotice('');
+    lock.current=true;pendingCompanies.current.add(symbol);setBusy(symbol);setError('');setNotice('');
     const key=`business-map:${symbol}:${enabled??'prepare'}`,requestId=pendingRequestId(key,storage());
     try {
       await adminApi(enabled===undefined?`financials/companies/${symbol}/actions`:`business-map/companies/${symbol}`,{
@@ -123,7 +124,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();
       else setError((err as Error).message);
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
-    } finally {lock.current=false;setBusy('');}
+    } finally {lock.current=false;pendingCompanies.current.delete(symbol);setBusy('');}
   }
   /**
    * One layer's switch for one company, or its global generation switch (symbol null). The switch moves at once (closing
@@ -131,34 +132,53 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
    */
   async function switchFeature(symbol:string|null,feature:Feature,on:boolean) {
     const key=`${symbol??'*'}:${feature}`;
-    if(pending.current.has(key))return;
+    if(pending.current.has(key)||symbol&&pendingCompanies.current.has(symbol))return;
     const row=symbol?directory?.rows.find(r=>r.ticker===symbol):null,below=LAYER_REQUIRES[feature]!;
     if(symbol&&on&&row&&!row.layers[below]){setError(`请先开启该公司的${LAYER_LABEL[below]}`);return;}
     const before={data,directory};
-    pending.current.add(key);switched.current++;setError('');
+    pending.current.add(key);if(symbol)pendingCompanies.current.add(symbol);switched.current++;setError('');
     setData(d=>d&&applySwitch(d,symbol,feature,on));
     if(symbol)setDirectory(d=>d&&{...d,rows:d.rows.map(r=>r.ticker!==symbol?r:{...r,layers:applyLayers(r.layers,feature,on)})});
     try {await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify({on})});}
     catch(err){
-      setData(before.data);setDirectory(before.directory);
+      setData(d=>d&&before.data?restoreSwitch(d,before.data,symbol,feature,on):d);
+      if(symbol)setDirectory(d=>{
+        const old=before.directory?.rows.find(r=>r.ticker===symbol);
+        if(!d||!old)return d;
+        const affected:Layer[]=[feature,...(on?[]:layersAbove(feature))];
+        return {...d,rows:d.rows.map(r=>r.ticker!==symbol?r:{...r,layers:{...r.layers,...Object.fromEntries(affected.map(layer=>[layer,old.layers[layer]]))}})};
+      });
       if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);
     }
-    finally {pending.current.delete(key);setRefresh(n=>n+1);}
+    finally {pending.current.delete(key);if(symbol)pendingCompanies.current.delete(symbol);setRefresh(n=>n+1);}
   }
   /** The project's scheduled-analysis switch, or one company's own (symbol given), which decides for it whatever the project's says. */
   async function switchScheduledAnalysis(symbol:string|null,on:boolean) {
     const key=`scheduled-analysis:${symbol??'*'}`;
-    if(pending.current.has(key))return;
+    if(!data||pending.current.has(key)||pending.current.has('scheduled-analysis:*')||symbol===null&&[...pending.current].some(k=>k.startsWith('scheduled-analysis:')))return;
     const before=data;
+    const affected=new Map(before.companies.filter(c=>symbol?c.ticker===symbol:c.scheduledAnalysis===before.scheduledAnalysis).map(c=>[c.ticker,c.scheduledAnalysis]));
     pending.current.add(key);switched.current++;setError('');
     // A company without a switch of its own follows the project's; the next read says which those are.
     setData(d=>d&&(symbol?{...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,scheduledAnalysis:on})}:{...d,scheduledAnalysis:on,companies:d.companies.map(c=>c.scheduledAnalysis===d.scheduledAnalysis?{...c,scheduledAnalysis:on}:c)}));
     try {await adminApi('business-map/scheduled-analysis',{method:'POST',body:JSON.stringify(symbol?{on,ticker:symbol}:{on})});}
     catch(err){
-      setData(before);
+      setData(d=>d&&{...d,...(!symbol?{scheduledAnalysis:before.scheduledAnalysis}:{}),companies:d.companies.map(c=>affected.has(c.ticker)?{...c,scheduledAnalysis:affected.get(c.ticker)!}:c)});
       if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);
     }
     finally {pending.current.delete(key);setRefresh(n=>n+1);}
+  }
+  async function switchStage(symbol:string|null,on:boolean) {
+    const key=`stage:${symbol??'*'}`;
+    if(!data||pending.current.has(key)||lock.current)return;
+    const before=symbol?data.companies.find(c=>c.ticker===symbol)?.stageEnabled:data.stageEnabled;
+    if(before===undefined)return;
+    const move=(d:BusinessMapCompanies,value:boolean)=>symbol?{...d,companies:d.companies.map(c=>c.ticker===symbol?{...c,stageEnabled:value}:c)}:{...d,stageEnabled:value};
+    pending.current.add(key);switched.current++;setError('');
+    setData(d=>d&&move(d,on));
+    try{await adminApi(symbol?`business-map/companies/${symbol}/stage`:'business-map/stage',{method:'POST',body:JSON.stringify({on})});}
+    catch(err){setData(d=>d&&move(d,before));if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
+    finally{pending.current.delete(key);setRefresh(n=>n+1);}
   }
   async function judge(symbol:string) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
@@ -184,15 +204,16 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
     {data&&scheduledNote(data)&&<p className="bm-admin-warning">{scheduledNote(data)}</p>}
     {data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
-    <p className="bm-admin-sr" id="bm-switch-guide">表头开关控制自动生成；每行开关控制该公司的功能。</p>
+    <p className="bm-admin-sr" id="bm-switch-guide">表头开关控制自动生成，提问表头开关控制全部公司的提问入口；每行开关控制该公司的对应功能。财报关闭后保留原始文件，隐藏摘要和解读。</p>
     {!directory&&!loadError&&<div className="bm-admin-loading" role="status"><span>加载公司</span>{Array.from({length:6},(_,i)=><div key={i} aria-hidden="true"/>)}</div>}
     {rows.length>0&&<div className="bm-admin-table-wrap" tabIndex={0} role="region" aria-label="公司功能管理" aria-describedby="bm-switch-guide"><table className="bm-admin-table bm-company-table">
       <thead><tr><th scope="col">公司</th>
         {LAYERS.map(l=><th scope="col" key={l} className="bm-admin-feature-col"><span className="bm-admin-feature-head"><Tooltip><TooltipTrigger asChild><span className="bm-admin-feature-label" tabIndex={0}>{LAYER_LABEL[l]}</span></TooltipTrigger><TooltipContent>{LAYER_LOCATION[l]}</TooltipContent></Tooltip>{l!=='map'&&<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[l]} aria-label={`${LAYER_LABEL[l]}自动生成（全部公司）`} title={data?.generation[l]?'全部公司自动生成已开启 · 点击暂停':'全部公司自动生成已暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,l,!data?.generation[l])}><span/></button>}</span></th>)}
+        <th scope="col" className="bm-admin-feature-col"><span className="bm-admin-feature-head"><span className="bm-admin-feature-label">提问</span><button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.stageEnabled} aria-label="提问（全部公司）" title={data?.stageEnabled?'提问入口已开启 · 点击暂停':'提问入口已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchStage(null,!data?.stageEnabled)}><span/></button></span></th>
         <th scope="col" className="bm-admin-feature-col"><span className="bm-admin-feature-head"><span className="bm-admin-feature-label">定时分析</span><button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.scheduledAnalysis} aria-label="定时分析（全部公司）" title={data?.scheduledAnalysis?'全部公司定时分析已开启 · 点击暂停':'全部公司定时分析已暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchScheduledAnalysis(null,!data?.scheduledAnalysis)}><span/></button></span></th>
         <th scope="col">操作</th></tr></thead>
       {rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
-        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onToggle={()=>void mutate(company.ticker,!row.layers.map)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
+        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onToggle={()=>void mutate(company.ticker,!row.layers.map)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onStage={on=>void switchStage(company.ticker,on)} stagePaused={!data?.stageEnabled} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
         :<Listed key={row.ticker} row={row} busy={!!busy} onMap={()=>void mutate(row.ticker,!row.layers.map)} onFeature={(feature,on)=>void switchFeature(row.ticker,feature,on)}/>;})}
     </table></div>}
     {directory&&!rows.length&&<div className="ra-empty" role="status"><Search size={24} aria-hidden="true"/><h3>无匹配公司</h3></div>}
@@ -214,7 +235,7 @@ function Listed({row,busy,onMap,onFeature}:{row:DirectoryCompany;busy:boolean;on
   return <tbody><tr className="bm-admin-row" aria-label={row.ticker}>
     <td><div className="bm-admin-company-cell"><span className="bm-admin-toggle-gap"/><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{row.ticker}</strong><small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></td>
     <LayerSwitches ticker={row.ticker} layers={row.layers} disabled={busy} onMap={onMap} onFeature={onFeature}/>
-    <td/><td/>
+    <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={false} aria-label={`${row.ticker} 提问`} title="先开启财务报表" disabled><span/></button></td><td/><td/>
   </tr></tbody>;
 }
 /** Layer switches after one moved: closing a layer closes every layer above it. */
@@ -276,8 +297,17 @@ function applySwitch(d:BusinessMapCompanies,symbol:string|null,feature:Feature,o
     ...Object.fromEntries(closed.map(l=>[l,moved(c.features[l],false)]))}})};
 }
 
+/** A refused request restores only the switches it moved; other companies and controls keep their latest state. */
+function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol:string|null,feature:Feature,on:boolean):BusinessMapCompanies {
+  if(!symbol)return {...d,generation:{...d.generation,[feature]:before.generation[feature]}};
+  const old=before.companies.find(c=>c.ticker===symbol);
+  if(!old)return d;
+  const affected=[feature,...(on?[]:layersAbove(feature))] as Feature[];
+  return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,...Object.fromEntries(affected.map(f=>[f,old.features[f]]))}})};
+}
+
 /** One company as a table row: its map state, one switch per feature and the actions; the row opens to the details. */
-function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
+function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onStage,stagePaused,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onStage:(on:boolean)=>void;stagePaused:boolean;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -295,10 +325,11 @@ function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onS
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <LayerSwitches ticker={c.ticker} layers={{...layers,...Object.fromEntries(FEATURES.map(f=>[f,c.features[f].on]))} as Record<Layer,boolean>} failed={f=>!!c.features[f].failure} title={f=>c.layerStatuses?.[f].label} disabled={busy} onMap={onToggle} onFeature={onFeature}/>
+      <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.stageEnabled} aria-label={`${c.ticker} 提问`} title={stagePaused?'提问已全局暂停':c.stageEnabled?'提问入口已开启':'提问入口已关闭'} disabled={busy||!c.dataEnabled} onClick={()=>onStage(!c.stageEnabled)}><span/></button></td>
       <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.scheduledAnalysis} aria-label={`${c.ticker} 定时分析`} title={c.scheduledAnalysis?'定时分析已开启':'定时分析已暂停'} onClick={()=>onScheduled(!c.scheduledAnalysis)}><span/></button></td>
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button></div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={LAYERS.length+3}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={LAYERS.length+4}><div className="bm-detail">
       <CompanyUsage ticker={c.ticker} onUnauthorized={onUnauthorized} rows={LAYERS.map(layer => ({ layer, label: LAYER_LABEL[layer], state: c.layerStatuses?.[layer] }))}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}

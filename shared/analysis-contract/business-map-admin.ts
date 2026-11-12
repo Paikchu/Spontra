@@ -17,6 +17,8 @@ export type CompanyLayerStatusCode = keyof typeof COMPANY_LAYER_STATUS_LABELS;
 /** The server selects one preset from observed switches, work and publication records. */
 export type CompanyLayerStatus = { code: CompanyLayerStatusCode; label: typeof COMPANY_LAYER_STATUS_LABELS[CompanyLayerStatusCode] };
 export type BusinessMapCompany = FinancialMaintenanceCompany & {
+  /** The company's question entrance; the project-wide stage switch may temporarily pause it. */
+  stageEnabled: boolean;
   layerStatuses: Record<Layer, CompanyLayerStatus>;
   /** Whether new filings and new task versions start this company's analysis on their own. */
   scheduledAnalysis: boolean;
@@ -55,7 +57,7 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
  * it. Publication translation, including manual retries, requires it to be on.
  * A company's own `scheduledAnalysis` is what applies to it: its own switch where it has one, the project's otherwise.
  */
-export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; scheduledAnalysis: boolean; generation: Record<Feature, boolean> };
+export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; scheduledAnalysis: boolean; stageEnabled: boolean; generation: Record<Feature, boolean> };
 /** One issuer of EDGAR's exchange directory on the companies page: its first-listed class, the others, and its five layer switches. */
 export type DirectoryCompany = { ticker: string; name: string; exchange: string; cik: string; classes: string[]; layers: Record<Layer, boolean> };
 /** One page of the companies page's directory (50 issuers). */

@@ -7,6 +7,7 @@ import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-da
 import { isLocale } from "../../../../shared/analysis-runtime/locale.ts";
 import { readArtifactEdition } from "../artifact/store.ts";
 import { z } from "zod";
+import { stageAvailable } from "./access.ts";
 
 /**
  * The stage's only door, reached from the business map over a Service Binding to this
@@ -29,10 +30,10 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
   const address = /^[0-9a-f]{64}$/.test(request.headers.get("x-spontra-address") ?? "") ? `ip:${request.headers.get("x-spontra-address")}` : null;
   const reader = await readerOf(env.REPORT_ADMIN_PASSWORD, request.headers.get("x-spontra-token"));
 
-  // The stage is open on every company page; the page asks only whether this browser already has a reader id.
+  // The reader sees Ask only while its global and company switches and the whitelist allow it.
   if (url.pathname === "/agents/status" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";
-    const open = TICKER_PATTERN.test(ticker);
+    const open = await stageAvailable(env, ticker);
     return json({ open, reader: reader != null });
   }
 
@@ -51,6 +52,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
   if (url.pathname === "/agents/conversations" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";
     if (!TICKER_PATTERN.test(ticker)) return json({ error: "bad-request" }, 400);
+    if (!await stageAvailable(env, ticker)) return json({ error: "not-found" }, 404);
     const rows = (await db.prepare("SELECT id, last_at, turns FROM stage_conversations WHERE user_id = ? AND ticker = ? AND status = 'active' ORDER BY last_at DESC LIMIT 20").bind(reader, ticker).all<{ id: string; last_at: string; turns: number }>()).results;
     return json({ conversations: rows.map(r => ({ id: r.id, lastAt: r.last_at, turns: r.turns })) });
   }
@@ -60,6 +62,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     const ticker = typeof body?.ticker === "string" ? body.ticker : "";
     const locale = isLocale(body?.locale) ? body.locale : "en";
     if (!TICKER_PATTERN.test(ticker)) return json({ error: "bad-request" }, 400);
+    if (!await stageAvailable(env, ticker)) return json({ error: "not-found" }, 404);
     const spent = await reserve(db, "stage-conversations", { reader, address });
     if (!spent.ok) return json({ error: "quota", which: spent.which }, 429);
     const now = new Date().toISOString();
@@ -80,8 +83,9 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     const requested = url.searchParams.get("locale");
     if (requested !== null && !isLocale(requested)) return json({ error: "bad-request" }, 400);
     const locale = isLocale(requested) ? requested : "en";
-    const row = await db.prepare("SELECT body FROM user_reports WHERE user_id = ? AND id = ?").bind(reader, report[1]).first<{ body: string }>();
+    const row = await db.prepare("SELECT ticker, body FROM user_reports WHERE user_id = ? AND id = ?").bind(reader, report[1]).first<{ ticker: string; body: string }>();
     if (!row) return json({ error: "not-found" }, 404);
+    if (!await stageAvailable(env, row.ticker)) return json({ error: "not-found" }, 404);
     const snapshot = artifactReportSnapshot.safeParse(JSON.parse(row.body));
     if (snapshot.success) {
       const artifact = await readArtifactEdition(env, snapshot.data.artifact.id, snapshot.data.artifact.version, locale);
@@ -96,6 +100,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     if (!CONVERSATION.test(id)) return json({ error: "not-found" }, 404);
     const row = await db.prepare("SELECT ticker, locale FROM stage_conversations WHERE id = ? AND user_id = ? AND status = 'active'").bind(id, reader).first<{ ticker: string; locale: string }>();
     if (!row) return json({ error: "not-found" }, 404);
+    if (!await stageAvailable(env, row.ticker)) return json({ error: "not-found" }, 404);
     const forwarded = new Request(request);
     forwarded.headers.delete("x-spontra-token");
     forwarded.headers.set("x-spontra-reader", reader);

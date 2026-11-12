@@ -8,6 +8,7 @@ import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocume
 import { ArtifactFrame } from "./ArtifactFrame";
 import { ArtifactLanguage } from "./ArtifactLanguage";
 import { usePreview } from "./artifact-reads";
+import { COMPANY_READ_SCHEMA } from "./company-opening";
 import "katex/dist/katex.min.css";
 import "@/packages/web/src/styles/earning-report.css";
 import "@/packages/web/src/report/report-blocks/report-content.css";
@@ -48,7 +49,7 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
     const controller = new AbortController();
     setFailed(false);
     // The response is cached by its URL for hours; the report's revision is part of the URL so a republished report is a new one.
-    const params = new URLSearchParams({ schema: "artifact-i18n-v1", ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...locale === "en" ? {} : { lang: locale }, ...revision ? { rev: revision } : {} }).toString();
+    const params = new URLSearchParams({ schema: COMPANY_READ_SCHEMA, ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...locale === "en" ? {} : { lang: locale }, ...revision ? { rev: revision } : {} }).toString();
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/filings/${encodeURIComponent(accession)}${params ? `?${params}` : ""}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<PublicFilingDetail> : Promise.reject(new Error(String(r.status))))
       .then(body => { if (!controller.signal.aborted) setDetail(body); })

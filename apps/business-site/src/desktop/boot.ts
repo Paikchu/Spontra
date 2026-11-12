@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getLocale } from "@/packages/web/src/i18n/core";
 import { CONTENT_MARK } from "../vitals";
+import { companyPath } from "../company-opening";
 import { companyOfLink, isExternal, proxiedUrl, proxyBase, themeAtLaunch, viewForDigit, type Theme, type ViewName } from "./desktop-model";
 import { showScrollThumbs } from "./scroll-thumb";
 import "./desktop.css";
@@ -73,8 +74,7 @@ function readAheadOfClick() {
     const company = companyOfLink((event.target instanceof Element ? event.target.closest("a[href]")?.getAttribute("href") : null) ?? "");
     clearTimeout(timer);
     if (!company) return;
-    const language = getLocale() === "en" ? "" : `?lang=${encodeURIComponent(getLocale())}`;
-    timer = setTimeout(() => { void fetch(`/api/business/v1/companies/${encodeURIComponent(company)}/opening${language}`).catch(() => {}); }, PREFETCH_DELAY_MS);
+    timer = setTimeout(() => { void fetch(companyPath(company, getLocale(), "/opening")).catch(() => {}); }, PREFETCH_DELAY_MS);
   });
 }
 

@@ -12,6 +12,7 @@ import { loadStageData } from "./data.ts";
 import { sha256 } from "../sha256.ts";
 import { reportDocuments, reportOpening, reportRecipe, type ReportInput, type ReportState } from "./report.ts";
 import { readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { stageAvailable } from "./access.ts";
 
 export type ReportParams = { userId: string; address: string | null; conversationId: string; ticker: string; question: string; locale: Locale };
 export type ReportOutcome = { runId: string; reportId: string | null; reason: string };
@@ -21,6 +22,7 @@ type ReportSpec = { params: ReportParams; now: string; runId: string; userHash: 
 /** Rebuilds the report recipe from its spec; each model call is reserved against the reader's report allowance. */
 export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<PiLoaded<ReportState>> {
   const { params } = spec;
+  if (!await stageAvailable(env, params.ticker)) throw new Error("stage report: unavailable");
   const data = await loadStageData(env, params.ticker);
   if (!data) throw new Error(`report: no stage data for ${params.ticker}`);
   const { documents, earlierAvailable } = await reportDocuments(env, params.ticker, data.periodEnd);
@@ -28,7 +30,8 @@ export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<
   return {
     recipe: reportRecipe(input), input, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
     ledger: { kind: "stage-report", ticker: params.ticker, runId: spec.runId, userHash: spec.userHash, conversationId: params.conversationId },
-    reserve: async (_state, now) => (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, now)).ok,
+    reserve: async (_state, now) => await stageAvailable(env, params.ticker)
+      && (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, now)).ok,
     refund: (_state, reservedAt) => refund(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, reservedAt),
   };
 }
@@ -60,6 +63,7 @@ export async function executeReportWorkflow(params: ReportParams, steps: Workflo
     await tell(outcome);
     return outcome;
   };
+  if (!await stageAvailable(env, params.ticker)) return finish(null, "stage-disabled");
   // Journalled, so the wakes that check on the session do not read the stage data and documents again.
   const ready = await steps.do("report-data", async () => !!await loadStageData(env, params.ticker));
   if (!ready) return finish(null, "no-data");

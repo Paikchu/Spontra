@@ -1,5 +1,5 @@
 import { observeRateLimit } from "./company-request";
-import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "@/packages/web/src/i18n";
 import { stageChartBox } from "./chart-box";
 import { crossfade } from "./page-turn";
@@ -13,6 +13,7 @@ import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, fetchValuation, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 import type { CompanyOpening, OpeningRequests } from "./company-opening";
+import { LAYERS } from "@/shared/analysis-contract/business-features";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
 export type CompanyData = {
@@ -27,6 +28,53 @@ export type CompanyData = {
   valuation: ValuationResponse | null;
 };
 const EMPTY: CompanyData = { publication: null, flow: null, capital: null, findings: null, fundamentals: null, events: null, filings: null, valuation: null };
+
+/** Apply the display choices to retained data as well as new reads. Raw filing facts belong to the map layer. */
+function visibleData(data: CompanyData): CompanyData {
+  const layers = data.publication?.layers;
+  if (!layers) return data;
+  if (!layers.map) return { ...EMPTY, publication: data.publication };
+  return { ...data,
+    publication: { ...data.publication!, tree: layers.tree ? data.publication?.tree : null, explainer: layers.tree ? data.publication?.explainer : null },
+    findings: layers.findings ? data.findings : null,
+    valuation: layers.valuation ? data.valuation : null,
+    filings: layers.filings || !data.filings ? data.filings : { ...data.filings, filings: data.filings.filings.map(f => ({ ...f,
+      headline: "", bullets: [], analystView: "", warnings: [], generatedAt: null, keyMetrics: [], changes: [], risks: [], guidance: [],
+      verification: null, analysisStatus: "not_collected", hasReport: false, snapshot: null,
+    })) },
+    events: layers.filings || !data.events ? data.events : { ...data.events, events: data.events.events.map(e => ({ ...e, summary: null })) },
+  };
+}
+
+/** A changed switch takes effect without making the reader accept an unrelated statement update. */
+function configurationUpdate(current: CompanyData, patch: Partial<CompanyData>): Partial<CompanyData> | null {
+  const publication = patch.publication;
+  if (!publication) return null;
+  if (publication.layers?.map === false || publication.reasons.includes("DATA_POLICY_DENIED")) return { ...EMPTY, publication };
+  if (current.publication?.layers?.map === false) return patch;
+  const next = publication.layers, before = current.publication?.layers;
+  if (LAYERS.every(layer => next?.[layer] === before?.[layer]) && publication.stageEnabled === current.publication?.stageEnabled) return null;
+  const previous = current.publication ?? publication;
+  const update: Partial<CompanyData> = { publication: { ...previous, layers: next, stageEnabled: publication.stageEnabled,
+    tree: next?.tree === false ? null : next?.tree !== before?.tree ? publication.tree : previous.tree,
+    explainer: next?.tree === false ? null : next?.tree !== before?.tree ? publication.explainer : previous.explainer,
+  } };
+  if (next?.findings === false) update.findings = null;
+  else if (next?.findings !== before?.findings && "findings" in patch) update.findings = patch.findings;
+  if (next?.valuation === false) update.valuation = null;
+  else if (next?.valuation !== before?.valuation && "valuation" in patch) update.valuation = patch.valuation;
+  if (next?.filings !== before?.filings) {
+    if ("filings" in patch) update.filings = patch.filings;
+    if ("events" in patch) update.events = patch.events;
+  }
+  return update;
+}
+
+/** Artifact URLs retain the newest applied settings revision even while an ordinary content update waits. */
+const advanceRevisions = (current: MapRevisions, next: MapRevisions): MapRevisions => Object.fromEntries(MAP_RESOURCES.flatMap(resource => {
+  const revision = [current[resource], next[resource]].filter((value): value is string => !!value).sort().at(-1);
+  return revision ? [[resource, revision]] : [];
+}));
 
 /** The main view becomes available once its own opening resources have settled. */
 export type { OpeningFace } from "./opening-face";
@@ -128,7 +176,7 @@ async function readResource(ticker: string, resource: MapResource, rev: string |
   if (resource === "company") {
     const publication = await fetchCompany(ticker, signal, rev, response);
     const flow = publicationFlow(publication, ticker);
-    return flow ? { publication, flow } : null;
+    return flow || publication.reasons.includes("DATA_POLICY_DENIED") ? { publication, flow } : null;
   }
   if (resource === "findings") {
     const findings = await fetchFindings(ticker, signal, rev, response);
@@ -227,7 +275,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         });
         if (signal.aborted || gen !== loadGen.current) return;
         // A language refetch without a statement keeps the page already on screen.
-        if (swapping && !result.data.flow) { setSettled(true); checksReady.current = true; return; }
+        if (swapping && !result.data.flow && !result.data.publication?.reasons.includes("DATA_POLICY_DENIED")) { setSettled(true); checksReady.current = true; return; }
         const complete = () => commit(result, true);
         if (primaryShown) startTransition(complete);
         else crossfade(() => { stageChartBox(); complete(); }, "map");
@@ -264,10 +312,24 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         }
         const resources = resourcesToRead(base, latest, staged.current?.revisions);
         if (!resources.length) return;
-        const read = await readRevisions(resources, latest, current.current, (r, rev) => readResource(ticker, r, rev, signal));
+        const answers = new Map<MapResource, Partial<CompanyData> | null>();
+        let read = await readRevisions(resources, latest, current.current, async (r, rev) => {
+          const part = await readResource(ticker, r, rev, signal);
+          answers.set(r, part);
+          return part;
+        });
         if (signal.aborted) return;
+        const configuration = configurationUpdate(current.current, { ...read.filled.patch, ...read.differs.patch });
+        if (configuration) {
+          const configured = { ...current.current, ...configuration };
+          current.current = configured;
+          setData(d => ({ ...d, ...configuration }));
+          if (!configured.flow) { staged.current = null; setPending(null); }
+          read = await readRevisions(resources, latest, configured, async resource => answers.get(resource) ?? null);
+          if (signal.aborted) return;
+        }
         shown.current = { ...shown.current, ...read.same, ...read.filled.revisions };
-        setRevisions(shown.current);
+        setRevisions(previous => advanceRevisions(previous, configuration ? latest : shown.current!));
         if (Object.keys(read.filled.patch).length) {
           if (read.filled.patch.events) setEventsPhase("ready");
           setData(d => ({ ...d, ...read.filled.patch }));
@@ -297,7 +359,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     setData(d => ({ ...d, ...update.patch }));
     setUpdates(n => n + 1);
     shown.current = { ...shown.current, ...update.revisions };
-    setRevisions(shown.current);
+    setRevisions(previous => advanceRevisions(previous, shown.current!));
     setPending(null);
     setClosed(true);
   }, []);
@@ -328,5 +390,6 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     }).catch(() => {}).finally(() => retries.current.delete(controller));
   }, [ticker]);
   const update = closed ? null : pending;
-  return { moduleErrors, retryModule, rateLimited, data, updates, revisions, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
+  const visible = useMemo(() => visibleData(data), [data]);
+  return { moduleErrors, retryModule, rateLimited, data: visible, updates, revisions, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
 }

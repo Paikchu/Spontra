@@ -2,9 +2,12 @@ import { companyRequest } from "./company-request";
 import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { Locale } from "@/shared/analysis-runtime/locale";
 
+/** A fresh URL namespace avoids copies cached before layer display choices were carried to the page. */
+export const COMPANY_READ_SCHEMA = "artifact-i18n-v2-layers";
+
 /** The locale is captured when a read starts, so a language switch cannot change a pending request's URL. */
 export function companyPath(ticker: string, locale: Locale, resource = "", rev?: string): string {
-  const query = new URLSearchParams();
+  const query = new URLSearchParams({ schema: COMPANY_READ_SCHEMA });
   if (locale !== "en") query.set("lang", locale);
   if (rev) query.set("rev", rev);
   const search = query.toString();

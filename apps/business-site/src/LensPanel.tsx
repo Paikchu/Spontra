@@ -17,6 +17,7 @@ import { LensFrame } from "./LensFrame";
 import { HtmlFrame } from "./HtmlFrame";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { usePreview, usePublishedArtifactRead } from "./artifact-reads";
+import { companyPath } from "./company-opening";
 
 const m = messages({
   finding: (title: string) => `Finding: ${title}`, report: (period: string) => `${period} report`,
@@ -145,7 +146,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
         const p = q.passage;
         return <figure key={key} className="lens-quote">
           <blockquote lang="en">{b.text}</blockquote>
-          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" || !LIBRARY_PASSAGE.test(p.passageId) ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
+          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" || !LIBRARY_PASSAGE.test(p.passageId) ? p.url : companyPath(ticker, getLocale(), `/passages/${encodeURIComponent(p.passageId)}`)} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
         </figure>;
       }
       case "table": {

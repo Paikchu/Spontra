@@ -219,14 +219,13 @@ export async function readHomeDigest(db: D1Database, locale: Locale | null, now 
 
   const consider = (ticker: string, cik: string | null, payload: string | null, publishedAt: string | null) => {
     const canonical = canonicalTicker(ticker);
-    if (!TICKER_PATTERN.test(canonical) || seen.has(canonical)) return;
+    if (!TICKER_PATTERN.test(canonical) || seen.has(canonical) || !enabled.has(canonical)) return;
     seen.add(canonical);
     let flow: PublicBusinessFlow | null = null;
     if (payload) {
       flow = flowOf(payload, canonical, cik);
       if (!flow) damaged = true;
     }
-    if (!flow && !enabled.has(canonical)) return;
     const history = historyOf(cik ? historyByCik.get(cik) : undefined, canonical, cik);
     const points = pointsOf(flow, history).filter((point, _, all) => !flow || point.currency === (all.at(-1)?.currency ?? point.currency));
     const latest = points.at(-1) ?? null;

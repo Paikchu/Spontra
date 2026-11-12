@@ -42,7 +42,7 @@ const m = messages({
  * document; the summary's headline is the title, so it is not repeated. A Form 4's analysis is one article about that
  * filing alone; a Form 4 without one shows its filer's every transaction of the company, newest first.
  */
-export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onClose }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onFocusEvent, onClose, analysisEnabled = true }: {
   event: CompanyEvent;
   publication: EventsPublication;
   ticker: string;
@@ -52,8 +52,9 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   /** Opens another filing of the events publication on the stage. */
   onFocusEvent: (id: string) => void;
   onClose: () => void;
+  analysisEnabled?: boolean;
 }) {
-  const analysis = useItemAnalysis(ticker, event.id, updates);
+  const analysis = useItemAnalysis(ticker, event.id, updates, analysisEnabled);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
   const title = verified?.finding.title ?? eventTitle(event);
   const history = event.insider ? <PersonHistory event={event} publication={publication} ticker={ticker} updates={updates} onFocusEvent={onFocusEvent} /> : null;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { useLocale } from "@/packages/web/src/i18n";
+import { COMPANY_READ_SCHEMA } from "./company-opening";
 
 /**
  * A draft the visual review opened through its signed preview link (`?artifact-preview=`): it takes the published
@@ -38,7 +39,7 @@ export function usePublishedArtifactRead(ticker: string, path: string | null, re
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
-    const params = new URLSearchParams({ schema: "artifact-i18n-v1", ...locale === "en" ? {} : { lang: locale }, ...rev ? { rev } : {} });
+    const params = new URLSearchParams({ schema: COMPANY_READ_SCHEMA, ...locale === "en" ? {} : { lang: locale }, ...rev ? { rev } : {} });
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${params.size ? `?${params}` : ""}`, { signal: controller.signal })
       .then(r => { if (!r.ok) throw new Error(`Artifact read failed: ${r.status}`); return r.json() as Promise<{ artifact?: PublishedArtifact | null }>; })
       .then(body => { if (!controller.signal.aborted) setLoaded({ key, artifact: body.artifact ?? null, status: body.artifact ? "ready" : "failed" }); })

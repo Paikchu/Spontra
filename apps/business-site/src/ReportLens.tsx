@@ -38,16 +38,17 @@ const trend = (v: string | null) => !v ? undefined
  * analysis is written by and verified here as a finding is. Without one, the
  * filing digest stands in — the verified key figures beside the conclusions, investment view and sources.
  */
-export function ReportLens({ report, ticker, data, updates, nodeColor, onClose }: {
+export function ReportLens({ report, ticker, data, updates, nodeColor, onClose, analysisEnabled = true }: {
   report: PublicFilingDigest;
   ticker: string;
   data: FindingData;
   updates: number;
   nodeColor: (id: string) => string;
   onClose: () => void;
+  analysisEnabled?: boolean;
 }) {
   const [more, setMore] = useState(false);
-  const analysis = useItemAnalysis(ticker, report.accessionNumber, updates);
+  const analysis = useItemAnalysis(ticker, report.accessionNumber, updates, analysisEnabled);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
   const title = reportTitle(report, ticker);
   return <section className="lens report-lens" aria-label={m.report(title)} key={report.accessionNumber}>
