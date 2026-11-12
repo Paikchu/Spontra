@@ -29,7 +29,7 @@ import { z } from "zod";
  * so a regenerated finding that kept a sentence costs nothing to translate again.
  */
 /** v2: the checker compares full values and accepts digits kept verbatim; v4: a range's unit scales both ends ($90–95B). Each bump retries the earlier false rejections. */
-export const TRANSLATION_VERSION = "translate.v9";
+export const TRANSLATION_VERSION = "translate.v10";
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */
 const BATCH_CHARS = 6_000, BATCH_ITEMS = 40;
@@ -98,7 +98,7 @@ async function memory(db: D1Database, locale: Locale, hashes: string[]): Promise
   return out;
 }
 
-export type TranslationItem = { sha: string; text: string; artifact?: true; context?: string };
+export type TranslationItem = { sha: string; text: string; artifact?: true; context?: string; values?: Readonly<Record<string, string>> };
 export type TranslationPlan = { fingerprint: string; batches: TranslationItem[][]; stale: number };
 
 /**
@@ -109,10 +109,10 @@ export type TranslationPlan = { fingerprint: string; batches: TranslationItem[][
 export async function translationPlan(db: D1Database, ticker: string, locale: Locale = LOCALE, read: () => Promise<TranslationSource[]> = () => readSources(db, ticker)): Promise<TranslationPlan | null> {
   const sources = await read();
   const unique = [...new Set(sources.flatMap(s => s.strings))];
-  const artifactUnits = new Map(sources.flatMap(s => s.resource === "artifact" ? s.artifact.plan.units.map(u => [u.text, u.context] as const) : []));
+  const artifactUnits = new Map(sources.flatMap(s => s.resource === "artifact" ? s.artifact.plan.units.map(u => [u.text, u] as const) : []));
   const hashes = await Promise.all(unique.map(sha256));
   const known = await memory(db, locale, hashes);
-  const pending = unique.map((text, i): TranslationItem => ({ sha: hashes[i]!, text, ...artifactUnits.has(text) ? { artifact: true, context: artifactUnits.get(text)! } : {} })).filter(item => {
+  const pending = unique.map((text, i): TranslationItem => ({ sha: hashes[i]!, text, ...artifactUnits.has(text) ? { artifact: true, context: artifactUnits.get(text)!.context, values: artifactUnits.get(text)!.values } : {} })).filter(item => {
     const row = known.get(item.sha);
     return !row || (row.status === "rejected" && (row.version !== TRANSLATION_VERSION || row.problems === UNANSWERED))
       || !!(item.artifact && row.status === "ready" && row.text && checkArtifactTranslation(item.text, row.text).length);
@@ -146,6 +146,7 @@ const SYSTEM = `你把美股财报分析网站上的英文文字翻译成简体�
 - 数字的数值必须与原文一致，金额改用中文单位：$28.5 billion → 285亿美元，$350 million → 3.5亿美元，$12 million → 1200万美元，$1.2 trillion → 1.2万亿美元，$1.24 per share → 每股 1.24美元；百分比照写（235.2%）；percentage points / pp → 个百分点；倍数 2.6x → 2.6倍。年份、季度、日期照原样（Q1 FY2027 → 2027 财年第一季度，2026-08-31 不变）。
 - {value}、{change}、{label}、{period} 这类占位符原样保留，位置可按中文语序调整。
 - HTML 报告中的 {o0}、{c0} 是内联标签开合，{x0} 是受保护的数字或原文；所有这种带编号占位符必须逐个原样保留，保持正确嵌套，可以调整整体位置；不输出 HTML 标签。
+- values 给出每个 {xN} 的原始可见文字，供理解金额、日期、期间和符号；据此理解日/月/年、增长率的位置，但译文中仍原样写 {xN}，不得替换成具体数值。
 - 仅当整条内容完全由公司名、产品名、服务套餐名称或通用缩写组成，无需翻译时，zh 原样返回，并添加 "preserveNames":true；普通标题和句子必须译成中文。
 - Markdown 结构（标题 #、列表 -、表格 |、公式 $$）逐行保持，只翻译其中的文字；表格的数字单元格照抄。
 - 用财经媒体的书面语，简洁直接；中文与英文、数字之间留一个空格（数字与紧随的单位之间不留）；不用感叹号。
@@ -170,12 +171,13 @@ function artifactAnswerProblems(source: string, answer: TranslationAnswer): stri
   const preserved = answer.preserveNames && answer.text === source && source.length <= 200;
   return [...checkArtifactTranslation(source, answer.text), ...(!/[\u3400-\u9fff]/.test(answer.text) && !preserved ? ["Translate into Chinese; for an unchanged list of proper names only, return preserveNames:true"] : [])];
 }
-export type AskTranslations = (stage: string, items: Array<{ i: number; text: string; context?: string; problems?: string[] }>) => Promise<Map<number, TranslationAnswer>>;
+type TranslationPrompt = { i: number; text: string; context?: string; values?: Readonly<Record<string, string>>; problems?: string[] };
+export type AskTranslations = (stage: string, items: TranslationPrompt[]) => Promise<Map<number, TranslationAnswer>>;
 class ModelUnavailable extends Error { constructor(reason: string) { super(reason); this.name = "ModelUnavailable"; } }
 
-async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string, runId: string, stage: string, items: Array<{ i: number; text: string; context?: string; problems?: string[] }>): Promise<Map<number, TranslationAnswer>> {
+async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string, runId: string, stage: string, items: TranslationPrompt[]): Promise<Map<number, TranslationAnswer>> {
   const model = modelFor(env, "translate");
-  const payload = { items: items.map(({ i, text, context, problems }) => ({ i, text, ...(context ? { context } : {}), ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
+  const payload = { items: items.map(({ i, text, context, values, problems }) => ({ i, text, ...(context ? { context } : {}), ...(values ? { values } : {}), ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
   let result: Record<string, unknown>;
   try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
   catch (error) {
@@ -198,7 +200,7 @@ async function translateBatch(env: AnalysisEnv, ticker: string, runId: string, b
   ask: AskTranslations = (stage, items) => askModel(env, fetch, ticker, runId, stage, items), locale: Locale = LOCALE): Promise<{ ready: number; rejected: number; stopped?: "budget" | "unavailable" } | null> {
   const now = new Date().toISOString();
   const outcome = new Map<number, { text: string | null; problems: string[] }>();
-  let pending: Array<{ i: number; text: string; context?: string; problems?: string[] }> = batch.map((item, i) => ({ i, text: item.text, ...(item.context ? { context: item.context } : {}) }));
+  let pending: TranslationPrompt[] = batch.map((item, i) => ({ i, text: item.text, ...(item.context ? { context: item.context } : {}), ...(item.values ? { values: item.values } : {}) }));
   let stopped: "budget" | "unavailable" | undefined;
   for (const attempt of [1, 2]) {
     if (!pending.length) break;
@@ -327,7 +329,7 @@ export async function executeTranslateWorkflow(params: TranslateParams, step: St
       await reserve();
       let answers: Awaited<ReturnType<typeof askModel>>;
       try {
-        answers = await askModel(env, fetcher, params.ticker, runId, "translate-semantic-fix", [...fixes].map(([i, problems]) => ({ i, text: pairs[i]!.source, context: `${pairs[i]!.context}\n受保护原始数值：${JSON.stringify(pairs[i]!.values)}`, problems })));
+        answers = await askModel(env, fetcher, params.ticker, runId, "translate-semantic-fix", [...fixes].map(([i, problems]) => ({ i, text: pairs[i]!.source, context: pairs[i]!.context, values: pairs[i]!.values, problems })));
       } catch (error) { unavailable = true; throw new ArtifactTranslationDeferred(error instanceof Error ? error.message : String(error)); }
       for (const [i] of fixes) {
         const answer = answers.get(i), source = pairs[i]!.source;
