@@ -10,14 +10,14 @@ const isDark = () => !document.documentElement.classList.contains("light");
  * frame to the height it reports, and opens the links it forwards. `data-rendered` tells the visual review the report
  * has drawn.
  */
-export function ArtifactFrame({ artifact, showLanguage = true }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css">; showLanguage?: boolean }) {
+export function ArtifactFrame({ artifact, showLanguage = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css">; showLanguage?: boolean; hostTitle?: string }) {
   return <>
     {showLanguage && <div className="artifact-language-row"><ArtifactLanguage artifact={artifact} /></div>}
-    <Frame key={`${artifact.id}:${artifact.lang}:${artifact.hash}`} artifact={artifact} />
+    <Frame key={`${artifact.id}:${artifact.lang}:${artifact.hash}:${hostTitle ?? ""}`} artifact={artifact} hostTitle={hostTitle} />
   </>;
 }
 
-function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html" | "css" | "lang" | "hash"> }) {
+function Frame({ artifact, hostTitle }: { artifact: Pick<PublishedArtifact, "title" | "html" | "css" | "lang" | "hash">; hostTitle?: string }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false), [height, setHeight] = useState(480);
   const post = (message: ArtifactFrameMessage) => frame.current?.contentWindow?.postMessage(message, "*");
@@ -37,7 +37,7 @@ function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html
   useEffect(() => {
     if (!ready || drawn.current) return;
     drawn.current = true;
-    post({ type: "artifact:render", html: artifact.html, css: artifact.css, dark: isDark(), lang: artifact.lang });
+    post({ type: "artifact:render", html: artifact.html, css: artifact.css, dark: isDark(), lang: artifact.lang, hostTitle });
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const observer = new MutationObserver(() => post({ type: "artifact:theme", dark: isDark() }));

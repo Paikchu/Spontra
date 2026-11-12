@@ -6,6 +6,7 @@
 
 :root {
   color-scheme: dark;
+  --report-measure: 760px;
   /* Black theme: true black paper, neutral greys for surfaces, and hairlines rather than shadows to separate them. */
   --background: #000000;
   --surface: #0d0d0d;

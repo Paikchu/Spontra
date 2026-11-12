@@ -29,6 +29,28 @@ function sanitize(root: Element) {
   }
 }
 
+/** An embedded report keeps the host's title once; a standalone report keeps its own opening heading. */
+function removeRepeatedTitle(root: Element, hostTitle?: string) {
+  if (!hostTitle) return;
+  const titleKey = (value: string) => value.normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]+/gu, "").replace(/[.!?。！？]+$/u, "").toLowerCase();
+  const heading = root.querySelector("h2");
+  if (!heading || !titleKey(hostTitle) || titleKey(heading.textContent ?? "") !== titleKey(hostTitle)) return;
+  // Only a title before all report content qualifies. A matching heading later in the report is a section heading.
+  const before = document.createRange();
+  before.selectNodeContents(root);
+  before.setEndBefore(heading);
+  const opening = before.cloneContents();
+  if (opening.textContent?.trim() || opening.querySelector("h2,h3,h4,figure,table,dl,ul,ol,blockquote,button")) return;
+  let container = heading.parentElement;
+  heading.remove();
+  // A title may occupy its own section; an empty section would still add a gap and separator.
+  while (container && container !== root && container.matches("div,section") && !container.children.length && !container.textContent?.trim()) {
+    const parent = container.parentElement;
+    container.remove();
+    container = parent;
+  }
+}
+
 const height = () => Math.ceil(document.documentElement.getBoundingClientRect().height);
 const within = (root: Element, name: string) => [...root.querySelectorAll(`[data-slot="${name}"]`)];
 
@@ -155,6 +177,7 @@ function render(m: Extract<ArtifactFrameMessage, { type: "artifact:render" }>) {
   const holder = document.createElement("div");
   holder.innerHTML = m.html;
   sanitize(holder);
+  removeRepeatedTitle(holder, m.hostTitle);
   document.body.replaceChildren(...holder.childNodes);
   const root = document.body;
   tabs(root); disclosures(root); tooltips(root); carousels(root); tables(root); progress(root);

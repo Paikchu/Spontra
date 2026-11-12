@@ -68,7 +68,7 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="report-document earning-report">
-      {artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} />
+      {artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} hostTitle={title} />
         : detail ? <SecReportDocument {...filingPresentation(detail, ticker)} embedded />
         : failed ? <p className="lens-empty">{m.loadFailed}</p>
         : <p className="lens-empty">{m.loading}</p>}

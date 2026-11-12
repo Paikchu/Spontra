@@ -58,7 +58,7 @@ export default function ArtifactPreviewPage() {
           <h1 lang={state.artifact.lang}>{state.artifact.title}</h1>
           <ArtifactLanguage artifact={state.artifact} />
         </header>
-        <ArtifactFrame artifact={state.artifact} showLanguage={false} />
+        <ArtifactFrame artifact={state.artifact} showLanguage={false} hostTitle={state.artifact.title} />
       </> : <p className="article-preview-message" role={state.status === "loading" ? "status" : "alert"}>
         {state.status === "loading" ? m.loading : m.unavailable}
       </p>}

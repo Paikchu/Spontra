@@ -191,7 +191,7 @@ export type ArtifactIssue = {
 export type ArtifactFrameMessage =
   | { type: "artifact:ready" }
   | { type: "artifact:ping" }
-  | { type: "artifact:render"; html: string; css: string; dark: boolean; lang: string }
+  | { type: "artifact:render"; html: string; css: string; dark: boolean; lang: string; hostTitle?: string }
   | { type: "artifact:theme"; dark: boolean }
   | { type: "artifact:rendered"; height: number }
   | { type: "artifact:size"; height: number }

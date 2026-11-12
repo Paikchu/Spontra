@@ -793,7 +793,7 @@ button { cursor: pointer; }
 .lens { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; height: clamp(236px, 34vh, 340px); margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--hairline); animation: rise .5s var(--ease) both; }
 .lens-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap; }
 .lens-title { display: flex; flex: 1 1 0; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.lens-title h2 { margin: 0; font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
+.lens-title h2 { min-width: 0; max-width: 100%; margin: 0; font-size: 15px; font-weight: 620; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .lens-kind { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); border: 1px solid color-mix(in srgb, var(--kind) 35%, transparent); }
 .lens-kind i { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 4px; font-size: 11px; font-style: normal; font-weight: 700; color: var(--background); background: var(--kind); }
 .lens-basis { font-size: 12px; color: var(--faint); }
@@ -842,7 +842,7 @@ button { cursor: pointer; }
 .stage[data-focus] .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
 .lens-doc { container: lens-doc / inline-size; display: grid; align-content: start; gap: 18px 0; min-height: 0; overflow-y: auto; padding: 4px 6px 8px 0; font-size: 14px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 /* One column at a reading measure, centred in the stage; the document scrolls at the stage's edge. The header shares the measure. */
-.lens { --lens-measure: 760px; }
+.lens { --lens-measure: var(--report-measure); }
 .lens > .lens-head, .lens-doc > * { width: min(100%, var(--lens-measure)); justify-self: center; }
 .lens-doc-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .lens-doc-cell { display: flex; flex-direction: column; gap: 12px; min-width: 0; container-type: inline-size; }
@@ -1186,10 +1186,10 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .report-warnings { margin: 0 0 8px; padding-left: 16px; font-size: 12px; color: var(--faint); }
 
 /* A filing's one report on the stage: the report page's document inside its own styles. */
-.report-document { min-height: 0; overflow-y: auto; padding: 8px 4px 32px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.report-document { min-width: 0; min-height: 0; overflow-y: auto; padding: 8px 0 32px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .report-document .lens-empty { padding: 60px 0; }
-/* The report shares the header's measure and centre; the frame alone would start at the stage's left edge. */
-.report-lens .report-document > .artifact-frame { width: min(100%, var(--lens-measure)); margin-inline: auto; }
+/* Legacy reports use the same reading column as HTML reports and their header. */
+.report-document.earning-report .sec-report-shell { width: min(100%, var(--report-measure)); margin-inline: auto; padding-inline: 0; }
 
 /* ---------- Live updates ---------- */
 /* A newer read is waiting: a pill over the stage's top edge, centred on the stage beside the rail. */
@@ -1402,4 +1402,5 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .light .fc-compact { --flow-profit: #096b5f; --flow-expense: #91521c; }
 
 /* An analysis report drawn in its sandbox (ArtifactFrame.tsx): the frame is as tall as the report it holds. */
-.artifact-frame { display: block; width: 100%; border: 0; background: transparent; color-scheme: normal; }
+.artifact-frame { display: block; width: min(100%, var(--report-measure)); max-width: 100%; min-width: 0; margin-inline: auto; justify-self: center; border: 0; background: transparent; color-scheme: normal; }
+.artifact-language-row { width: min(100%, var(--report-measure)); min-width: 0; margin-inline: auto; justify-self: center; }

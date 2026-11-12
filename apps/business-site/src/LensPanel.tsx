@@ -92,7 +92,7 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
       </div>
     </header>
     <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} {...core ? { layout: core } : {}}>
-      {artifact && <ArtifactFrame artifact={artifact} />}
+      {artifact && <ArtifactFrame artifact={artifact} hostTitle={finding.title} />}
     </LensBlocks>
   </section>;
 }

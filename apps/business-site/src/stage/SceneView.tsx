@@ -109,7 +109,7 @@ function ReportBlock({ ticker, reportId, data }: { ticker: string; reportId: str
   if ("artifact" in report) return <section className="lens scene-lens scene-report">
     <header className="lens-head"><div className="lens-title"><b className="lens-kind">{m.report}</b>
       <h2 lang={langOf(report.question)}>{report.question}</h2></div></header>
-    <ArtifactFrame artifact={report.artifact} />
+    <ArtifactFrame artifact={report.artifact} hostTitle={report.question} />
   </section>;
   if (!verified) return <p className="scene-notice">{m.unavailable}</p>;
   const layout = report.finding.lens.type === "document" ? report.finding.lens.document : undefined;
