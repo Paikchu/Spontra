@@ -231,10 +231,10 @@ async function translateBatch(env: AnalysisEnv, ticker: string, runId: string, b
  * Writes one table per resource from the remembered translations of the strings it carries now, and announces the
  * run, in one batch. Read fresh, so a publication that changed while the run translated gets what is known for it.
  */
-async function publishTables(env: AnalysisEnv, ticker: string, runId: string, review: TranslationReview, locale: Locale = LOCALE): Promise<{ tables: number; translated: number; total: number }> {
+async function publishTables(env: AnalysisEnv, ticker: string, runId: string, review: TranslationReview, locale: Locale = LOCALE, artifactsOnly = false): Promise<{ tables: number; translated: number; total: number }> {
   const db = env.DB!;
   const read = () => readSources(db, ticker, env);
-  const sources = await read();
+  const sources = (await read()).filter(source => !artifactsOnly || source.resource === "artifact");
   const unique = [...new Set(sources.flatMap(s => s.strings))];
   const hashes = await Promise.all(unique.map(sha256));
   const hashOf = new Map(unique.map((text, i) => [text, hashes[i]!]));
@@ -293,15 +293,6 @@ export async function executeTranslateWorkflow(params: TranslateParams, step: St
   const plan = await step.do("translate-plan", () => translationPlan(env.DB!, params.ticker, LOCALE, () => readSources(env.DB!, params.ticker, env)));
   let ready = 0, rejected = 0, spent = false, unavailable = false;
   const batches = plan?.batches ?? [];
-  for (let i = 0; i < batches.length && !spent && !unavailable; i += PARALLEL) {
-    const ask: AskTranslations = (stage, items) => askModel(env, fetcher, params.ticker, runId, stage, items);
-    const results = await Promise.all(batches.slice(i, i + PARALLEL).map((batch, k) => step.do(`translate-${i + k + 1}`, () => translateBatch(env, params.ticker, runId, batch, ask))));
-    for (const r of results) {
-      if (!r || r.stopped === "budget") spent = true;
-      if (r?.stopped === "unavailable") unavailable = true;
-      if (r) { ready += r.ready; rejected += r.rejected; }
-    }
-  }
   const review: TranslationReview = async pairs => {
     if (!pairs.length) return [];
     if (!await reserveCall(env, new Date().toISOString())) { spent = true; throw new ArtifactTranslationDeferred("daily translation budget"); }
@@ -313,6 +304,20 @@ export async function executeTranslateWorkflow(params: TranslateParams, step: St
     if (!checked.success) { unavailable = true; throw new ArtifactTranslationDeferred("translation review returned no valid verdict"); }
     return checked.data.problems;
   };
+  // A complete report is published independently of unrelated historical JSON strings.
+  await step.do("translate-known-artifacts", () => publishTables(env, params.ticker, runId, review, LOCALE, true));
+  const lastArtifactBatch = batches.findLastIndex(batch => batch.some(item => item.artifact)) + 1;
+  for (let i = 0; i < batches.length && !spent && !unavailable; i += PARALLEL) {
+    const ask: AskTranslations = (stage, items) => askModel(env, fetcher, params.ticker, runId, stage, items);
+    const results = await Promise.all(batches.slice(i, i + PARALLEL).map((batch, k) => step.do(`translate-${i + k + 1}`, () => translateBatch(env, params.ticker, runId, batch, ask))));
+    for (const r of results) {
+      if (!r || r.stopped === "budget") spent = true;
+      if (r?.stopped === "unavailable") unavailable = true;
+      if (r) { ready += r.ready; rejected += r.rejected; }
+    }
+    if (i < lastArtifactBatch && i + PARALLEL >= lastArtifactBatch)
+      await step.do("translate-artifacts-publish", () => publishTables(env, params.ticker, runId, review, LOCALE, true));
+  }
   const published = await step.do("translate-publish", () => publishTables(env, params.ticker, runId, review));
   return { status: spent ? "budget" : unavailable ? "model-unavailable" : "ready", batches: batches.length, ready, rejected, ...published };
 }
