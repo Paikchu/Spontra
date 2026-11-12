@@ -48,7 +48,7 @@ export async function artifactTranslationProgress(env: ArtifactStoreEnv, source:
     outboxStatement(env.DB!, { type: "translations.published", ticker: stored.document.ticker }, at)]);
 }
 
-export type TranslationReview = (pairs: Array<{ source: string; target: string; context: string }>) => Promise<string[]>;
+export type TranslationReview = (pairs: Array<{ source: string; target: string; context: string; values: Readonly<Record<string, string>> }>) => Promise<{ problems: string[]; translations: string[] }>;
 export class ArtifactTranslationDeferred extends Error {}
 
 /** A translation has its own R2 object and D1 pointer; the original artifact is never rewritten. */
@@ -59,9 +59,9 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
   const db = env.DB!, doc = stored.document;
   let translated: ArtifactDocument;
   try {
-    const problems = await review(plan.units.map(u => ({ source: u.text, target: values.get(u.id)!, context: u.context })));
-    if (problems.length) throw new Error(problems.join("; "));
-    translated = plan.apply(values);
+    const reviewed = await review(plan.units.map(u => ({ source: u.text, target: values.get(u.id)!, context: u.context, values: u.values })));
+    if (reviewed.problems.length) throw new Error(reviewed.problems.join("; "));
+    translated = plan.apply(new Map(plan.units.map((unit, index) => [unit.id, reviewed.translations[index]!] as const)));
     const html = documentHtml(translated), hash = await sha256(`${html}\n${stored.css}`);
     const key = `artifact-translations/${id.replace(/:/g, "/")}/v${doc.version}/zh-CN/${version}/${hash}.json`;
     await env.SEC_FILINGS!.put(key, JSON.stringify({ document: translated, html, css: stored.css, hash, degraded: stored.degraded } satisfies StoredArtifact), { httpMetadata: { contentType: "application/json" } });

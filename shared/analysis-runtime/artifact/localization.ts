@@ -1,9 +1,9 @@
 import type { ArtifactDocument } from "../../analysis-contract/artifact.ts";
-import { parseHtml, serializeHtml, type HtmlNode } from "./html.ts";
+import { nodeText, parseHtml, serializeHtml, type HtmlNode } from "./html.ts";
 import { chartTranslationUnits, localizeArtifactChart, localizeFinancialLabel } from "./chart-localization.ts";
 
 /** A complete phrase, with its inline markup and figures represented by immutable tokens. */
-export type ArtifactTranslationUnit = { id: string; text: string; context: string };
+export type ArtifactTranslationUnit = { id: string; text: string; context: string; values: Readonly<Record<string, string>> };
 export type ArtifactTranslationPlan = {
   units: ArtifactTranslationUnit[];
   /** Every unit is required; a partial translation is never a published sourceDoc. */
@@ -148,7 +148,13 @@ function build(sourceDoc: ArtifactDocument, translations?: ReadonlyMap<string, s
       if (!needsTranslation(part, sourceDoc.ticker)) return part;
       const lead = part.match(/^\s*/)?.[0] ?? "", trail = part.match(/\s*$/)?.[0] ?? "";
       const text = part.trim(), unitId = `${id}:${index}`;
-      units.push({ id: unitId, text, context });
+      const values: Record<string, string> = {};
+      for (const token of tokens(text)) {
+        if (token[1] !== "x") continue;
+        const literal = rich.literals.get(Number(token.slice(2, -1)))!;
+        values[token] = literal.type === "text" ? literal.value : nodeText([literal.value]);
+      }
+      units.push({ id: unitId, text, context, values });
       if (!translations) return part;
       const target = translations.get(unitId);
       if (target === undefined) throw new Error(`Missing artifact translation ${unitId}`);
