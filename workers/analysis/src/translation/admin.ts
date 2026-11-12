@@ -45,7 +45,7 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
     if (source.resource === "artifact") {
       const row = await readArtifactTranslation(env, source.artifact.id, source.artifact.stored.document.version, source.artifact.stored.hash);
       return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected,
-        publishedAt: row?.status === "ready" ? row.updated_at : null, publication: { status: row?.status ?? "pending", error: row?.error ?? null } };
+        publishedAt: row?.published_at ?? (row?.status === "ready" ? row.updated_at : null), publication: { status: row?.status ?? "pending", error: row?.error ?? null } };
     }
     const table = (await repository.getCache<{ at: string }>(tableKey(locale, source.resource, ticker, source.scope)).catch(() => null))?.payload;
     return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected, publishedAt: table?.at ?? null, publication: null };

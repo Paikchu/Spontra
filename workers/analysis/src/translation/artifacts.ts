@@ -83,8 +83,8 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
       throw new Error(qa.issues.filter(i => i.severity !== "minor").map(i => `${i.block}: ${i.problem}`).join("; "));
     const at = new Date().toISOString();
     await db.batch([
-      db.prepare("UPDATE analysis_artifact_translations SET status='ready', completed=total, error=NULL, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
-        .bind(at, id, doc.version, stored.hash),
+      db.prepare("UPDATE analysis_artifact_translations SET status='ready', completed=total, error=NULL, published_r2_key=r2_key, published_hash=hash, published_at=?, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
+        .bind(at, at, id, doc.version, stored.hash),
       outboxStatement(db, { type: "translations.published", ticker: doc.ticker }, at),
     ]);
     return true;

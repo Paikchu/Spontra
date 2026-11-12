@@ -72,14 +72,18 @@ function segments(text: string): string[] {
 }
 
 type ElementNode = Extract<HtmlNode, { type: "element" }>;
-type Literal = { type: "text"; value: string } | { type: "node"; value: HtmlNode };
+type Literal = { type: "text"; value: string; formatted: string | null } | { type: "node"; value: HtmlNode };
 type RichText = { text: string; elements: Map<number, ElementNode>; literals: Map<number, Literal> };
 
 function encodeRich(nodes: HtmlNode[]): RichText {
   const elements = new Map<number, ElementNode>(), literals = new Map<number, Literal>();
   const literal = (value: Literal) => { const id = literals.size; literals.set(id, value); return `{x${id}}`; };
   const encode = (children: HtmlNode[]): string => children.map(node => {
-    if (node.type === "text") return node.text.replace(/\s+/g, " ").replace(NUMBER, value => literal({ type: "text", value }));
+    if (node.type === "text") return node.text.replace(/\s+/g, " ").replace(NUMBER, (value: string, offset: number, text: string) => {
+      const scaled = /(?:trillion|billion|million|thousand|bn|mn|[BMK])$/i.test(value);
+      const range = /(?:[–—-]|\bto)\s*$/i.test(text.slice(0, offset)) || /^\s*(?:[–—-]|to\b)/i.test(text.slice(offset + value.length));
+      return literal({ type: "text", value, formatted: scaled && !range ? localizeFinancialLabel(value) : null });
+    });
     if (PROTECTED.has(node.tag) || node.tag === "br") return literal({ type: "node", value: node });
     const id = elements.size;
     elements.set(id, node);
@@ -109,7 +113,7 @@ function decodeRich(rich: RichText, text: string, localized: boolean): HtmlNode[
       const value = rich.literals.get(id);
       if (!value) throw new Error(`Unknown artifact literal ${token}`);
       if (literalParents.get(id) !== (stack.at(-1)?.id ?? null)) throw new Error(`Artifact figure or literal moved outside its inline element at ${token}`);
-      if (value.type === "text") append({ type: "text", text: value.value });
+      if (value.type === "text") append({ type: "text", text: localized ? value.formatted ?? value.value : value.value });
       else {
         const node = structuredClone(value.value);
         if (localized && node.type === "element" && node.tag === "data" && node.children.every(child => child.type === "text")) {

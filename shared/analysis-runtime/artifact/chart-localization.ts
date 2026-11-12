@@ -1,6 +1,6 @@
 import type { ArtifactChart } from "../../analysis-contract/artifact.ts";
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
-import { compactMoney } from "../locale.ts";
+import { compactMoney, compactNumber } from "../locale.ts";
 import { chartHeight } from "../lens/compile.ts";
 import { formatFigure, periodLabel, tickLabel } from "../lens/format.ts";
 import { renderChartSvg } from "../lens/render.ts";
@@ -17,8 +17,8 @@ const escape = (text: string) => text.replace(/[&<>"']/g, c => ({ "&": "&amp;", 
 export function localizeFinancialLabel(source: string): string | null {
   const text = source.trim();
   const symbols: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP", "HK$": "HKD", "NT$": "TWD" };
-  const scale: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 };
-  const money = /^([+−-]?)(HK\$|NT\$|[$€£])([\d,]+(?:\.\d+)?)([KMBT])?$/i.exec(text);
+  const scale: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9, T: 1e12, THOUSAND: 1e3, MILLION: 1e6, BILLION: 1e9, TRILLION: 1e12, BN: 1e9, MN: 1e6 };
+  const money = /^([+−-]?)(HK\$|NT\$|[$€£])([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mn|[KMBT])?$/i.exec(text);
   if (money) {
     const value = Number(money[3]!.replace(/,/g, "")) * (scale[money[4]?.toUpperCase() ?? ""] ?? 1) * (money[1] === "−" || money[1] === "-" ? -1 : 1);
     return (money[1] === "+" ? "+" : "") + compactMoney(value, symbols[money[2]!.toUpperCase()]!, "zh-CN");
@@ -28,7 +28,10 @@ export function localizeFinancialLabel(source: string): string | null {
     const value = Number(code[2]!.replace(/,/g, "")) * (scale[code[3] ?? ""] ?? 1) * (code[1] === "−" || code[1] === "-" ? -1 : 1);
     return (code[1] === "+" ? "+" : "") + compactMoney(value, code[4]!, "zh-CN");
   }
-  if (/^[+−-]?[\d,.]+\s+pp$/.test(text)) return text.replace(/\s+pp$/, "个百分点");
+  const quantity = /^([+−-]?)([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mn|[KMBT])$/i.exec(text);
+  if (quantity) return (quantity[1] === "-" ? "−" : quantity[1]) + compactNumber(Number(quantity[2]!.replace(/,/g, "")) * scale[quantity[3]!.toUpperCase()]!, "zh-CN");
+  if (/^[+−-]?[\d,.]+\s+(?:pp|pts?|percentage points?)$/i.test(text)) return text.replace(/\s+(?:pp|pts?|percentage points?)$/i, "个百分点");
+  if (/^[+−-]?[\d,.]+\s+bps$/i.test(text)) return text.replace(/\s+bps$/i, "个基点");
   if (/^[+−-]?[\d,.]+[×x]$/.test(text)) return text.replace(/[×x]$/, "倍");
   if (/^FY to \d{4}\.\d{2}$/.test(text)) return `截至 ${text.slice(6)} 财年`;
   return null;

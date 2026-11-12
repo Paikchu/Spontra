@@ -16,6 +16,7 @@ export type ArtifactTranslationRow = {
   artifact_id: string; source_version: number; source_hash: string; locale: "zh-CN"; translator_version: string;
   status: "translating" | "checking" | "ready" | "failed"; completed: number; total: number;
   r2_key: string | null; hash: string | null; error: string | null; updated_at: string;
+  published_r2_key: string | null; published_hash: string | null; published_at: string | null;
 };
 
 export const artifactId = (kind: ArtifactKind, ticker: string, subject: string) => `${kind}:${ticker}:${subject}`;
@@ -80,9 +81,11 @@ export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: Artifac
   const original = toPublished(id, stored, row.published_at);
   if (locale !== "zh-CN" || original.lang === "zh-CN") return original;
   const translated = await readArtifactTranslation(env, id, row.published_version, stored.hash);
-  if (translated?.status === "ready" && translated.r2_key) {
-    const object = await env.SEC_FILINGS.get(translated.r2_key);
-    if (object) return { ...toPublished(id, JSON.parse(await object.text()) as Stored, translated.updated_at), translation: { locale: "zh-CN", status: "ready" } };
+  const publishedKey = translated?.published_r2_key ?? (translated?.status === "ready" ? translated.r2_key : null);
+  const publishedAt = translated?.published_at ?? (translated?.status === "ready" ? translated.updated_at : null);
+  if (publishedKey && publishedAt) {
+    const object = await env.SEC_FILINGS.get(publishedKey);
+    if (object) return { ...toPublished(id, JSON.parse(await object.text()) as Stored, publishedAt), translation: { locale: "zh-CN", status: "ready" } };
   }
   return { ...original, translation: { locale: "zh-CN", status: translated?.status === "ready" ? "pending" : translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 } };
 }
