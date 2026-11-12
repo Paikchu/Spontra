@@ -700,9 +700,10 @@ button { cursor: pointer; }
 .biz-total-delta { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total-delta em { font-style: normal; }
 /* The mix as one bar: each business its hue, as wide as its share; the business under the pointer or picked stands out. */
-.biz-fold { flex: none; align-self: center; width: 24px; height: 24px; margin: -4px -4px -4px 0; color: var(--faint); }
+.biz-fold, .guidance-more { flex: none; width: 24px; height: 24px; color: var(--faint); }
+.biz-fold { align-self: center; margin: -4px -4px -4px 0; }
 .biz-fold:hover { color: var(--foreground); }
-.biz-fold svg { width: 14px; height: 14px; transition: transform .24s var(--ease); }
+.biz-fold svg, .guidance-more svg { width: 14px; height: 14px; transition: transform .24s var(--ease); }
 .biz[data-folded] .biz-fold svg { transform: rotate(-90deg); }
 /* The rows fold to nothing under the head; the list keeps its place for when they return. */
 .biz-rows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .24s var(--ease); }
@@ -755,10 +756,8 @@ button { cursor: pointer; }
 .quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
 /* The findings, the standing read of the company, between the businesses and the tabs. */
 .guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
-.guidance-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 28px; margin: 2px 0 0 36px; padding: 0 10px; border-radius: 999px; color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
-.guidance-more:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); color: var(--foreground); }
-.guidance-more .fold-chevron { margin-top: 0; transform: rotate(90deg); }
-.guidance-more[aria-expanded="true"] .fold-chevron { transform: rotate(-90deg); }
+.guidance-more { align-self: flex-end; margin: 2px 6px 0 0; }
+.guidance-more[aria-expanded="true"] svg { transform: rotate(180deg); }
 @media (max-width: 960px) { .stream-tabs { position: static; } }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }

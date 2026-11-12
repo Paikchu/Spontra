@@ -144,8 +144,8 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
     {findings.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
       {findingsShown.map(f => <FindingRow key={f.id} finding={f} verdict={verdicts?.[f.id]} checked={focus === f.id} arrive={arrived.get(f.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === f.id ? null : f.id)} />)}
-      {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="guidance-more" aria-expanded={allFindings} onClick={() => setAllFindings(v => !v)}>
-        {allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)}<Chevron />
+      {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="icon-button guidance-more" aria-expanded={allFindings} aria-label={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} title={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} onClick={() => setAllFindings(v => !v)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
       </Button>}
     </div>}
     <div className="stream-tabs" role="group" aria-label={m.tabs}>
