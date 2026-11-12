@@ -11,7 +11,7 @@ export type ArtifactTranslationPlan = {
 };
 
 const TOKEN = /\{[ocx]\d+\}/g;
-const NUMBER = /(?:\b(?:10-[KQ]|8-K|20-F|6-K)\b|(?:[$€£¥]\s*)?[+−-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?:\s?(?:trillion|billion|million|thousand|bn|mn|[BMKbm]|%|bps|pp|x|×)(?![A-Za-z]))?)/g;
+const NUMBER = /(?:\b(?:10-[KQ]|8-K|20-F|6-K)\b|(?:[$€£¥]\s*)?(?:[+−]|(?<![A-Za-z0-9])[-])?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?:\s?(?:trillion|billion|million|thousand|bn|mn|[BMKbm]|%|bps|pp|x|×)(?![A-Za-z]))?)/g;
 const INLINE = new Set(["span", "strong", "em", "small", "sub", "sup", "a", "cite", "data", "kbd", "mark", "abbr", "br"]);
 const PROTECTED = new Set(["data", "kbd"]);
 const TEXT_ATTRIBUTES = new Set(["title", "data-content"]);
