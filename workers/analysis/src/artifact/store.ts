@@ -1,6 +1,7 @@
 import type { ArtifactDocument, ArtifactKind, PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
 import { sha256 } from "../sha256.ts";
 import { documentHtml } from "./document.ts";
+import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
 
 /**
  * Artifact persistence (docs/analysis-html-artifact.md §7.7, §8): every draft the visual review renders and every
@@ -9,7 +10,13 @@ import { documentHtml } from "./document.ts";
  */
 type Bucket = { get(key: string): Promise<{ text(): Promise<string> } | null>; put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> };
 export type ArtifactStoreEnv = { DB?: D1Database; SEC_FILINGS: Bucket; REPORT_ADMIN_PASSWORD?: string; DEEPSEEK_API_KEY?: string };
-type Stored = { document: ArtifactDocument; html: string; css: string; hash: string; degraded: string[] };
+export type StoredArtifact = { document: ArtifactDocument; html: string; css: string; hash: string; degraded: string[] };
+type Stored = StoredArtifact;
+export type ArtifactTranslationRow = {
+  artifact_id: string; source_version: number; source_hash: string; locale: "zh-CN"; translator_version: string;
+  status: "translating" | "checking" | "ready" | "failed"; completed: number; total: number;
+  r2_key: string | null; hash: string | null; error: string | null; updated_at: string;
+};
 
 export const artifactId = (kind: ArtifactKind, ticker: string, subject: string) => `${kind}:${ticker}:${subject}`;
 /** A finding's dossier is bound to the findings publication it was written for: a new publication waits for its own. */
@@ -57,26 +64,39 @@ export function publishStatements(env: ArtifactStoreEnv, kind: ArtifactKind, tic
   ];
 }
 
-async function readVersion(env: ArtifactStoreEnv, id: string, version: number): Promise<(Stored & { createdAt: string }) | null> {
+export async function readArtifactVersion(env: ArtifactStoreEnv, id: string, version: number): Promise<(Stored & { createdAt: string }) | null> {
   const row = await env.DB!.prepare("SELECT r2_key, created_at FROM analysis_artifact_versions WHERE artifact_id = ? AND version = ?").bind(id, version).first<{ r2_key: string; created_at: string }>();
   const object = row ? await env.SEC_FILINGS.get(row.r2_key) : null;
   return object ? { ...JSON.parse(await object.text()) as Stored, createdAt: row!.created_at } : null;
 }
 
 /** The published artifact for a subject, as the map reads it. */
-export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string): Promise<PublishedArtifact | null> {
+export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string, locale?: Locale | null): Promise<PublishedArtifact | null> {
   const id = artifactId(kind, ticker, subject);
   const row = await env.DB!.prepare("SELECT published_version, published_at FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(id).first<{ published_version: number; published_at: string }>().catch(() => null);
   if (!row) return null;
-  const stored = await readVersion(env, id, row.published_version);
-  return stored ? toPublished(id, stored, row.published_at) : null;
+  const stored = await readArtifactVersion(env, id, row.published_version);
+  if (!stored) return null;
+  const original = toPublished(id, stored, row.published_at);
+  if (locale !== "zh-CN" || original.lang === "zh-CN") return original;
+  const translated = await readArtifactTranslation(env, id, row.published_version, stored.hash);
+  if (translated?.status === "ready" && translated.r2_key) {
+    const object = await env.SEC_FILINGS.get(translated.r2_key);
+    if (object) return { ...toPublished(id, JSON.parse(await object.text()) as Stored, translated.updated_at), translation: { locale: "zh-CN", status: "ready" } };
+  }
+  return { ...original, translation: { locale: "zh-CN", status: translated?.status === "ready" ? "pending" : translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 } };
+}
+
+export function readArtifactTranslation(env: Pick<ArtifactStoreEnv, "DB">, id: string, version: number, sourceHash: string): Promise<ArtifactTranslationRow | null> {
+  return env.DB!.prepare("SELECT * FROM analysis_artifact_translations WHERE artifact_id = ? AND source_version = ? AND source_hash = ? AND locale = 'zh-CN'")
+    .bind(id, version, sourceHash).first<ArtifactTranslationRow>();
 }
 
 /** The published document itself, blocks and sources, for a session that revises it or a check that reads it again. */
 export async function readPublishedDocument(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string): Promise<ArtifactDocument | null> {
   const id = artifactId(kind, ticker, subject);
   const row = await env.DB!.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(id).first<{ published_version: number }>().catch(() => null);
-  return row ? (await readVersion(env, id, row.published_version))?.document ?? null : null;
+  return row ? (await readArtifactVersion(env, id, row.published_version))?.document ?? null : null;
 }
 
 const workKey = (id: string) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/work.json`;
@@ -94,8 +114,10 @@ export async function readWorkState<T>(env: ArtifactStoreEnv, kind: ArtifactKind
 }
 
 const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
-  id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version, title: s.document.title,
+  id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version,
+  title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title : s.document.title,
   html: s.html, css: s.css, hash: s.hash, publishedAt: at, degraded: s.degraded,
+  lang: isLocale(s.document.lang) ? s.document.lang : "en", translation: null,
 });
 
 /** Records one check's result against a version, for the admin's record of how each block was settled. */
@@ -113,8 +135,8 @@ async function previewKey(env: ArtifactStoreEnv) {
 }
 
 /** A short-lived link token for one draft version, so the visual review can open it in the real stage. */
-export async function previewToken(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string, version: number, now = Date.now()): Promise<string> {
-  const body = b64(new TextEncoder().encode(JSON.stringify({ a: artifactId(kind, ticker, subject), v: version, e: now + PREVIEW_MS })));
+export async function previewToken(env: ArtifactStoreEnv, kind: ArtifactKind, ticker: string, subject: string, version: number, now = Date.now(), locale?: "zh-CN"): Promise<string> {
+  const body = b64(new TextEncoder().encode(JSON.stringify({ a: artifactId(kind, ticker, subject), v: version, e: now + PREVIEW_MS, ...(locale ? { l: locale } : {}) })));
   return `${body}.${b64(await crypto.subtle.sign("HMAC", await previewKey(env), new TextEncoder().encode(body)))}`;
 }
 
@@ -125,9 +147,14 @@ export async function readPreview(env: ArtifactStoreEnv, token: string, now = Da
   const bytes = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
   try {
     if (!await crypto.subtle.verify("HMAC", await previewKey(env), bytes(signature), new TextEncoder().encode(body))) return null;
-    const claim = JSON.parse(new TextDecoder().decode(bytes(body))) as { a: string; v: number; e: number };
+    const claim = JSON.parse(new TextDecoder().decode(bytes(body))) as { a: string; v: number; e: number; l?: "zh-CN" };
     if (!(claim.e > now)) return null;
-    const stored = await readVersion(env, claim.a, claim.v);
+    let stored = await readArtifactVersion(env, claim.a, claim.v);
+    if (stored && claim.l === "zh-CN") {
+      const translated = await readArtifactTranslation(env, claim.a, claim.v, stored.hash);
+      const object = translated?.r2_key ? await env.SEC_FILINGS.get(translated.r2_key) : null;
+      stored = object ? { ...JSON.parse(await object.text()) as Stored, createdAt: translated!.updated_at } : null;
+    }
     return stored ? toPublished(claim.a, stored, stored.createdAt) : null;
   } catch { return null; }
 }

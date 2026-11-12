@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
-import { getLocale, messages } from "@/packages/web/src/i18n";
+import { messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
 import { filingPresentation } from "@/packages/web/src/report-client";
 import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument";
-import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { ArtifactFrame } from "./ArtifactFrame";
+import { ArtifactLanguage } from "./ArtifactLanguage";
 import { usePreview } from "./artifact-reads";
 import "katex/dist/katex.min.css";
 import "@/packages/web/src/styles/earning-report.css";
@@ -41,31 +41,34 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
 }) {
   const [detail, setDetail] = useState<PublicFilingDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  const locale = useLocale();
   const preview = usePreview("filing-report", accession);
   const reportDate = snapshot?.reportDate, reportVersion = snapshot?.reportVersion;
   useEffect(() => {
     const controller = new AbortController();
+    setFailed(false);
     // The response is cached by its URL for hours; the report's revision is part of the URL so a republished report is a new one.
-    const params = new URLSearchParams({ ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...getLocale() === "en" ? {} : { lang: getLocale() }, ...revision ? { rev: revision } : {} }).toString();
+    const params = new URLSearchParams({ schema: "artifact-i18n-v1", ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...locale === "en" ? {} : { lang: locale }, ...revision ? { rev: revision } : {} }).toString();
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/filings/${encodeURIComponent(accession)}${params ? `?${params}` : ""}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<PublicFilingDetail> : Promise.reject(new Error(String(r.status))))
       .then(body => { if (!controller.signal.aborted) setDetail(body); })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [ticker, accession, reportDate, reportVersion, revision]);
+  }, [ticker, accession, reportDate, reportVersion, revision, locale]);
   const artifact = preview ?? detail?.artifact ?? null;
+  const title = artifact?.title ?? head.title;
   if (fallback && !artifact && (failed || detail && !detail.filing.summary?.report)) return <>{fallback}</>;
-  return <section className="lens report-lens" aria-label={m.report(head.title)}>
+  return <section className="lens report-lens" aria-label={m.report(title)}>
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind report-kind">{head.kind}</b>
-        <h2 lang={head.titleLang}>{head.title}</h2>
-        <span className="lens-basis">{m.filed(head.form, head.filed)}<SourceLanguage of={head.sourceTexts} /></span>
+        <h2 lang={artifact?.lang ?? head.titleLang}>{title}</h2>
+        <span className="lens-basis">{m.filed(head.form, head.filed)}{artifact ? <ArtifactLanguage artifact={artifact} /> : <SourceLanguage of={head.sourceTexts} />}</span>
       </div>
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="report-document earning-report">
-      {artifact ? <ArtifactFrame artifact={artifact} />
+      {artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} />
         : detail ? <SecReportDocument {...filingPresentation(detail, ticker)} embedded />
         : failed ? <p className="lens-empty">{m.loadFailed}</p>
         : <p className="lens-empty">{m.loading}</p>}

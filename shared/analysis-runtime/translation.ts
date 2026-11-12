@@ -11,7 +11,7 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "item" | "valuation";
+export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "item" | "valuation" | "artifact";
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -28,6 +28,8 @@ type Rule = {
 
 const set = (...values: string[]) => new Set(values);
 const RULES: Record<TranslatedResource, Rule> = {
+  // Artifact prose is extracted and reconstructed by the artifact localizer, never by this JSON walker.
+  artifact: { keys: set(), skip: set() },
   // The statement's descriptive sentences: what each business is, who buys, how it charges, the basis. Names and figures are data.
   flow: { keys: set("description", "customers", "monetization", "disclosure", "basisLabel"), skip: set("sources", "figures", "name", "products", "lineage", "amount", "revenue", "expenseComponents", "otherComponents", "revenueAdjustments") },
   // Findings with their lens documents (the analyst dossier is merged in): titles, judgments, watches, prose,
@@ -77,6 +79,19 @@ const isText = (s: string, rule: Rule) => /[A-Za-z]/.test(s.replace(/\{(?:value|
  */
 function walk(value: unknown, rule: Rule, visit: (text: string) => string | undefined, key: string | null = null): unknown {
   if (typeof value === "string") {
+    if (value.length > MAX_UNIT) {
+      const parts: string[] = [];
+      let start = 0;
+      while (start < value.length) {
+        let end = Math.min(start + 6000, value.length);
+        if (end < value.length) { const boundary = value.lastIndexOf("\n", end); const space = value.lastIndexOf(" ", end); const split = boundary > start ? boundary : space; if (split > start) end = split + 1; }
+        const part = value.slice(start, end), text = part.trim();
+        const translated = text ? walk(text, rule, visit, key) : text;
+        parts.push(typeof translated === "string" && translated !== text ? part.replace(text, () => translated) : part);
+        start = end;
+      }
+      return parts.join("");
+    }
     if (key == null || (rule.keys ? !rule.keys.has(key) : false) || !isText(value, rule)) return value;
     return visit(value) ?? value;
   }

@@ -1,4 +1,4 @@
-import { TRANSLATION_VERSION, translationPlan } from "../translation/translate.ts";
+import { TRANSLATION_VERSION, translationPlan, readSources } from "../translation/translate.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
@@ -30,7 +30,7 @@ export const TRANSLATION_TASKS = {
       if (env.TRANSLATION_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "translation disabled" } };
       const outcome = await driveWorkflow(env, `translate:${ticker}`, env.TRANSLATE_WORKFLOW, async () => {
         if (await budgetSpent(env, now)) return { status: "later", afterMs: untilTomorrow(now), detail: { waiting: "daily translation budget" } };
-        const plan = await translationPlan(env.DB!, ticker);
+        const plan = await translationPlan(env.DB!, ticker, "zh-CN", () => readSources(env.DB!, ticker, env));
         if (!plan) return null;
         const stalled = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string; runs: number }>(stalledKey(ticker)))?.payload;
         if (stalled?.fingerprint === plan.fingerprint && stalled.runs >= STALLED_RUNS) return { status: "done", detail: { skipped: "the same strings stayed untranslated after repeated runs" } };
@@ -41,7 +41,7 @@ export const TRANSLATION_TASKS = {
       // A finished run leaves work when the budget stopped it, the model was unavailable, or the publications changed
       // while it ran: tomorrow for the budget, otherwise in half an hour (a new publication brings its own event sooner).
       if (outcome.status === "done" && (outcome.detail as { workflow?: string } | undefined)?.workflow === "complete") {
-        const remaining = await translationPlan(env.DB!, ticker);
+        const remaining = await translationPlan(env.DB!, ticker, "zh-CN", () => readSources(env.DB!, ticker, env));
         const repository = new D1SecRepository(env.DB!);
         if (!remaining) { await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(stalledKey(ticker)).run(); return outcome; }
         if (await budgetSpent(env, now)) return { status: "later", afterMs: untilTomorrow(now), detail: { remaining: true, waiting: "daily translation budget" } };

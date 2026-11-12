@@ -140,19 +140,20 @@ async function openBrowser(binding: BrowserWorker): Promise<Browser> {
   return puppeteer.launch(binding, { keep_alive: 120_000 });
 }
 
-async function artifactFrame(page: Page): Promise<{ frame: Frame; rect: { x: number; y: number; width: number; height: number } } | null> {
+async function artifactFrame(page: Page, expectedHash?: string): Promise<{ frame: Frame; rect: { x: number; y: number; width: number; height: number } } | null> {
   // The frame is brought into view first: a browser paints an off-screen cross-origin frame late or not at all.
-  await page.waitForSelector("iframe[data-artifact-frame]", { timeout: LOAD_MS });
-  await page.$eval("iframe[data-artifact-frame]", el => el.scrollIntoView({ block: "start" }));
-  await page.waitForSelector("iframe[data-artifact-frame][data-rendered]", { timeout: LOAD_MS });
-  const rect = await page.$eval("iframe[data-artifact-frame][data-rendered]", el => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; });
+  const selector = expectedHash ? `iframe[data-artifact-frame][data-artifact-hash="${expectedHash}"]` : "iframe[data-artifact-frame]";
+  await page.waitForSelector(selector, { timeout: LOAD_MS });
+  await page.$eval(selector, el => el.scrollIntoView({ block: "start" }));
+  await page.waitForSelector(`${selector}[data-rendered]`, { timeout: LOAD_MS });
+  const rect = await page.$eval(`${selector}[data-rendered]`, el => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height }; });
   const frame = page.frames().find(f => f.url().includes("/artifact-frame"));
   return frame ? { frame, rect } : null;
 }
 
 type Pass = { viewport: Viewport; measured: Measured; frameRect: { x: number; y: number; width: number; height: number }; shots: Array<{ block: string; part: number; height: number; image: ImageInput }> };
 
-async function renderPass(browser: Browser, url: string, viewport: Viewport, errors: string[]): Promise<Pass> {
+async function renderPass(browser: Browser, url: string, viewport: Viewport, errors: string[], expectedHash?: string): Promise<Pass> {
   const page = await browser.newPage();
   page.on("pageerror", (e: unknown) => errors.push(`${viewport.name}: script error ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)));
   try {
@@ -161,7 +162,7 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     await page.evaluateOnNewDocument(`try { localStorage.setItem("business-map-theme", ${JSON.stringify(viewport.dark ? "dark" : "light")}); } catch (e) {}`);
     // The drawn frame is what the review waits for; other parts of the page may keep loading (pictures, scripts).
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_MS });
-    const found = await artifactFrame(page).catch(async (error: unknown) => {
+    const found = await artifactFrame(page, expectedHash).catch(async (error: unknown) => {
       // What the page showed instead, so a frame that never drew says why.
       const seen = await page.evaluate(`(() => ({ lens: !!document.querySelector("section.lens"), frames: document.querySelectorAll("iframe[data-artifact-frame]").length, rendered: document.querySelectorAll("iframe[data-artifact-frame][data-rendered]").length, path: location.pathname + location.search.replace(/artifact-preview=[^&]+/, "artifact-preview=…"), text: (document.body.innerText || "").replace(/\\s+/g, " ").slice(0, 160) }))()`).catch(() => null);
       console.log(JSON.stringify({ event: "artifact-qa-page", viewport: viewport.name, url, seen, errors: errors.slice(-3) }));
@@ -209,7 +210,7 @@ export const visualPasses = (scores: Record<string, number> | null) => !!scores 
  * One review of a draft. `url` opens it in the real stage; `blocks` are the ids the review may name. The design review
  * is skipped, not failed, when Anthropic is not configured; the result says so through `scores: null`.
  */
-export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_API_KEY?: string; DB?: D1Database }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }): Promise<QaResult> {
+export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_API_KEY?: string; DB?: D1Database }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }, options: { visual?: boolean; expectedHash?: string } = {}): Promise<QaResult> {
   if (!env.BROWSER) return { issues: [], scores: null, unavailable: "no browser binding", shots: 0 };
   const errors: string[] = [];
   let browser: Browser;
@@ -219,7 +220,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
     for (const viewport of VIEWPORTS) {
       // The stage reloads its frame when the company's data moves under it; a width that lost its frame is tried once more.
       for (let attempt = 0; attempt < 2; attempt++) {
-        try { passes.push(await renderPass(browser, url, viewport, errors)); break; }
+        try { passes.push(await renderPass(browser, url, viewport, errors, options.expectedHash)); break; }
         catch (error) {
           if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 2500)); continue; }
           errors.push(`${viewport.name}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300));
@@ -242,7 +243,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
   let scores: Record<string, number> | null = null;
   // First parts before second parts, so every width shows every block before the limit is reached.
   const images = passes.flatMap((p, order) => p.shots.map(s => ({ ...s, viewport: p.viewport.name, order }))).sort((a, b) => a.part - b.part || a.order - b.order).slice(0, MAX_IMAGES);
-  if (anthropicConfigured(env) && images.length) {
+  if (options.visual !== false && anthropicConfigured(env) && images.length) {
     const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {

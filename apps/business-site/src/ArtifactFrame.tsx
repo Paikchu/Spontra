@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactFrameMessage, PublishedArtifact } from "@/shared/analysis-contract/artifact";
-import { getLocale } from "@/packages/web/src/i18n";
+import { ArtifactLanguage } from "./ArtifactLanguage";
 
 const isDark = () => !document.documentElement.classList.contains("light");
 
@@ -10,11 +10,14 @@ const isDark = () => !document.documentElement.classList.contains("light");
  * frame to the height it reports, and opens the links it forwards. `data-rendered` tells the visual review the report
  * has drawn.
  */
-export function ArtifactFrame({ artifact }: { artifact: Pick<PublishedArtifact, "id" | "version" | "title" | "html" | "css"> }) {
-  return <Frame key={`${artifact.id}:${artifact.version}`} artifact={artifact} />;
+export function ArtifactFrame({ artifact, showLanguage = true }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css">; showLanguage?: boolean }) {
+  return <>
+    {showLanguage && <div className="artifact-language-row"><ArtifactLanguage artifact={artifact} /></div>}
+    <Frame key={`${artifact.id}:${artifact.lang}:${artifact.hash}`} artifact={artifact} />
+  </>;
 }
 
-function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html" | "css"> }) {
+function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html" | "css" | "lang" | "hash"> }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false), [height, setHeight] = useState(480);
   const post = (message: ArtifactFrameMessage) => frame.current?.contentWindow?.postMessage(message, "*");
@@ -34,7 +37,7 @@ function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html
   useEffect(() => {
     if (!ready || drawn.current) return;
     drawn.current = true;
-    post({ type: "artifact:render", html: artifact.html, css: artifact.css, dark: isDark(), lang: getLocale() });
+    post({ type: "artifact:render", html: artifact.html, css: artifact.css, dark: isDark(), lang: artifact.lang });
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const observer = new MutationObserver(() => post({ type: "artifact:theme", dark: isDark() }));
@@ -42,6 +45,6 @@ function Frame({ artifact }: { artifact: Pick<PublishedArtifact, "title" | "html
     return () => observer.disconnect();
   }, []);
   return <iframe ref={frame} className="artifact-frame" src="/artifact-frame" sandbox="allow-scripts" title={artifact.title}
-    data-artifact-frame="" data-rendered={rendered ? "" : undefined} style={{ height }}
+    data-artifact-frame="" data-artifact-hash={artifact.hash} data-rendered={rendered ? "" : undefined} style={{ height }}
     onLoad={() => { if (!drawn.current) post({ type: "artifact:ping" }); }} />;
 }

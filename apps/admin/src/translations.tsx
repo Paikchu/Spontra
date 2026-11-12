@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
-import type { TranslationEntry, TranslationsAdmin } from "@/shared/analysis-contract/translations-admin";
+import type { TranslationEntry, TranslationsAdmin, TranslationStarted } from "@/shared/analysis-contract/translations-admin";
 import type { TranslatedResource } from "@/shared/analysis-runtime/translation";
 import { adminApi, AdminApiError } from "./admin-api";
 import { usePageActive } from "./admin-page";
 
 const RESOURCE: Record<TranslatedResource, string> = {
   flow: "业务地图说明", findings: "要点与分析师", explainer: "业务解读", tree: "业务脑图",
-  events: "事件摘要", filings: "财报列表", filing: "完整财报", item: "文件分析", valuation: "估值评估",
+  events: "事件摘要", filings: "财报列表", filing: "完整财报", item: "文件分析", valuation: "估值评估", artifact: "HTML 报告",
 };
 const STATUS: Record<TranslationEntry["status"], [string, string]> = { ready: ["已翻译", "reviewed"], rejected: ["未通过", "failed"], pending: ["待翻译", "processing"] };
+const PUBLICATION = { pending: "待翻译", translating: "翻译中", checking: "检查中", ready: "已发布", failed: "未通过" };
 type Filter = "all" | TranslationEntry["status"];
 const date = (value?: string | null) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
 const label = (resource: TranslatedResource, scope: string) => scope ? `${RESOURCE[resource]} ${scope}` : RESOURCE[resource];
@@ -18,6 +19,8 @@ const label = (resource: TranslatedResource, scope: string) => scope ? `${RESOUR
 export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; onUnauthorized: () => void }) {
   const [data, setData] = useState<TranslationsAdmin | null>(null), [error, setError] = useState(""), [refresh, setRefresh] = useState(0);
   const [filter, setFilter] = useState<Filter>("all"), [resource, setResource] = useState(""), [search, setSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false), [queued, setQueued] = useState(false), [triggerError, setTriggerError] = useState("");
+  const requestId = useRef<string | null>(null);
   const unauthorized = useRef(onUnauthorized);
   useEffect(() => { unauthorized.current = onUnauthorized; }, [onUnauthorized]);
   useEffect(() => {
@@ -27,7 +30,21 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     return () => c.abort();
   }, [ticker, refresh]);
   const shown = usePageActive();
-  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, data?.run ? 10000 : 300000); return () => clearInterval(timer); }, [data?.run, shown]);
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, data?.run || queued ? 10000 : 300000); return () => clearInterval(timer); }, [data?.run, queued, shown]);
+  useEffect(() => { if (data?.run) setQueued(false); }, [data?.run]);
+  useEffect(() => { requestId.current = null; setQueued(false); setTriggerError(""); }, [ticker]);
+  const translate = async () => {
+    setSubmitting(true); setTriggerError("");
+    requestId.current ??= crypto.randomUUID();
+    try {
+      await adminApi<TranslationStarted>(`ai/companies/${ticker}/translations`, { method: "POST", body: JSON.stringify({ requestId: requestId.current }) });
+      requestId.current = null;
+      setQueued(true); setRefresh(n => n + 1);
+    } catch (error) {
+      if (error instanceof AdminApiError && error.status === 401) unauthorized.current();
+      else setTriggerError(error instanceof Error ? error.message : "翻译任务未能提交");
+    } finally { setSubmitting(false); }
+  };
   const entries = useMemo(() => (data?.entries ?? []).filter(e => (filter === "all" || e.status === filter) && (!resource || `${e.resource}:${e.scope}` === resource)
     && (!search || e.source.toLowerCase().includes(search.toLowerCase()) || (e.text ?? "").includes(search))), [data, filter, resource, search]);
 
@@ -40,14 +57,21 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     <header className="ai-head">
       <div><h2>{data.ticker} · 中文译文</h2>
         <p>已翻译 {translated} / {total} 条 · 未通过 {rejected} · 今日模型调用 {data.budget.used} / {data.budget.cap}（全部公司）· {data.run ? `运行中，开始于 ${date(data.run.startedAt)}` : "空闲"} · {data.enabled ? "自动翻译已开启" : "自动翻译未开启"} · {data.version}</p></div>
-      <div className="ai-trigger"><button className="fm-button" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={15} />刷新</button></div>
+      <div className="ai-trigger">
+        <button className="fm-button" disabled={submitting || !!data.run || !data.enabled} onClick={() => void translate()}>{submitting ? "提交中" : "翻译现有报告"}</button>
+        <button className="fm-button" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={15} />刷新</button>
+      </div>
     </header>
+    <p className="ai-hint">仅翻译已发布内容</p>
+    {queued && <p className="ai-hint" role="status">翻译任务已加入队列</p>}
+    {triggerError && <p className="ra-error" role="alert">{triggerError}</p>}
     <h3>各资源</h3>
     <div className="bm-admin-table-wrap"><table className="bm-admin-table tr-table">
-      <thead><tr><th>资源</th><th>已翻译</th><th>未通过</th><th>待翻译</th><th>译文表更新</th></tr></thead>
+      <thead><tr><th>资源</th><th>已翻译</th><th>未通过</th><th>待翻译</th><th>发布状态</th><th>译文表更新</th></tr></thead>
       <tbody>{data.resources.map(r => <tr key={`${r.resource}:${r.scope}`}>
         <td><button className="tr-link" onClick={() => setResource(v => v === `${r.resource}:${r.scope}` ? "" : `${r.resource}:${r.scope}`)} aria-pressed={resource === `${r.resource}:${r.scope}`}>{label(r.resource, r.scope)}</button></td>
-        <td>{r.translated} / {r.total}</td><td>{r.rejected || "—"}</td><td>{r.total - r.translated - r.rejected || "—"}</td><td>{date(r.publishedAt)}</td>
+        <td>{r.translated} / {r.total}</td><td>{r.rejected || "—"}</td><td>{r.total - r.translated - r.rejected || "—"}</td>
+        <td>{r.publication ? PUBLICATION[r.publication.status] : "—"}{r.publication?.error && <small className="ra-error">{r.publication.error}</small>}</td><td>{date(r.publishedAt)}</td>
       </tr>)}</tbody>
     </table></div>
     <div className="tr-filters">

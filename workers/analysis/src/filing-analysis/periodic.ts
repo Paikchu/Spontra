@@ -266,7 +266,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const result = compilePoints({ id, title, aspect: args.aspect === "square" ? "square" : "wide", span: months === 12 ? "fiscal_year" : "quarter", mark: args.type === "line" ? "line" : "bar", series });
         if (!result.chart) return fail(`The chart did not compile:\n${result.errors.map(e => `- ${e}`).join("\n")}`);
         const width = 720;
-        state.composer.charts[id] = { id, title: result.chart.title ?? title, svg: renderChartSvg(result.chart, { width, height: chartHeight(width, result.chart.aspect) }, { still: true }), points: [] };
+        state.composer.charts[id] = { id, title: result.chart.title ?? title, svg: renderChartSvg(result.chart, { width, height: chartHeight(width, result.chart.aspect) }, { still: true }), points: [], compiled: result.chart };
         (s.charted ??= []).push(id);
         return ok(`Chart "${id}" compiled. Place it with <figure data-chart="${id}"></figure>. Points drawn (series | period | value | cite as):\n${lines.join("\n")}`);
       }),

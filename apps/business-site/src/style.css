@@ -90,6 +90,9 @@ button { cursor: pointer; }
   display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px;
   font-size: 12px; font-weight: 500; line-height: 1; color: var(--faint); white-space: nowrap; vertical-align: middle;
 }
+.artifact-language-row { margin: 0 0 12px; }
+.artifact-language { margin-inline-start: 8px; }
+.artifact-language-row .artifact-language { margin-inline-start: 0; }
 .rail-list { display: flex; flex-direction: column; gap: 0; }
 /* The rail's rhythm: every row, business, finding or filing, is one 28px line. */
 :root { --row-h: 28px; }

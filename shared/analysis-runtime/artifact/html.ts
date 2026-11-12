@@ -139,7 +139,7 @@ export function layoutProblems(nodes: HtmlNode[]): string[] {
   const walk = (list: HtmlNode[], inCard: boolean) => {
     for (const node of list) {
       if (node.type === "text") {
-        const long = node.text.split(/[\s\-\/–—]+/).find(w => w.length > L.wordChars);
+        const long = node.text.split(/[\s\-\/–—\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]+/).find(w => w.length > L.wordChars);
         if (long) out.push(`"${long.slice(0, 30)}…" is ${long.length} characters with no place to break; it will run past a phone's width. Shorten it or put spaces in it`);
         continue;
       }

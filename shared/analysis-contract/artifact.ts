@@ -1,3 +1,6 @@
+import type { CompiledChart } from "./lens-frame.ts";
+import type { Locale } from "../analysis-runtime/locale.ts";
+
 /**
  * Analysis artifacts (docs/analysis-html-artifact.md): every analysis builds one HTML document of blocks, written with
  * shadcn/ui data-display markup and Tailwind classes, rendered in the `/artifact-frame` sandbox. This file is the
@@ -126,7 +129,14 @@ export type ArtifactBlock = {
 };
 
 /** A compiled chart the document embeds; `svg` is drawn by the harness, `chart` feeds the frame's hover values. */
-export type ArtifactChart = { id: string; title: string; svg: string; points: Array<{ series: string; period: string; text: string }> };
+export type ArtifactChart = {
+  id: string;
+  title: string;
+  svg: string;
+  points: Array<{ series: string; period: string; text: string }>;
+  /** Frozen values and scales let another language redraw the same chart without reading newer financial data. */
+  compiled?: CompiledChart;
+};
 
 export type ArtifactDocument = {
   schema: typeof ARTIFACT_SCHEMA;
@@ -142,6 +152,10 @@ export type ArtifactDocument = {
   sources: Array<{ id: string; title: string; url: string | null; kind: "sec" | "web" | "data" }>;
 };
 
+export type ArtifactTranslation =
+  | { locale: "zh-CN"; status: "ready" }
+  | { locale: "zh-CN"; status: "pending" | "translating" | "checking" | "failed"; completed: number; total: number };
+
 /** A published artifact as the map reads it: the HTML the frame renders, the CSS compiled for its classes, and what it is. */
 export type PublishedArtifact = {
   id: string;
@@ -150,6 +164,8 @@ export type PublishedArtifact = {
   subject: string;
   version: number;
   title: string;
+  lang: Locale;
+  translation: ArtifactTranslation | null;
   html: string;
   css: string;
   hash: string;

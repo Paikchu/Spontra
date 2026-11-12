@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
+import { useLocale } from "@/packages/web/src/i18n";
 
 /**
  * A draft the visual review opened through its signed preview link (`?artifact-preview=`): it takes the published
@@ -26,16 +27,17 @@ export function usePreview(kind: PublishedArtifact["kind"], subject: string | nu
  * when there is none. `rev` (when it was published) keys the read, so a newer artifact is a new address.
  */
 export function usePublishedArtifact(ticker: string, path: string | null, rev?: string | null): PublishedArtifact | null {
-  const [artifact, setArtifact] = useState<PublishedArtifact | null>(null);
+  const [loaded, setLoaded] = useState<{ ticker: string; path: string; artifact: PublishedArtifact } | null>(null);
+  const locale = useLocale();
   useEffect(() => {
-    setArtifact(null);
     if (!path) return;
     const controller = new AbortController();
-    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${rev ? `?rev=${encodeURIComponent(rev)}` : ""}`, { signal: controller.signal })
+    const params = new URLSearchParams({ schema: "artifact-i18n-v1", ...locale === "en" ? {} : { lang: locale }, ...rev ? { rev } : {} });
+    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${params.size ? `?${params}` : ""}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<{ artifact?: PublishedArtifact | null }> : null)
-      .then(body => { if (!controller.signal.aborted && body?.artifact) setArtifact(body.artifact); })
+      .then(body => { if (!controller.signal.aborted && body?.artifact) setLoaded({ ticker, path, artifact: body.artifact }); })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [ticker, path, rev]);
-  return artifact;
+  }, [ticker, path, rev, locale]);
+  return loaded?.ticker === ticker && loaded.path === path ? loaded.artifact : null;
 }

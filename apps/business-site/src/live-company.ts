@@ -184,6 +184,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
   const [closed, setClosed] = useState(false);
   /** How many updates the reader took, so lists can tell rows an update brought from rows that loaded late. */
   const [updates, setUpdates] = useState(0);
+  const [revisions, setRevisions] = useState<MapRevisions>({});
   /** The events block's own state, so a failed events read does not take the map down with it. */
   const [eventsPhase, setEventsPhase] = useState<"ready" | "loading" | "error">("loading");
   /** The revisions of what is on screen, per resource that was read; null until the first read has started. */
@@ -215,6 +216,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
           setReady(true);
           if (finished) setSettled(true);
           shown.current = result.revisions;
+          setRevisions(result.revisions);
           companyRevision.current = result.companyRevision;
         };
         let primaryShown = false;
@@ -265,6 +267,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         const read = await readRevisions(resources, latest, current.current, (r, rev) => readResource(ticker, r, rev, signal));
         if (signal.aborted) return;
         shown.current = { ...shown.current, ...read.same, ...read.filled.revisions };
+        setRevisions(shown.current);
         if (Object.keys(read.filled.patch).length) {
           if (read.filled.patch.events) setEventsPhase("ready");
           setData(d => ({ ...d, ...read.filled.patch }));
@@ -294,6 +297,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     setData(d => ({ ...d, ...update.patch }));
     setUpdates(n => n + 1);
     shown.current = { ...shown.current, ...update.revisions };
+    setRevisions(shown.current);
     setPending(null);
     setClosed(true);
   }, []);
@@ -324,5 +328,5 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     }).catch(() => {}).finally(() => retries.current.delete(controller));
   }, [ticker]);
   const update = closed ? null : pending;
-  return { moduleErrors, retryModule, rateLimited, data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
+  return { moduleErrors, retryModule, rateLimited, data, updates, revisions, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
 }

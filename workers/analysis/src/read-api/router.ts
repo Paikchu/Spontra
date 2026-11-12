@@ -191,20 +191,20 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
       // The filing's report as an artifact, when the filing path composed one (docs/analysis-html-artifact.md); the summary stays for older readers.
-      const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber).catch(() => null);
+      const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber, locale);
       return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
     case "artifact": {
       if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       const ticker = route.ticker.trim().toUpperCase();
-      const published = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, route.artifactKind, ticker, ticker);
+      const published = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, route.artifactKind, ticker, ticker, locale);
       return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     }
     case "dossier-artifact": {
       if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       const ticker = route.ticker.trim().toUpperCase();
       const findings = await readStoredFindings(database, ticker).catch(() => null);
-      const published = findings?.fingerprint ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, dossierSubject(findings.fingerprint, route.findingId)) : null;
+      const published = findings?.fingerprint ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, dossierSubject(findings.fingerprint, route.findingId), locale) : null;
       return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     }
     case "business-flow": {

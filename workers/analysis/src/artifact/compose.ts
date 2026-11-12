@@ -427,7 +427,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const result = compileChart(spec, setup.chart!.data, setup.chart!.periodEnd);
       if (!result.chart) return fail(`The chart did not compile:\n${result.errors.map(e => `- ${e}`).join("\n")}`);
       const width = 720, svg = renderChartSvg(result.chart, { width, height: chartHeight(width, result.chart.aspect) }, { still: true });
-      state.composer.charts[spec.id] = { id: spec.id, title: result.chart.title ?? spec.title ?? "", svg, points: [] };
+      state.composer.charts[spec.id] = { id: spec.id, title: result.chart.title ?? spec.title ?? "", svg, points: [], compiled: result.chart };
       return ok(`Chart "${spec.id}" compiled${result.notes.length ? ` (${result.notes.join("; ")})` : ""}. Place it with <figure data-chart="${spec.id}"></figure>.`);
     })] : []),
     tool<S>("view_issue", "Show the open problems of one block, with the viewport and design scores where they came from the rendering.", { id: { type: "string" } }, ["id"], (a, state) => {

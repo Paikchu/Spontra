@@ -1,9 +1,10 @@
-import type { TranslationEntry, TranslationsAdmin } from "../../../../shared/analysis-contract/translations-admin.ts";
+import type { TranslationEntry, TranslationResourceSummary, TranslationsAdmin } from "../../../../shared/analysis-contract/translations-admin.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { readSources, tableKey, TRANSLATION_VERSION, type TranslationSource } from "./translate.ts";
 import { sha256 } from "../sha256.ts";
+import { readArtifactTranslation } from "../artifact/store.ts";
 
 const MAX_ENTRIES = 1500;
 const DEFAULT_DAILY_CALLS = 300;
@@ -15,7 +16,7 @@ type Row = { source_sha256: string; text: string | null; status: "ready" | "reje
  * rejected. Read-only; computed from the same sources the translator reads.
  */
 export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = new Date(), locale: Locale = "zh-CN",
-  read: () => Promise<TranslationSource[]> = () => readSources(env.DB!, ticker)): Promise<TranslationsAdmin> {
+  read: () => Promise<TranslationSource[]> = () => readSources(env.DB!, ticker, env)): Promise<TranslationsAdmin> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const sources = await read();
@@ -33,7 +34,7 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
     repository.getCache<{ instanceId: string; startedAt: string }>(`pipeline:workflow:translate:${ticker}`).catch(() => null),
   ]);
   const entries: TranslationEntry[] = [];
-  const resources = await Promise.all(sources.map(async source => {
+  const resources = await Promise.all(sources.map(async (source): Promise<TranslationResourceSummary> => {
     let translated = 0, rejected = 0;
     for (const text of source.strings) {
       const row = rows.get(hashOf.get(text)!);
@@ -41,8 +42,13 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
       if (status === "ready") translated++; else if (status === "rejected") rejected++;
       entries.push({ resource: source.resource, scope: source.scope, source: text, text: row?.text ?? null, status, problems: row?.problems ? JSON.parse(row.problems) as string[] : [], at: row?.created_at ?? null });
     }
+    if (source.resource === "artifact") {
+      const row = await readArtifactTranslation(env, source.artifact.id, source.artifact.stored.document.version, source.artifact.stored.hash);
+      return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected,
+        publishedAt: row?.status === "ready" ? row.updated_at : null, publication: { status: row?.status ?? "pending", error: row?.error ?? null } };
+    }
     const table = (await repository.getCache<{ at: string }>(tableKey(locale, source.resource, ticker, source.scope)).catch(() => null))?.payload;
-    return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected, publishedAt: table?.at ?? null };
+    return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected, publishedAt: table?.at ?? null, publication: null };
   }));
   const order = { rejected: 0, pending: 1, ready: 2 } as const;
   entries.sort((a, b) => order[a.status] - order[b.status]);

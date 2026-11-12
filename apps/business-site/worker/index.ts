@@ -237,13 +237,14 @@ export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch,local
 
 /** One filing with its full published report, for the in-page reader; only the documented envelope passes through. */
 /** A published analysis artifact for a company, or null. */
-export async function loadArtifact(ticker:string,kind:string,fetcher:typeof fetch=fetch):Promise<PublishedArtifact|null>{
- const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/artifacts/${kind}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+export async function loadArtifact(ticker:string,kind:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublishedArtifact|null>{
+ const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/artifacts/${kind}`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
  if(response.status===404)return null;
  if(!response.ok)throw new Error("Artifact source unavailable");
  const body=await response.json() as {artifact?:PublishedArtifact|null};
  return body.artifact&&typeof body.artifact.html==="string"&&body.artifact.ticker===ticker?body.artifact:null;
 }
+const artifactSettled=(artifact:PublishedArtifact)=>!artifact.translation||artifact.translation.status==="ready";
 export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDetail|null>{
  if(!ACCESSION.test(accession))return null;
   const query=snapshot?"?"+new URLSearchParams(snapshot):"";
@@ -477,13 +478,15 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang","rev"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang","rev","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
   // `?lang=zh-CN` reads the generated prose in Chinese where it has been translated; the cache keys on the full URL.
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
+  const schema=url.searchParams.get("schema");
+  if(schema!=null&&schema!=="artifact-i18n-v1")return json({error:"Not found"},404);
   const locale:Locale|null=isLocale(lang)&&lang!=="en"?lang:null;
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
@@ -510,13 +513,13 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const key=new Request(url.href,{method:"GET"});const cached=privateRead?undefined:await cache?.match(key);if(cached)return cached;
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
-   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
+   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>,cacheable?:(body:T)=>boolean)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});const canCache=!!body&&(!cacheable||cacheable(body));if(!canCache)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&canCache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{}});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
-   // The company analysis composed as an artifact (docs/analysis-html-artifact.md); English until artifacts are translated.
-   if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher));
-   if(match[2].startsWith("/artifacts/dossier/"))return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher));
+   // The company analysis and dossiers select a translated artifact for the reader's locale.
+   if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);
+   if(match[2].startsWith("/artifacts/dossier/"))return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher,locale),artifactSettled);
    if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
    if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
@@ -527,7 +530,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);
-    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
+    const response=json(body);const canCache=!body.artifact||artifactSettled(body.artifact);if(!canCache)response.headers.set("cache-control","no-store");if(cache&&canCache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
