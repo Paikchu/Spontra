@@ -7,7 +7,8 @@ import type { TaskName } from "./registry.ts";
  * decides for that company whatever the project's says (only Cloudflare on, or everything but Cloudflare). Off for a
  * company, SEC discovery announces none of its filings, a deployment's new task version queues no re-run for it, and a run
  * of its queued before the switch went off is held when its turn comes; all of it goes out once the company is on again.
- * A request made while it is off, and what that request leads to, runs as usual. A task that belongs to no company
+ * A generation request made while it is off, and what that request leads to, runs as usual; translation always waits
+ * for the company's switch to be on. A task that belongs to no company
  * (`*`) follows the project's switch. A failed read propagates, so an unreadable switch never counts as on.
  */
 export type ScheduledAnalysisPauses = {

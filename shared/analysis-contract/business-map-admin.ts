@@ -51,7 +51,8 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
 };
 /**
  * `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags).
- * `scheduledAnalysis`: whether new filings and new task versions start analysis on their own; manual runs ignore it.
+ * `scheduledAnalysis`: whether new filings and new task versions start analysis on their own; manual generation ignores
+ * it. Publication translation, including manual retries, requires it to be on.
  * A company's own `scheduledAnalysis` is what applies to it: its own switch where it has one, the project's otherwise.
  */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; scheduledAnalysis: boolean; generation: Record<Feature, boolean> };

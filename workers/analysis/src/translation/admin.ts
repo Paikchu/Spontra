@@ -5,17 +5,17 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { readSources, tableKey, TRANSLATION_VERSION, type TranslationSource } from "./translate.ts";
 import { sha256 } from "../sha256.ts";
 import { previewToken, readArtifactTranslation } from "../artifact/store.ts";
+import { translationScheduled } from "./scheduling.ts";
 
 const MAX_ENTRIES = 1500;
-const DEFAULT_DAILY_CALLS = 300;
 type Row = { source_sha256: string; text: string | null; status: "ready" | "rejected"; problems: string | null; created_at: string };
 
 /**
  * What the admin shows for one company's Chinese: per resource how much is translated and when its table was
- * written, today's model calls, the run in progress, and every string with its translation or the reasons it was
+ * written, the run in progress, and every string with its translation or the reasons it was
  * rejected. Read-only; computed from the same sources the translator reads.
  */
-export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = new Date(), locale: Locale = "zh-CN",
+export async function translationsAdmin(env: AnalysisEnv, ticker: string, locale: Locale = "zh-CN",
   read: () => Promise<TranslationSource[]> = () => readSources(env.DB!, ticker, env)): Promise<TranslationsAdmin> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
@@ -28,10 +28,9 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
     for (const row of (await db.prepare("SELECT source_sha256, text, status, problems, created_at FROM i18n_strings WHERE locale = ? AND source_sha256 IN (SELECT value FROM json_each(?))")
       .bind(locale, JSON.stringify(hashes.slice(i, i + 500))).all<Row>()).results) rows.set(row.source_sha256, row);
   }
-  const day = now.toISOString().slice(0, 10);
-  const [budget, started] = await Promise.all([
-    db.prepare("SELECT units FROM feature_budget WHERE day = ? AND feature = 'translate-calls'").bind(day).first<{ units: number }>().catch(() => null),
+  const [started, scheduled] = await Promise.all([
     repository.getCache<{ instanceId: string; startedAt: string }>(`pipeline:workflow:translate:${ticker}`).catch(() => null),
+    translationScheduled(env, ticker),
   ]);
   const entries: TranslationEntry[] = [];
   const resources = await Promise.all(sources.map(async (source): Promise<TranslationResourceSummary> => {
@@ -59,8 +58,7 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
   const order = { rejected: 0, pending: 1, ready: 2 } as const;
   entries.sort((a, b) => order[a.status] - order[b.status]);
   return {
-    ticker, locale, version: TRANSLATION_VERSION, enabled: env.TRANSLATION_ENABLED !== "false" && !!env.DEEPSEEK_API_KEY,
-    budget: { day, used: budget?.units ?? 0, cap: Number(env.TRANSLATION_DAILY_CALLS) || DEFAULT_DAILY_CALLS },
+    ticker, locale, version: TRANSLATION_VERSION, scheduled, enabled: scheduled && env.TRANSLATION_ENABLED !== "false" && !!env.DEEPSEEK_API_KEY,
     run: started?.payload ?? null,
     resources: resources.filter(r => r.total > 0 || r.publishedAt),
     entries: entries.slice(0, MAX_ENTRIES), truncated: entries.length > MAX_ENTRIES,

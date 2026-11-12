@@ -25,6 +25,7 @@ import { sha256 } from "../sha256.ts";
 import { scopeTickers } from "../pipeline/router.ts";
 import { contentPublishedStatement } from "../publication/publish.ts";
 import { flushOutbox } from "../pipeline/outbox.ts";
+import { scheduledAnalysisPauses } from "../pipeline/scheduled-analysis.ts";
 
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const translationRequest = z.object({ requestId: z.string().regex(UUID) });
@@ -152,6 +153,7 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
 async function startTranslation(request: Request, env: AnalysisEnv, db: D1Database, ticker: string, now: number): Promise<Response> {
   const parsed = translationRequest.safeParse(await request.json());
   if (!parsed.success) return json({ error: "操作参数无效。" }, 400);
+  if ((await scheduledAnalysisPauses(db)).at(ticker) !== null) return json({ error: "该公司的定时任务已关闭，翻译已暂停。" }, 409);
   if (env.TRANSLATION_ENABLED === "false") return json({ error: "中文翻译已关闭。" }, 503);
   if (!env.DEEPSEEK_API_KEY || !env.TRANSLATE_WORKFLOW) return json({ error: "翻译工作流尚未配置。" }, 503);
   if (!env.PIPELINE_EVENTS) return json({ error: "发布通知队列未配置。" }, 503);
@@ -203,12 +205,12 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       })));
       return json({ companies } satisfies AiCompanies);
     }
-    // The company's Chinese: coverage per resource, today's budget and every string with its translation.
+    // The company's Chinese: coverage per resource and every string with its translation.
     const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations$/.exec(path);
     if (translations && (request.method === "GET" || request.method === "POST")) {
       if (!(await scopeTickers(env, "publication")).includes(translations[1]!)) return json({ error: "该公司没有已发布内容。" }, 404);
       if (request.method === "POST") return startTranslation(request, env, db, translations[1]!, now);
-      return json(await translationsAdmin(env, translations[1]!, new Date(now)));
+      return json(await translationsAdmin(env, translations[1]!));
     }
     const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|explainer|tree|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);

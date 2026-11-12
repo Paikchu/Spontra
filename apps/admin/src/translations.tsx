@@ -15,7 +15,7 @@ type Filter = "all" | TranslationEntry["status"];
 const date = (value?: string | null) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
 const label = (resource: TranslatedResource, scope: string) => scope ? `${RESOURCE[resource]} ${scope}` : RESOURCE[resource];
 
-/** One company's Chinese: coverage per resource, today's model calls, and every string beside its translation. */
+/** One company's Chinese: coverage per resource and every string beside its translation. */
 export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; onUnauthorized: () => void }) {
   const [data, setData] = useState<TranslationsAdmin | null>(null), [error, setError] = useState(""), [refresh, setRefresh] = useState(0);
   const [filter, setFilter] = useState<Filter>("all"), [resource, setResource] = useState(""), [search, setSearch] = useState("");
@@ -56,7 +56,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
   return <div className="ai-pad">
     <header className="ai-head">
       <div><h2>{data.ticker} · 中文译文</h2>
-        <p>已翻译 {translated} / {total} 条 · 未通过 {rejected} · 今日模型调用 {data.budget.used} / {data.budget.cap}（全部公司）· {data.run ? `运行中，开始于 ${date(data.run.startedAt)}` : "空闲"} · {data.enabled ? "自动翻译已开启" : "自动翻译未开启"} · {data.version}</p></div>
+        <p>已翻译 {translated} / {total} 条 · 未通过 {rejected} · {data.run ? `运行中，开始于 ${date(data.run.startedAt)}` : "空闲"} · {!data.scheduled ? "定时任务已关闭，翻译已暂停" : data.enabled ? "自动翻译已开启" : "自动翻译未开启"} · {data.version}</p></div>
       <div className="ai-trigger">
         <button className="fm-button" disabled={submitting || !!data.run || !data.enabled} onClick={() => void translate()}>{submitting ? "提交中" : "翻译现有报告"}</button>
         <button className="fm-button" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={15} />刷新</button>

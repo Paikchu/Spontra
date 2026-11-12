@@ -6,6 +6,7 @@ import { reviewRendering } from "../artifact/qa.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { sha256 } from "../sha256.ts";
+import { requireTranslationScheduled, TranslationPaused } from "./scheduling.ts";
 
 export type ArtifactSource = {
   resource: "artifact"; scope: string; strings: string[];
@@ -56,12 +57,15 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
   const db = env.DB!, doc = stored.document;
   let translated: ArtifactDocument;
   try {
+    await requireTranslationScheduled(env, doc.ticker);
     const reviewed = await review(plan.units.map(u => ({ source: u.text, target: values.get(u.id)!, context: u.context, values: u.values })));
     if (reviewed.problems.length) throw new Error(reviewed.problems.join("; "));
+    await requireTranslationScheduled(env, doc.ticker);
     translated = plan.apply(new Map(plan.units.map((unit, index) => [unit.id, reviewed.translations[index]!] as const)));
     const html = documentHtml(translated), hash = await sha256(`${html}\n${stored.css}`);
     const key = `artifact-translations/${id.replace(/:/g, "/")}/v${doc.version}/zh-CN/${version}/${hash}.json`;
     await env.SEC_FILINGS!.put(key, JSON.stringify({ document: translated, html, css: stored.css, hash, degraded: stored.degraded } satisfies StoredArtifact), { httpMetadata: { contentType: "application/json" } });
+    await requireTranslationScheduled(env, doc.ticker);
     const checkingAt = new Date().toISOString();
     await db.batch([db.prepare("UPDATE analysis_artifact_translations SET status='checking', r2_key=?, hash=?, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
       .bind(key, hash, checkingAt, id, doc.version, stored.hash), outboxStatement(db, { type: "translations.published", ticker: doc.ticker }, checkingAt)]);
@@ -70,11 +74,14 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
     const url = new URL("/article-preview", origin);
     url.searchParams.set("lang", "zh-CN"); url.searchParams.set("token", token);
     // Translation checks exercise the actual report and its interactions, without another content-generation run.
+    await requireTranslationScheduled(env, doc.ticker);
     const qa = await reviewRendering(env, url.href, doc.blocks.map(b => b.id), { ticker: doc.ticker, runId }, { visual: false, expectedHash: hash });
+    await requireTranslationScheduled(env, doc.ticker);
     await recordCheck(env, doc.kind, doc.ticker, doc.subject, doc.version, "translation:zh-CN", 1, { sourceHash: stored.hash, translatedHash: hash, ...qa });
     if (qa.unavailable || qa.errors?.length) throw new ArtifactTranslationDeferred(qa.unavailable || qa.errors!.join("; "));
     if (qa.issues.some(i => i.severity === "blocker" || i.severity === "major"))
       throw new Error(qa.issues.filter(i => i.severity !== "minor").map(i => `${i.block}: ${i.problem}`).join("; "));
+    await requireTranslationScheduled(env, doc.ticker);
     const at = new Date().toISOString();
     await db.batch([
       db.prepare("UPDATE analysis_artifact_translations SET status='ready', completed=total, error=NULL, published_r2_key=r2_key, published_hash=hash, published_at=?, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
@@ -83,6 +90,7 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
     ]);
     return true;
   } catch (error) {
+    if (error instanceof TranslationPaused) throw error;
     const failedAt = new Date().toISOString();
     await db.batch([db.prepare("UPDATE analysis_artifact_translations SET status=?, error=?, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
       .bind(error instanceof ArtifactTranslationDeferred ? "translating" : "failed", error instanceof Error ? error.message.slice(0, 4000) : String(error).slice(0, 4000), failedAt, id, doc.version, stored.hash),

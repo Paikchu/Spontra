@@ -24,7 +24,7 @@ export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<
 
 /**
  * `heldSince`: when the event behind the run was written, if that was before scheduled analysis went off for the company.
- * `parked`: a new task version's re-run for a company whose scheduled analysis is off, kept held until it is on again.
+ * `parked`: publication processing, or a new task version's re-run, held until scheduled analysis is on again.
  */
 type Target = { task: TaskName; ticker: string; causeId: string; heldSince?: string; parked?: boolean };
 type DueRow = { ticker: string; task: string; due_at: string; first_requested_at: string };
@@ -60,8 +60,8 @@ export const delaySeconds = (dueAt: string, now: number) => Math.min(86_400, Mat
  * Turns a batch of events into one pending run per company and task: records each in `pipeline_due`, then sends
  * one delayed task message per run. Events for the same company and task inside the batch collapse into one. The
  * map's publication revisions move in the same batches. While scheduled analysis is off for a company, an event written
- * before it went off queues a run that will be held, and a new task version leaves a held run without a message; any
- * other event opens a window of its own, so it never waits behind a held run.
+ * before it went off queues a run that will be held, and a new task version leaves a held run without a message.
+ * Publication processing is always held while the switch is off; other new requests open a window of their own.
  * Throws when anything fails, so the queue redelivers the whole batch; re-recording a due run is harmless.
  */
 export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now = Date.now()): Promise<{ events: number; runs: number }> {
@@ -76,8 +76,8 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
     fanout.set(event.id, list.length);
     for (const target of list) {
       const key = `${target.ticker}\u0000${target.task}`, before = wanted.get(key);
-      const pausedAt = TASKS[target.task].scope === "publication" ? null : pauses.at(target.ticker);
-      const parked = event.type === "task.version_changed" && pausedAt !== null;
+      const pausedAt = pauses.at(target.ticker);
+      const parked = pausedAt !== null && (TASKS[target.task].scope === "publication" || event.type === "task.version_changed");
       // A run something else in the batch asked for stays that run: it happens on the deployed code either way.
       if (parked && before && !before.parked) continue;
       wanted.set(key, parked ? { ...target, parked } : { ...target, heldSince: beforePause(event.at, pausedAt) && (!before || before.heldSince) ? event.at : undefined });
@@ -92,12 +92,15 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
       .bind(JSON.stringify(keys)).all<DueRow>()).results.map(row => [`${row.ticker}\u0000${row.task}`, row]));
     for (const [key, target] of wanted) {
       if (target.parked) {
-        // A run already recorded for the company and task, pending or held, covers the new version.
-        statements.push(db.prepare("INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id, held_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticker, task) DO NOTHING")
+        // Existing publication work is held too; generation requests retain their own scheduling window.
+        const conflict = TASKS[target.task].scope === "publication"
+          ? "DO UPDATE SET due_at = excluded.due_at, held_at = COALESCE(pipeline_due.held_at, excluded.held_at), cause_id = excluded.cause_id"
+          : "DO NOTHING";
+        statements.push(db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id, held_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticker, task) ${conflict}`)
           .bind(target.ticker, target.task, at, at, target.causeId, at));
         continue;
       }
-      const paused = TASKS[target.task].scope !== "publication" && pauses.at(target.ticker);
+      const paused = pauses.at(target.ticker);
       const { dueAt, first } = nextDue(target.task, paused && !target.heldSince ? undefined : existing.get(key), now);
       statements.push(db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id, held_at = NULL`)

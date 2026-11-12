@@ -30,9 +30,8 @@ export type TranslationsAdmin = {
   ticker: string;
   locale: Locale;
   version: string;
+  scheduled: boolean;
   enabled: boolean;
-  /** Model calls used today across all companies, against the daily cap. */
-  budget: { day: string; used: number; cap: number };
   /** The translation run in progress, if any. */
   run: { instanceId: string; startedAt: string } | null;
   resources: TranslationResourceSummary[];
