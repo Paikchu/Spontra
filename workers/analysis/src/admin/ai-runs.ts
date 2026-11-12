@@ -19,10 +19,12 @@ import { researchSearchConfigured } from "../web-search/research-search.ts";
 import { json } from "./http.ts";
 import { z } from "zod";
 import type { TranslationStarted } from "../../../../shared/analysis-contract/translations-admin.ts";
-import type { TaskMessage } from "../pipeline/messages.ts";
 import { failedInputKey } from "../pipeline/workflow-task.ts";
 import { readSources } from "../translation/translate.ts";
 import { sha256 } from "../sha256.ts";
+import { scopeTickers } from "../pipeline/router.ts";
+import { contentPublishedStatement } from "../publication/publish.ts";
+import { flushOutbox } from "../pipeline/outbox.ts";
 
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const translationRequest = z.object({ requestId: z.string().regex(UUID) });
@@ -146,13 +148,13 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   return json({ runId, reused: false } satisfies AiRunStarted, 202);
 }
 
-/** Queues only translation of existing publications; it emits no analysis or report-generation event. */
+/** Re-announces existing publications to their shared post-publication processing; no content is generated. */
 async function startTranslation(request: Request, env: AnalysisEnv, db: D1Database, ticker: string, now: number): Promise<Response> {
   const parsed = translationRequest.safeParse(await request.json());
   if (!parsed.success) return json({ error: "操作参数无效。" }, 400);
   if (env.TRANSLATION_ENABLED === "false") return json({ error: "中文翻译已关闭。" }, 503);
   if (!env.DEEPSEEK_API_KEY || !env.TRANSLATE_WORKFLOW) return json({ error: "翻译工作流尚未配置。" }, 503);
-  if (!env.PIPELINE_TASKS) return json({ error: "任务队列未配置。" }, 503);
+  if (!env.PIPELINE_EVENTS) return json({ error: "发布通知队列未配置。" }, 503);
   const { requestId } = parsed.data, at = new Date(now).toISOString(), key = `translate:request:v1:${requestId}`;
   const sources = await readSources(db, ticker, env);
   const hashes = await Promise.all([...new Set(sources.flatMap(source => source.strings))].map(sha256));
@@ -161,10 +163,6 @@ async function startTranslation(request: Request, env: AnalysisEnv, db: D1Databa
   const statements = [
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO NOTHING")
       .bind(key, JSON.stringify({ ticker, resetPending: true }), at),
-    db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id)
-      SELECT ?, 'translate', ?, ?, ? WHERE ${firstRequest}
-      ON CONFLICT(ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id, held_at = NULL`)
-      .bind(ticker, at, at, requestId, key, ticker),
     db.prepare(`DELETE FROM sec_cache WHERE cache_key IN (?, ?) AND ${firstRequest}`)
       .bind(failedInputKey("translate", ticker), `translate:stalled:v1:${ticker}`, key, ticker),
     db.prepare(`UPDATE analysis_artifact_translations SET status = 'translating', error = NULL, updated_at = ?
@@ -178,18 +176,14 @@ async function startTranslation(request: Request, env: AnalysisEnv, db: D1Databa
       AND source_sha256 IN (SELECT value FROM json_each(?)) AND ${firstRequest}`)
       .bind(JSON.stringify(hashes.slice(i, i + 500)), key, ticker));
   }
+  statements.push(contentPublishedStatement(db, ticker, at, { sql: firstRequest, binds: [key, ticker] }, requestId));
   statements.push(db.prepare(`UPDATE sec_cache SET payload = json_remove(payload, '$.resetPending') WHERE cache_key = ? AND ${firstRequest}`)
     .bind(key, key, ticker));
   const written = await db.batch(statements);
-  const receipt = (await db.prepare("SELECT json_extract(payload, '$.ticker') ticker, fetched_at at FROM sec_cache WHERE cache_key = ?")
-    .bind(key).first<{ ticker: string; at: string }>())!;
+  const receipt = (await db.prepare("SELECT json_extract(payload, '$.ticker') ticker FROM sec_cache WHERE cache_key = ?")
+    .bind(key).first<{ ticker: string }>())!;
   if (receipt.ticker !== ticker) return json({ error: "操作标识已用于其他公司。" }, 409);
-  const due = await db.prepare("SELECT due_at, cause_id FROM pipeline_due WHERE ticker = ? AND task = 'translate'")
-    .bind(ticker).first<{ due_at: string; cause_id: string | null }>();
-  if (due?.due_at === receipt.at && due.cause_id === requestId) {
-    const message = { v: 1, kind: "task", id: `translate-manual-${requestId}`, causeId: requestId, task: "translate", ticker, dueAt: receipt.at } satisfies TaskMessage;
-    await env.PIPELINE_TASKS.send(message, { contentType: "json" });
-  }
+  await flushOutbox(env);
   return json({ requestId, status: "queued", reused: written[0]!.meta.changes === 0 } satisfies TranslationStarted, 202);
 }
 
@@ -201,8 +195,9 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
     // Version ids are timestamps; the admin proxy percent-encodes their colons.
     const path = decodeURIComponent(new URL(request.url).pathname);
     if (path === "/admin/ai/companies" && request.method === "GET") {
-      const [latest, named] = await Promise.all([new AiRunStore(db).latestRuns(), securities(db)]);
-      const companies = await Promise.all(tickers.map(async ticker => ({
+      const [latest, named, published] = await Promise.all([new AiRunStore(db).latestRuns(), securities(db), scopeTickers(env, "publication")]);
+      const listed = [...new Set([...tickers, ...published])].sort();
+      const companies = await Promise.all(listed.map(async ticker => ({
         ticker, name: named(ticker)?.name ?? ticker,
         kinds: Object.fromEntries(await Promise.all(AI_RUN_KINDS.map(async kind => [kind, await state(env, db, kind, ticker, latest.get(`${kind}:${ticker}`) ?? null)]))) as AiCompanies["companies"][number]["kinds"],
       })));
@@ -211,7 +206,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
     // The company's Chinese: coverage per resource, today's budget and every string with its translation.
     const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations$/.exec(path);
     if (translations && (request.method === "GET" || request.method === "POST")) {
-      if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
+      if (!(await scopeTickers(env, "publication")).includes(translations[1]!)) return json({ error: "该公司没有已发布内容。" }, 404);
       if (request.method === "POST") return startTranslation(request, env, db, translations[1]!, now);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }

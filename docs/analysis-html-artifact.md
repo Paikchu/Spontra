@@ -338,6 +338,8 @@ sequenceDiagram
 
 - 发布的文档存 R2，D1 存指针、版本号和每个块的哈希。块哈希用于判断哪些块变了：翻译只翻变了的块，复核和视觉验收只看变了的块，更新提示可以指出改了哪一部分。
 - 发布与事件同批写入，沿用现有的 `*.published` 事件。
+- 所有正常发布都经过共享发布层，并在同一事务发出 `content.published`。HTML 的唯一入口是 `artifact/store.publishStatements`；仍供读者使用的 JSON 发布入口使用 `publication/publish`。领域事件继续驱动原有业务，翻译只订阅 `content.published`，不依赖要点、公司分析或其他功能的发布链。
+- 翻译属于 `publication` 后处理范围，保留文章的公司标识，不受白名单、生成功能开关或自动分析暂停拦截。全局翻译开关和每日模型预算继续有效。译文只发 `translations.published`，不会再次触发翻译或文章生成。
 - **沙箱渲染**：业务站新增 `/artifact-frame` 页面，沿用现有 `/html-frame` 的做法（`HtmlFrame.tsx`）：
   - iframe 只开 `sandbox="allow-scripts"`，不开 `allow-same-origin`，页面是不透明源，读不到主站的 Cookie、存储和 DOM。
   - CSP 只允许站点构建产出的组件脚本、站点样式文件，以及随产物一起存储的产物 CSS（第 4.2 节），禁止网络请求（`connect-src 'none'`），图片只允许内联的 SVG 和 `data:`。
@@ -346,11 +348,14 @@ sequenceDiagram
   - 双方只接受来自对方窗口的消息，沿用 `HtmlFrameMessage` 的校验方式。
 - 组件脚本和站点 CSS 跟随业务站一起发布；产物 CSS 在服务端编译时用的是同一份主题。验收记录渲染时用的主题、CSS 与脚本版本，如果线上版本之后变了，已发布的产物在下一次发布时重新验收。
 - 中文版本按块提取完整段落、表格单元格、标题和读者文字属性（`title`、tooltip 的 `data-content`）。内联元素、数字与引用用受控占位符保护，程序回填 HTML；非文案属性不变。金额和倍率可按中文格式展示，原始数值与引用不变。长段落按句界拆分，不因长度静默遗漏。
+- 翻译来源只包含受支持、已正式发布的文章，不按当前要点 fingerprint 或具体功能列表筛选。旧 `valuation-report` HTML 已退役，清理其 D1 指针、版本、检查和译文尝试；R2 原对象保留为不可达归档，现行估值 JSON 不受影响。
 - 原文仍是一份经过核验的不可变版本。中文译文单独存入 R2，`analysis_artifact_translations` 按原文 artifact、版本、hash 和 `zh-CN` 保存状态与指针，不推进原文版本。新图表保留冻结的 `CompiledChart` 供中文标签重绘；历史 SVG 仅处理文字和无障碍标签。
 - 当前翻译尝试与已验收的中文发布指针分开：升级翻译器或重试时继续提供同一原文版本已发布的中文，直到新译文通过验收后原子替换。完整 HTML 报告优先发布，不等待无关历史 JSON 文本回填。
 - 翻译复用 `i18n_strings`，只有变更的文字需要模型调用。完整中文通过语义复核和真实沙箱的多视口排版、交互检查后整份发布；预览验收等待译文实际 hash。预算或浏览器暂不可用保留可重试状态；未通过的译文不会替换原文。
 - 报告接口返回真实正文 `lang` 与翻译状态，中文未完成时回退到同一版本原文并明确标注。语言切换和译文发布会重新读取，iframe 按实际内容 hash 更新；状态变化通过 `translations.published` 推进读取 revision，该事件没有生成任务订阅。
-- 后台中文译文页的「翻译现有报告」只入队 `translate`，不发送 `report.published`、不调用文章生成。POST `/admin/ai/companies/:ticker/translations` 使用 UUID `requestId` 幂等入队；手动重试仅清理本公司当前版本的失败译文及拒绝记忆，保留已发布译文。
+- 验收使用通用签名页面 `/article-preview?token=…`，复用同一 `ArtifactFrame`，不加载公司、要点或对话功能，也不依赖它们的可见性与开关。后台译文资源可打开原文或当前译文预览；预览 token 不写入日志。
+- 后台中文译文页的「翻译现有报告」幂等地重新发出 `content.published`，由同一全局消费者入队 `translate`，不发送领域生成事件、不调用文章生成。POST `/admin/ai/companies/:ticker/translations` 使用 UUID `requestId`；重试仅清理本公司当前版本的失败译文及拒绝记忆，保留已发布译文。翻译公司列表来自已发布内容，独立于生成开关。
+- 私人报告 GET 在读者鉴权后，按快照中的文章 ID 与原文版本覆盖所请求语言的 artifact；不改写 `user_reports.body`，也不以公司最新版本替代已保存快照。语言切换重新读取该版本。
 
 ## 9. 技术组件
 

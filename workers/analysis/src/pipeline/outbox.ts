@@ -25,6 +25,17 @@ export function outboxInsert(event: OutboxEvent, at = new Date().toISOString(), 
     : { sql: `INSERT INTO pipeline_outbox (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, values };
 }
 
+/** One insert keeps a publication's companion events under the same write guard, including SQLite changes(). */
+export function outboxInsertMany(events: readonly [OutboxEvent, ...OutboxEvent[]], at: string, guard?: { sql: string; binds: unknown[] }): { sql: string; values: unknown[] } {
+  const values: unknown[] = [];
+  const rows = events.map(event => {
+    values.push(crypto.randomUUID(), event.type, event.ticker, event.cik ?? null, event.task ?? null,
+      event.detail ? JSON.stringify(event.detail) : null, event.causeId ?? null, at, ...(guard?.binds ?? []));
+    return `SELECT ?, ?, ?, ?, ?, ?, ?, ?${guard ? ` WHERE ${guard.sql}` : ""}`;
+  });
+  return { sql: `INSERT INTO pipeline_outbox (${COLUMNS}) ${rows.join(" UNION ALL ")}`, values };
+}
+
 const message = (row: OutboxRow): EventMessage => ({
   v: 1, kind: "event", id: row.id, causeId: row.cause_id, type: row.type as EventMessage["type"], ticker: row.ticker,
   cik: row.cik, task: row.task as EventMessage["task"], detail: row.detail ? JSON.parse(row.detail) as EventMessage["detail"] : null, at: row.created_at,

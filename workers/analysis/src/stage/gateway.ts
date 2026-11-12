@@ -4,6 +4,9 @@ import { reserve } from "./budget.ts";
 import { issueReader, readerOf } from "./identity.ts";
 import type { StageAgent, StageProps } from "./agent.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { isLocale } from "../../../../shared/analysis-runtime/locale.ts";
+import { readArtifactEdition } from "../artifact/store.ts";
+import { z } from "zod";
 
 /**
  * The stage's only door, reached from the business map over a Service Binding to this
@@ -13,7 +16,10 @@ import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-da
  * never creates an object.
  */
 const CONVERSATION = /^[0-9a-f]{32}$/;
-const LOCALES = new Set(["en", "zh-CN"]);
+const artifactReportSnapshot = z.object({
+  schemaVersion: z.literal("user-report.v1"),
+  artifact: z.object({ kind: z.literal("stage-report"), id: z.string(), version: z.number().int().positive() }).passthrough(),
+}).passthrough();
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
 
 export async function handleStageRequest(request: Request, env: AnalysisEnv & { StageAgent?: DurableObjectNamespace }): Promise<Response> {
@@ -52,7 +58,7 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
   if (url.pathname === "/agents/conversations" && request.method === "POST") {
     const body = await request.json().catch(() => null) as { ticker?: unknown; locale?: unknown } | null;
     const ticker = typeof body?.ticker === "string" ? body.ticker : "";
-    const locale = typeof body?.locale === "string" && LOCALES.has(body.locale) ? body.locale : "en";
+    const locale = isLocale(body?.locale) ? body.locale : "en";
     if (!TICKER_PATTERN.test(ticker)) return json({ error: "bad-request" }, 400);
     const spent = await reserve(db, "stage-conversations", { reader, address });
     if (!spent.ok) return json({ error: "quota", which: spent.which }, 429);
@@ -68,11 +74,20 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     return json({ id }, 201);
   }
 
-  // One of the reader's own reports, as written; never cached, never anyone else's.
+  // One of the reader's own reports. Its source snapshot stays pinned; only the requested language is overlaid.
   const report = /^\/agents\/reports\/([0-9a-f]{32})$/.exec(url.pathname);
   if (report && request.method === "GET") {
+    const requested = url.searchParams.get("locale");
+    if (requested !== null && !isLocale(requested)) return json({ error: "bad-request" }, 400);
+    const locale = isLocale(requested) ? requested : "en";
     const row = await db.prepare("SELECT body FROM user_reports WHERE user_id = ? AND id = ?").bind(reader, report[1]).first<{ body: string }>();
-    return row ? new Response(row.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" } }) : json({ error: "not-found" }, 404);
+    if (!row) return json({ error: "not-found" }, 404);
+    const snapshot = artifactReportSnapshot.safeParse(JSON.parse(row.body));
+    if (snapshot.success) {
+      const artifact = await readArtifactEdition(env, snapshot.data.artifact.id, snapshot.data.artifact.version, locale);
+      if (artifact) return json({ ...snapshot.data, artifact }, 200, { "cache-control": "private, no-store" });
+    }
+    return new Response(row.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" } });
   }
 
   const agent = /^\/agents\/stage-agent\/([^/]+)(?:\/.*)?$/.exec(url.pathname);

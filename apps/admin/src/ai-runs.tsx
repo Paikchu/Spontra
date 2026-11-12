@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/shared/analysis-contract/ai-runs-admin";
 import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
@@ -72,7 +72,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
 
   useEffect(() => {
     const c = new AbortController();
-    void adminApi<AiCompanies>("ai/companies", { signal: c.signal }).then(r => { setList(r); setListError(""); callbacks.current.onAuthenticated(); setTicker(t => r.companies.some(x => x.ticker === t) ? t : r.companies[0]?.ticker ?? ""); })
+    void adminApi<AiCompanies>("ai/companies", { signal: c.signal }).then(r => { if (!c.signal.aborted) { setList(r); setListError(""); callbacks.current.onAuthenticated(); } })
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setListError((e as Error).message); });
     return () => c.abort();
   }, [refresh]);
@@ -84,8 +84,12 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
     try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
   }, [ticker, kind, tabs.length, shown]);
 
-  // A page lists the companies at least one of its tasks runs for; a company switched off leaves the list.
-  const listed = list?.companies.filter(c => tabs.some(([k]) => k !== "translations" && (c.kinds as Partial<Record<string, { enabled?: boolean }>>)[k]?.enabled !== false)) ?? [];
+  // Translation follows published content; the other tabs retain their generation-feature lists.
+  const listed = useMemo(() => list?.companies.filter(company => kind === "translations" || kinds.some(task => company.kinds[task].enabled !== false)) ?? [], [list, kind, kinds]);
+  useEffect(() => {
+    if (!list) return;
+    setTicker(current => listed.some(company => company.ticker === current) ? current : listed[0]?.ticker ?? "");
+  }, [list, listed]);
   const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
   return <div className="ra-workspace ai-workspace">
     <section className="ra-list" aria-label="公司">
@@ -93,7 +97,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
       <div className="ra-list-caption"><span>{list ? `${listed.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kind !== "translations" && kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
         </span></button>)}
         {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
       </div>

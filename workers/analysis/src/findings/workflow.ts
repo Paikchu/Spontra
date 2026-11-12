@@ -15,7 +15,7 @@ import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
-import { outboxStatement } from "../pipeline/outbox.ts";
+import { publicationOutboxStatements } from "../publication/publish.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
@@ -135,7 +135,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
         .bind(findingsCacheKey(params.ticker), JSON.stringify(record), now),
-      outboxStatement(db, { type: "findings.published", ticker: params.ticker }, now),
+      ...publicationOutboxStatements(db, { type: "findings.published", ticker: params.ticker }, now),
     ]);
     await new AiRunStore(requireDb(env)).saveVersion("findings", params.ticker, record, now);
     return true;

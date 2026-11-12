@@ -19,7 +19,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import type { PiLoaded } from "../pi/host.ts";
 import { sessionRunner, type SessionRunner } from "../pi/runs.ts";
 import { readPeersResponse } from "../peers/read.ts";
-import { outboxStatement } from "../pipeline/outbox.ts";
+import { publicationOutboxStatements } from "../publication/publish.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { analystRecipe, hydrateAnalyst, runAnalyst, type AnalystOutcome, type AnalystRunInput, type AnalystSpec, type AnalystState } from "./agent.ts";
@@ -171,7 +171,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     const record = { ...dossier, analystTrace: trace };
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at").bind(dossierCacheKey(params.ticker), JSON.stringify(record), now),
-      outboxStatement(db, { type: "dossier.published", ticker: params.ticker }, now),
+      ...publicationOutboxStatements(db, { type: "dossier.published", ticker: params.ticker }, now),
       db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(emptyDossierKey(params.ticker)),
     ]);
     await new AiRunStore(db).saveVersion("analyst", params.ticker, record, now);

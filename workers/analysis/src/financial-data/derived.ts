@@ -10,7 +10,7 @@ import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from '.
 import { extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { fiscalFourthQuarters, priorPresentationOnly, priorYearsUnchanged } from './period-review.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
-import { outboxStatement } from '../pipeline/outbox.ts';
+import { publicationOutboxStatements } from '../publication/publish.ts';
 import { namesMembers, storedMemberLabels } from './member-labels.ts';
 import { storedCalculation } from './calculation.ts';
 import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
@@ -251,7 +251,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   await env.DB.batch([
     env.DB.prepare('INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at')
       .bind(snapshotKey(ticker), JSON.stringify(snapshot), snapshot.builtAt),
-    outboxStatement(env.DB, { type: 'map.derived', ticker, causeId }, snapshot.builtAt),
+    ...publicationOutboxStatements(env.DB, { type: 'map.derived', ticker, causeId }, snapshot.builtAt),
   ]);
   return { spent, built: true, pending, ...gap };
 }

@@ -25,7 +25,7 @@ export const TRANSLATION_TASKS = {
    * UTC day; a failed run is retried after a growing wait, then dead-lettered (workflow-task.ts).
    */
   translate: {
-    version: TRANSLATION_VERSION,
+    version: `${TRANSLATION_VERSION}:publication.v1`,
     async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
       if (env.TRANSLATION_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "translation disabled" } };
       const outcome = await driveWorkflow(env, `translate:${ticker}`, env.TRANSLATE_WORKFLOW, async () => {

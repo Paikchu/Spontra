@@ -2,6 +2,7 @@ import {publicFlowSchema} from '../../../../shared/analysis-runtime/financial-da
 import type { PublicBusinessFlow, BusinessFlowQuarter } from '../../../../shared/analysis-contract/business-flow.ts';
 import { checkCompleteFlow } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
+import { publicationOutboxStatements } from '../publication/publish.ts';
 export interface Job {id:string;cik:string;ticker:string;generation:number;lease:string;cursor:string;attempt:number;}
 export interface CompleteStore {stage(job:Job,quarter:BusinessFlowQuarter):Promise<void>;staged(job:Job):Promise<BusinessFlowQuarter[]>;publish(job:Job,flow:PublicBusinessFlow):Promise<boolean>;defer(job:Job,reasons:string[],cursor:string):Promise<void>;
  /** Ends a job that found nothing new to publish, as succeeded, with why. */
@@ -20,7 +21,7 @@ export class D1CompleteStore implements CompleteStore{
    this.db.prepare(`INSERT INTO financial_complete_current(cik,version_id,generation) SELECT cik,version_id,generation FROM financial_complete_versions WHERE version_id=? AND EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND lease_token=? AND status='running' AND lease_until>?) ON CONFLICT(cik) DO UPDATE SET version_id=excluded.version_id,generation=excluded.generation WHERE excluded.generation>financial_complete_current.generation`).bind(version,job.id,job.lease,now),
    this.db.prepare(`UPDATE financial_collection_jobs SET status='succeeded',reasons_json='[]',cursor_json=?,updated_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)`).bind(job.cursor,now,job.id,job.lease,job.cik,version),
    // Announced in the same transaction, and only when this job's publication took effect.
-   outboxStatement(this.db,{type:'financials.published',ticker:job.ticker,cik:job.cik,causeId:this.causeId},now,{sql:"EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND status='succeeded' AND updated_at=?)",binds:[job.id,now]}),
+   ...publicationOutboxStatements(this.db,{type:'financials.published',ticker:job.ticker,cik:job.cik,causeId:this.causeId},now,{sql:"EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND status='succeeded' AND updated_at=?)",binds:[job.id,now]}),
    ...(this.announceDegraded&&[...flow.quarters].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd))[0]?.presentation?.source==='degraded'
     ?[outboxStatement(this.db,{type:'presentation.unresolved',ticker:job.ticker,cik:job.cik,causeId:this.causeId},now,{sql:"EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND status='succeeded' AND updated_at=?)",binds:[job.id,now]})]:[]),
   ]);return (results[2].meta.changes??0)>0;

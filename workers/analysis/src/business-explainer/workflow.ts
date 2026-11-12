@@ -15,7 +15,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
-import { outboxStatement } from "../pipeline/outbox.ts";
+import { publicationOutboxStatements } from "../publication/publish.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
@@ -81,7 +81,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
         .bind(businessExplainerCacheKey(params.ticker), JSON.stringify(explainer), now),
-      outboxStatement(db, { type: "explainer.published", ticker: params.ticker }, now),
+      ...publicationOutboxStatements(db, { type: "explainer.published", ticker: params.ticker }, now),
     ]);
     await new AiRunStore(requireDb(env)).saveVersion("explainer", params.ticker, explainer, now);
   });

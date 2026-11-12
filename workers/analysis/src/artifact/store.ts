@@ -2,6 +2,7 @@ import type { ArtifactDocument, ArtifactKind, PublishedArtifact } from "../../..
 import { sha256 } from "../sha256.ts";
 import { documentHtml } from "./document.ts";
 import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
+import { contentPublishedStatement } from "../publication/publish.ts";
 
 /**
  * Artifact persistence (docs/analysis-html-artifact.md §7.7, §8): every draft the visual review renders and every
@@ -62,6 +63,7 @@ export function publishStatements(env: ArtifactStoreEnv, kind: ArtifactKind, tic
     db.prepare("UPDATE analysis_artifact_versions SET status = 'superseded' WHERE artifact_id = ? AND status = 'published'").bind(id),
     db.prepare("UPDATE analysis_artifact_versions SET status = 'published' WHERE artifact_id = ? AND version = ? AND hash = ?").bind(id, version, hash),
     db.prepare("UPDATE analysis_artifacts SET published_version = ?, published_hash = ?, published_at = ?, degraded = ?, updated_at = ? WHERE artifact_id = ?").bind(version, hash, at, JSON.stringify(degraded), at, id),
+    contentPublishedStatement(db, ticker, at),
   ];
 }
 
@@ -78,9 +80,24 @@ export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: Artifac
   if (!row) return null;
   const stored = await readArtifactVersion(env, id, row.published_version);
   if (!stored) return null;
-  const original = toPublished(id, stored, row.published_at);
+  return localizedEdition(env, id, stored, row.published_at, locale);
+}
+
+/** A reader's saved report keeps the exact source edition even after its current publication changes. */
+export async function readArtifactEdition(env: ArtifactStoreEnv, id: string, version: number, locale?: Locale | null): Promise<PublishedArtifact | null> {
+  const row = await env.DB!.prepare(`SELECT COALESCE(CASE WHEN a.published_version = v.version THEN a.published_at END, v.created_at) published_at
+    FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id = v.artifact_id
+    WHERE v.artifact_id = ? AND v.version = ? AND v.status IN ('published','superseded')`)
+    .bind(id, version).first<{ published_at: string }>();
+  if (!row) return null;
+  const stored = await readArtifactVersion(env, id, version);
+  return stored ? localizedEdition(env, id, stored, row.published_at, locale) : null;
+}
+
+async function localizedEdition(env: ArtifactStoreEnv, id: string, stored: StoredArtifact, at: string, locale?: Locale | null): Promise<PublishedArtifact> {
+  const original = toPublished(id, stored, at);
   if (locale !== "zh-CN" || original.lang === "zh-CN") return original;
-  const translated = await readArtifactTranslation(env, id, row.published_version, stored.hash);
+  const translated = await readArtifactTranslation(env, id, stored.document.version, stored.hash);
   const publishedKey = translated?.published_r2_key ?? (translated?.status === "ready" ? translated.r2_key : null);
   const publishedAt = translated?.published_at ?? (translated?.status === "ready" ? translated.updated_at : null);
   if (publishedKey && publishedAt) {

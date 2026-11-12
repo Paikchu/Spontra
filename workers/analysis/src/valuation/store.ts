@@ -2,7 +2,7 @@ import { priceGuideOf } from "../../../../shared/analysis-runtime/valuation/pric
 import { latestValuationQuote } from "./quotes.ts";
 import type { ReportStatus, ValuationAttempt, ValuationEvidence, ValuationPublication, ValuationResponse } from "../../../../shared/analysis-contract/valuation.ts";
 import { readValuationPublication } from "../../../../shared/analysis-runtime/valuation/read.ts";
-import { outboxStatement } from "../pipeline/outbox.ts";
+import { publicationOutboxStatements } from "../publication/publish.ts";
 
 /**
  * Where valuation reports live: immutable versions keyed by content hash,
@@ -63,10 +63,11 @@ export class ValuationStore {
     const readyOnly = publication.reportStatus === "ready" ? "" : " AND version_id IS NULL";
     statements.push(db.prepare(`UPDATE valuation_current SET version_id = ?, last_fingerprint = ?, updated_at = ? WHERE ticker = ? AND request_generation = ?${readyOnly}`).bind(publication.versionId, fingerprint, now, ticker, generation));
     statements.push(db.prepare("UPDATE valuation_current SET last_fingerprint = ?, updated_at = ? WHERE ticker = ? AND request_generation = ?").bind(fingerprint, now, ticker, generation));
+    statements.push(...publicationOutboxStatements(db, { type: "valuation.published", ticker: publication.ticker, cik: publication.cik }, now,
+      { sql: "EXISTS (SELECT 1 FROM valuation_current WHERE ticker = ? AND version_id = ? AND request_generation = ?)", binds: [ticker, publication.versionId, generation] }));
     await db.batch(statements);
     const after = await this.current(ticker);
     const current = after?.version_id === publication.versionId && after.request_generation === generation;
-    if (current) await db.batch([outboxStatement(db, { type: "valuation.published", ticker: publication.ticker, cik: publication.cik }, now)]);
     return { current, stored: !existing };
   }
 

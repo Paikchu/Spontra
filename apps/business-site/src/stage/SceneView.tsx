@@ -89,13 +89,14 @@ function FindingList({ findings, onOpen }: { findings: VerifiedFinding[]; onOpen
  * against its evidence, its quotes against the passages it carries.
  */
 function ReportBlock({ ticker, reportId, data }: { ticker: string; reportId: string; data: FindingData }) {
+  const locale = useLocale();
   const [report, setReport] = useState<UserReport | null | "failed">(null);
   useEffect(() => {
     const c = new AbortController();
-    fetch(`/agents/reports/${reportId}`, { signal: c.signal, headers: { accept: "application/json" } })
-      .then(async (r): Promise<UserReport | "failed"> => r.ok ? await r.json() as UserReport : "failed").then(value => setReport(value)).catch(() => { if (!c.signal.aborted) setReport("failed"); });
+    fetch(`/agents/reports/${reportId}?${new URLSearchParams({ locale })}`, { signal: c.signal, headers: { accept: "application/json" } })
+      .then(async (r): Promise<UserReport | "failed"> => r.ok ? await r.json() as UserReport : "failed").then(value => { if (!c.signal.aborted) setReport(value); }).catch(() => { if (!c.signal.aborted) setReport("failed"); });
     return () => c.abort();
-  }, [reportId]);
+  }, [reportId, locale]);
   const verified = useMemo(() => {
     if (!report || report === "failed" || "artifact" in report) return null;
     const facts: FindingData = { ...data, passages: [...(data.passages ?? []), ...report.passages] };

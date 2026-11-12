@@ -24,6 +24,7 @@ const m = messages({
 
 const loadCompanyPage = () => import("./CompanyPage");
 const Company = lazy(loadCompanyPage);
+const ArticlePreview = lazy(() => import("./ArtifactPreviewPage"));
 // Speculative loading must not surface an error before the reader opens the route.
 const preloadCompanyPage = () => { void loadCompanyPage().catch(() => {}); };
 
@@ -282,9 +283,10 @@ function App() {
     </>
   );
 }
-startVitals();
+const articlePreview = typeof location !== "undefined" && location.pathname === "/article-preview";
+if (!articlePreview) startVitals();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {articlePreview ? <Suspense fallback={null}><ArticlePreview /></Suspense> : <App />}
   </StrictMode>,
 );

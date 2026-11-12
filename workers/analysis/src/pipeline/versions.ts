@@ -9,7 +9,7 @@ type Stored = { payload: string; deployed_at: string };
  * Announces every task whose version changed since the code that last ran: one `task.version_changed` per task,
  * written with the new version record in one batch. One primary-key read when nothing changed. Versions only move
  * forward: while a deployment rolls out, an invocation of the older code finds a newer record and leaves it alone.
- * The router leaves a held run for each company whose scheduled analysis is off, which goes out once it is on again.
+ * Generation runs are held while scheduled analysis is off; publication processing is scheduled independently.
  */
 export async function announceTaskVersions(env: AnalysisEnv): Promise<TaskName[]> {
   if (!env.DB) return [];

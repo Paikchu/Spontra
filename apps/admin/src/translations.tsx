@@ -67,11 +67,12 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     {triggerError && <p className="ra-error" role="alert">{triggerError}</p>}
     <h3>各资源</h3>
     <div className="bm-admin-table-wrap"><table className="bm-admin-table tr-table">
-      <thead><tr><th>资源</th><th>已翻译</th><th>未通过</th><th>待翻译</th><th>发布状态</th><th>译文表更新</th></tr></thead>
+      <thead><tr><th>资源</th><th>已翻译</th><th>未通过</th><th>待翻译</th><th>发布状态</th><th>译文表更新</th><th>预览</th></tr></thead>
       <tbody>{data.resources.map(r => <tr key={`${r.resource}:${r.scope}`}>
         <td><button className="tr-link" onClick={() => setResource(v => v === `${r.resource}:${r.scope}` ? "" : `${r.resource}:${r.scope}`)} aria-pressed={resource === `${r.resource}:${r.scope}`}>{label(r.resource, r.scope)}</button></td>
         <td>{r.translated} / {r.total}</td><td>{r.rejected || "—"}</td><td>{r.total - r.translated - r.rejected || "—"}</td>
         <td>{r.publication ? PUBLICATION[r.publication.status] : "—"}{r.publication?.error && <small className="ra-error">{r.publication.error}</small>}</td><td>{date(r.publishedAt)}</td>
+        <td>{r.preview ? <a className="tr-link" href={r.preview.href} target="_blank" rel="noopener noreferrer">{r.preview.lang === "zh-CN" ? "中文预览" : "原文预览"}</a> : "—"}</td>
       </tr>)}</tbody>
     </table></div>
     <div className="tr-filters">

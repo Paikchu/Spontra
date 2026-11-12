@@ -50,6 +50,8 @@ export type QaResult = {
 type Measured = { stageWidth: number; blocks: Array<{ id: string; x: number; y: number; width: number; height: number }>; problems: Array<{ block: string; severity: "blocker" | "major" | "minor"; kind: "render" | "interaction"; problem: string }> };
 
 const LOAD_MS = 45_000;
+const qaErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+  .replace(/([?&](?:token|artifact-preview)=)[^&\s"')]+/g, "$1[redacted]");
 
 /** Runs inside the artifact frame: geometry, colours from the theme, charts drawn, and the interactive components exercised. */
 const MEASURE = `(async () => {
@@ -155,7 +157,7 @@ type Pass = { viewport: Viewport; measured: Measured; frameRect: { x: number; y:
 
 async function renderPass(browser: Browser, url: string, viewport: Viewport, errors: string[], expectedHash?: string): Promise<Pass> {
   const page = await browser.newPage();
-  page.on("pageerror", (e: unknown) => errors.push(`${viewport.name}: script error ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)));
+  page.on("pageerror", (e: unknown) => errors.push(`${viewport.name}: script error ${qaErrorMessage(e)}`.slice(0, 200)));
   try {
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1, isMobile: !!viewport.mobile, hasTouch: !!viewport.mobile });
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }, { name: "prefers-color-scheme", value: viewport.dark ? "dark" : "light" }]);
@@ -164,9 +166,9 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: LOAD_MS });
     const found = await artifactFrame(page, expectedHash).catch(async (error: unknown) => {
       // What the page showed instead, so a frame that never drew says why.
-      const seen = await page.evaluate(`(() => ({ lens: !!document.querySelector("section.lens"), frames: document.querySelectorAll("iframe[data-artifact-frame]").length, rendered: document.querySelectorAll("iframe[data-artifact-frame][data-rendered]").length, path: location.pathname + location.search.replace(/artifact-preview=[^&]+/, "artifact-preview=…"), text: (document.body.innerText || "").replace(/\\s+/g, " ").slice(0, 160) }))()`).catch(() => null);
-      console.log(JSON.stringify({ event: "artifact-qa-page", viewport: viewport.name, url, seen, errors: errors.slice(-3) }));
-      throw new Error(`${error instanceof Error ? error.message.slice(0, 80) : String(error)}; page: ${JSON.stringify(seen)}`);
+      const seen = await page.evaluate(`(() => ({ lens: !!document.querySelector("section.lens"), frames: document.querySelectorAll("iframe[data-artifact-frame]").length, rendered: document.querySelectorAll("iframe[data-artifact-frame][data-rendered]").length, path: location.pathname, text: (document.body.innerText || "").replace(/\\s+/g, " ").slice(0, 160) }))()`).catch(() => null);
+      console.log(JSON.stringify({ event: "artifact-qa-page", viewport: viewport.name, path: new URL(url).pathname, seen, errors: errors.slice(-3) }));
+      throw new Error(`${qaErrorMessage(error).slice(0, 80)}; page: ${JSON.stringify(seen)}`);
     });
     if (!found) throw new Error("the artifact frame never drew");
     await found.frame.evaluate(axeSource).catch(() => undefined);
@@ -214,7 +216,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
   if (!env.BROWSER) return { issues: [], scores: null, unavailable: "no browser binding", shots: 0 };
   const errors: string[] = [];
   let browser: Browser;
-  try { browser = await openBrowser(env.BROWSER); } catch (error) { return { issues: [], scores: null, unavailable: `browser: ${error instanceof Error ? error.message : String(error)}`, shots: 0 }; }
+  try { browser = await openBrowser(env.BROWSER); } catch (error) { return { issues: [], scores: null, unavailable: `browser: ${qaErrorMessage(error)}`, shots: 0 }; }
   const passes: Pass[] = [];
   try {
     for (const viewport of VIEWPORTS) {
@@ -223,7 +225,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
         try { passes.push(await renderPass(browser, url, viewport, errors, options.expectedHash)); break; }
         catch (error) {
           if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 2500)); continue; }
-          errors.push(`${viewport.name}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300));
+          errors.push(`${viewport.name}: ${qaErrorMessage(error)}`.slice(0, 300));
         }
       }
     }

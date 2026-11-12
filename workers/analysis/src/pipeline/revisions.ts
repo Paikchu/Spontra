@@ -7,6 +7,7 @@ import type { EventType } from "./registry.ts";
  * change costs the reader one comparison, while a missed one leaves the page stale.
  */
 const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
+  "content.published": ["company", "findings", "events", "filings", "valuation"],
   "financials.published": ["company", "capital"],
   "map.derived": ["company", "capital"],
   "report.published": ["company", "filings"],

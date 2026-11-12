@@ -126,6 +126,7 @@ type DueRow = { due_at: string; first_requested_at: string; cause_id: string | n
 
 /** Whether a company is in a task's scope, read from the environment the queue entry already resolved (no D1 read). */
 function inScope(env: AnalysisEnv, scope: Exclude<TaskScope, "global">, ticker: string): boolean {
+  if (scope === "publication") return true;
   return scope === "map" ? allowData(dataTickers(env), ticker) : featureTickersFor(env, scope).includes(ticker);
 }
 
@@ -134,7 +135,7 @@ function inScope(env: AnalysisEnv, scope: Exclude<TaskScope, "global">, ticker: 
  * `pipeline_due` moved on (a newer trigger pushed the run back) or is gone (the run already happened). A message
  * that arrives early, because a queue delay is capped at a day, is sent on again for the remainder.
  * The due row is deleted only after the run succeeds, so a failure leaves it for the queue's retry. A run queued before
- * scheduled analysis went off for its company is marked held and its message consumed; switching it back on sends the run again.
+ * scheduled analysis went off for its company is marked held when it is a generation task; publication processing continues.
  */
 export async function runTaskMessage(env: AnalysisEnv, message: TaskMessage, now = new Date()): Promise<{ outcome: string; detail?: unknown }> {
   const db = env.DB!;
@@ -152,7 +153,7 @@ export async function runTaskMessage(env: AnalysisEnv, message: TaskMessage, now
       ...logStatements(db, { messageId: message.id, causeId: message.causeId, kind: "task", name: message.task, ticker: message.ticker, outcome: "done", detail: { skipped: `${scope} is off for this company` } })]);
     return { outcome: "done", detail: { skipped: `${scope} is off for this company` } };
   }
-  if (beforePause(row.first_requested_at, (await scheduledAnalysisPauses(db)).at(message.ticker))) {
+  if (scope !== "publication" && beforePause(row.first_requested_at, (await scheduledAnalysisPauses(db)).at(message.ticker))) {
     await db.batch([db.prepare("UPDATE pipeline_due SET held_at = ? WHERE ticker = ? AND task = ? AND due_at = ?").bind(now.toISOString(), message.ticker, message.task, row.due_at),
       ...logStatements(db, { messageId: message.id, causeId: message.causeId, kind: "task", name: message.task, ticker: message.ticker, outcome: "held" })]);
     return { outcome: "held" };

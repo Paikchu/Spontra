@@ -4,7 +4,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { readSources, tableKey, TRANSLATION_VERSION, type TranslationSource } from "./translate.ts";
 import { sha256 } from "../sha256.ts";
-import { readArtifactTranslation } from "../artifact/store.ts";
+import { previewToken, readArtifactTranslation } from "../artifact/store.ts";
 
 const MAX_ENTRIES = 1500;
 const DEFAULT_DAILY_CALLS = 300;
@@ -43,12 +43,18 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, now = 
       entries.push({ resource: source.resource, scope: source.scope, source: text, text: row?.text ?? null, status, problems: row?.problems ? JSON.parse(row.problems) as string[] : [], at: row?.created_at ?? null });
     }
     if (source.resource === "artifact") {
-      const row = await readArtifactTranslation(env, source.artifact.id, source.artifact.stored.document.version, source.artifact.stored.hash);
+      const doc = source.artifact.stored.document;
+      const row = await readArtifactTranslation(env, source.artifact.id, doc.version, source.artifact.stored.hash);
+      const lang: Locale = row?.r2_key ? "zh-CN" : "en";
+      const token = await previewToken(env, doc.kind, ticker, doc.subject, doc.version, Date.now(), lang === "zh-CN" ? lang : undefined);
+      const url = new URL("/article-preview", env.BUSINESS_SITE_ORIGIN);
+      url.searchParams.set("token", token);
+      url.searchParams.set("lang", lang);
       return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected,
-        publishedAt: row?.published_at ?? (row?.status === "ready" ? row.updated_at : null), publication: { status: row?.status ?? "pending", error: row?.error ?? null } };
+        publishedAt: row?.published_at ?? (row?.status === "ready" ? row.updated_at : null), publication: { status: row?.status ?? "pending", error: row?.error ?? null }, preview: { href: url.href, lang } };
     }
     const table = (await repository.getCache<{ at: string }>(tableKey(locale, source.resource, ticker, source.scope)).catch(() => null))?.payload;
-    return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected, publishedAt: table?.at ?? null, publication: null };
+    return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected, publishedAt: table?.at ?? null, publication: null, preview: null };
   }));
   const order = { rejected: 0, pending: 1, ready: 2 } as const;
   entries.sort((a, b) => order[a.status] - order[b.status]);

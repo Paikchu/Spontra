@@ -12,6 +12,7 @@ export type TranslationResourceSummary = {
   /** When the read API's table for it was last written; null before the first run. */
   publishedAt: string | null;
   publication: { status: "pending" | "translating" | "checking" | "ready" | "failed"; error: string | null } | null;
+  preview: { href: string; lang: Locale } | null;
 };
 
 /** One English string with what the translator did with it. `pending` has not been translated yet. */

@@ -1,4 +1,4 @@
-import type { ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
+import { ARTIFACT_KINDS, type ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
 import { extractArtifactTranslation } from "../../../../shared/analysis-runtime/artifact/localization.ts";
 import { documentHtml } from "../artifact/document.ts";
 import { previewToken, readArtifactTranslation, readArtifactVersion, recordCheck, type ArtifactStoreEnv, type StoredArtifact } from "../artifact/store.ts";
@@ -6,7 +6,6 @@ import { reviewRendering } from "../artifact/qa.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { sha256 } from "../sha256.ts";
-import { readStoredFindings } from "../findings/read.ts";
 
 export type ArtifactSource = {
   resource: "artifact"; scope: string; strings: string[];
@@ -14,10 +13,8 @@ export type ArtifactSource = {
 };
 
 export async function readArtifactSources(env: ArtifactStoreEnv, ticker: string): Promise<ArtifactSource[]> {
-  const findings = await readStoredFindings(env.DB!, ticker);
-  const prefix = findings?.fingerprint ? `${findings.fingerprint.slice(0, 16)}.` : "";
-  const rows = (await env.DB!.prepare("SELECT artifact_id, published_version FROM analysis_artifacts WHERE ticker = ? AND published_version IS NOT NULL AND (kind != 'dossier' OR (? != '' AND substr(subject,1,?) = ?)) ORDER BY CASE kind WHEN 'filing-report' THEN 0 WHEN 'company-analysis' THEN 1 ELSE 2 END, published_at DESC")
-    .bind(ticker, prefix, prefix.length, prefix).all<{ artifact_id: string; published_version: number }>()).results;
+  const rows = (await env.DB!.prepare("SELECT artifact_id, published_version FROM analysis_artifacts WHERE ticker = ? AND published_version IS NOT NULL AND kind IN (SELECT value FROM json_each(?)) ORDER BY CASE kind WHEN 'filing-report' THEN 0 WHEN 'company-analysis' THEN 1 ELSE 2 END, published_at DESC")
+    .bind(ticker, JSON.stringify(ARTIFACT_KINDS)).all<{ artifact_id: string; published_version: number }>()).results;
   const sources: ArtifactSource[] = [];
   for (const row of rows) {
     const stored = await readArtifactVersion(env, row.artifact_id, row.published_version);
@@ -70,11 +67,8 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
       .bind(key, hash, checkingAt, id, doc.version, stored.hash), outboxStatement(db, { type: "translations.published", ticker: doc.ticker }, checkingAt)]);
     const token = await previewToken(env, doc.kind, doc.ticker, doc.subject, doc.version, Date.now(), "zh-CN");
     const origin = env.BUSINESS_SITE_ORIGIN!;
-    const url = new URL(`/companies/${encodeURIComponent(doc.ticker)}`, origin);
-    if (doc.kind === "filing-report") url.searchParams.set("report", doc.subject);
-    else if (doc.kind === "company-analysis") url.searchParams.set("view", "company");
-    else if (doc.kind === "dossier") url.searchParams.set("finding", doc.subject.slice(doc.subject.indexOf(".") + 1));
-    url.searchParams.set("lang", "zh-CN"); url.searchParams.set("artifact-preview", token);
+    const url = new URL("/article-preview", origin);
+    url.searchParams.set("lang", "zh-CN"); url.searchParams.set("token", token);
     // Translation checks exercise the actual report and its interactions, without another content-generation run.
     const qa = await reviewRendering(env, url.href, doc.blocks.map(b => b.id), { ticker: doc.ticker, runId }, { visual: false, expectedHash: hash });
     await recordCheck(env, doc.kind, doc.ticker, doc.subject, doc.version, "translation:zh-CN", 1, { sourceHash: stored.hash, translatedHash: hash, ...qa });

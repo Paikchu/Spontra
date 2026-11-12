@@ -6,7 +6,7 @@ import { useLocale } from "@/packages/web/src/i18n";
  * A draft the visual review opened through its signed preview link (`?artifact-preview=`): it takes the published
  * artifact's place for this one subject, so the review sees the draft in the real stage.
  */
-/** `subject` "*" takes any draft of the kind (a valuation report's subject is its run's generation). */
+/** `subject` "*" takes any draft of the kind, as the stage does for its conversation reports. */
 export function usePreview(kind: PublishedArtifact["kind"], subject: string | null): PublishedArtifact | null {
   const [token] = useState(() => new URLSearchParams(location.search).get("artifact-preview"));
   const [draft, setDraft] = useState<PublishedArtifact | null>(null);

@@ -17,7 +17,7 @@ function layerForUsage(kind: string): Layer | null {
   const task = USAGE_TASK[kind];
   if (!task) return null;
   const scope = TASKS[task].scope;
-  return scope === 'global' ? null : scope;
+  return scope === 'global' || scope === 'publication' ? null : scope;
 }
 
 const empty = (): CompanyTokenUsage => ({ calls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, callsWithoutTokens: 0 });

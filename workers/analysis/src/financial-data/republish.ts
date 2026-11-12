@@ -4,6 +4,7 @@ import {publicFlowSchema} from '../../../../shared/analysis-runtime/financial-da
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import {historyFromSnapshot, reconcileRounding, roundingCompatible} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {readRevenueHistory} from './history.ts';
+import {contentPublishedStatement} from '../publication/publish.ts';
 
 /** Rebuild only revenue presentation from stored history. The stored complete statements remain
  * the authority for their accounting totals. No extraction, network fetch, event, or model dispatch. */
@@ -46,8 +47,8 @@ function rebuildPublication(flow: PublicBusinessFlow, history: RevenueHistoryQua
 }
 
 /** One immutable version per maintenance request. Pointer and all affected cache revisions commit
- * together, fenced by both the task lease and the version read. Deliberately bypasses the outbox:
- * financials.published would start other workflows, including optional model consumers. */
+ * together, fenced by both the task lease and the version read. Only shared post-publication processing
+ * is notified; financials.published would restart generation workflows and is deliberately not sent. */
 export async function republishStoredFinancials(db: D1Database, target: {ticker:string;cik:string;taskId:string;leaseToken:string}, now = new Date()): Promise<string> {
   const version = `reread:${target.taskId}`, at = now.toISOString();
   const prior = await db.prepare('SELECT version_id FROM financial_complete_versions WHERE version_id=?').bind(version).first();
@@ -89,6 +90,7 @@ export async function republishStoredFinancials(db: D1Database, target: {ticker:
       SELECT ?,?,? WHERE ${owns} AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)
       ON CONFLICT(ticker,resource) DO UPDATE SET revision=CASE WHEN publication_revisions.revision>=excluded.revision THEN strftime('%Y-%m-%dT%H:%M:%fZ',publication_revisions.revision,'+0.001 seconds') ELSE excluded.revision END`)
       .bind(ticker,resource,at,...owned,target.cik,version))),
+    ...tickers.map(ticker=>contentPublishedStatement(db,ticker,at,{sql:`${owns} AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)`,binds:[...owned,target.cik,version]})),
   ]);
   if (!results[1].meta.changes) throw new Error('REPUBLICATION_LEASE_OR_VERSION_CHANGED');
   return version;

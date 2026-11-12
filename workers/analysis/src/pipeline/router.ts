@@ -11,6 +11,12 @@ import { beforePause, scheduledAnalysisPauses } from "./scheduled-analysis.ts";
 /** The companies a task covers, for a version change that re-runs it everywhere. */
 export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<string[]> {
   if (scope === "global") return ["*"];
+  if (scope === "publication") {
+    const rows = await env.DB!.prepare(`SELECT DISTINCT ticker FROM (
+      SELECT ticker FROM publication_revisions UNION SELECT ticker FROM analysis_artifacts WHERE published_version IS NOT NULL
+    ) WHERE ticker <> '*' ORDER BY ticker`).all<{ ticker: string }>();
+    return rows.results.map(row => row.ticker);
+  }
   const policyEnv = await companyPolicyEnvironment(env);
   if (scope !== "map") return featureTickersFor(policyEnv, scope);
   return [...dataTickers(policyEnv)].sort();
@@ -33,7 +39,7 @@ async function targets(env: AnalysisEnv, event: EventMessage, scopes: (scope: Ta
     if (subscription.when && !subscription.when(event)) continue;
     const scope = TASKS[subscription.task].scope;
     // A company task runs only for companies in its scope: the SEC report only where layer 2 is on.
-    if (scope !== "global" && !(await scopes(scope)).includes(event.ticker)) continue;
+    if (scope !== "global" && scope !== "publication" && !(await scopes(scope)).includes(event.ticker)) continue;
     list.push({ task: subscription.task, ticker: scope === "global" ? "*" : event.ticker, causeId: event.id });
   }
   return list;
@@ -70,7 +76,7 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
     fanout.set(event.id, list.length);
     for (const target of list) {
       const key = `${target.ticker}\u0000${target.task}`, before = wanted.get(key);
-      const pausedAt = pauses.at(target.ticker);
+      const pausedAt = TASKS[target.task].scope === "publication" ? null : pauses.at(target.ticker);
       const parked = event.type === "task.version_changed" && pausedAt !== null;
       // A run something else in the batch asked for stays that run: it happens on the deployed code either way.
       if (parked && before && !before.parked) continue;
@@ -91,7 +97,8 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
           .bind(target.ticker, target.task, at, at, target.causeId, at));
         continue;
       }
-      const { dueAt, first } = nextDue(target.task, pauses.at(target.ticker) && !target.heldSince ? undefined : existing.get(key), now);
+      const paused = TASKS[target.task].scope !== "publication" && pauses.at(target.ticker);
+      const { dueAt, first } = nextDue(target.task, paused && !target.heldSince ? undefined : existing.get(key), now);
       statements.push(db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id, held_at = NULL`)
         .bind(target.ticker, target.task, dueAt, target.heldSince ?? first, target.causeId));

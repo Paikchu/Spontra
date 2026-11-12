@@ -4,7 +4,7 @@ import { loadReportContinuity } from "./continuity.ts";
 import { inReportingCurrency } from "./history.ts";
 import { SecMemoryRepository } from "./d1-memory.ts";
 import { parseJson, hashJson, type D1Like, type D1ResultStatement } from "./d1-support.ts";
-import { outboxInsert } from "../pipeline/outbox.ts";
+import { publicationOutboxInserts } from "../publication/publish.ts";
 export { SEC_ANALYSIS_JOB_LEASE_MS } from "./d1-jobs.ts";
 
 import type { SecFiling, SecFilingSummary, SecFilingWithSummary } from "./sec.ts";
@@ -41,8 +41,8 @@ type PublicFilingRow = {
 
 /** A published report or 8-K summary, announced in the same batch: the event rail attaches the summary to its filing. */
 function reportPublished(database: D1Like, summary: SecFilingSummary) {
-  const { sql, values } = outboxInsert({ type: "report.published", ticker: summary.ticker, detail: { form: summary.form, accession: summary.accessionNumber } }, summary.generatedAt);
-  return database.prepare(sql).bind(...values);
+  return publicationOutboxInserts({ type: "report.published", ticker: summary.ticker, detail: { form: summary.form, accession: summary.accessionNumber } }, summary.generatedAt)
+    .map(({ sql, values }) => database.prepare(sql).bind(...values));
 }
 
 /** The filing list's row for one filing, as SQL and values, so a caller can commit it with its own statements. */
@@ -133,7 +133,7 @@ export class D1SecRepository implements SecRepository {
           payload = excluded.payload
       `).bind(summary.ticker, summary.accessionNumber, summary.generatedAt, JSON.stringify(summary)),
       ...also,
-      reportPublished(this.database, summary),
+      ...reportPublished(this.database, summary),
     ];
   }
 
@@ -488,7 +488,7 @@ export class D1SecRepository implements SecRepository {
         VALUES (?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
         ON CONFLICT(job_id) DO NOTHING
       `).bind(memoryJobId, artifact.filing.ticker, artifact.filing.accessionNumber, artifact.periodId, sourceR2Key),
-      reportPublished(this.database, summary),
+      ...reportPublished(this.database, summary),
     ];
     await this.database.batch(statements);
     return memoryJobId;
