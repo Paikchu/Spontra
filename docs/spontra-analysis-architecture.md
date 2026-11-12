@@ -8,7 +8,7 @@
 
 ## 一、定位与原则
 
-Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worker `spontra-analysis`）。它为每家美股公司把 SEC 文件逐级加工成五种产物，前端（DeepSeek Harness 的 investment 应用）只读产物，不读原文。
+Spontra Analysis 是跑在 Cloudflare 上的后端（`workers/analysis/`，Worker `spontra-analysis`）。它为每家美股公司把 SEC 文件逐级加工成五种产物，前端只读产物，不读原文。
 
 ### 1.1 五层
 

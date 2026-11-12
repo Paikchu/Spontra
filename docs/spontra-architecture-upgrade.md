@@ -155,7 +155,7 @@ flowchart TB
   p3 --> api
   p4 --> api
   p5 --> api
-  api --> site["业务站 · Harness 投资应用"]
+  api --> site["业务站"]
 ```
 
 ### 层次图：每层的产物、校验与对上接口

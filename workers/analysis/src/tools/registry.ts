@@ -3,7 +3,7 @@ import type { AgentSchema, AgentClientTool } from "../tool-loop.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
- * The tool contract every agent shares, after DeepSeek Harness's `ToolDefinition`:
+ * The tool contract every agent shares:
  * typed parameters checked before the call, a decision before it runs (allow, deny, or ask the reader) and after
  * (accept, or block with feedback the model reads), and an observation written for the model. `S` is the run's own
  * state (materials read, numbers resolved, the last compile) that the tools of one run share.

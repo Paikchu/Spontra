@@ -51,7 +51,7 @@ Spontra 是一个以 Discovery Agent 为核心的公司基本面研究平台。�
 
 ## 定位与实现边界
 
-以上定义产品目标，不代表完整的 Discovery Agent、Live Report 与 Agent 自主布局已经实现。当前前端由 DeepSeek Harness 仓库维护，本仓库提供公司研究数据、分析服务、业务地图与后台；具体职责及部署方式见下文。现有能力应逐项验证，不能将定时分析或报告展示等同于完整的自主研究闭环。
+以上定义产品目标，不代表完整的 Discovery Agent、Live Report 与 Agent 自主布局已经实现。本仓库提供公司研究数据、分析服务、业务地图与后台；具体职责及部署方式见下文。现有能力应逐项验证，不能将定时分析或报告展示等同于完整的自主研究闭环。
 
 - GitHub：[Paikchu/Spontra](https://github.com/Paikchu/Spontra)，主分支 `main`，唯一 remote 为 `origin`。
 - 线上地图：`spontra-business-map` Worker。
@@ -60,11 +60,8 @@ Spontra 是一个以 Discovery Agent 为核心的公司基本面研究平台。�
 
 | 层 | 是什么 | 位置 |
 | --- | --- | --- |
-| 前端 | 基于 DeepSeek Harness 的投资研究应用（Harness 客户端 + `investment` 组合包） | `deepseek-harness` 仓库：`packages/bundle/investment`、`packages/client/ui-investment`、`packages/api/investment-controller` |
 | 后端 | **Spontra Analysis**：SEC 发现与解析、AI 分析、读取 API | 本仓库 `workers/analysis/`，Worker `spontra-analysis` |
 | 业务地图与后台 | 公开业务地图与运维后台，经 Service Binding 读 Spontra Analysis | 本仓库 `apps/business-site/`、`apps/admin/` |
-
-前端代码只在 `deepseek-harness` 仓库开发与发布，本仓库不放 Harness 前端源码；两边只通过 Spontra Analysis 的读取 API 与共享契约（`shared/analysis-contract/`）对接。
 
 ## 三个 Worker，一个仓库
 
