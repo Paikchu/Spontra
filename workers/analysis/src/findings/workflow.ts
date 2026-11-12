@@ -1,7 +1,6 @@
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { companyName as listedName } from "../catalog/issuer-directory.ts";
@@ -19,12 +18,7 @@ import { publicationOutboxStatements } from "../publication/publish.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v11";
-/**
- * Part of the findings fingerprint since findings had their own chart agent. Each finding's analysis is now the analyst's
- * dossier artifact; the value stays so that removing the agent does not rewrite every company's findings.
- */
-export const LENS_VERSION = "lens.agent.v6";
+export const FINDINGS_VERSION = "findings.detector.v12";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
@@ -54,7 +48,7 @@ export async function findingsInput(env: AnalysisEnv, ticker: string): Promise<I
   ]);
   const overview = analysis?.overview;
   const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}: ${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, extract: extract.fingerprint, analysis: analysis?.generatedAt ?? null, filings: filings.map(f => f.id) }));
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, ticker, extract: extract.fingerprint, analysis: analysis?.generatedAt ?? null, filings: filings.map(f => f.id) }));
   return { data: extract.data, ledger: extract.ledger, context, filings, fingerprint };
 }
 
@@ -77,20 +71,6 @@ export async function findingsFingerprint(env: AnalysisEnv, ticker: string): Pro
   return (await findingsInput(env, ticker))?.fingerprint ?? null;
 }
 
-/**
- * The watches of every finding published before this one for the company (stored versions plus what served until now),
- * each stamped with its report and publication time; at most the newest 24, and never a watch of this publication.
- */
-export async function priorWatches(store: AiRunStore, ticker: string, previous: FindingsPublication | null, current: FindingsPublication): Promise<FindingRecordEntry[]> {
-  const entries = new Map<string, FindingRecordEntry>();
-  const add = (p: FindingsPublication | null) => { for (const f of p?.findings ?? []) if (f.watch && p && p.generatedAt !== current.generatedAt) entries.set(`${p.periodEnd}:${f.id}`, { findingId: f.id, title: f.title, kind: f.kind, periodEnd: p.periodEnd, publishedAt: p.generatedAt, watch: f.watch }); };
-  for (const e of previous?.record ?? []) entries.set(`${e.periodEnd}:${e.findingId}`, e);
-  add(previous);
-  const versions = await store.versions("findings", ticker).catch(() => []);
-  for (const v of versions.slice(0, 12)) { const stored = await store.version("findings", ticker, v.id).catch(() => null); add(stored ? readFindingsPublication(stored.publication, ticker) : null); }
-  return [...entries.values()].sort((a, b) => a.publishedAt.localeCompare(b.publishedAt)).slice(-24);
-}
-
 export async function executeFindingsWorkflow(params: FindingsWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: FindingsDeps = {}) {
   assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
@@ -102,16 +82,14 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
   const companyName = issuerNames(await listedName(requireDb(env), params.ticker) ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
-  const draft = await writeFindings({
+  const outcome = await writeFindings({
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, filings: input.filings, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage,
   });
-  // Each finding keeps the chart it was written with; the analyst composes its full analysis as a dossier artifact.
-  const outcome = draft;
   // The headline figures of each statement view for this report; a failed call publishes the findings without them.
   const periodEnd = input.ledger.periodEnd;
   const written = await writeHighlights({
-    ticker: params.ticker, companyName, periodEnd, table: buildHighlightTable(input.data, periodEnd), findings: outcome.publication?.findings.map(f => f.title) ?? [],
+    ticker: params.ticker, companyName, periodEnd, table: buildHighlightTable(input.data, periodEnd), findings: outcome.publication?.leads?.map(f => f.title) ?? [],
     data: input.data, model, stage,
   }).catch(() => ({ highlights: null, withheld: [] }));
   // Neither findings nor highlights verified: whatever an older run stored keeps serving.
@@ -122,25 +100,21 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     const previous = stored ? readFindingsPublication(stored.payload, params.ticker) : null;
     // Earlier reports keep the highlights written when each was the newest.
     const highlights = mergeHighlights(written.highlights, previous?.highlights);
-    // Findings that verified nothing fall back to the set an older run published, so the
-    // new highlights still land; it takes this run's fingerprint, so the same input is not written again.
-    const base = outcome.publication ?? (previous ? { ...previous, fingerprint: params.fingerprint }
-      : { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion, fingerprint: params.fingerprint, findings: [], sources: input.ledger.sources });
+    // A missing new handoff can retain same-report leads, never the detector's old reader-facing body.
+    const base = outcome.publication ?? { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion,
+      fingerprint: params.fingerprint, findings: [], ...(previous?.periodEnd === periodEnd && previous.leads?.length ? { leads: previous.leads } : {}), sources: input.ledger.sources };
     const publication = readFindingsPublication({ ...base, highlights }, params.ticker);
     if (!publication) return false;
-    // Earlier publications' watches, oldest first, so the page can score each against the data as it stands now.
-    const store = new AiRunStore(db);
-    const record = { ...publication, record: await priorWatches(store, params.ticker, previous, publication) };
     // The publication and its event commit together.
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-        .bind(findingsCacheKey(params.ticker), JSON.stringify(record), now),
+        .bind(findingsCacheKey(params.ticker), JSON.stringify(publication), now),
       ...publicationOutboxStatements(db, { type: "findings.published", ticker: params.ticker }, now),
     ]);
-    await new AiRunStore(requireDb(env)).saveVersion("findings", params.ticker, record, now);
+    await new AiRunStore(db).saveVersion("findings", params.ticker, publication, now);
     return true;
   });
   if (!published) return { status: "empty" as const, withheld: outcome.withheld };
-  return { status: "ready" as const, findings: outcome.publication?.findings.length ?? 0, findingsFallback: !outcome.publication, withheld: outcome.withheld,
+  return { status: "ready" as const, leads: outcome.publication?.leads?.length ?? 0, findingsFallback: !outcome.publication, withheld: outcome.withheld,
     highlights: written.highlights ? { cash: written.highlights.cash.length, profit: written.highlights.profit.length, balance: written.highlights.balance.length } : null, highlightsWithheld: written.withheld.length };
 }

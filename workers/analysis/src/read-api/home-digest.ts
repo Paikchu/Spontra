@@ -10,7 +10,7 @@ import { checkCompleteFlow, newestPair } from "../../../../shared/analysis-runti
 import { publicFlowSchema } from "../../../../shared/analysis-runtime/financial-data/schema.ts";
 import { readHistory } from "../../../../shared/analysis-runtime/financial-data/history.ts";
 import { canonicalTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
+import { findingLeadsOf, readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import { localize, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
@@ -151,11 +151,12 @@ function findingsOf(raw: unknown, ticker: string, table: TranslationTable | null
   return publication ? localize("findings", publication, table) : null;
 }
 
-function projectFindings(publication: FindingsPublication | null): { counts: HomeCompany["findingCounts"]; top: HomeFinding[] } {
+function projectFindings(publication: FindingsPublication | null, published: Set<string>): { counts: HomeCompany["findingCounts"]; top: HomeFinding[] } {
   const counts = { risk: 0, strength: 0, shift: 0, watch: 0 };
   if (!publication) return { counts, top: [] };
-  for (const finding of publication.findings) counts[finding.kind] += 1;
-  const top = [...publication.findings]
+  const ready = publication.fingerprint ? findingLeadsOf(publication).filter(lead => published.has(`${publication.fingerprint!.slice(0, 16)}.${lead.id}`)) : [];
+  for (const finding of ready) counts[finding.kind] += 1;
+  const top = [...ready]
     .sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id))
     .slice(0, 2)
     .map(finding => ({ id: finding.id, kind: finding.kind, severity: finding.severity, title: finding.title, periodEnd: publication.periodEnd }));
@@ -172,11 +173,12 @@ function dataTickers(rows: Array<{ ticker: string; enabled: number }>): Set<stri
  * Read-only: no model call, no SEC fetch, no write.
  */
 export async function readHomeDigest(db: D1Database, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
+  const [publications, histories, findings, dossiers, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
     db.prepare(`SELECT substr(cache_key, 13) ticker, payload FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'`).all<{ ticker: string; payload: string }>(),
+    db.prepare("SELECT ticker, subject FROM analysis_artifacts WHERE kind = 'dossier' AND published_version IS NOT NULL").all<{ ticker: string; subject: string }>().catch(() => ({ results: [] as Array<{ ticker: string; subject: string }> })),
     db.prepare(`SELECT substr(cache_key, 24) ticker, payload FROM sec_cache WHERE cache_key >= 'admin:financial-issuer:' AND cache_key < 'admin:financial-issuer;'`).all<{ ticker: string; payload: string }>(),
     db.prepare(`SELECT ticker, enabled FROM financial_company_settings`).all<{ ticker: string; enabled: number }>().catch(() => ({ results: [] as Array<{ ticker: string; enabled: number }> })),
     locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
@@ -195,6 +197,8 @@ export async function readHomeDigest(db: D1Database, locale: Locale | null, now 
 
   const historyByCik = new Map(histories.results.map(row => [row.cache_key.slice("sec:revenue-history:v1:".length), row.payload]));
   const findingsByTicker = new Map(findings.results.map(row => [canonicalTicker(row.ticker), jsonRow(row.payload)]));
+  const dossiersByTicker = new Map<string, Set<string>>();
+  for (const row of dossiers.results) { const ticker = canonicalTicker(row.ticker), subjects = dossiersByTicker.get(ticker) ?? new Set<string>(); subjects.add(row.subject); dossiersByTicker.set(ticker, subjects); }
   const issuerByTicker = new Map(issuers.results.map(row => [canonicalTicker(row.ticker), row.payload]));
   const translationPrefix = locale ? `i18n:v1:${locale}:findings:` : "";
   const translationByTicker = new Map<string, TranslationTable>();
@@ -232,7 +236,7 @@ export async function readHomeDigest(db: D1Database, locale: Locale | null, now 
     const name = named(canonical)?.name ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
     const shown = findingsShown(canonical);
     const publication = shown ? findingsOf(findingsByTicker.get(canonical), canonical, translationByTicker.get(canonical) ?? null) : null;
-    const { counts, top } = projectFindings(publication);
+    const { counts, top } = projectFindings(publication, dossiersByTicker.get(canonical) ?? new Set());
     let revenueReason: HomeRevenueReason | null = null;
     let revenue: HomeCompany["revenue"] = null;
     if (latest && periodEnd) {

@@ -14,7 +14,7 @@ import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explaine
 import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
 import {readBusinessTree} from "@/shared/analysis-runtime/business-tree";
 import type {BusinessTree} from "@/shared/analysis-contract/business-tree";
-import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
+import {findingLeadsOf,readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
 import type {FindingPassage,FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
@@ -118,7 +118,7 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 }
 
 /** The findings with what their lens documents rest on: the quoted passages as the library serves them now, and the peers projection. */
-export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,string>};
+export type FindingsBundle={status:"ready"|"preparing";findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,string>};
 const asText=(v:unknown)=>typeof v==="string"?v:null;
 /** A served passage, rebuilt field by field; a malformed one is left out, and a malformed table drops the table alone. */
 function readFindingPassage(value:unknown):FindingPassage|null{
@@ -154,13 +154,13 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,loca
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown;dossiers?:unknown};
-  const findings=body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
+  const findings=body.schemaVersion==="findings-response.v1"&&(body.status==="ready"||body.status==="preparing")?readFindingsPublication(body.findings,ticker):null;
   if(!findings)return null;
   const passages=(Array.isArray(body.passages)?body.passages:[]).map(readFindingPassage).filter((p):p is FindingPassage=>p!=null).slice(0,60);
   // The findings whose analysis is a published dossier artifact, by id with when it was published (its read's revision).
-  const ids=new Set(findings.findings.map(f=>f.id));
+  const ids=new Set(findingLeadsOf(findings).map(f=>f.id));
   const dossiers=Object.fromEntries(Object.entries(body.dossiers&&typeof body.dossiers==="object"?body.dossiers as Record<string,unknown>:{}).filter((e):e is [string,string]=>ids.has(e[0])&&typeof e[1]==="string"&&REVISION.test(e[1])));
-  return {findings,passages,peers:readPeersPublication(body.peers),dossiers};
+  return {status:body.status==="ready"?"ready":"preparing",findings,passages,peers:readPeersPublication(body.peers),dossiers};
  }catch{return null;}
 }
 
@@ -515,7 +515,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>,cacheable?:(body:T)=>boolean)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});const canCache=!!body&&(!cacheable||cacheable(body));if(!canCache)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&canCache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{}});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{}});if(bundle?.status!=="ready")response.headers.set("cache-control","no-store");if(cache&&bundle?.status==="ready"&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    // The company analysis and dossiers select a translated artifact for the reader's locale.
    if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);

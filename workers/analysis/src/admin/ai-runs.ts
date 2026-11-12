@@ -11,7 +11,7 @@ import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-t
 import { securities } from "../catalog/issuer-directory.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
 import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
-import { findingsCacheKey, readFindingsResponse } from "../findings/read.ts";
+import { findingsCacheKey, readStoredFindings } from "../findings/read.ts";
 import type { AiWorkflowBinding, AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { authenticateAdmin } from "./auth.ts";
@@ -61,9 +61,9 @@ async function currentPublication(db: D1Database, kind: AiRunKind, ticker: strin
   if (kind === "analyst") return (await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)))?.payload ?? null;
   if (kind === "findings") {
     // The lens agent's trace is stored beside the publication and shown only here.
-    const [publication, stored] = await Promise.all([readFindingsResponse(db, ticker), new D1SecRepository(db).getCache<{ lensTrace?: unknown }>(findingsCacheKey(ticker))]);
+    const [publication, stored] = await Promise.all([readStoredFindings(db, ticker), new D1SecRepository(db).getCache<{ lensTrace?: unknown }>(findingsCacheKey(ticker))]);
     const trace = stored?.payload?.lensTrace;
-    return publication.findings && trace ? { ...publication.findings, lensTrace: trace } : publication.findings;
+    return publication && trace ? { ...publication, lensTrace: trace } : publication;
   }
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;

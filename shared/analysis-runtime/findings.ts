@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, FundamentalsUnavailableReason, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import { DERIVED_METRICS, EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type DerivedMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
+import { DERIVED_METRICS, EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type DerivedMetric, type EventField, type FindingEvidence, type FindingLead, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
 import type { EventsPublication } from "../analysis-contract/events.ts";
 import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { alignedPeerQuarter } from "./peers.ts";
@@ -65,12 +65,17 @@ const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ladder") }),
   z.object({ type: z.literal("document"), document: lensDocument }),
 ]);
+const anchors = z.object({ view: z.enum(["profit", "cash", "balance"]), nodeIds: z.array(text(200)).max(12), metrics: z.array(z.enum(FLOW_METRICS)).max(6), capital: z.array(z.enum(CAPITAL_METRICS)).max(6).optional() });
 const finding = z.object({
   id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   title: text(80), judgment: claim, evidence: z.array(evidence).min(1).max(8),
-  anchors: z.object({ view: z.enum(["profit", "cash", "balance"]), nodeIds: z.array(text(200)).max(12), metrics: z.array(z.enum(FLOW_METRICS)).max(6), capital: z.array(z.enum(CAPITAL_METRICS)).max(6).optional() }),
+  anchors,
   lens, pairWith: text(80).optional(),
   watch: watchSchema.optional(),
+});
+export const findingLeadSchema = z.object({
+  id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  title: text(80), question: text(400), evidence: z.array(evidence).min(1).max(3), anchors, pairWith: text(80).optional(),
 });
 const recordEntry = z.object({ findingId: text(80), title: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), periodEnd: date, publishedAt: z.string().max(40), watch: watchSchema });
 export const findingsMaterialSchema = z.object({ id: text(40), kind: z.enum(["sec", "transcript", "web"]), title: text(300), url: https, publishedAt: z.string().max(40).nullable(), passageId: z.string().regex(/^[a-z0-9]{8,64}$/).optional(), documentId: z.string().max(80).optional(), form: z.string().max(20).optional(), path: z.array(z.string().max(200)).max(12).optional(), textSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() });
@@ -81,6 +86,7 @@ export const findingsPublicationSchema = z.object({
   ticker: z.string().regex(TICKER_PATTERN),
   periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   findings: z.array(finding).max(8),
+  leads: z.array(findingLeadSchema).max(8).optional(),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
   highlights: z.array(reportHighlightsSchema).max(8).optional(),
   record: z.array(recordEntry).max(24).optional(),
@@ -135,8 +141,14 @@ export function readFindingsPublication(value: unknown, ticker: string): Finding
   const kept = parsed.data.findings.filter(f => { if (seen.has(f.id) || !f.judgment.sourceIds.every(id => sources.has(id))) return false; seen.add(f.id); return true; });
   const ids = new Set(kept.map(f => f.id));
   const findings: AnalysisFinding[] = kept.map(f => { if (f.pairWith && (f.pairWith === f.id || !ids.has(f.pairWith))) { const { pairWith, ...rest } = f; void pairWith; return rest; } return f; });
+  const leadIds = new Set<string>();
+  const uniqueLeads = parsed.data.leads?.filter(l => { if (leadIds.has(l.id)) return false; leadIds.add(l.id); return true; });
+  const leads = uniqueLeads?.map(l => {
+    if (l.pairWith && (l.pairWith === l.id || !leadIds.has(l.pairWith))) { const { pairWith, ...rest } = l; void pairWith; return rest; }
+    return l;
+  });
   // Highlights alone are a publication: the findings of a run that verified none are empty, the stat tiles still show.
-  return findings.length || parsed.data.highlights?.length ? { ...parsed.data, findings } : null;
+  return findings.length || leads?.length || parsed.data.highlights?.length ? { ...parsed.data, findings, ...(leads ? { leads } : {}) } : null;
 }
 
 /* ---------- Resolution ---------- */
@@ -755,6 +767,48 @@ export function watchVerdict(data: FindingData, watch: FindingWatch, publication
 }
 export type WithheldFinding = { id: string; reasons: string[] };
 
+export type VerifiedFindingLead = FindingLead & { periodEnd: string; resolved: ResolvedEvidence[] };
+
+/** Legacy publications can start research, but their body, watch and layout are not carried into the article. */
+export function findingLeadsOf(publication: FindingsPublication): FindingLead[] {
+  return publication.leads ?? publication.findings.map(f => ({
+    id: f.id, kind: f.kind, severity: f.severity, title: f.title, anchors: f.anchors,
+    question: "Investigate this signal's causes, persistence and consequences, and the evidence that would change the view.",
+    evidence: f.evidence.slice(0, 3), ...(f.pairWith ? { pairWith: f.pairWith } : {}),
+  }));
+}
+
+function resolveSubject(f: Pick<AnalysisFinding, "evidence" | "anchors">, data: FindingData, periodEnd: string, locale: Locale) {
+  const reasons: string[] = [];
+  const resolved = f.evidence.map(e => resolveEvidence(data, e, locale));
+  resolved.forEach((r, i) => { if (!r) reasons.push(`evidence ${i} unresolved`); });
+  const quarter = flowQuarter(data, periodEnd);
+  if (f.anchors.nodeIds.length) {
+    const ids = quarter ? flowNodeIds(quarter) : new Set((data.history?.quarters.find(q => near(q.periodEnd, periodEnd))?.segments ?? []).flatMap(s => [s.id, ...(s.children ?? []).map(c => c.id)]));
+    for (const id of f.anchors.nodeIds) if (!ids.has(id)) reasons.push(`anchor node ${id} absent`);
+  }
+  for (const m of f.anchors.metrics) if (!quarter || finite(quarter.figures[m]?.value) == null) reasons.push(`anchor metric ${m} absent`);
+  if (data.capital) for (const c of f.anchors.capital ?? []) if (!capitalAt(data, c, periodEnd, "quarter") && !capitalAt(data, c, periodEnd, "fiscal_year")) reasons.push(`anchor capital ${c} absent`);
+  return { resolved, reasons };
+}
+
+/** Research pointers need resolvable evidence, not an already written judgment or layout. */
+export function verifyFindingLeads(publication: FindingsPublication, data: FindingData, locale: Locale = "en"): { verified: VerifiedFindingLead[]; withheld: WithheldFinding[] } {
+  const verified: VerifiedFindingLead[] = [], withheld: WithheldFinding[] = [];
+  const order = { risk: 0, strength: 1, shift: 2, watch: 3 }, seen = new Set<string>();
+  for (const lead of findingLeadsOf(publication)) {
+    const { resolved, reasons } = resolveSubject(lead, data, publication.periodEnd, locale);
+    if (seen.has(lead.id)) reasons.push("duplicate lead id");
+    seen.add(lead.id);
+    const candidates = resolved.flatMap(r => r ? evidenceCandidates(r) : []);
+    for (const n of proseNumbers(`${lead.title} ${lead.question}`)) if (!numberSupported(n, candidates)) reasons.push(`number ${n} unsupported`);
+    if (reasons.length) withheld.push({ id: lead.id, reasons });
+    else verified.push({ ...lead, periodEnd: publication.periodEnd, resolved: resolved as ResolvedEvidence[] });
+  }
+  verified.sort((a, b) => b.severity - a.severity || order[a.kind] - order[b.kind]);
+  return { verified, withheld };
+}
+
 /**
  * Keeps only findings the page's data can stand behind: every piece of evidence resolves, every
  * anchored business and metric exists in the quarter the finding is about, and every number in
@@ -765,18 +819,8 @@ export function verifyFindings(publication: FindingsPublication, data: FindingDa
   const verified: VerifiedFinding[] = [], withheld: WithheldFinding[] = [];
   const order: Record<AnalysisFinding["kind"], number> = { risk: 0, strength: 1, shift: 2, watch: 3 };
   for (const f of publication.findings) {
-    const reasons: string[] = [];
-    const resolved = f.evidence.map(e => resolveEvidence(data, e, locale));
-    resolved.forEach((r, i) => { if (!r) reasons.push(`evidence ${i} unresolved`); });
-    // Anchors are checked on the report the findings were written from, whatever periods the evidence spans.
     const periodEnd = publication.periodEnd;
-    const quarter = flowQuarter(data, periodEnd);
-    if (f.anchors.nodeIds.length) {
-      const ids = quarter ? flowNodeIds(quarter) : new Set((data.history?.quarters.find(q => near(q.periodEnd, periodEnd))?.segments ?? []).flatMap(s => [s.id, ...(s.children ?? []).map(c => c.id)]));
-      for (const id of f.anchors.nodeIds) if (!ids.has(id)) reasons.push(`anchor node ${id} absent`);
-    }
-    for (const m of f.anchors.metrics) if (!quarter || finite(quarter.figures[m]?.value) == null) reasons.push(`anchor metric ${m} absent`);
-    if (data.capital) for (const c of f.anchors.capital ?? []) if (!capitalAt(data, c, periodEnd, "quarter") && !capitalAt(data, c, periodEnd, "fiscal_year")) reasons.push(`anchor capital ${c} absent`);
+    const { resolved, reasons } = resolveSubject(f, data, periodEnd, locale);
     if (f.lens.type === "ladder" && !data.capital?.quarters.some(q => q.rpo)) reasons.push("ladder lens without RPO");
     const candidates = resolved.flatMap(r => r ? evidenceCandidates(r) : []);
     for (const n of proseNumbers(`${f.title} ${f.judgment.text}`)) if (!numberSupported(n, candidates)) reasons.push(`number ${n} unsupported`);

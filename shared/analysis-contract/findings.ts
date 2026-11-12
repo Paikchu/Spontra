@@ -112,6 +112,14 @@ export type FindingRecordEntry = { findingId: string; title: string; kind: Findi
 /** A filing passage, transcript excerpt or web page a lens document quotes; the text itself is re-read at serve time, never trusted from here. */
 export type FindingMaterial = { id: string; kind: "sec" | "transcript" | "web"; title: string; url: string; publishedAt: string | null; passageId?: string; documentId?: string; form?: string; path?: string[]; textSha256?: string };
 
+/** Internal research handoff. The analyst authors the article; the detector supplies only a question and pointers. */
+export type FindingLead = Pick<AnalysisFinding, "id" | "kind" | "severity" | "title" | "anchors" | "pairWith"> & {
+  /** One or two sentences, at most 400 characters; a question rather than a finished conclusion. */
+  question: string;
+  /** One to three references sufficient to start the investigation. */
+  evidence: FindingEvidence[];
+};
+
 /**
  * A finding-shaped analysis an agent wrote, with the passages it quotes as read when it was written: a judgment whose
  * every number its evidence produces and a lens document of charts, quotes and prose. The page verifies it with the
@@ -170,6 +178,9 @@ export type FindingsPublication = {
   model: string;
   /** Hash of the report and narrative the set was written from; the sweep regenerates when it changes. */
   fingerprint?: string;
+  /** Lightweight research leads; their metadata locates the independently published analyst articles. */
+  leads?: FindingLead[];
+  /** Legacy authored findings. New detectors leave this empty and publish leads instead. */
   findings: AnalysisFinding[];
   sources: ExplainerSource[];
   /** Headline figures of this report and of the reports before it, each written when its report was the newest. */

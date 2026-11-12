@@ -19,7 +19,7 @@ export function usePreview(kind: PublishedArtifact["kind"], subject: string | nu
       .catch(() => undefined);
     return () => controller.abort();
   }, [token, kind, subject]);
-  return draft;
+  return draft?.kind === kind && (subject === "*" || draft.subject === subject) ? draft : null;
 }
 
 /**
@@ -27,17 +27,23 @@ export function usePreview(kind: PublishedArtifact["kind"], subject: string | nu
  * when there is none. `rev` (when it was published) keys the read, so a newer artifact is a new address.
  */
 export function usePublishedArtifact(ticker: string, path: string | null, rev?: string | null): PublishedArtifact | null {
-  const [loaded, setLoaded] = useState<{ ticker: string; path: string; artifact: PublishedArtifact } | null>(null);
+  return usePublishedArtifactRead(ticker, path, rev).artifact;
+}
+
+/** A dossier distinguishes unfinished analysis from a failed read, and never shows a different revision while loading. */
+export function usePublishedArtifactRead(ticker: string, path: string | null, rev?: string | null, retry = 0): { artifact: PublishedArtifact | null; status: "preparing" | "loading" | "ready" | "failed" } {
+  const [loaded, setLoaded] = useState<{ key: string; artifact: PublishedArtifact | null; status: "ready" | "failed" } | null>(null);
   const locale = useLocale();
+  const key = JSON.stringify([ticker, path, rev, locale, retry]);
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ schema: "artifact-i18n-v1", ...locale === "en" ? {} : { lang: locale }, ...rev ? { rev } : {} });
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/artifacts/${path}${params.size ? `?${params}` : ""}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() as Promise<{ artifact?: PublishedArtifact | null }> : null)
-      .then(body => { if (!controller.signal.aborted && body?.artifact) setLoaded({ ticker, path, artifact: body.artifact }); })
-      .catch(() => undefined);
+      .then(r => { if (!r.ok) throw new Error(`Artifact read failed: ${r.status}`); return r.json() as Promise<{ artifact?: PublishedArtifact | null }>; })
+      .then(body => { if (!controller.signal.aborted) setLoaded({ key, artifact: body.artifact ?? null, status: body.artifact ? "ready" : "failed" }); })
+      .catch(() => { if (!controller.signal.aborted) setLoaded({ key, artifact: null, status: "failed" }); });
     return () => controller.abort();
-  }, [ticker, path, rev, locale]);
-  return loaded?.ticker === ticker && loaded.path === path ? loaded.artifact : null;
+  }, [ticker, path, rev, locale, key]);
+  return loaded?.key === key ? loaded : { artifact: null, status: path ? "loading" : "preparing" };
 }

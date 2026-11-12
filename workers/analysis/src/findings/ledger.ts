@@ -160,6 +160,19 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
 }
 
 /**
+ * Layer 2's full ledger remains available to the analyst. Detection only needs the newest quarter and trailing-four-
+ * quarter levels with their already computed changes, rather than every historical row and obligation schedule.
+ */
+export function discoveryLedger(ledger: Ledger): Ledger {
+  const rows = ledger.rows.filter(row => {
+    if (Math.abs(Date.parse(row.periodEnd) - Date.parse(ledger.periodEnd)) > 20 * 86_400_000) return false;
+    if ("schedule" in row.ref) return false;
+    return !("ratio" in row.ref && "nodeId" in row.ref.ratio.numerator && "capital" in row.ref.ratio.denominator && row.ref.ratio.denominator.capital === "capex");
+  });
+  return { ...ledger, rows };
+}
+
+/**
  * The newest quarter against the five before it, one row per figure, grouped by the statement view it belongs to: what
  * a highlights writer reads to tell which figures broke from their trend. Values are written as the ledger writes them;
  * the change columns are the newest quarter's.

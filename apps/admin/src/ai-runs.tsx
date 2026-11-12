@@ -15,7 +15,7 @@ import { PLANS } from "./run-progress";
 
 /** The BusinessView outputs this admin shows. */
 export type ViewKind = AiRunKind;
-const KINDS: Array<[ViewKind, string]> = [["findings", "要点"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
+const KINDS: Array<[ViewKind, string]> = [["findings", "分析线索"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
@@ -33,7 +33,7 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   ...PLANS.tree.step,
   [/^tree-publish$/, () => "发布"],
   [/^findings-input$/, () => "读取财报与公司综述"],
-  [/^findings-write$/, () => "撰写要点"],
+  [/^findings-write$/, () => "发现分析线索"],
   [/^findings-repair$/, () => "修正未通过项"],
   [/^findings-publish$/, () => "核对并发布"],
   [/^explainer-input$/, () => "读取业务列表"],
@@ -253,10 +253,11 @@ function AnalystView({ dossier }: { dossier: DossierRecord }) {
 type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: string; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[] }> };
 function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {
   const trace = (id: string) => publication.lensTrace?.findings.find(f => f.id === id);
-  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}{publication.lensTrace ? ` · Lens ${publication.lensTrace.version}` : ""}</p>{publication.findings.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
+  const leads = publication.leads ?? publication.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, question: f.judgment.text, evidence: f.evidence, anchors: f.anchors, pairWith: f.pairWith }));
+  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model} · {leads.length} 条线索，仅供分析师研究</p>{leads.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
     <header><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
-    <p>{f.judgment.text}</p>
-    <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view} · 版面 {f.lens.type === "document" ? `${f.lens.document.rows.length} 行 · ${f.lens.document.rows.flatMap(r => r.cells.flat()).filter(b => b.kind === "chart").length} 张图` : f.lens.type}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
+    <p>{f.question}</p>
+    <small>{f.evidence.length} 项起始证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}</small>
     {t && <details className="ai-raw"><summary>Lens 生成过程 · {t.turns.length} 轮{t.document ? "" : " · 未采用，沿用原图"}{t.warnings.length ? ` · ${t.warnings.length} 条提示` : ""}</summary>
       {t.warnings.length > 0 && <ul className="ai-lens-warnings">{t.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       <ol className="ai-tree-steps">{t.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre></li>)}</ol>

@@ -9,9 +9,9 @@ import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSanke
 import type { NoticeCode, SceneBlock } from "@/shared/analysis-contract/scene";
 import { compileChart } from "@/shared/analysis-runtime/lens/compile";
 import { verifyScene } from "@/shared/analysis-runtime/scene/verify";
-import { findingData, KIND_LABEL, verifiedFindings, type VerifiedFinding } from "../findings-model";
+import { findingData, verifiedFindings, type VerifiedFinding } from "../findings-model";
 import type { CompanyData } from "../live-company";
-import { LensBlocks } from "../LensPanel";
+import { LensBlocks, LensPanel } from "../LensPanel";
 import { LensFrame } from "../LensFrame";
 import { SeverityIcon } from "../SeverityIcon";
 import { trendChart, type StageState } from "./stage-model";
@@ -46,11 +46,9 @@ export default function SceneView({ ticker, scene, data, onOpenFinding }: { tick
     switch (b.kind) {
       case "lens": {
         const finding = byId.get(b.findingId);
-        return finding ? <section className="lens scene-lens" data-kind={finding.kind}>
-          <header className="lens-head"><div className="lens-title"><b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}</b>
-            <h2 lang={langOf(finding.title)}><Button variant="unstyled" type="button" onClick={() => onOpenFinding(finding.id)}>{finding.title}</Button></h2></div></header>
-          <LensBlocks finding={finding} data={facts} sources={data.findings?.findings.sources ?? []} materials={data.findings?.findings.materials} record={data.findings?.findings.record} ticker={ticker} nodeColor={() => "var(--biz-1)"} compact={false} layout={b.document} />
-        </section> : null;
+        return finding ? <LensPanel finding={finding} data={facts} sources={[]} ticker={ticker} nodeColor={() => "var(--biz-1)"} pair={null} compact
+          dossier={{ version: data.findings?.dossiers[finding.id] ?? null, subject: data.findings?.findings.fingerprint ? `${data.findings.findings.fingerprint.slice(0, 16)}.${finding.id}` : null }}
+          onPair={() => {}} onClose={() => {}} onFocusThis={() => onOpenFinding(finding.id)} /> : null;
       }
       case "chart": { const chart = verified.charts[b.id]; return chart ? <LensFrame chart={chart} /> : null; }
       case "metric-trend": return <Trend block={b} data={facts} periodEnd={scene.scene.scope.periodEnd} />;

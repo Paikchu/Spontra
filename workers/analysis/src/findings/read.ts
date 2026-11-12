@@ -1,9 +1,7 @@
 import type { FindingPassage, FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
-import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
+import { findingLeadsOf, readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import { citedPeers, peersFor } from "../../../../shared/analysis-runtime/peers.ts";
-import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
-import { dossierCacheKey } from "../analyst/workflow.ts";
 import { publishedDossiers } from "../artifact/store.ts";
 import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
@@ -45,15 +43,16 @@ export async function readStoredFindings(db: D1Database, rawTicker: string): Pro
 }
 
 /**
- * The publication as served: the stored set, with the analyst's documents when written for this very
- * publication.
+ * Leads name the analyses a reader can open. Detector drafts and historical lens documents are never public bodies;
+ * the analyst's published HTML is read through the artifact route.
  */
 export async function readServedFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
   const ticker = rawTicker.trim().toUpperCase();
   const base = await readStoredFindings(db, ticker);
   if (!base) return null;
-  const dossier = await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null);
-  return readFindingsPublication(mergeDossier(base, dossier), ticker) ?? mergeDossier(base, dossier);
+  const { materials: _materials, record: _record, ...navigation } = base;
+  void _materials; void _record;
+  return readFindingsPublication({ ...navigation, findings: [], leads: findingLeadsOf(base) }, ticker);
 }
 
 /** The stored publication, re-validated and never repaired. */
@@ -66,7 +65,9 @@ export async function readFindingsResponse(db: D1Database, rawTicker: string, op
   // Quoted passages and the peers the publication cites ride with it; neither is required for it to serve. Only the cited
   // peers, so another company's new quarter leaves this answer, and this company's revision, as they were.
   // The findings whose dossier the analyst published as an artifact for this very publication.
-  const [passages, peers, dossiers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null),
-    findings.fingerprint ? publishedDossiers(db, ticker, findings.fingerprint) : Promise.resolve({})]);
-  return { schemaVersion: "findings-response.v1", status: "ready", findings, passages, peers, dossiers };
+  const [passages, peers, published] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null),
+    findings.fingerprint ? publishedDossiers(db, ticker, findings.fingerprint) : Promise.resolve<Record<string, string>>({})]);
+  const ids = new Set(findingLeadsOf(findings).map(lead => lead.id));
+  const dossiers = Object.fromEntries(Object.entries(published).filter(([id]) => ids.has(id)));
+  return { schemaVersion: "findings-response.v1", status: Object.keys(dossiers).length ? "ready" : "preparing", findings, passages, peers, dossiers };
 }

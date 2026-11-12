@@ -6,6 +6,7 @@ import type { BusinessTree } from "../../../../shared/analysis-contract/business
 import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
+import { findingLeadsOf } from "../../../../shared/analysis-runtime/findings.ts";
 import { VALUATION_HORIZON_MONTHS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusNote, type ConsensusTarget, type DiscountRate, type DiscountRateSources, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, WEIGHT_SUM_TOLERANCE, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
@@ -525,8 +526,12 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         }
         return `${read.form} filed ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion (analysis, not evidence): ${read.judgment}\n\n${out.join("\n\n") || "(no passage quoted)"}`;
       }, observe: (_a, v) => v }),
-    tool({ name: "read_findings", description: "The company's verified findings: what the financial review concluded across the eight quarters (analysis, not evidence; their figures are facts you read with read_financials).", parameters: z.object({}), concurrencySafe: true,
-      execute: async (_a, ctx) => { const f = await ctx.stage("findings", () => readStoredFindings(db, ctx.state.input.ticker).catch(() => null)); return f?.findings.length ? f.findings.map(x => `${x.id} · ${x.kind} · severity ${x.severity} · ${x.title}\n${x.judgment.text}`).join("\n\n") : "No findings are published."; }, observe: (_a, v) => v }),
+    tool({ name: "read_findings", description: "The company's research leads and questions, not established conclusions or evidence. Investigate them independently; read figures with read_financials and source passages with read_filing_analysis.", parameters: z.object({}), concurrencySafe: true,
+      execute: async (_a, ctx) => {
+        const publication = await ctx.stage("findings", () => readStoredFindings(db, ctx.state.input.ticker).catch(() => null));
+        const leads = publication ? findingLeadsOf(publication) : [];
+        return leads.length ? leads.map(lead => `${lead.id} · ${lead.kind} · severity ${lead.severity} · ${lead.title}\nResearch question (not a conclusion): ${lead.question}`).join("\n\n") : "No research leads are published.";
+      }, observe: (_a, v) => v }),
     tool({ name: "read_business_tree", description: "The company's business breakdown: each disclosed business, its lines and products and how they earn money, each anchored by a passage from a researched page or filing. A business's anchors become evidence [e…].", parameters: z.object({ business: z.string().max(120).optional() }),
       execute: async (args, ctx) => {
         const tree = await ctx.stage("tree", async () => (await new D1SecRepository(db).getCache<BusinessTree>(businessTreeCacheKey(ctx.state.input.ticker)).catch(() => null))?.payload ?? null);

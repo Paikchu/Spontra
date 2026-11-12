@@ -92,7 +92,7 @@ export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: s
   const response = await companyRequest(companyPath(ticker, "/findings", rev), signal, openingResponse);
   if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null; dossiers?: Record<string, string> };
-  return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null, dossiers: body.dossiers ?? {} } : null;
+  return (body.status === "ready" || body.status === "preparing") && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null, dossiers: body.dossiers ?? {} } : null;
 }
 
 /** The valuation assessment in every state it answers with (hidden, preparing, ready, insufficient, failed); null only when the read failed. */

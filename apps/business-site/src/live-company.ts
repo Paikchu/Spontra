@@ -8,7 +8,7 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
-import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import { findingLeadsOf, type FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, fetchValuation, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
@@ -150,7 +150,7 @@ const newIds = (next: string[] | undefined, before: string[] | undefined) => !!n
 
 function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
   const news: UpdateNews[] = [];
-  if (newIds(patch.findings?.findings.findings.map(f => f.id), now.findings?.findings.findings.map(f => f.id))) news.push("findings");
+  if (newIds(patch.findings ? findingLeadsOf(patch.findings.findings).map(f => f.id) : undefined, now.findings ? findingLeadsOf(now.findings.findings).map(f => f.id) : undefined)) news.push("findings");
   if (newIds(patch.filings?.filings.map(f => f.accessionNumber), now.filings?.filings.map(f => f.accessionNumber))
     || newIds(patch.flow?.quarters.map(q => q.periodEnd), now.flow?.quarters.map(q => q.periodEnd))) news.push("reports");
   if (newIds(patch.events?.events.map(e => e.id), now.events?.events.map(e => e.id))) news.push("events");

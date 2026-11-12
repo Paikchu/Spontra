@@ -135,7 +135,8 @@ export async function readWorkState<T>(env: ArtifactStoreEnv, kind: ArtifactKind
 
 const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
   id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version,
-  title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title : s.document.title,
+  title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title
+    : s.document.kind === "dossier" ? s.document.blocks.find(b => b.id === "thesis")?.title ?? s.document.title : s.document.title,
   html: s.html, css: s.css, hash: s.hash, publishedAt: at, degraded: s.degraded,
   lang: isLocale(s.document.lang) ? s.document.lang : "en", translation: null,
 });

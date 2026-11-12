@@ -1,5 +1,5 @@
 import type { FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
-import { resolveEvidence, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { resolveEvidence, type FindingData, type VerifiedFindingLead } from "../../../../shared/analysis-runtime/findings.ts";
 import { assessStatements, formatMetric, METRIC_DEFS } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import type { Flag } from "../../../../shared/analysis-contract/statement-analysis.ts";
 
@@ -13,7 +13,7 @@ export type PlannedLine = { key: LineKey; why: string; questions: string[]; evid
 export type Tier = "deep" | "standard" | "light";
 export type Plan = { tier: Tier; lines: PlannedLine[]; budget: { turns: number; reads: number; finds: number; searches: number; webReads: number } };
 
-const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 16, reads: 8, finds: 6, searches: 3, webReads: 3 }, standard: { turns: 10, reads: 5, finds: 4, searches: 2, webReads: 2 }, light: { turns: 0, reads: 0, finds: 0, searches: 0, webReads: 0 } };
+const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 16, reads: 8, finds: 6, searches: 3, webReads: 3 }, standard: { turns: 10, reads: 5, finds: 4, searches: 2, webReads: 2 }, light: { turns: 6, reads: 3, finds: 2, searches: 0, webReads: 0 } };
 const MAX_LINES = 5;
 
 const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
@@ -55,8 +55,8 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
   ], evidence: "the comparable peers and their basis (peers), the peers table (peer references) for peers of basis company, peers' filings through find_sections with peers; the divergence table" },
 };
 
-const refs = (f: VerifiedFinding): FindingRef[] => f.evidence.map(e => e.ref);
-const cites = (f: VerifiedFinding, test: (r: FindingRef) => boolean) => refs(f).some(r => test(r) || ("ratio" in r && (test(r.ratio.numerator) || test(r.ratio.denominator))));
+const refs = (f: VerifiedFindingLead): FindingRef[] => f.evidence.map(e => e.ref);
+const cites = (f: VerifiedFindingLead, test: (r: FindingRef) => boolean) => refs(f).some(r => test(r) || ("ratio" in r && (test(r.ratio.numerator) || test(r.ratio.denominator))));
 const capital = (name: string) => (r: FindingRef) => "capital" in r && r.capital === name;
 const yoy = (data: FindingData, ref: FindingRef, end: string, span: FindingSpan) => resolveEvidence(data, { ref, periodEnd: end, span, compare: "yoy" })?.delta ?? null;
 
@@ -77,7 +77,7 @@ function tripped(flags: Flag[], line: LineKey): string[] {
   return flags.filter(f => rules.includes(f.ruleId)).map(f => `${f.ruleId} (${formatMetric(f.value, METRIC_DEFS.get(f.metricId)!.form)} against ${f.threshold})`);
 }
 
-export function planFinding(f: VerifiedFinding, data: FindingData, peers: string[]): Plan {
+export function planFinding(f: VerifiedFindingLead, data: FindingData, peers: string[]): Plan {
   const end = f.periodEnd, span: FindingSpan = f.evidence[0]?.span ?? "quarter";
   const tier: Tier = f.kind === "watch" || f.severity <= 1 ? "light" : f.severity === 3 ? "deep" : "standard";
   const flags = assessStatements(data, end).flags;

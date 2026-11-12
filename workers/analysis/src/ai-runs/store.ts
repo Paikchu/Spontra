@@ -20,9 +20,9 @@ export function summarize(kind: AiRunKind, publication: unknown): AiVersionSumma
   const p = (publication ?? {}) as Record<string, unknown>;
   const list = (key: string) => Array.isArray(p[key]) ? (p[key] as unknown[]).length : 0;
   // A dossier keeps one document per finding under its id, and its sources are the materials the quotes rest on.
-  const documents = p.documents && typeof p.documents === "object" ? Object.keys(p.documents as object).length : 0;
+  const documents = p.artifacts && typeof p.artifacts === "object" ? Object.keys(p.artifacts as object).length : p.documents && typeof p.documents === "object" ? Object.keys(p.documents as object).length : 0;
   return {
-    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : kind === "valuation" ? "dimensions" : "items"),
+    items: kind === "analyst" ? documents : list(kind === "findings" ? Array.isArray(p.leads) ? "leads" : "findings" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : kind === "valuation" ? "dimensions" : "items"),
     sources: kind === "analyst" ? list("materials") : kind === "valuation" ? list("evidence") : list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,

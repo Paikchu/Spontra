@@ -16,7 +16,7 @@ import { SeverityIcon } from "./SeverityIcon";
 import { LensFrame } from "./LensFrame";
 import { HtmlFrame } from "./HtmlFrame";
 import { ArtifactFrame } from "./ArtifactFrame";
-import { usePreview, usePublishedArtifact } from "./artifact-reads";
+import { usePreview, usePublishedArtifactRead } from "./artifact-reads";
 
 const m = messages({
   finding: (title: string) => `Finding: ${title}`, report: (period: string) => `${period} report`,
@@ -24,12 +24,14 @@ const m = messages({
   close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
   metric: "Metric", current: "Current", compared: "Compared with", change: "Change", value: "Value", traded: (date: string) => `Traded ${date}`,
+  analysisPreparing: "The analyst is preparing this analysis.", analysisLoading: "Loading the analyst's analysis…", analysisFailed: "The analysis could not be loaded.", retry: "Retry",
 }, {
   finding: (title: string) => `要点：${title}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
   close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
   metric: "指标", current: "本期", compared: "对比", change: "变化", value: "数值", traded: (date: string) => `交易日 ${date}`,
+  analysisPreparing: "分析师正在准备这条要点的分析。", analysisLoading: "正在加载分析师的分析…", analysisFailed: "分析暂时无法加载。", retry: "重试",
 });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
 
@@ -46,11 +48,9 @@ const LIBRARY_PASSAGE = /^p[0-9a-f]{14,32}$/;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /**
- * The finding in focus, holding the whole stage: the finding as verified against the data the stage draws (its
- * judgment, figures and what to watch), then the analyst's dossier artifact when one is published for this
- * publication. Without a dossier the finding's own document stands, laid out from its chart.
+ * A lead opens the analyst's dossier. Detector drafts, figures and watches are never a detail-page fallback.
  */
-export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, onPair, onClose, split = false, compact = false, onFocusThis, dossier }: {
+export function LensPanel({ finding, ticker, pair, onPair, onClose, split = false, compact = false, onFocusThis, dossier }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
@@ -71,18 +71,16 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   dossier?: { version: string | null; subject: string | null };
 }) {
   const preview = usePreview("dossier", dossier?.subject ?? null);
-  // A draft opened for the visual review shows only what the published dossier will: nothing of the finding's older document.
-  const [previewing] = useState(() => new URLSearchParams(location.search).has("artifact-preview"));
-  const published = usePublishedArtifact(ticker, !compact && dossier?.version ? `dossier/${finding.id}` : null, dossier?.version);
-  const artifact = compact ? null : preview ?? published;
-  // With a dossier the finding shows only its verified core above the analysis; the analysis is the artifact.
-  const core = useMemo<LensDocumentShape | null>(() => artifact || (!compact && (dossier?.version || previewing)) ? { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }, ...(finding.watch ? [{ kind: "watch" as const }] : []), ...(record?.length ? [{ kind: "record" as const }] : [])]] }] } : null, [artifact, compact, dossier?.version, previewing, finding.watch, record?.length]);
+  const [retry, setRetry] = useState(0);
+  const published = usePublishedArtifactRead(ticker, dossier?.version ? `dossier/${finding.id}` : null, dossier?.version, retry);
+  const artifact = preview ?? published.artifact;
+  const title = artifact?.title ?? finding.title;
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<SeverityIcon severity={finding.severity} /></b>
-        <h2 lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</h2>
-        <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[finding.title, finding.judgment.text]} /></span>
+        <h2 lang={langOf(title)}>{normalizeDisplayText(title)}</h2>
+        <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[title]} /></span>
       </div>
       <div className="lens-nav">
         {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>{m.focusThis}</Button> : <>
@@ -91,9 +89,10 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
         </>}
       </div>
     </header>
-    <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} {...core ? { layout: core } : {}}>
-      {artifact && <ArtifactFrame artifact={artifact} hostTitle={finding.title} />}
-    </LensBlocks>
+    {artifact ? <div className="lens-doc"><ArtifactFrame artifact={artifact} hostTitle={title} /></div>
+      : <div className="empty" role="status"><p>{published.status === "failed" ? m.analysisFailed : published.status === "loading" ? m.analysisLoading : m.analysisPreparing}</p>
+        {published.status === "failed" && <Button variant="unstyled" type="button" onClick={() => setRetry(n => n + 1)}>{m.retry}</Button>}
+      </div>}
   </section>;
 }
 

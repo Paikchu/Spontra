@@ -709,6 +709,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           dossier={{ version: dossiers?.[focused.id] ? revisions.findings ?? dossiers[focused.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${focused.id}` : null }}
           onPair={() => setSplit(v => !v)} onClose={() => focusFinding(null)} />
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
+          dossier={{ version: dossiers?.[pair.id] ? revisions.findings ?? dossiers[pair.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${pair.id}` : null }}
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.

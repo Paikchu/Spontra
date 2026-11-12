@@ -4,7 +4,7 @@ import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
-import { verifyFindings, type FindingData, type FindingFundamentals, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
+import { verifyFindingLeads, type FindingData, type FindingFundamentals, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
 import { getLocale, type Locale } from "@/packages/web/src/i18n";
 
 export type { VerifiedFinding };
@@ -15,9 +15,11 @@ export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | 
   return { quarters: flow.quarters, history, capital, fundamentals, peers, passages, events };
 }
 
-/** Findings the page can stand behind, most severe first; their figures named in the reader's language. */
+/** Navigation only: the existing list and Sankey consume the lead's anchors; its body belongs to the analyst artifact. */
 export function verifiedFindings(publication: FindingsPublication | null, data: FindingData, locale: Locale = getLocale()): VerifiedFinding[] {
-  return publication ? verifyFindings(publication, data, locale).verified : [];
+  return publication ? verifyFindingLeads(publication, data, locale).verified.map<VerifiedFinding>(lead => ({ ...lead,
+    judgment: { text: "", sourceIds: [] }, lens: { type: "document", document: { rows: [] } }, watchOutcome: null,
+  })) : [];
 }
 
 /** Sankey node names a finding lights on the profit statement: its businesses, and the statement lines it names. */
