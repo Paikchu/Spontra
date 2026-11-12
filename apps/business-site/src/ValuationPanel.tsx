@@ -484,7 +484,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
       <Status valuation={valuation} />
       <Scores report={report} onCite={setOpen} />
       <FairValue report={report} guide={guide} onCite={setOpen} />
-      {report.model && <section className="val-block"><details className="val-fold val-stress">
+      {report.model && <section className="val-block"><details className="val-fold val-stress" open>
         <summary>{m.stressScenarios}</summary>
         <div className="val-fold-body">
         <h3>{m.range}</h3>
