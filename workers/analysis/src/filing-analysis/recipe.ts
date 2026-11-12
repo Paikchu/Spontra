@@ -2,6 +2,7 @@ import { modelFor } from "../ai-config.ts";
 import { renderTable } from "../analyst/agent.ts";
 import { webTools, type WebToolState } from "../compose/tools.ts";
 import { librarySectionPassages } from "../filing-library/store.ts";
+import { readFilingReadme, readmePage, resolveReadmeAccession } from "../filing-library/readme.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { handPolicy, handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { PiLoaded } from "../pi/host.ts";
@@ -13,7 +14,7 @@ import { stageTools } from "../stage/recipe.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import type { LibraryPassageView } from "../../../../shared/analysis-contract/filing-library.ts";
 import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "./profiles.ts";
-import { previousSectionOf, recordRunSummary, recordRunTurn, sectionDocuments, updateFiling } from "./store.ts";
+import { recordRunSummary, recordRunTurn, sectionDocuments, updateFiling } from "./store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
 import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } from "../artifact/compose.ts";
 import { PERIODIC_BLOCKS, periodicTools, type PeriodicState } from "./periodic.ts";
@@ -36,13 +37,8 @@ type FilingState = WebToolState & { composer: ComposerState; candidates: unknown
 
 const ok = (observation: string): HandResult => ({ observation });
 /** DeepSeek sometimes sends a nested argument as a JSON string. */
-const parsed = (value: unknown): unknown => {
-  if (typeof value !== "string" || !/^\s*[[{]/.test(value)) return value;
-  try { return JSON.parse(value); } catch { return value; }
-};
-const idsOf = (value: unknown) => (Array.isArray(parsed(value)) ? parsed(value) as unknown[] : []).map(String).filter(Boolean);
 const passageText = (p: LibraryPassageView) => p.table ? renderTable(p.table, []) : p.text;
-const RESULT_CHARS = 60_000;
+const RESULT_CHARS = 100_000;
 const CATEGORIES = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"] as const;
 
 function job(spec: FilingSpec, status: "complete" | "failed", at: string, errorDetail?: string) {
@@ -83,15 +79,6 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     const [pair] = await sectionDocuments(db, [sectionId]);
     return pair ? (await librarySectionPassages(db, pair[1], [sectionId])).map(passageText).join("\n\n") : null;
   };
-  const read = async (sectionIds: string[], state: FilingState, earlier: boolean) => {
-    const out: string[] = [];
-    for (const [sectionId, documentId] of await sectionDocuments(db, sectionIds)) {
-      state.read = [...new Set([...(state.read ?? []), sectionId])];
-      registerSource(state.composer, sectionId, { title: `${earlier ? "Earlier filing" : `${filing.form} ${filing.reportDate || filing.filingDate}`}, section ${sectionId}`, url: earlier ? null : (/^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null), kind: "sec" });
-      out.push(`## ${sectionId} [source ${sectionId}]\n${(await librarySectionPassages(db, documentId, [sectionId])).map(passageText).join("\n\n") || "(no text)"}`);
-    }
-    return out.join("\n\n") || "No such section.";
-  };
   // The passages of this filing that hold a name or figure, for a review whose cited sources do not (§4.1).
   const find = async (terms: string[]) => {
     const documents = (await db.prepare("SELECT document_id FROM sec_documents WHERE ticker = ? AND accession_number = ? AND status = 'ready'").bind(ticker, accession).all<{ document_id: string }>()).results.map(r => r.document_id);
@@ -113,21 +100,27 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     blocks: state.composer.blocks.length, degraded: state.composer.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id),
     detail: { ...(periodic ? periodic.detail(state) : {}), mode: base ? "revise" : "rewrite", ...(state.composer.changes ? { changes: state.composer.changes } : {}), edits: state.composer.log.filter(l => l.phase === "edit").length },
   }).catch(error => console.error(JSON.stringify({ event: "filing-run-summary", ticker, accession, error: error instanceof Error ? error.message : String(error) })));
-  const ids: { type: "object"; properties: Record<string, unknown>; required: string[] } = { type: "object", properties: { sectionIds: { type: "array", items: { type: "string" } } }, required: ["sectionIds"] };
   const own: AnyTool<FilingState>[] = [
-    handTool<FilingState>({ name: "read_sections", description: "Read sections of this filing whole, tables included, by the ids the first message lists. Send several ids at once. Each section is a source a block can cite by its id.", input_schema: ids },
-      async (args, state) => ok(await read(idsOf(args.sectionIds), state, false))),
-    handTool<FilingState>({ name: "read_previous", description: "Read the same sections in the earlier filing; each becomes a source under its own id.", input_schema: ids },
+    handTool<FilingState>({ name: "read_filing", description: "Read this filing's README: boilerplate removed, this filing's exhibits included, passages marked [p…]. previous: true reads the earlier filing. offset continues a long README. Cite the current filing as source readme and an earlier one as source readme:<accession>.", input_schema: { type: "object", properties: { previous: { type: "boolean" }, offset: { type: "number" } }, required: [] } },
       async (args, state) => {
-        const earlier = (await Promise.all(idsOf(args.sectionIds).map(id => previousSectionOf(db, id)))).flatMap(s => s ? [s.sectionId] : []);
-        return ok(earlier.length ? await read(earlier, state, true) : "The earlier filing has no such section.");
+        const previous = args.previous === true;
+        const offset = Number(args.offset ?? 0) || 0;
+        const target = await resolveReadmeAccession(db, ticker, { accession, previous });
+        if (!target) return ok(previous ? "The earlier filing has no README." : "This filing has no README yet.");
+        const readme = await readFilingReadme(env, ticker, target);
+        if (!readme) return ok("The README is not ready yet.");
+        const sourceId = previous ? `readme:${target}` : "readme";
+        state.read = [...new Set([...(state.read ?? []), sourceId])];
+        registerSource(state.composer, sourceId, { title: `${readme.form} ${readme.reportDate} README`, url: /^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null, kind: "sec" });
+        const page = readmePage(readme.markdown, offset);
+        return ok(`[source ${sourceId}] ${readme.form} ${readme.reportDate}\n${page.text}`);
       }),
     ...(profile.id === "current" ? [handTool<FilingState>({ name: "set_category", description: `What kind of current report this is: ${CATEGORIES.join(", ")}.`, input_schema: { type: "object", properties: { category: { type: "string", enum: [...CATEGORIES] } }, required: ["category"] } },
       (args, state) => { state.category = CATEGORIES.includes(args.category as never) ? String(args.category) : "other"; return ok(`Category: ${state.category}.`); })] : []),
   ];
   const setup: ComposerSetup<FilingState> = {
     env, chart: data ? { data: data.data, periodEnd: data.periodEnd } : null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns,
-    research: periodic ? ["read_sections", "grep", "section_history", "query_facts", "fact_history", "read_transcript", "read_report"] : ["read_sections", "read_previous", ...(figures.length ? ["read_series"] : []), "search", "read_web"],
+    research: periodic ? ["read_sections", "grep", "section_history", "query_facts", "fact_history", "read_transcript", "read_report"] : ["read_filing", ...(figures.length ? ["read_series"] : []), "search", "read_web"],
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
     ...(periodic ? { resolve: periodic.resolve, figure: periodic.figure, required: () => PERIODIC_BLOCKS, precheck: periodic.precheck } : {}),
@@ -137,6 +130,11 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       if (held) return held;
       if (state.data[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.data[id]! };
       if (state.web[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: state.web[id]! };
+      if (id === "readme" || id.startsWith("readme:")) {
+        const accession = id === "readme" ? filing.accessionNumber : id.slice("readme:".length);
+        const readme = await readFilingReadme(env, ticker, accession);
+        return readme ? { title: state.composer.sources[id]?.title ?? `${readme.form} ${readme.reportDate}`, text: readme.markdown } : null;
+      }
       const text = state.composer.sources[id] ? await sectionText(id) : null;
       return text === null ? null : { title: state.composer.sources[id]!.title, text };
     },
@@ -161,11 +159,11 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   const compose = composerTools(setup);
   const list = [...(periodic ? periodic.tools : own), ...figures, ...web, ...compose];
   return {
-    id: periodic ? "filing.periodic.v5" : `filing.${spec.profile}.v3`,
+    id: periodic ? "filing.periodic.v5" : `filing.${spec.profile}.v4`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: periodic ? 90_000 : RESULT_CHARS,
     callsPerTurn: Infinity,
-    concurrent: ["read_sections", "read_previous", "grep", "section_history", "query_facts", "fact_history", "read_report", "read_transcript", "read_evidence", "list_leads", "read_series", "company_overview", "read_block", "outline", "view_issue"],
+    concurrent: ["read_filing", "read_sections", "read_previous", "grep", "section_history", "query_facts", "fact_history", "read_report", "read_transcript", "read_evidence", "list_leads", "read_series", "company_overview", "read_block", "outline", "view_issue"],
     system: () => periodic ? `${PERIODIC_SYSTEM(ticker)}\n\n${COMPOSER_GUIDE}\n${PERIODIC_EVIDENCE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${COMPOSER_GUIDE}`,
     open: () => {
       const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, data: {}, web: {} };

@@ -21,7 +21,8 @@ async function opening(db: D1Database, filing: SecFiling, documentIds: string[],
       ...(revise ? { published: "A report on this filing is published and is the document you open on: outline lists its blocks, read_block shows one. Revise it, do not rewrite it. Your leads, notes and computed figures from the session that wrote it are carried (list_leads, read_evidence). Check what a reader would still find wrong or missing — blocks marked conservative or safe-layout were cut by the harness and need their gaps filled, open leads may now be answerable, a figure may deserve a chart — and change only that, with edit_block or write_blocks for a block that needs writing again. Leave every block you have no reason to change exactly as it is. Then call finish.", first: "Call outline." } : { first: "Call research_pack." }) });
   }
   return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
-    sections: sections.map(s => ({ id: s.sectionId, path: s.path.join(" › "), change: s.change, chars: s.chars })) });
+    readme: "Call read_filing. It is this filing with boilerplate removed and its exhibits included. Quote it as source readme. offset continues a long README.",
+    first: "Call read_filing." });
 }
 
 export type StartOptions = { requestedBy: "scheduled" | "manual"; accession?: string; runId?: string; /** A manual run on a published report revises it unless told to rewrite. */ mode?: "revise" | "rewrite" };

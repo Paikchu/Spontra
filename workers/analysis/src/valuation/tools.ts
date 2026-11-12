@@ -12,8 +12,7 @@ import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
 import { sha256 } from "../sha256.ts";
-import { libraryFindAcross, libraryRead } from "../filing-library/tool.ts";
-import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
+import { readFilingReadme, readmePage, resolveReadmeAccession } from "../filing-library/readme.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { defineTool, type AnyTool } from "../tools/registry.ts";
 import { readyTranscripts } from "../transcripts/library.ts";
@@ -79,7 +78,8 @@ export const factLine = (f: ValuationInput["facts"][number]) => `${f.id} | ${f.l
 /** Registers a passage once and returns its id: source identity plus content hash, so a re-split passage is new evidence. */
 async function registerEvidence(state: ValuationState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null, displayedExcerpt?: string): Promise<string> {
   const contentSha256 = await sha256(passage.text);
-  const excerpt = (displayedExcerpt ?? (passage.table ? renderTable(passage.table, []) : passage.text)).slice(0, READ_CHARS);
+  const cap = passage.passageId.startsWith("readme:") ? 100_000 : READ_CHARS;
+  const excerpt = (displayedExcerpt ?? (passage.table ? renderTable(passage.table, []) : passage.text)).slice(0, cap);
   const excerptSha256 = await sha256(excerpt);
   const evidenceId = `e${(await sha256(`${VALUATION_EVIDENCE_VERSION}|${kind}|${passage.documentId}|${passage.passageId}|${contentSha256}|${excerptSha256}`)).slice(0, 10)}`;
   if (!state.evidence.has(evidenceId)) {
@@ -455,37 +455,29 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
       }).join("\n\n"), observe: (_a, v) => v }),
     tool({ name: "read_financials", description: "The validated financial facts (ids, values, periods). Pass ids to read some, none to read all.", parameters: z.object({ ids: z.array(z.string()).max(40).optional() }), concurrencySafe: true,
       execute: ({ ids }, ctx) => { const facts = ctx.state.input.facts.filter(f => !ids?.length || ids.includes(f.id)); return facts.length ? facts.map(factLine).join("\n") : "No such facts."; }, observe: (_a, v) => v }),
-    tool({ name: "list_filings", description: "The filings this run may read, newest first.", parameters: z.object({}), concurrencySafe: true,
-      execute: (_a, ctx) => ctx.state.input.documents.map(d => `${d.form} filed ${d.filedAt} (report ${d.reportDate}) · documentId ${d.documentId}${d.docType !== "primary" ? ` · ${d.docType}` : ""}`).join("\n") || "No filings are available to read.", observe: (_a, v) => v }),
-    tool({ name: "find_filing_sections", description: "Find sections of the readable filings by question, keywords or canonical part (business, risk_factors, mdna, note, press_release...).", parameters: z.object({ question: z.string().max(300).optional(), keywords: z.string().max(200).optional(), canonical: z.string().max(40).optional() }), concurrencySafe: true,
-      execute: async (args, ctx) => {
-        if (ctx.state.used.finds >= RESEARCH_BUDGET.finds) throw new Error("no finds left; read what you found");
-        ctx.state.used.finds++;
-        const allowed = new Set(ctx.state.input.documents.map(d => d.documentId));
-        const found = await ctx.stage("find", () => libraryFindAcross(env, { tickers: [ctx.state.input.ticker], question: args.question, keywords: args.keywords, canonical: args.canonical as never, limit: 12 }));
-        const rows = found.found.filter(s => allowed.has(s.documentId)).slice(0, 8);
-        return rows.map(s => `${s.form} ${s.filedAt} · documentId ${s.documentId} · sectionId ${s.sectionId} · ${s.path.join(" › ")}${s.gist ? ` · ${s.gist.slice(0, 160)}` : ""}`).join("\n") || "No sections found in the readable filings; try other keywords or list_filings.";
+    tool({ name: "list_filings", description: "The filings this run may read, newest first, one README each.", parameters: z.object({}), concurrencySafe: true,
+      execute: (_a, ctx) => {
+        const byAccession = new Map<string, (typeof ctx.state.input.documents)[number]>();
+        for (const d of ctx.state.input.documents) if (!byAccession.has(d.accession) || d.docType === "primary") byAccession.set(d.accession, d);
+        return [...byAccession.values()].map(d => `${d.form} filed ${d.filedAt} (report ${d.reportDate}) · accession ${d.accession}`).join("\n") || "No filings are available to read.";
       }, observe: (_a, v) => v }),
-    tool({ name: "read_filing_section", description: "Read a section of a readable filing. Each passage becomes evidence [e…] a score or scenario may cite.", parameters: z.object({ documentId: z.string().max(80), sectionId: z.string().max(80).optional(), focus: z.array(z.string().max(60)).max(8).optional() }),
+    tool({ name: "read_filing", description: "Read one filing's README: boilerplate removed and this filing's exhibits included. offset continues a long README. The page read becomes evidence [e…] a score or scenario may cite.", parameters: z.object({ accession: z.string().max(32), offset: z.number().int().min(0).optional() }),
       execute: async (args, ctx) => {
         if (ctx.state.used.reads >= RESEARCH_BUDGET.reads) throw new Error("no filing reads left; score with the evidence you have");
-        if (!ctx.state.input.documents.some(d => d.documentId === args.documentId)) throw new Error("that documentId is not among this run's readable filings (list_filings)");
+        if (!ctx.state.input.documents.some(d => d.accession === args.accession)) throw new Error("that accession is not among this run's readable filings (list_filings)");
         ctx.state.used.reads++;
         const read = await ctx.stage("read", async () => {
-          const document = await readLibraryDocument(db, args.documentId);
-          if (!document || document.ticker !== ctx.state.input.ticker) return null;
-          const read = await libraryRead(db, { documentId: args.documentId, sectionId: args.sectionId, focus: args.focus, maxChars: READ_CHARS });
-          const full = await libraryPassages(db, read.passages.map(p => p.passageId));
-          return { passages: read.passages.map(p => { const row = full.find(f => f.passageId === p.passageId); return { passageId: p.passageId, documentId: args.documentId, title: `${document.ticker} ${document.form} ${document.reportDate}`, form: document.form, filedAt: document.filedAt, url: document.documentUrl, path: p.path.split(" › "), text: p.text,
-            table: row?.table ? { unit: row.table.unit, columns: row.table.columns, rows: row.table.rows.map(r => ({ label: r.label, cells: r.cells.map(c => ({ text: c.text, value: c.value })) })) } : null } satisfies FindingPassage; }), omitted: read.omitted };
+          const accession = await resolveReadmeAccession(db, ctx.state.input.ticker, { accession: args.accession });
+          if (!accession) return null;
+          const readme = await readFilingReadme(env, ctx.state.input.ticker, accession);
+          if (!readme) return null;
+          const page = readmePage(readme.markdown, args.offset ?? 0);
+          const document = ctx.state.input.documents.find(d => d.accession === accession && d.docType === "primary") ?? ctx.state.input.documents.find(d => d.accession === accession)!;
+          return { page, document, readme };
         });
-        if (!read) throw new Error("the filing could not be read");
-        const out: string[] = [];
-        for (const p of read.passages) {
-          const excerpt = (p.table ? renderTable(p.table, args.focus ?? []) : p.text).slice(0, READ_CHARS);
-          out.push(`[${await registerEvidence(ctx.state, p, "sec", null, excerpt)}] ${p.path.join(" › ")}\n${excerpt}`);
-        }
-        return out.join("\n\n") + (read.omitted ? `\n(${read.omitted} passages omitted; narrow with focus)` : "");
+        if (!read) throw new Error("the filing README is not ready");
+        const passage: FindingPassage = { passageId: `readme:${ctx.state.input.ticker}:${read.readme.accession}:${read.page.start}`, documentId: read.document.documentId, title: `${ctx.state.input.ticker} ${read.readme.form} ${read.readme.reportDate}`, form: read.readme.form, filedAt: read.readme.filedAt, url: read.document.url, path: ["README"], text: read.page.text, table: null };
+        return `[${await registerEvidence(ctx.state, passage, "sec", null, read.page.text)}] ${passage.title}\n${read.page.text}`;
       }, observe: (_a, v) => v }),
     tool({ name: "read_transcript", description: "Read an earnings call around focus terms. The excerpt becomes evidence.", parameters: z.object({ transcriptId: z.string().max(80), focus: z.array(z.string().max(60)).min(1).max(8) }),
       execute: async (args, ctx) => {
@@ -638,7 +630,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "find_filing_sections", "read_filing_section", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "read_filing", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

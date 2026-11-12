@@ -9,6 +9,7 @@ import { readCompletePublicationForTicker } from "../financial-data/publication.
 import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { writeFilingReadme } from "./readme.ts";
 import {
   libraryPassageHashes, librarySectionHashes, markLibraryDocumentUnreadable, previousLibraryDocument, writeLibraryDocument,
   type LibraryDocumentRow, type StoredPassage, type StoredSection,
@@ -55,23 +56,27 @@ export async function prepareLibraryDocument(env: AnalysisEnv, p: FilingLibraryP
   const record = await readPointer(env, p);
   // A newer archive of the document replaced this one; the next sweep starts a split for it.
   if (!record || record.contentSha256 !== p.sha || !record.rawKey?.startsWith("financial-disclosures/")) return { status: "superseded" };
+  const wrote = async (result: Record<string, unknown>) => {
+    await writeFilingReadme(env, p.ticker, record.source.accessionNumber);
+    return result;
+  };
   const object = await env.SEC_FILINGS.get(record.rawKey);
   if (!object) throw new Error("ARCHIVE_SOURCE_MISSING");
   const html = await object.text();
   if (await digest(html) !== record.contentSha256) {
     await recordUnreadable(env, p, "ARCHIVE_MISMATCH");
-    return { status: "unreadable", reason: "ARCHIVE_MISMATCH" };
+    return wrote({ status: "unreadable", reason: "ARCHIVE_MISMATCH" });
   }
   let parsed: ReturnType<typeof parseFilingDocument>;
   try { parsed = parseFilingDocument(html, { documentId: p.documentId, accessionNumber: record.source.accessionNumber, documentUrl: record.source.documentUrl, form: record.source.form }); }
   catch (error) {
     // A document the parser cannot read is recorded and skipped; it is tried again when the parser version changes.
     await recordUnreadable(env, p, `PARSE_FAILED: ${error instanceof Error ? error.message : String(error)}`);
-    return { status: "unreadable", reason: "PARSE_FAILED" };
+    return wrote({ status: "unreadable", reason: "PARSE_FAILED" });
   }
   if (!parsed.passages.length) {
     await markLibraryDocumentUnreadable(db, documentRow(p, record, { docType: parsed.docType, structure: parsed.structure, status: "unreadable", failureReason: "NO_READABLE_TEXT", issues: parsed.issues }));
-    return { status: "unreadable", reason: "NO_READABLE_TEXT" };
+    return wrote({ status: "unreadable", reason: "NO_READABLE_TEXT" });
   }
   const base = documentRow(p, record, { docType: parsed.docType, structure: parsed.structure, issues: parsed.issues });
   const previousDocumentId = await previousLibraryDocument(db, base);
@@ -107,8 +112,8 @@ export async function prepareLibraryDocument(env: AnalysisEnv, p: FilingLibraryP
   const cik = base.cik ? base.cik.padStart(10, "0") : null;
   await writeLibraryDocument(db, { ...base, previousDocumentId, structureCheck }, sections, passages,
     [outboxStatement(db, { type: "library.prepared", ticker: p.ticker, cik, detail: { form: record.source.form, accession: record.source.accessionNumber }, causeId })], facts);
-  return {
+  return wrote({
     status: "ready", structure: parsed.structure, docType: parsed.docType, sections: sections.length, passages: passages.length,
     changed: sections.filter(s => s.change !== "unchanged").length, structureCheck: structureCheck.status, facts: facts.length,
-  };
+  });
 }

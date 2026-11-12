@@ -4,7 +4,7 @@
 
 ## 一句话
 
-Spontra Analysis 只在一个模块里访问 EDGAR：`workers/analysis/src/sec-archive/`。它分两面——**清单**（哪些申报存在）和**下载并归档**（把申报原文存进 R2、指针写进 D1）。其余所有功能、Workflow 和 Agent 需要 SEC 原文时，只能读已归档的文件：原始 HTML（`archivedFiling`）或文件库拆好的段落（`find_sections` / `read_section` 工具）。不再有第二条下载路径，也不经网页搜索抓取 sec.gov 页面。
+Spontra Analysis 只在一个模块里访问 EDGAR：`workers/analysis/src/sec-archive/`。它分两面——**清单**（哪些申报存在）和**下载并归档**（把申报原文存进 R2、指针写进 D1）。其余所有功能、Workflow 和 Agent 需要 SEC 原文时，只能读已归档的文件：原始 HTML（`archivedFiling`），或文件库为一份申报合成的 README（`list_filings` / `read_filing`）。README 去掉套话，保留有改动的套话，并入同一份申报的附件，段落编号和档期仍在文中。定期报告的财报会话仍按章节读文件库。不再有第二条下载路径，也不经网页搜索抓取 sec.gov 页面。
 
 ## 为什么
 
@@ -17,7 +17,7 @@ sec-archive/
   gateway.ts   EDGAR 网络层（模块私有）：节流、contact user-agent、主机白名单、大小上限
   archive.ts   归档读写：archivedFiling / readArchivedDocument / archivingReader
   task.ts      `archive` 任务：把财务采集不读的 8-K（无 Item 2.02）归档
-  tool.ts      Agent 工具集：list_filings / find_sections / read_section（只查 D1）
+  tool.ts      Agent 工具集：list_filings / read_filing（只读文件库合成的 README）
   index.ts     对外唯一出口：edgarListings、archivingReader、archivedFiling…
 ```
 
@@ -26,7 +26,7 @@ sec-archive/
 | `edgarListings(env)` | 发行人目录、submissions 列表及分页、Company Facts、申报索引页、Form 3/4/5 XML。只说明“有什么”，不返回申报正文 | 申报发现 Cron、SEC 财报的 `discover`、事件任务、发行人目录（`catalog/issuer-directory.ts`）、采集请求、基本面刷新 |
 | `archivingReader(env, ticker)` | 唯一会下载申报正文的 reader：下载即按内容哈希归档，已归档的直接从 R2 读 | 财务采集、补历史、财务维护、报表结构判断、`archive` 任务 |
 | `archivedFiling(env, ticker, accession)` | 一份申报在归档中的全部文档（正文在前，附件在后）及其原文 | SEC 财报 `prepare`、要点条目的 8-K 回退 |
-| `secFilingTools(input)` | 挂到 Agent 上的 SEC 资源：列申报、找章节、读段落并登记为材料 | compose（要点、条目分析等所有写分析的 Agent） |
+| `secFilingTools(input)` | 挂到 Agent 上的 SEC 资源：列已有 README 的申报，读一份申报的 README 并登记为一份材料 | compose（要点、条目分析等所有写分析的 Agent） |
 
 `gateway.ts` 不在 `index.ts` 以外导出。EDGAR 地址统一定义在 `shared/analysis-runtime/sec-sources.ts`，网关用它拼请求。`scripts/check-analysis-boundary.ts` 在构建时拒绝：`workers/analysis/src` 中 `sec-archive/` 以外的代码出现 EDGAR 清单端点字面量或引用清单地址构造函数（`secSubmissionsUrl`、`secSubmissionsPageUrl`、`secCompanyFactsUrl`、`SEC_EXCHANGE_DIRECTORY_URL`、`SEC_TICKERS_URL`）、在模块外构造 EDGAR reader，或以值导入 `gateway.ts`。`workers/analysis/scripts/` 下的本地维护脚本不在此范围内。`/Archives/edgar/data/...` 的文档 URL 是数据，各模块仍可持有和比较。
 

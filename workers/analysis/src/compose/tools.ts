@@ -10,6 +10,7 @@ import { compileDocument, verifyLensDocument } from "../../../../shared/analysis
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
+import { readFilingReadme, readmePassage } from "../filing-library/readme.ts";
 import { secFilingTools } from "../sec-archive/tool.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { StageData } from "../stage/data.ts";
@@ -64,6 +65,16 @@ export const REPAIR_ROUNDS = 1;
 
 const tool = defineTool<ComposeState>();
 const untrusted = (host: string, text: string) => `<untrusted source="${host}">\n${text}\n</untrusted>`;
+
+/** A README material stores no text between turns; the quote check reads the filing's README back. */
+async function withReadmeText(env: AnalysisEnv, materials: Material[]): Promise<Material[]> {
+  return Promise.all(materials.map(async m => {
+    const ref = readmePassage(m.passage.passageId);
+    if (!ref) return m;
+    const readme = await readFilingReadme(env, ref.ticker, ref.accession);
+    return { ...m, passage: { ...m.passage, text: readme?.markdown ?? "" } };
+  }));
+}
 
 function register(state: ComposeState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null): string {
   const seen = state.materials.find(m => m.passageId === passage.passageId);
@@ -125,7 +136,7 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
   const stageInput: StageInput = { data, locale: input.locale, scene: [], view: null };
   const reads = stageTools(stageInput).filter(t => ["company_overview", "findings", "read_series"].includes(t.name)) as unknown as AnyTool<ComposeState>[];
   const draftSchema = composeDraft(input.minEvidence);
-  const compose = (state: ComposeState, value: unknown): string => {
+  const compose = async (state: ComposeState, value: unknown): Promise<string> => {
     const parsed = draftSchema.safeParse(value);
     if (!parsed.success) return `The analysis does not match the contract:\n  ${parsed.error.issues.slice(0, 8).map(i => `${i.path.join(".") || "analysis"}: ${i.message}`).join("\n  ")}`;
     const document = readLensDocument(parsed.data.document);
@@ -137,20 +148,21 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
       anchors: { view: "profit", nodeIds: [], metrics: [], capital: [] },
       lens: { type: "document", document },
     };
-    const facts: FindingData = { ...data.data, passages: [...(data.data.passages ?? []), ...state.materials.map(m => m.passage)] };
+    const materials = await withReadmeText(env, state.materials);
+    const facts: FindingData = { ...data.data, passages: [...(data.data.passages ?? []), ...materials.map(m => m.passage)] };
     const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker, periodEnd: input.periodEnd, generatedAt: input.now, model: "compose", findings: [finding], sources: sources(state) };
     const { verified, withheld } = verifyFindings(publication, facts, input.locale);
     const errors: string[] = withheld.flatMap(w => w.reasons.map(r => `judgment: ${r}`));
     const resolved = verified[0]?.resolved ?? [];
-    const lens = verified[0] ? verifyLensDocument(document, finding, resolved, facts, input.periodEnd, { locale: input.locale }, { ticker, materials: state.materials }) : null;
+    const lens = verified[0] ? verifyLensDocument(document, finding, resolved, facts, input.periodEnd, { locale: input.locale }, { ticker, materials }) : null;
     if (verified[0] && !lens) errors.push("document: nothing verifies; it needs its judgment block and blocks whose references resolve");
     for (const reason of lens?.reasons ?? []) errors.push(`document: ${reason}`);
     const blocks = document.rows.flatMap(r => r.cells.flat());
     // The figures block lists every figure of the evidence, so a second one repeats the first.
     if (blocks.filter(b => b.kind === "figures").length > 1) errors.push("document: one figures block at most; it already lists every figure of the evidence");
-    const quotes = blocks.flatMap(b => b.kind === "quote" ? [state.materials.find(m => m.id === b.materialId)] : []);
+    const quotes = blocks.flatMap(b => b.kind === "quote" ? [materials.find(m => m.id === b.materialId)] : []);
     if (input.quoteFiling && !quotes.some(m => m?.kind === "sec")) errors.push("document: quote at least one filing material (m<n>) word for word");
-    if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_section with previous: true)");
+    if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_filing with previous: true)");
     for (const line of input.check?.(finding) ?? []) errors.push(line);
     state.draft = { finding, errors };
     if (errors.length && ++state.rejected > REPAIR_ROUNDS) { state.withheld = true; return `errors (${errors.length}):\n  ${errors.join("\n  ")}\nNo repair is left: the analysis is withheld.`; }
@@ -165,12 +177,12 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
     tool({ name: "compose", description: "Check the whole analysis: its judgment against its evidence, its document against the data and the materials read.", parameters: z.object({ report: z.unknown() }), strict: false,
       execute: ({ report }, ctx) => compose(ctx.state, report), observe: (_a, v) => v }),
     tool({ name: "finish", description: "Publish the last composed analysis; only one with no errors is accepted.", parameters: z.object({}),
-      execute: (_a, ctx) => {
+      execute: async (_a, ctx) => {
         const draft = ctx.state.draft;
         if (!draft) throw new Error("nothing composed yet; call compose first");
         if (draft.errors.length) throw new Error(`the last analysis has ${draft.errors.length} error(s); fix them and compose again`);
         const used = new Set((draft.finding.lens.type === "document" ? draft.finding.lens.document : { rows: [] } as LensDocument).rows.flatMap(r => r.cells.flat()).flatMap(b => b.kind === "quote" ? [b.materialId] : []));
-        const materials = ctx.state.materials.filter(m => used.has(m.id));
+        const materials = await withReadmeText(env, ctx.state.materials.filter(m => used.has(m.id)));
         ctx.state.composed = { finding: draft.finding, materials: materials.map(({ passage: _p, ...m }) => { void _p; return m; }), passages: materials.map(m => m.passage), sources: sources(ctx.state) };
         return "Published.";
       }, observe: (_a, v) => v }),

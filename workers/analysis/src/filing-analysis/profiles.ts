@@ -15,7 +15,7 @@ const PROFILES: readonly FilingProfile[] = [
   },
   {
     id: "current", match: form => /^(?:8-K|6-K)(?:\/A)?$/.test(form), turns: 50, wallMs: 60 * MINUTE, reasoning: "high",
-    prompt: `The subject is a current report (8-K or 6-K). Read what it actually is and break it down accordingly. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE}`,
+    prompt: `The subject is a current report (8-K or 6-K). Call read_filing first: that README is the filing, with boilerplate removed and the exhibits of this filing included. Quote it as source readme. read_filing with previous: true is the earlier filing's README; quote that as the source id the tool shows. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE}`,
   },
 ];
 

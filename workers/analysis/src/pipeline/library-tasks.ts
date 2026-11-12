@@ -6,6 +6,7 @@ import { linkInput, linksCacheKey } from "../filing-library/links.ts";
 import { searchEnabled, syncSearchItems } from "../filing-library/search.ts";
 import { STORAGE_SWEEP_VERSION, sweepStorage } from "../storage/sweep.ts";
 import { prepareLibraryDocument } from "../filing-library/prepare.ts";
+import { FILING_README_VERSION, refreshFilingReadmes } from "../filing-library/readme.ts";
 import { pendingLibraryDocuments } from "../filing-library/store.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
@@ -24,7 +25,7 @@ export const LIBRARY_TASKS = {
    * company once; ids of unchanged text survive it.
    */
   library: {
-    version: LIBRARY_PARSER_VERSION,
+    version: `${LIBRARY_PARSER_VERSION}+${FILING_README_VERSION}`,
     async run(env, ticker, { causeId }): Promise<TaskOutcome> {
       if (env.FILING_LIBRARY_ENABLED === "false") return { status: "done", detail: { skipped: "filing library disabled" } };
       const started = Date.now();
@@ -38,7 +39,10 @@ export const LIBRARY_TASKS = {
         if (result.status === "ready") detail.prepared++; else if (result.status === "superseded") detail.superseded++; else detail.unreadable++;
         detail.bytes += document.bytes;
       }
-      return pending.length === BATCH ? { status: "later", afterMs: 1000, detail } : { status: "done", detail };
+      if (pending.length === BATCH) return { status: "later", afterMs: 1000, detail };
+      // Filings already split keep their README until a document of theirs changes; a renderer bump rewrites them here.
+      const readmes = ticker ? await refreshFilingReadmes(env, ticker, 2) : { written: 0, remaining: 0 };
+      return readmes.remaining ? { status: "later", afterMs: 1000, detail: { ...detail, readmes } } : { status: "done", detail: { ...detail, readmes } };
     },
   },
 
