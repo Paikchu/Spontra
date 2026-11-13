@@ -129,12 +129,11 @@ export function PeriodMark({ ticker, periodEnd, periodStart, fiscalYear, fiscalQ
   </span>;
 }
 
-/** Axis date stays YYYY.MM. The current column adds the issuer quarter under it. */
+/** Axis date stays YYYY.MM; selection is underlined, with issuer quarter available on hover/focus. */
 export function QuarterBadge({ ticker, periodEnd, periodStart, current, prefix }: { ticker: string; periodEnd: string; periodStart?: string | null; current: boolean; prefix: string }) {
   const labels = periodLabel({ ticker, periodEnd, periodStart }, getLocale());
-  return <span className="trend-period">
-    <time dateTime={periodEnd}><span>{periodEnd.slice(0, 4)}</span><span className="trend-period-month">{periodEnd.slice(5, 7)}</span></time>
-    {current && <b className="trend-now">{labels.primary ? <><span className="trend-now-prefix">{prefix}</span><span className="trend-now-sep"> · </span><span className="trend-now-fy">{labels.primary}</span></> : labels.unknown}</b>}
+  return <span className="trend-period" title={`${current ? `${prefix} · ` : ""}${labels.primary ?? labels.unknown}`}>
+    <time dateTime={periodEnd} aria-current={current ? "date" : undefined}><span>{periodEnd.slice(0, 4)}</span><span className="trend-period-month">{periodEnd.slice(5, 7)}</span></time>
   </span>;
 }
 

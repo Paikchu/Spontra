@@ -1,3 +1,4 @@
+import { ChartNote } from "./ChartNote";
 import { Button } from "@/packages/web/src/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/packages/web/src/ui/custom-chart";
@@ -24,7 +25,7 @@ const m = messages({
   derivedQ4: "Derived Q4 · ",
   secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
   comma: ", ",
-  basisChanged: "Segments re-based", basisWhy: (since: string) => `Segments reported on a new basis from ${since}. Growth by business is only computed within one basis; a year-ago quarter restated in the latest filing is on the new basis.`,
+  basisChanged: "About business comparisons", basisWhy: (since: string) => `Segments reported on a new basis from ${since}. Growth by business is only computed within one basis; a year-ago quarter restated in the latest filing is on the new basis.`,
   earlierBasis: "Earlier segment basis", currentBasis: "Current segment basis",
 }, {
   yoyGrowth: "同比增长", qoqGrowth: "环比增长", comparisonBase: "比较基准", allBusinesses: "全部业务",
@@ -40,7 +41,7 @@ const m = messages({
   derivedQ4: "推算 Q4 · ",
   secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
   comma: "，",
-  basisChanged: "分部口径已调整", basisWhy: (since: string) => `自 ${since} 起按新分部口径披露。分业务的增速只在同一口径内计算；最新财报按新口径重算的上年同期数属于新口径。`,
+  basisChanged: "查看业务比较说明", basisWhy: (since: string) => `公司自 ${since} 起重新划分业务分类。各项业务的增长率只比较分类一致的数据；如财报重新计算了去年同期数据，则使用该可比数据。`,
   earlierBasis: "原分部口径", currentBasis: "现分部口径",
 });
 
@@ -135,7 +136,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       <div className="trend-title">
         <div className="trend-heading">
           <h2 key={mode}>{subject}</h2>
-          {basisSince && <span className="basis-tag" tabIndex={0} title={m.basisWhy(shortPeriod(basisSince))} aria-label={`${m.basisChanged} · ${m.basisWhy(shortPeriod(basisSince))}`}>{m.basisChanged}</span>}
+          {basisSince && <ChartNote label={m.basisChanged}>{m.basisWhy(shortPeriod(basisSince))}</ChartNote>}
           {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>
             <span className="trend-views" role="radiogroup" aria-label={m.revenueView}>

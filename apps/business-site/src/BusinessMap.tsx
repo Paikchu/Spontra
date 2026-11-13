@@ -1,3 +1,4 @@
+import { ChartNote } from "./ChartNote";
 import { ModuleFailure } from "./ModuleFailure";
 import type { Layer } from "@/shared/analysis-contract/business-features";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
@@ -67,10 +68,10 @@ const m = messages({
   reconciliation: "Revenue reconciliation", reconciliationUnit: (currency: string) => `${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
   findingStage: (ticker: string, title: string) => `${ticker} finding: ${title}`, filingStage: (ticker: string, title: string) => `${ticker} filing: ${title}`, flowStage: (ticker: string) => `${ticker} revenue to profit flow`,
   revenueThisQuarter: "Revenue this quarter", ofParent: (share: string, parent: string) => `${share} of ${parent}`, topLevel: "Top-level business",
-  metricsUnavailable: "SEC metrics unavailable", metricsWhy: (reason: "annual_only" | "no_quarterly_values"): string => reason === "annual_only"
-    ? "The company tags its statements in XBRL only in its annual report (20-F); its quarterly results carry no XBRL, so no quarterly metric can be read."
-    : "None of the statement lines the metrics read carries a quarterly XBRL value.",
-  segmentsRebased: "Segments re-based", segmentsRebasedWhy: (restated: boolean) => `This quarter reports its businesses on a new segment basis.${restated ? " Year-over-year changes use the year-ago quarter as restated in this filing." : " Businesses are not compared with quarters on the earlier basis."}`,
+  metricsUnavailable: "About available metrics", metricsWhy: (reason: "annual_only" | "no_quarterly_values"): string => reason === "annual_only"
+    ? "Quarterly financial metrics cannot currently be shown: the available structured reports contain annual figures only. This does not mean the company has no quarterly results."
+    : "Quarterly figures for these financial metrics are not available from the current data source. This is missing data, not a zero value.",
+  segmentsRebased: "About business comparisons", segmentsRebasedWhy: (restated: boolean) => `This quarter reports its businesses on a new segment basis.${restated ? " Year-over-year changes use the year-ago quarter as restated in this filing." : " Businesses are not compared with quarters on the earlier basis."}`,
   companyRevenue: "Total company revenue", gross: "Gross profit", operating: "Operating income", pretax: "Income before taxes", netLoss: "Net loss", net: "Net income",
   margin: (value: string) => `Margin ${value}`, coverage: (value: string) => `Cost coverage ${value}`,
   comparisonBase: "Comparison base", financialView: "Financial view", noFinancials: "No quarterly financials disclosed",
@@ -97,10 +98,10 @@ const m = messages({
   reconciliation: "营收调节（分部合计与合并营收的差）", reconciliationUnit: () => "", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
   findingStage: (ticker: string, title: string) => `${ticker} 要点：${title}`, filingStage: (ticker: string, title: string) => `${ticker} 文件：${title}`, flowStage: (ticker: string) => `${ticker} 营收至利润流向`,
   revenueThisQuarter: "本季营收", ofParent: (share: string, parent: string) => `占 ${parent} ${share}`, topLevel: "一级业务",
-  metricsUnavailable: "SEC 季度指标不可用", metricsWhy: (reason: "annual_only" | "no_quarterly_values"): string => reason === "annual_only"
-    ? "该公司只在年报（20-F）中以 XBRL 申报报表，季度业绩不含 XBRL，读不到季度指标。"
-    : "指标读取的报表科目都没有季度 XBRL 数值。",
-  segmentsRebased: "分部口径已调整", segmentsRebasedWhy: (restated: boolean) => `本季按新的分部口径披露业务。${restated ? "同比取本期财报按新口径重算的上年同期数。" : "不与原口径的季度逐项比较。"}`,
+  metricsUnavailable: "查看指标说明", metricsWhy: (reason: "annual_only" | "no_quarterly_values"): string => reason === "annual_only"
+    ? "暂时无法展示这些季度财务指标：当前可读取的结构化报表只提供年度数据，并不代表公司没有发布季度业绩。"
+    : "当前数据源尚无这些财务指标的季度数值。数据缺失不代表数值为零。",
+  segmentsRebased: "查看业务比较说明", segmentsRebasedWhy: (restated: boolean) => `公司本季重新划分了业务分类。${restated ? "同比使用本次财报按相同分类重新计算的去年同期数据。" : "因此不直接比较调整前后的各项业务。"}`,
   companyRevenue: "公司总营收", gross: "毛利", operating: "营业利润", pretax: "税前利润", netLoss: "净亏损", net: "净利润",
   margin: (value: string) => `利润率 ${value}`, coverage: (value: string) => `成本覆盖率 ${value}`,
   comparisonBase: "比较基准", financialView: "报表视图", noFinancials: "未披露季度财务数据",
@@ -572,8 +573,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
 
   // A picked business is broken down from the businesses the chart draws at its left edge: itself, or the disclosed businesses it is made of.
   // Company Facts holds no quarterly metric for this company: the trend says so, and why, where the metric picker would be.
-  const metricsUnavailable = fundamentals?.unavailable ? <span className="basis-tag metrics-unavailable" tabIndex={0} data-why={m.metricsWhy(fundamentals.unavailable.reason)}
-    aria-label={`${m.metricsUnavailable} · ${m.metricsWhy(fundamentals.unavailable.reason)}`}>{m.metricsUnavailable}</span> : null;
+  const metricsUnavailable = fundamentals?.unavailable ? <ChartNote label={m.metricsUnavailable}>{m.metricsWhy(fundamentals.unavailable.reason)}</ChartNote> : null;
   // Operating and net income side by side on the trend, one press apart, when both are charted.
   const profitPair = PROFIT_PAIR.every(key => metricGroups.some(g => g.options.some(o => o.key === key)));
   const profitToggle = profitPair && shownMetric && (PROFIT_PAIR as readonly string[]).includes(shownMetric.key) ? <ProfitToggle value={shownMetric.key} onChange={setMetricKey} /> : null;
@@ -654,7 +654,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
             <span className="biz-total-value">{revenue != null ? money(revenue) : "—"}</span>
             {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
-          {rebased && <span className="basis-tag biz-basis" tabIndex={0} title={m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)} aria-label={`${m.segmentsRebased} · ${m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)}`}>{m.segmentsRebased}</span>}
+          {rebased && <ChartNote label={m.segmentsRebased}>{m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)}</ChartNote>}
           <Button variant="unstyled" type="button" className="icon-button biz-fold" aria-expanded={!bizFolded} aria-controls="rail-business" aria-label={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} title={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} onClick={() => setBizFolded(v => !v)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
           </Button>

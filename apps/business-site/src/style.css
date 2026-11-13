@@ -351,16 +351,16 @@ button { cursor: pointer; }
 .trend-kpis dt { font-size: 12px; color: var(--muted-foreground); }
 .trend-kpis dd { margin: 2px 0 0; font-size: 17px; font-weight: 620; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
-.trend-plot { --axis-r: 0px; position: relative; display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px var(--axis-r) 56px var(--axis); }
+.trend-plot { --axis-r: 0px; --axis-bottom: 32px; position: relative; display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px var(--axis-r) var(--axis-bottom) var(--axis); }
 .trend-plot[data-rates] { --axis-r: 48px; }
-.trend-grid { position: absolute; inset: 22px var(--axis-r) 56px var(--axis); pointer-events: none; }
+.trend-grid { position: absolute; inset: 22px var(--axis-r) var(--axis-bottom) var(--axis); pointer-events: none; }
 .trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--grid); transition: bottom .7s var(--ease); }
 .trend-grid div:first-child { border-top-style: solid; border-color: var(--grid); }
 .trend-grid span { position: absolute; right: calc(100% + 6px); top: -7px; max-width: calc(var(--axis) - 6px); overflow: hidden; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.trend-sweep { position: absolute; inset: 22px var(--axis-r) 56px var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
+.trend-sweep { position: absolute; inset: 22px var(--axis-r) var(--axis-bottom) var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
 
 .trend-col { position: relative; min-width: 0; container-type: inline-size; }
-.trend-hit { position: absolute; inset: -22px 0 -56px; z-index: 2; padding: 0; border: 0; border-radius: 8px; background: transparent; }
+.trend-hit { position: absolute; inset: -22px 0 calc(-1 * var(--axis-bottom)); z-index: 2; padding: 0; border: 0; border-radius: 8px; background: transparent; }
 .trend-hit:not(:disabled) { cursor: pointer; }
 .trend-hit:disabled { cursor: default; }
 .trend-hit:focus-visible { outline-offset: 2px; }
@@ -376,16 +376,7 @@ button { cursor: pointer; }
 .trend-col[data-state="missing"] .trend-value { bottom: 22% !important; color: var(--faint); }
 .trend-period { position: absolute; top: calc(100% + 7px); left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .trend-col[data-current] .trend-period { color: var(--foreground); }
-.trend-now {
-  position: absolute; top: 16px; left: 50%; z-index: 3; transform: translateX(-50%); width: max-content; max-width: 112px;
-  padding: 1px 5px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.25; text-align: center; white-space: normal;
-  color: var(--background); background: var(--foreground); pointer-events: none;
-}
-.trend-col[data-align="start"] .trend-now { left: 0; transform: none; }
-.trend-col[data-align="end"] .trend-now { left: auto; right: 0; transform: none; }
-@container (max-width: 120px) {
-  .trend-now-prefix, .trend-now-sep { display: none; }
-}
+.trend-col[data-current] .trend-period time { font-weight: 650; border-bottom: 2px solid currentColor; padding-bottom: 3px; }
 .trend-period-month::before { content: "."; }
 
 .trend-tip { position: absolute; bottom: calc(100% + 26px); left: 50%; z-index: 6; min-width: 210px; padding: 10px 12px; transform: translateX(-50%); pointer-events: none; border-radius: 10px; font-size: 12px;
@@ -632,11 +623,10 @@ button { cursor: pointer; }
   .trend { height: 178px; }
 }
 
-/* Stack dates and badges so all eight quarters stay readable. */
+/* Stack dates so all eight quarters stay readable. */
 @media (max-width: 620px) {
   .trend[data-view="trend"] { grid-template-rows: auto 256px; }
-  .trend-plot { padding-bottom: 60px; }
-  .trend-grid, .trend-sweep { bottom: 60px; }
+  .trend-plot { --axis-bottom: 42px; }
   .trend-period { flex-direction: column; gap: 3px; font-size: 12px; line-height: 1.2; }
   .trend-period time span { display: block; text-align: center; }
   .trend-period-month::before { content: none; }
@@ -1359,18 +1349,13 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 @media (max-width: 640px) { .home-fresh-card { flex: 0 0 min(78vw, 260px); } .home-fresh-row { margin-right: -16px; padding-right: 16px; } }
 
 /* ---------- Segment basis (B6): a re-segmentation marked on the trend, bars on an earlier basis set apart ---------- */
-.basis-tag { display: inline-flex; align-items: center; flex: none; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 620; line-height: 1.4; white-space: nowrap; cursor: help;
-  color: var(--muted-foreground); background: var(--surface); border: 1px dashed var(--border); }
-.basis-tag:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+.chart-note { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; color: var(--muted-foreground); background: transparent; cursor: pointer; }
+.chart-note:hover, .chart-note[data-state="open"] { color: var(--foreground); background: var(--surface); }
+.chart-note:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.chart-note-content { z-index: 100; max-width: min(320px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover, var(--surface)); color: var(--foreground); font-size: 12px; line-height: 1.5; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
 .trend-col[data-segment-basis="earlier"]:not(:hover) .trend-stack { opacity: .32; filter: grayscale(.7); }
 .trend-col[data-basis-break]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px dashed var(--border); pointer-events: none; }
 .trend-tip-basis { color: var(--muted-foreground); }
-.biz-basis { align-self: center; font-size: 11px; padding: 1px 7px; }
-/* SEC metrics unavailable (B9): the reason opens under the tag on hover or focus. */
-.metrics-unavailable { position: relative; }
-.metrics-unavailable:hover::after, .metrics-unavailable:focus-visible::after { content: attr(data-why); position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(320px, 80vw);
-  padding: 8px 10px; border-radius: 10px; white-space: normal; font-weight: 400; line-height: 1.45; color: var(--foreground); background: var(--popover, var(--surface)); border: 1px solid var(--border); box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
-
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
 
