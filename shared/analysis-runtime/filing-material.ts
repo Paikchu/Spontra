@@ -1,12 +1,12 @@
 import type { LibraryTable } from "../analysis-contract/filing-library.ts";
-import type { MaterialBlock, MaterialDocumentCoverage, MaterialFiling, MaterialSource, MaterialTable, ParsedMaterialDocument } from "../analysis-contract/filing-material.ts";
+import type { MaterialBlock, MaterialDocumentCoverage, MaterialFiling, MaterialIndexedBlock, MaterialSource, MaterialTable, ParsedMaterialDocument } from "../analysis-contract/filing-material.ts";
 import { decodeEntities, descendants, extractFilingDisclosures, nodeText, parseMarkup, type Element } from "./financial-data/disclosure-extraction.ts";
 import { tableGrid, type TableGrid } from "./financial-data/table-grid.ts";
 import { headingPeriod, type FilingFactRow } from "./filing-library/facts.ts";
 import { libraryHash } from "./filing-library/parse.ts";
 import { omit } from "./omit.ts";
 
-export const MATERIAL_PARSER_VERSION = "material-parser.v5";
+export const MATERIAL_PARSER_VERSION = "material-parser.v6";
 const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
 const numeric = (text: string): number | null => {
   const raw = text.replace(/[$€£¥,%\s]/g, "");
@@ -24,6 +24,14 @@ const csvCell = (value: string) => /[",\r\n]/.test(value) ? `"${value.replace(/"
 export function csvFromTable(table: LibraryTable): string {
   const rows = [[table.rowHeader ?? "Item", ...table.columns], ...table.rows.map(row => [[...row.path, row.label].filter(Boolean).join(" > "), ...row.cells.map(cell => cell.text)])];
   return rows.map(row => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+
+export function tableCatalogEntry(table: MaterialTable, block: Pick<MaterialIndexedBlock, "locator" | "range"> | undefined) {
+  if (!block) throw new Error(`MATERIAL_TABLE_SOURCE_MISSING:${table.tableId}`);
+  return { ...omit(table, "csv", "table"), unit: table.table.unit, notes: table.table.notes,
+    rowHeader: table.table.rowHeader ?? "Item", columns: table.table.columns,
+    rowCount: table.table.rows.length, columnCount: table.table.columns.length + 1,
+    locator: block.locator, markdownRange: block.range };
 }
 
 export function parseCsv(csv: string): string[][] {
@@ -303,7 +311,9 @@ export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource
       tables.push(asset);
       coverage.issues.push(...converted.issues.map(issue => `${asset.tableId}:${issue}`), ...verifyTableCsv(asset.table, asset.csv).issues.map(issue => `${asset.tableId}:${issue}`));
       const originalHeader = grid.rows.slice(0, converted.headers).flatMap(row => row.cells.filter(c => c.column === 0).map(c => c.text)).filter(Boolean);
-      const text = [...new Set(originalHeader), tableMarkdown(asset.table)].join("\n\n");
+      const complex = grid.rows.some(row => row.cells.some(cell => cell.rowSpan > 1 || cell.colSpan > 1));
+      const body = complex ? [...asset.table.unit ? [`Unit: ${asset.table.unit}`] : [], html.slice(piece.node.start, piece.node.end), ...asset.table.notes].join("\n\n") : tableMarkdown(asset.table);
+      const text = [...new Set(originalHeader), body].join("\n\n");
       blocks.push({ ...materialBlock(source, { kind: "table", title: name, text, start: piece.start, end: piece.node.end }), id: asset.tableId, tableId: asset.tableId });
       tableLocations.set(asset.tableId, { node: piece.node, grid, headers: converted.headers, columnMap: converted.columnMap });
     }

@@ -150,13 +150,12 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const start = Number(str(args.cursor) || 0), rows = Number(args.rows) > 0 ? Math.min(40, Number(args.rows)) : 40;
         const result = readFilingTable(material, str(args.tableId), { cursor: str(args.cursor) || undefined, rows });
         const block = material.blocks.find(b => b.tableId === result.table.tableId);
-        if (block) await resolve(block.id, state);
-        await resolve(result.table.tableId, state);
+        await resolve(result.sourceId, state);
         const end = result.nextCursor === null ? result.table.table.rows.length : Number(result.nextCursor);
         const facts = material.facts.filter(f => (f.passageId === block?.id || f.passageId === result.table.tableId) && (f.row === null || (f.row >= start && f.row < end)));
         for (const fact of facts) await resolve(fact.factId, state);
         if (material.ref.accession === accession) p(state).tablesRead = [...new Set([...p(state).tablesRead, result.table.tableId])];
-        return ok(`${JSON.stringify({ ref: result.ref, tableId: result.table.tableId, filename: result.table.filename, description: result.table.description, unit: result.table.table.unit, notes: result.table.table.notes, source: result.table.sourceUrl, nextCursor: result.nextCursor })}\n\n${result.csv}\n\n${facts.map(f => `${f.factId} row ${f.row} col ${f.col} = ${f.value} ${f.unit}`).join("\n")}`);
+        return ok(`${JSON.stringify({ ref: result.ref, tableId: result.table.tableId, sourceId: result.sourceId, rowStart: result.rowStart, rowEnd: result.rowEnd, columns: result.columns, cellReference: result.cellReference, filename: result.table.filename, description: result.table.description, unit: result.table.table.unit, notes: result.table.table.notes, source: result.table.sourceUrl, nextCursor: result.nextCursor })}\n\n${result.csv}\n\n${facts.map(f => `${f.factId} row ${f.row} col ${f.col} = ${f.value} ${f.unit}`).join("\n")}`);
       }),
     handTool<S>({ name: "grep", description: "Search the fixed filing Markdown by words or phrases. Returns block anchors to read with read_filing_markdown. scope earlier or all searches prepared earlier materials too.",
       input_schema: object({ terms: strings, scope: { type: "string", enum: ["filing", "earlier", "all"] }, cursor: { type: "string" } }, ["terms"]) },

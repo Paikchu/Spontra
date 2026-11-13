@@ -2,11 +2,11 @@ import type { MaterialFiling, MaterialRef, MaterialSnapshot, MaterialState } fro
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
-import { MATERIAL_ORGANIZER_VERSION, MATERIAL_VERSION } from "../../../../shared/analysis-contract/filing-material.ts";
+import { MATERIAL_ARCHIVE_INVENTORY_VERSION, MATERIAL_ORGANIZER_VERSION, MATERIAL_VERSION } from "../../../../shared/analysis-contract/filing-material.ts";
 import { MATERIAL_PARSER_VERSION } from "../../../../shared/analysis-runtime/filing-material.ts";
 
 export const MATERIAL_PREFIX = "sec-materials/v1/";
-export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_ORGANIZER_VERSION}`;
+export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_ORGANIZER_VERSION}:${MATERIAL_ARCHIVE_INVENTORY_VERSION}`;
 export const materialStatePrefix = (ticker: string) => `filing-material:state:v1:${ticker}:`;
 export const materialStateKey = (ticker: string, accession: string) => `${materialStatePrefix(ticker)}${accession}`;
 export const materialBase = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/${ref.version}`;

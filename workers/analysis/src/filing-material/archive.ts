@@ -1,5 +1,6 @@
 import { unzipSync } from "fflate";
-import type { MaterialFiling, MaterialSource } from "../../../../shared/analysis-contract/filing-material.ts";
+import { z } from "zod";
+import { MATERIAL_ARCHIVE_INVENTORY_VERSION, type MaterialArchiveInventory, type MaterialFiling, type MaterialSource } from "../../../../shared/analysis-contract/filing-material.ts";
 import { decodeEntities } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import { parseSecArchiveDocumentUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -8,7 +9,9 @@ import { materialEdgarReader, type GatewayOptions } from "../sec-archive/index.t
 import { MATERIAL_PREFIX, materialDigest } from "./store.ts";
 
 export type ManifestEntry = { filename: string; type: string; url: string; start: number | null; end: number | null; container: string | null };
-export type MaterialManifest = { filing: MaterialFiling; entries: ManifestEntry[]; submission: MaterialSource; headerEnd: number };
+export type MaterialManifest = { filing: MaterialFiling; entries: ManifestEntry[]; submission: MaterialSource; headerEnd: number; inventory: MaterialArchiveInventory };
+
+const directorySchema = z.object({ directory: z.object({ item: z.array(z.object({ name: z.string().min(1) })) }) });
 
 const receiptKey = (filing: MaterialFiling, id: string) => `filing-material:source:v1:${filing.ticker}:${filing.accession}:${id}`;
 const manifestKey = (filing: MaterialFiling) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/manifest.json`;
@@ -113,17 +116,37 @@ export async function readSourceBytes(env: Pick<AnalysisEnv, "SEC_FILINGS">, sou
 
 export async function loadMaterialManifest(env: AnalysisEnv, filing: MaterialFiling, options: GatewayOptions = {}): Promise<MaterialManifest> {
   const key = manifestKey(filing), stored = await env.SEC_FILINGS.get(key);
-  if (stored) return JSON.parse(await stored.text());
+  if (stored) {
+    const manifest: MaterialManifest = JSON.parse(await stored.text());
+    if (manifest.inventory?.inventoryVersion === MATERIAL_ARCHIVE_INVENTORY_VERSION) return manifest;
+  }
   const reader = materialEdgarReader(env.SEC_USER_AGENT, { delayMs: 250, ...options });
-  const index = await reader.index(filing.cik, filing.accession), bytes = await reader.submission(filing.cik, filing.accession);
+  const index = await reader.index(filing.cik, filing.accession), directoryText = await reader.directory(filing.cik, filing.accession);
+  const directory = directorySchema.parse(JSON.parse(directoryText));
+  const bytes = await reader.submission(filing.cik, filing.accession);
   const root = filingRoot(filing);
   const submissionName = `${filing.accession}.txt`;
   const submission = await putSource(env, filing, { filename: submissionName, type: "SUBMISSION", url: `${root}${submissionName}`, start: null, end: null, container: null }, bytes, "text/plain");
   const parsed = submissionEntries(bytes, root);
   const union = new Map(parsed.entries.map(entry => [entry.filename, entry]));
   for (const entry of indexEntries(index, root)) if (entry.filename !== submissionName && !union.has(entry.filename)) union.set(entry.filename, entry);
+  const excluded: MaterialArchiveInventory["excluded"] = [];
+  for (const { name: filename } of directory.directory.item) {
+    if (filename === submissionName) { excluded.push({ filename, reason: "archived-as-complete-submission" }); continue; }
+    if (filename === `${filing.accession}-index.htm` || filename === `${filing.accession}-index.html`) {
+      excluded.push({ filename, reason: "sec-generated-filing-index" }); continue;
+    }
+    if (filename === `${filing.accession}-index-headers.htm` || filename === `${filing.accession}-index-headers.html`) {
+      excluded.push({ filename, reason: "sec-generated-filing-header-index" }); continue;
+    }
+    if (!union.has(filename)) union.set(filename, { filename, type: "SEC-DIRECTORY", url: new URL(filename, root).href, start: null, end: null, container: null });
+  }
   if (!union.has(filing.primaryDocument)) union.set(filing.primaryDocument, { filename: filing.primaryDocument, type: filing.form, url: filing.documentUrl, start: null, end: null, container: null });
-  const manifest: MaterialManifest = { filing, entries: [...union.values()], submission, headerEnd: parsed.headerEnd };
+  const sha256 = await materialDigest(directoryText), rawKey = `${MATERIAL_PREFIX}sources/${sha256}`;
+  await env.SEC_FILINGS.put(rawKey, directoryText, { httpMetadata: { contentType: "application/json" }, onlyIf: { etagDoesNotMatch: "*" } });
+  const inventory: MaterialArchiveInventory = { inventoryVersion: MATERIAL_ARCHIVE_INVENTORY_VERSION,
+    directory: { url: `${root}index.json`, rawKey, sha256, files: directory.directory.item.map(item => item.name) }, excluded };
+  const manifest: MaterialManifest = { filing, entries: [...union.values()], submission, headerEnd: parsed.headerEnd, inventory };
   await env.SEC_FILINGS.put(key, JSON.stringify(manifest), { httpMetadata: { contentType: "application/json" } });
   await env.SEC_FILINGS.put(`${key.slice(0, -5)}-index.html`, index, { httpMetadata: { contentType: "text/html" } });
   return manifest;

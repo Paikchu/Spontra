@@ -4,6 +4,7 @@ import type { MaterialFiling, MaterialSource, ParsedMaterialDocument } from "../
 import { MATERIAL_PARSER_VERSION, createMaterialTable, documentCoverage, materialBlock, parseMaterialHtml, parseMaterialText, tableMarkdown, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { materialDigest } from "./store.ts";
+import { verifyMaterialHtmlCoverage } from "../../../../shared/analysis-runtime/filing-material-coverage.ts";
 
 const VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const PDF_PAGE_VERSION = "pdf-pages.v1";
@@ -145,7 +146,11 @@ export async function extractMaterialDocument(env: AnalysisEnv, filing: Material
     if (/\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(source.filename) || source.contentType.startsWith("image/")) return await parseImage(env, filing, source, `data:${source.contentType};base64,${Buffer.from(bytes).toString("base64")}`);
     const raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const text = raw.replace(/^\s*<(?:XML|JSON)>\s*([\s\S]*?)\s*<\/(?:XML|JSON)>\s*$/i, "$1");
-    if (/\.html?$/i.test(source.filename) || /text\/html|application\/xhtml\+xml/.test(source.contentType) || /<html\b/i.test(text)) return parseMaterialHtml(filing, source, text);
+    if (/\.html?$/i.test(source.filename) || /text\/html|application\/xhtml\+xml/.test(source.contentType) || /<html\b/i.test(text)) {
+      const document = parseMaterialHtml(filing, source, text);
+      verifyMaterialHtmlCoverage(text, document);
+      return document;
+    }
     if (/\.(?:xml|xsd|xsl|json|js|mjs|css|map)$/i.test(source.filename) || /(?:xml|json)/.test(source.contentType) || source.type === "XML") return parseMaterialText(filing, source, text, "code");
     if (/\.txt$/i.test(source.filename) || source.contentType.startsWith("text/")) return parseMaterialText(filing, source, text);
     throw new Error(`MATERIAL_FORMAT_UNSUPPORTED:${source.contentType}`);

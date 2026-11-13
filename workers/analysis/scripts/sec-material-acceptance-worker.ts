@@ -4,11 +4,13 @@ import { secArchiveDocumentUrl, secArchiveRoot } from "../../../shared/analysis-
 import { createAnalysisOperations, type AnalysisEnv } from "../src/operations.ts";
 import { D1SecRepository } from "../src/sec/d1.ts";
 import type { SecFiling } from "../src/sec/sec.ts";
-import type { MaterialRef, MaterialSnapshot } from "../../../shared/analysis-contract/filing-material.ts";
+import type { MaterialBlock, MaterialRef, MaterialSnapshot } from "../../../shared/analysis-contract/filing-material.ts";
 import { requestFilingMaterial, prepareFilingMaterial, getFilingMaterial, readMaterialSnapshot } from "../src/filing-material/index.ts";
 import { filingMaterialMeta, materialBlockId } from "../src/filing-material/read.ts";
 import { readSourceBytes } from "../src/filing-material/archive.ts";
-import { verifyTableCsv } from "../../../shared/analysis-runtime/filing-material.ts";
+import { organizationBatches, organizationCacheKey, parseOrganizationReceipt } from "../src/filing-material/prepare.ts";
+import { MATERIAL_PREFIX, materialBase, materialDigest } from "../src/filing-material/store.ts";
+import { tableCatalogEntry, verifyTableCsv } from "../../../shared/analysis-runtime/filing-material.ts";
 import { startFilingRuns } from "../src/filing-analysis/start.ts";
 import type { FilingWork } from "../src/filing-analysis/recipe.ts";
 import { filingSessions } from "../src/durable-runs/binding.ts";
@@ -16,6 +18,7 @@ import { readPreview, readPublishedArtifact, readPublishedDocument, readWorkStat
 import { recheckFiling } from "../src/filing-analysis/recheck.ts";
 import { handleMapRead } from "../src/read-api/router.ts";
 import type { PublishedArtifact } from "../../../shared/analysis-contract/artifact.ts";
+import type { AiUsageRow } from "../src/ai-runs/usage.ts";
 
 export { TaskRunner } from "../src/durable-runs/runner.ts";
 export { StageAgent } from "../src/stage/agent.ts";
@@ -36,6 +39,9 @@ const forbidden = new Set(["research_pack", "read_section", "read_sections", "re
 const needed = ["read_filing_markdown", "find_filing_tables", "read_filing_table", "compute", "finish"];
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const sameMaterial = (a: MaterialRef, b: MaterialRef) => a.ticker === b.ticker && a.accession === b.accession && a.version === b.version;
+const organizationMigrationPrefix = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/organization/migrations/`;
+const organizationMigrationSchema = z.object({ material: z.object({ ticker: z.string(), accession: z.string(), version: z.string() }), modelRunId: z.string(), complete: z.literal(true),
+  receipts: z.array(z.object({ index: z.number().int(), key: z.string(), status: z.string(), blocks: z.number().int(), decisions: z.number().int() })) });
 
 async function loadRun(env: Env, id: string): Promise<Run> {
   const run = (await new D1SecRepository(env.DB!).getCache<Run>(runKey(id)))?.payload;
@@ -139,10 +145,72 @@ function materialSourceChecks(snapshot: MaterialSnapshot, refs: Set<string>) {
   });
 }
 
+async function originalOrganizationBatches(env: Env, snapshot: MaterialSnapshot) {
+  const blocks: MaterialBlock[] = [];
+  for (const block of snapshot.blocks) {
+    if (block.kind === "code" || block.kind === "image") continue;
+    let text = "";
+    if (!block.tableId) {
+      if (block.storage === "inline") text = block.text;
+      else {
+        if (!block.range) throw new Error(`Organization source range missing: ${block.id}`);
+        const object = await env.SEC_FILINGS.get(snapshot.markdown.key, { range: { offset: block.range.offset, length: block.range.length } });
+        if (!object) throw new Error(`Organization source missing: ${block.id}`);
+        const bytes = new Uint8Array(await object.arrayBuffer());
+        if (bytes.length !== block.range.length || await materialDigest(bytes) !== block.range.sha256) throw new Error(`Organization source differs: ${block.id}`);
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      }
+    }
+    blocks.push({ ...block, text });
+  }
+  const tables = snapshot.tables.map(table => ({ ...table,
+    description: `${table.title}. ${table.table.rows.length} disclosed rows and ${table.table.columns.length + 1} columns.${table.table.unit ? ` Unit: ${table.table.unit}.` : ""}`,
+  }));
+  return organizationBatches(blocks, tables);
+}
+
+async function preprocessingRecords(env: Env, snapshot: MaterialSnapshot) {
+  const batches = await originalOrganizationBatches(env, snapshot), receipts = [];
+  for (const [index, batch] of batches.entries()) {
+    const key = await organizationCacheKey(snapshot.filing, batch), object = await env.SEC_FILINGS.get(key);
+    if (!object) throw new Error(`Organization content receipt missing: ${index}`);
+    const answer = parseOrganizationReceipt(JSON.parse(await object.text()), batch);
+    receipts.push({ index, key, inputHash: key.slice(key.lastIndexOf("/") + 1, -5), blockIds: batch.blocks.map(block => block.id),
+      decisions: answer.decisions, tableDescriptions: answer.tables });
+  }
+  const migrations = [];
+  let cursor: string | undefined;
+  do {
+    const objects = await env.SEC_FILINGS.list({ prefix: organizationMigrationPrefix(snapshot.ref), ...(cursor ? { cursor } : {}) });
+    for (const item of objects.objects) {
+      const object = await env.SEC_FILINGS.get(item.key);
+      if (!object) throw new Error(`Organization migration record missing: ${item.key}`);
+      const migration = organizationMigrationSchema.parse(JSON.parse(await object.text()));
+      if (migration.material.ticker !== snapshot.ref.ticker || migration.material.accession !== snapshot.ref.accession) throw new Error("Organization migration filing mismatch");
+      const matchingKeys = new Set(receipts.map(receipt => receipt.key));
+      if (migration.receipts.some(receipt => matchingKeys.has(receipt.key))) migrations.push({ key: item.key, ...migration });
+    }
+    cursor = objects.truncated ? objects.cursor : undefined;
+  } while (cursor);
+  const currentMaterialRunId = `material-${snapshot.ref.accession}-${snapshot.ref.version}`;
+  const modelRunIds = [...new Set([currentMaterialRunId, ...migrations.map(migration => migration.modelRunId)])];
+  type ModelCall = Pick<AiUsageRow, "at" | "runId" | "stage" | "provider" | "model" | "reasoning" | "inputTokens" | "cachedTokens" | "outputTokens" | "reasoningTokens" | "durationMs" | "outcome">;
+  const calls = await env.DB!.prepare(`SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = ? AND stage = 'filing-material-organize' AND run_id IN (${modelRunIds.map(() => "?").join(",")}) ORDER BY at`)
+    .bind(snapshot.ref.ticker, ...modelRunIds).all<ModelCall>();
+  return { material: snapshot.ref, currentMaterialRunId, receipts, migrations, modelCalls: calls.results,
+    currentMaterialModelCalls: calls.results.filter(call => call.runId === currentMaterialRunId).length,
+    receiptModelRuns: modelRunIds.map(runId => ({ runId, recordedCalls: calls.results.filter(call => call.runId === runId).length })),
+    ledgerMeaning: "The ledger contains recorded provider calls. Input-hash receipts may originate in an earlier material version; reusing them does not constitute another model call." };
+}
+
 async function exported(env: Env, run: Run, entry: Entry) {
   const accession = entry.filing.accessionNumber;
   if (!entry.material) throw new Error("The run has no pinned material version");
   const snapshot = await readMaterialSnapshot(env, entry.material);
+  const catalogSources = new Map(snapshot.blocks.map(block => [block.id, block]));
+  const tableCatalog = snapshot.tables.map(table => tableCatalogEntry(table, catalogSources.get(table.anchor)));
+  const storedCatalog = await env.SEC_FILINGS.get(`${materialBase(snapshot.ref)}/tables.json`);
+  if (!storedCatalog || await storedCatalog.text() !== JSON.stringify(tableCatalog)) throw new Error("Stored table catalog differs from the pinned material");
   const originals = [];
   for (const source of snapshot.documents) {
     const bytes = await readSourceBytes(env, source);
@@ -193,8 +261,9 @@ async function exported(env: Env, run: Run, entry: Entry) {
       computation: work?.periodic?.computed[source.id] ?? null, web: work?.web[source.id] === undefined ? null : { url: source.url } })),
     claims: recheck?.items.map(item => ({ ...item, materials: sources.filter(source => source.id === item.ref), computation: work?.periodic?.computed[item.ref] ?? null })) ?? [],
     computationInputs: sources.filter(source => Object.values(work?.periodic?.computed ?? {}).some(computed => source.id in computed.inputs)) };
-  return { run, filing: entry.filing, snapshot, csvFiles, artifact, document, work, formalRead, turns: turns.results,
-    checks: checks.results, recheck, sourceCheck, status: { ...status, passed: status.passed && !status.issues.length } };
+  const preprocessing = await preprocessingRecords(env, snapshot);
+  return { run, filing: entry.filing, snapshot, tableCatalog, csvFiles, artifact, document, work, formalRead, turns: turns.results,
+    checks: checks.results, recheck, sourceCheck, preprocessing, status: { ...status, passed: status.passed && !status.issues.length } };
 }
 
 const acceptanceWorker = {

@@ -2,7 +2,6 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { z } from "zod";
-import { omit } from "../shared/analysis-runtime/omit.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
@@ -18,14 +17,21 @@ const statusSchema = z.array(z.object({ filing: z.object({ accessionNumber: z.st
   complete: z.boolean(), passed: z.boolean(), issues: z.array(z.string()), calls: z.number() }).passthrough());
 const markdownSchema = z.object({ key: z.string(), bytes: z.number().int().nonnegative(), chars: z.number().int().nonnegative() });
 const textRangeSchema = z.object({ anchorOffset: z.number().int().nonnegative(), offset: z.number().int().nonnegative(), length: z.number().int().nonnegative(), chars: z.number().int().nonnegative(), sha256: z.string() });
+const tableCatalogSchema = z.array(z.object({ tableId: z.string(), documentId: z.string(), title: z.string(), description: z.string(), filename: z.string(),
+  csvKey: z.string(), sha256: z.string(), sourceUrl: z.string(), anchor: z.string(), form: z.string(), filedAt: z.string(), reportDate: z.string(),
+  unit: z.string().nullable(), notes: z.array(z.string()), rowHeader: z.string(), columns: z.array(z.string()), rowCount: z.number().int().nonnegative(), columnCount: z.number().int().positive(),
+  locator: z.object({ start: z.number().nullable(), end: z.number().nullable(), page: z.number().nullable() }), markdownRange: textRangeSchema.nullable() }).passthrough());
 const exportSchema = z.object({ filing: entrySchema.shape.filing,
   snapshot: z.object({ format: z.literal("filing-material.index.v2"), markdown: markdownSchema,
     blocks: z.array(z.object({ id: z.string(), range: textRangeSchema.nullable() }).passthrough()),
     coverage: z.unknown(), documents: z.array(z.unknown()), tables: z.array(z.object({ tableId: z.string(), filename: z.string(), description: z.string() }).passthrough()) }).passthrough(),
   csvFiles: z.array(z.object({ tableId: z.string(), filename: z.string(), csv: z.string(), sha256: z.string() })),
+  tableCatalog: tableCatalogSchema,
   artifact: z.object({ title: z.string(), html: z.string(), css: z.string(), hash: z.string() }).passthrough(),
   document: z.unknown(), work: z.unknown(), formalRead: z.unknown(), turns: z.array(z.unknown()), checks: z.array(z.unknown()), recheck: z.unknown(),
   sourceCheck: z.object({ markdownRead: z.boolean(), tablesRead: z.array(z.string()), successfulTools: z.record(z.string(), z.number().int().nonnegative()), citations: z.array(z.unknown()), claims: z.array(z.unknown()) }).passthrough(),
+  preprocessing: z.object({ currentMaterialRunId: z.string(), receipts: z.array(z.object({ index: z.number().int(), key: z.string(), inputHash: z.string(), decisions: z.array(z.unknown()), tableDescriptions: z.array(z.unknown()) }).passthrough()),
+    modelCalls: z.array(z.unknown()), currentMaterialModelCalls: z.number().int().nonnegative() }).passthrough(),
   status: z.object({ passed: z.boolean(), issues: z.array(z.string()) }).passthrough(),
 }).passthrough();
 
@@ -139,7 +145,7 @@ for (const entry of run.entries) {
   await saveJson(join(directory, "manifest.json"), payload.snapshot.documents);
   await saveJson(join(directory, "coverage.json"), payload.snapshot.coverage);
   await saveJson(join(directory, "snapshot.json"), payload.snapshot);
-  await saveJson(join(directory, "tables.json"), payload.snapshot.tables.map(table => omit(table, "table", "csv")));
+  await saveJson(join(directory, "tables.json"), payload.tableCatalog);
   for (const table of payload.csvFiles) {
     if (createHash("sha256").update(table.csv, "utf8").digest("hex") !== table.sha256) throw new Error(`Downloaded CSV hash differs from the source table: ${table.tableId}`);
     const folder = join(directory, "tables", table.tableId);
@@ -155,6 +161,7 @@ for (const entry of run.entries) {
   await saveJson(join(directory, "checks.json"), payload.checks);
   await saveJson(join(directory, "recheck.json"), payload.recheck);
   await saveJson(join(directory, "source-check.json"), payload.sourceCheck);
+  await saveJson(join(directory, "preprocessing.json"), payload.preprocessing);
   await saveJson(join(directory, "verdict.json"), payload.status);
   verdicts.push({ form: entry.filing.form, accession: entry.filing.accessionNumber, passed: payload.status.passed, issues: payload.status.issues, directory });
 }

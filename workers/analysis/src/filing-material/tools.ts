@@ -55,10 +55,11 @@ export function materialTools<S>(input: { env: AnalysisEnv; ticker: string | ((s
       const source = await sourceText(input.env, snapshot, id);
       if (!source) continue;
       const table = block.tableId ? snapshot.tables.find(item => item.tableId === block.tableId) : null;
+      const rows = /#rows:(\d+)-(\d+)$/.exec(id);
       const passage: FindingPassage = { passageId: id, documentId: `${snapshot.ref.accession}:${snapshot.ref.version}:${block.documentId}`,
         title: `${snapshot.filing.form} ${snapshot.filing.reportDate || snapshot.filing.filedAt}: ${block.title}`,
         form: snapshot.filing.form, filedAt: snapshot.filing.filedAt, url: block.sourceUrl, path: block.path, text: source.text,
-        table: table ? table.table : null };
+        table: table ? { ...table.table, rows: rows ? table.table.rows.slice(Number(rows[1]), Number(rows[2])) : table.table.rows } : null };
       sources.push(`[${await input.register(state, passage)}] source ${id}`);
     }
     return sources;
@@ -105,8 +106,7 @@ export function materialTools<S>(input: { env: AnalysisEnv; ticker: string | ((s
         const snapshot = await load(args.accession, ctx.state);
         let rows = 40, page = readFilingTable(snapshot, args.tableId, { ...args, rows });
         while (page.csv.length > 32_000 && rows > 1) { rows = Math.max(1, Math.floor(rows / 2)); page = readFilingTable(snapshot, args.tableId, { ...args, rows }); }
-        const ids = snapshot.blocks.filter(block => block.tableId === args.tableId).map(block => block.id);
-        return { ref: page.ref, table: tableDescription(page.table), csv: page.csv, nextCursor: page.nextCursor, sources: await register(snapshot, ids, ctx.state) };
-      }, observe: (_args, value) => `${JSON.stringify({ ref: value.ref, nextCursor: value.nextCursor, table: value.table, sources: value.sources })}\n\n${value.csv}` }),
+        return { ref: page.ref, table: tableDescription(page.table), csv: page.csv, rowStart: page.rowStart, rowEnd: page.rowEnd, columns: page.columns, cellReference: page.cellReference, nextCursor: page.nextCursor, sources: await register(snapshot, [page.sourceId], ctx.state) };
+      }, observe: (_args, value) => `${JSON.stringify({ ref: value.ref, nextCursor: value.nextCursor, rowStart: value.rowStart, rowEnd: value.rowEnd, columns: value.columns, cellReference: value.cellReference, table: value.table, sources: value.sources })}\n\n${value.csv}` }),
   ];
 }

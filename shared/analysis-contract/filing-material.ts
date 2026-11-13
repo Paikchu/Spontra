@@ -3,6 +3,8 @@ import type { FilingFactRow } from "../analysis-runtime/filing-library/facts.ts"
 
 export const MATERIAL_VERSION = "filing-material.v1";
 export const MATERIAL_ORGANIZER_VERSION = "source-organizer.v2";
+export const MATERIAL_READ_BYTES = 64_000;
+export const MATERIAL_ARCHIVE_INVENTORY_VERSION = "sec-directory-union.v1";
 export type MaterialRef = { ticker: string; accession: string; version: string };
 export type MaterialFiling = {
   ticker: string; accession: string; cik: string; form: string; filedAt: string; reportDate: string;
@@ -32,6 +34,11 @@ export type MaterialDocumentCoverage = {
   documentId: string; filename: string; sourceTextChars: number; retainedTextChars: number;
   sourceTables: number; retainedTables: number; sourceImages: number; retainedImages: number;
   pages: number; retainedPages: number; issues: string[];
+  htmlBaseline?: {
+    method: "independent-raw-token-inventory.v1";
+    textLeaves: number; mappedLeaves: number; textChars: number; mappedTextChars: number;
+    tables: number; mappedTables: number; images: number; mappedImages: number;
+  };
 };
 export type ParsedMaterialDocument = {
   blocks: MaterialBlock[]; tables: MaterialTable[]; facts: FilingFactRow[];
@@ -41,11 +48,17 @@ export type MaterialDecision =
   | { blockId: string; action: "keep"; section: string }
   | { blockId: string; action: "duplicate"; target: string }
   | { blockId: string; action: "boilerplate"; reason: string };
+export type MaterialArchiveInventory = {
+  inventoryVersion: typeof MATERIAL_ARCHIVE_INVENTORY_VERSION;
+  directory: { url: string; rawKey: string; sha256: string; files: string[] };
+  excluded: Array<{ filename: string; reason: "archived-as-complete-submission" | "sec-generated-filing-index" | "sec-generated-filing-header-index" }>;
+};
 export type MaterialCoverage = {
   expectedDocuments: number; archivedDocuments: number; documents: MaterialDocumentCoverage[];
   sourceBlocks: number; retainedBlocks: number; duplicates: Array<{ blockId: string; target: string }>;
   excluded: Array<{ blockId: string; reason: string }>; tableCells: number; checkedCells: number;
   issues: string[];
+  archiveInventory?: MaterialArchiveInventory;
 };
 export type MaterialSnapshot = {
   format: "filing-material.index.v2";

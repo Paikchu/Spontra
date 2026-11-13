@@ -3,10 +3,11 @@ import { factText, periodText } from "../../../../shared/analysis-runtime/filing
 import { csvFromTable } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { SecFiling } from "../sec/sec.ts";
+import { MATERIAL_READ_BYTES } from "../../../../shared/analysis-contract/filing-material.ts";
 
 type MaterialReadEnv = Pick<AnalysisEnv, "SEC_FILINGS">;
 const encoder = new TextEncoder();
-const SOURCE_BYTES = 64_000;
+const SOURCE_BYTES = MATERIAL_READ_BYTES;
 
 export const filingMaterialMeta = (filing: SecFiling): MaterialFiling => ({
   ticker: filing.ticker, accession: filing.accessionNumber, cik: filing.cik, form: filing.form,
@@ -29,7 +30,7 @@ async function markdownBytes(env: MaterialReadEnv, snapshot: MaterialSnapshot, o
   return bytes;
 }
 
-export const materialBlockId = (sourceId: string): string => /^(.+)#\d+-\d+$/.exec(sourceId)?.[1] ?? sourceId;
+export const materialBlockId = (sourceId: string): string => /^(.+)#(?:(?:rows:)?\d+-\d+|cell:\d+:\d+)$/.exec(sourceId)?.[1] ?? sourceId;
 
 export async function readFilingMarkdown(env: MaterialReadEnv, snapshot: MaterialSnapshot, request: { anchor?: string; cursor?: string; maxChars?: number } = {}): Promise<MaterialPage> {
   let start = position(request.cursor);
@@ -57,7 +58,7 @@ export async function readFilingMarkdown(env: MaterialReadEnv, snapshot: Materia
     if (!block.range) return [];
     const from = Math.max(start, block.range.offset), to = Math.min(end, block.range.offset + block.range.length);
     if (from >= to) return [];
-    return [block.storage === "markdown" || from > block.range.offset || to < block.range.offset + block.range.length
+    return [block.kind === "table" || block.storage === "markdown" || from > block.range.offset || to < block.range.offset + block.range.length
       ? `${block.id}#${from - block.range.offset}-${to - block.range.offset}` : block.id];
   });
   return { ref: snapshot.ref, text, blockIds, nextCursor: end < snapshot.markdown.bytes ? String(end) : null, toc: snapshot.toc };
@@ -70,12 +71,15 @@ export function findFilingTables(snapshot: MaterialSnapshot, query: { name?: str
   return { tables: tables.slice(start, end), nextCursor: end < tables.length ? String(end) : null };
 }
 
-export function readFilingTable(snapshot: MaterialSnapshot, tableId: string, request: { cursor?: string; rows?: number } = {}): { ref: MaterialSnapshot["ref"]; table: MaterialTable; csv: string; nextCursor: string | null } {
+export function readFilingTable(snapshot: MaterialSnapshot, tableId: string, request: { cursor?: string; rows?: number } = {}) {
   const table = snapshot.tables.find(item => item.tableId === tableId);
   if (!table) throw new Error(`Unknown table ${tableId} in material ${snapshot.ref.version}`);
-  const start = position(request.cursor), end = start + (request.rows ?? 250);
+  const start = Math.min(position(request.cursor), table.table.rows.length), end = Math.min(start + (request.rows ?? 250), table.table.rows.length);
   const csv = start === 0 && end >= table.table.rows.length ? table.csv : csvFromTable({ ...table.table, rows: table.table.rows.slice(start, end) });
-  return { ref: snapshot.ref, table, csv, nextCursor: end < table.table.rows.length ? String(end) : null };
+  return { ref: snapshot.ref, table, csv, sourceId: `${tableId}#rows:${start}-${end}`, rowStart: start, rowEnd: end,
+    columns: [table.table.rowHeader ?? "Item", ...table.table.columns],
+    cellReference: { template: `${tableId}#cell:{row}:{column}`, rowBase: 0, columnBase: 0, rowHeaderColumn: 0 },
+    nextCursor: end < table.table.rows.length ? String(end) : null };
 }
 
 async function blockContains(env: MaterialReadEnv, snapshot: MaterialSnapshot, block: MaterialIndexedBlock, terms: string[]): Promise<boolean> {
@@ -121,6 +125,25 @@ export async function sourceText(env: MaterialReadEnv, snapshot: MaterialSnapsho
     const block = snapshot.blocks.find(item => item.id === fact.passageId);
     return { title: `${fact.label} ${periodText(fact)}`, text: `${fact.label}: ${factText(fact)} ${periodText(fact)}. Printed as ${fact.shown}. ${fact.dimensions}`, exact: fact.value, url: block?.sourceUrl ?? snapshot.filing.documentUrl };
   }
+  const cell = /^(.+)#cell:(\d+):(\d+)$/.exec(id);
+  const rows = /^(.+)#rows:(\d+)-(\d+)$/.exec(id);
+  const table = snapshot.tables.find(item => item.tableId === (cell?.[1] ?? rows?.[1] ?? id));
+  if (table) {
+    if (cell) {
+      const row = table.table.rows[position(cell[2])], column = position(cell[3]);
+      if (!row || column > table.table.columns.length) throw new Error(`Invalid table cell ${id}`);
+      const label = [...row.path, row.label].filter(Boolean).join(" > ");
+      const value = column === 0 ? label : row.cells[column - 1]!.text;
+      const heading = column === 0 ? table.table.rowHeader ?? "Item" : table.table.columns[column - 1]!;
+      return { title: `${table.title}, row ${cell[2]}, column ${column}`, text: `${label}\n${heading}\n${value}\nUnit: ${table.table.unit ?? "not stated"}\n${table.table.notes.join("\n")}`, url: table.sourceUrl };
+    }
+    const start = rows ? position(rows[2]) : 0, end = rows ? position(rows[3]) : table.table.rows.length;
+    if (end < start || end > table.table.rows.length) throw new Error(`Invalid table source range ${id}`);
+    const csv = csvFromTable({ ...table.table, rows: table.table.rows.slice(start, end) });
+    const text = `${table.description}\nUnit: ${table.table.unit ?? "not stated"}\n${csv}\n${table.table.notes.join("\n")}`;
+    if (encoder.encode(text).length > SOURCE_BYTES) throw new Error(`SOURCE_RANGE_REQUIRED:${table.tableId}. Read a smaller page with read_filing_table, or read its Markdown anchor and continue with nextCursor.`);
+    return { title: table.title, text, url: table.sourceUrl };
+  }
   const part = /^(.+)#(\d+)-(\d+)$/.exec(id);
   const block = snapshot.blocks.find(item => item.id === (part?.[1] ?? id));
   if (block) {
@@ -132,6 +155,5 @@ export async function sourceText(env: MaterialReadEnv, snapshot: MaterialSnapsho
     const slice = bytes ? bytes.subarray(start, end) : block.range ? await markdownBytes(env, snapshot, block.range.offset + start, end - start) : new Uint8Array();
     return { title: block.title, text: new TextDecoder("utf-8", { fatal: true }).decode(slice), url: block.sourceUrl };
   }
-  const table = snapshot.tables.find(item => item.tableId === id);
-  return table ? { title: table.title, text: `${table.description}\nUnit: ${table.table.unit ?? "not stated"}\n${table.csv}\n${table.table.notes.join("\n")}`, url: table.sourceUrl } : null;
+  return null;
 }

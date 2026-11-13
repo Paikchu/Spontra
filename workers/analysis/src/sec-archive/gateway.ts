@@ -14,6 +14,7 @@ export type GatewayOptions = { fetcher?: typeof fetch; delayMs?: number };
 
 export type MaterialEdgarReader = {
   index(cik: string, accession: string): Promise<string>;
+  directory(cik: string, accession: string): Promise<string>;
   submission(cik: string, accession: string): Promise<Uint8Array>;
   document(url: string): Promise<Response>;
 };
@@ -23,6 +24,7 @@ export function materialEdgarReader(userAgent: string, options: GatewayOptions =
   const root = (cik: string, accession: string) => secArchiveRoot(Number(cik), accession);
   return {
     index: (cik, accession) => request(secArchiveDocumentUrl(root(cik, accession), `${accession}-index.htm`), "text/html").then(r => r.text()),
+    directory: (cik, accession) => request(secArchiveDocumentUrl(root(cik, accession), "index.json"), "application/json").then(r => r.text()),
     submission: (cik, accession) => request(secArchiveDocumentUrl(root(cik, accession), `${accession}.txt`), "text/plain", 60_000).then(async r => new Uint8Array(await r.arrayBuffer())),
     document: url => request(url, "*/*", 60_000),
   };

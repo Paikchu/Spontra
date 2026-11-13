@@ -2,6 +2,7 @@
   "$schema": "../../../node_modules/wrangler/config-schema.json",
   "name": "spontra-sec-material-acceptance-local",
   "main": "sec-material-acceptance-worker.ts",
+  "build": { "command": "npm run analysis:prepare" },
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js", "**/pdfjs-source.txt"], "fallthrough": true }],
