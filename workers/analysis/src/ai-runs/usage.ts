@@ -37,15 +37,20 @@ function aiUsageKind(stage: string): string {
   return stage.split(/[-:]/, 1)[0] || stage;
 }
 
-/** Messages API usage. After a server-side fallback, `iterations` lists every attempt and the top level only the last. */
-type TokenUsage = { input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown };
+/** OpenAI usage includes cached input in prompt_tokens. Pi and Anthropic report it separately. */
+type TokenUsage = {
+  prompt_tokens?: unknown; completion_tokens?: unknown; prompt_cache_hit_tokens?: unknown;
+  prompt_tokens_details?: { cached_tokens?: unknown };
+  completion_tokens_details?: { reasoning_tokens?: unknown };
+  input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown;
+};
 type ProviderUsage = TokenUsage & { iterations?: unknown; server_tool_use?: { web_search_requests?: unknown } };
 const count = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
-/** Input is everything the model read, cached or not; cached is the part read from the prompt cache. */
 const tokens = (usage: TokenUsage) => ({
-  input: (count(usage.input_tokens) ?? 0) + (count(usage.cache_read_input_tokens) ?? 0) + (count(usage.cache_creation_input_tokens) ?? 0),
-  cached: count(usage.cache_read_input_tokens) ?? 0,
-  output: count(usage.output_tokens) ?? 0,
+  input: count(usage.prompt_tokens) ?? (count(usage.input_tokens) ?? 0) + (count(usage.cache_read_input_tokens) ?? 0) + (count(usage.cache_creation_input_tokens) ?? 0),
+  cached: count(usage.prompt_cache_hit_tokens) ?? count(usage.prompt_tokens_details?.cached_tokens) ?? count(usage.cache_read_input_tokens) ?? 0,
+  output: count(usage.completion_tokens) ?? count(usage.output_tokens) ?? 0,
+  reasoning: count(usage.completion_tokens_details?.reasoning_tokens),
 });
 
 /** Shapes the ledger row from the metrics `requestWorkerSecModelContent` collects: stage, model, reasoning, usage, error. */
@@ -54,7 +59,10 @@ export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, c
   const usage = (metrics.usage && typeof metrics.usage === "object" ? metrics.usage : {}) as ProviderUsage;
   const error = typeof metrics.error === "string" ? metrics.error : null;
   const attempts = Array.isArray(usage.iterations) && usage.iterations.length ? usage.iterations as TokenUsage[] : [usage];
-  const total = attempts.map(tokens).reduce((sum, t) => ({ input: sum.input + t.input, cached: sum.cached + t.cached, output: sum.output + t.output }));
+  const total = attempts.map(tokens).reduce((sum, t) => ({
+    input: sum.input + t.input, cached: sum.cached + t.cached, output: sum.output + t.output,
+    reasoning: sum.reasoning === null && t.reasoning === null ? null : (sum.reasoning ?? 0) + (t.reasoning ?? 0),
+  }));
   return {
     at: call.at,
     ticker: call.ticker ?? null,
@@ -67,8 +75,7 @@ export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, c
     inputTokens: total.input,
     cachedTokens: total.cached,
     outputTokens: total.output,
-    // Claude bills thinking as output and does not report it separately.
-    reasoningTokens: null,
+    reasoningTokens: total.reasoning,
     durationMs: Math.max(0, Math.round(call.durationMs)),
     outcome: error === null ? "ok" : error.startsWith("model-timeout:") ? "timeout" : "error",
     searchCalls: call.searchCalls ?? count(usage.server_tool_use?.web_search_requests) ?? 0,

@@ -63,7 +63,7 @@ flowchart LR
 
 - **任务与 Workflow。** 无模型的任务在 Worker 里直接跑；用模型的任务（sec-report、items、company-analysis、findings、analyst、explainer、tree、valuation、translate 等）各自是一个 Cloudflare Workflow，步骤可重放，模型调用按步骤缓存。
 - **存储。** D1 是真相：`sec_cache`（按 key 存 JSON 产物）、`sec_documents`/`sec_sections`/`sec_passages`（文件库）、`filing_read_notes`、`valuation_*`、`ai_usage`（每次模型调用的账）。R2 存归档原文与网页缓存。Vectorize 存业务标签向量。
-- **模型。** 全部经 `api.deepseek.com/anthropic`，deepseek-flash；按任务分推理档位。
+- **模型。** 分析任务与 Pi 会话经 `api.deepseek.com/chat/completions`，使用 OpenAI 兼容格式和 deepseek-flash；按任务分推理档位。独立的产物仲裁与截图评审调用 OpenAI Chat Completions，由 `OPENAI_API_KEY` 与 `OPENAI_REVIEW_MODEL` 配置。
 
 ### 2.3 开关与阶梯
 

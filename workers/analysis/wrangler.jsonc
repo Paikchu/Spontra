@@ -16,6 +16,7 @@
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
     "SEC_REASONING_MODEL": "deepseek-flash",
+    "OPENAI_REVIEW_MODEL": "gpt-6.1-terra",
     // ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
     "FINDINGS_ENABLED": "true",
     "ANALYST_ENABLED": "true",

@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { Recipe, TurnRecord } from "../recipe.ts";

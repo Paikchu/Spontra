@@ -1,12 +1,12 @@
 import puppeteer, { type Browser, type BrowserWorker, type Frame, type Page } from "@cloudflare/puppeteer";
 import axeSource from "axe-core/axe.min.js";
-import { anthropicConfigured, AnthropicUnavailable, judge, type ImageInput } from "./anthropic.ts";
+import { judgeConfigured, JudgeUnavailable, judge, type JudgeEnv, type ImageInput } from "./openai.ts";
 import { issueKey, type TrackedIssue } from "./document.ts";
 
 /**
  * The visual review (docs/analysis-html-artifact.md §7): the draft is opened in the real company page through a signed
  * preview link, at several widths and both themes, inside the same `/artifact-frame` sandbox readers get. Programmatic
- * checks find what can be measured; the interactive components are exercised; screenshots go to Claude Haiku 5.5 for
+ * checks find what can be measured; the interactive components are exercised; screenshots go to the configured OpenAI model for
  * the design review. Every finding names a block, so the composer fixes only that block.
  */
 /** `parts`: how many screenshots a tall block may take at this width, each `SLICE` pixels at most. */
@@ -210,9 +210,9 @@ export const visualPasses = (scores: Record<string, number> | null) => !!scores 
 
 /**
  * One review of a draft. `url` opens it in the real stage; `blocks` are the ids the review may name. The design review
- * is skipped, not failed, when Anthropic is not configured; the result says so through `scores: null`.
+ * is skipped, not failed, when the OpenAI judge is not configured; the result says so through `scores: null`.
  */
-export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_API_KEY?: string; DB?: D1Database }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }, options: { visual?: boolean; expectedHash?: string } = {}): Promise<QaResult> {
+export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }, options: { visual?: boolean; expectedHash?: string } = {}): Promise<QaResult> {
   if (!env.BROWSER) return { issues: [], scores: null, unavailable: "no browser binding", shots: 0 };
   const errors: string[] = [];
   let browser: Browser;
@@ -245,7 +245,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
   let scores: Record<string, number> | null = null;
   // First parts before second parts, so every width shows every block before the limit is reached.
   const images = passes.flatMap((p, order) => p.shots.map(s => ({ ...s, viewport: p.viewport.name, order }))).sort((a, b) => a.part - b.part || a.order - b.order).slice(0, MAX_IMAGES);
-  if (options.visual !== false && anthropicConfigured(env) && images.length) {
+  if (options.visual !== false && judgeConfigured(env) && images.length) {
     const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {
@@ -260,7 +260,7 @@ export async function reviewRendering(env: { BROWSER?: BrowserWorker; ANTHROPIC_
         issues.push({ block, kind: "visual", severity: v.severity, problem: v.problem, suggestion: v.suggestion, viewport: v.viewport, key: issueKey(block, `visual ${v.problem}`) });
       }
     } catch (error) {
-      if (!(error instanceof AnthropicUnavailable)) throw error;
+      if (!(error instanceof JudgeUnavailable)) throw error;
     }
   }
   return { issues, scores, unavailable: null, shots: images.length, covered: Object.fromEntries(passes.map(p => [p.viewport.name, [...new Set(images.filter(s => s.viewport === p.viewport.name).map(s => s.block))]])), ...(errors.length ? { errors } : {}) };

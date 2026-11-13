@@ -12,7 +12,7 @@ import { arbitrate, reviewBlock, type SourceReader } from "./review.ts";
 import { reviewRendering, visualPasses } from "./qa.ts";
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
 import { previewToken, publishStatements, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
-import { judge, AnthropicUnavailable } from "./anthropic.ts";
+import { judge, JudgeUnavailable } from "./openai.ts";
 
 /**
  * The composing tools every analysis shares (docs/analysis-html-artifact.md §5) and the harness behind `finish`: the
@@ -456,7 +456,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
             schema: { type: "object", additionalProperties: false, required: ["issueStands", "reason"], properties: { issueStands: { type: "boolean" }, reason: { type: "string" } } },
             text: JSON.stringify({ remark: { problem: issue.problem, suggestion: issue.suggestion ?? null, viewport: issue.viewport ?? null }, block: b.html.slice(0, 20_000), argument: str(a.argument).slice(0, 3000) }),
           });
-        } catch (error) { if (!(error instanceof AnthropicUnavailable)) throw error; ruling = null; }
+        } catch (error) { if (!(error instanceof JudgeUnavailable)) throw error; ruling = null; }
       }
       log(c, id, issue.kind, 4, `contested: ${ruling ? (ruling.issueStands ? "stands" : "withdrawn") : "no ruling"} ${ruling?.reason ?? ""}`);
       if (!ruling) return ok("No ruling could be had; the problem stands. Change the block.");
