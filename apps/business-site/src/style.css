@@ -165,14 +165,12 @@ button { cursor: pointer; }
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
-/* The figures share a row with the controls while each keeps 120px for its title; when they cannot, the controls move to
-   a second row rather than cut the titles ("Operating income" must never read "Operating..."). Flags take a row of their own. */
+/* Narrow layouts can wrap the controls; desktop keeps the entire header on one shared type scale. */
 .stage-head--summary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
 .stage-head--summary > * { flex: 1 0 100%; min-width: 0; }
 .stage-head--summary > .stats { flex: 1 1 auto; min-width: 0; }
 .stage-head--summary > .stage-controls { flex: none; margin-left: auto; flex-wrap: nowrap; }
-/* Too narrow for four figures at 120px in a row (the 1280 desktop, where the view tabs share the stage's first row): two by two. */
-@media (min-width: 641px) {
+@media (min-width: 641px) and (max-width: 960px) {
   .stage-head--summary { container: stage-head / inline-size; }
   @container stage-head (max-width: 600px) {
     .stats:has(> .stat:nth-child(4)):not(:has(> [data-missing])) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
@@ -412,6 +410,21 @@ button { cursor: pointer; }
 .stage-views { gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .stage-views button { padding: 5px 13px; border-radius: 999px; text-decoration: none; transition: background .2s, color .2s; }
 .stage-views button[aria-checked="true"] { background: var(--foreground); color: var(--background); }
+@media (min-width: 961px) {
+  .stage:has(> .stage-head--summary) { container-type: inline-size; --stage-head-unit: min(1px, .075cqi); }
+  .stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: calc(12 * var(--stage-head-unit)) calc(24 * var(--stage-head-unit)); }
+  .stage-head--summary > .stats { column-gap: calc(48 * var(--stage-head-unit)); overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
+  .stage-head--summary .stat { gap: calc(4 * var(--stage-head-unit)); max-width: none; }
+  .stage-head--summary .stat-label { font-size: calc(12 * var(--stage-head-unit)); white-space: nowrap; }
+  .stage-head--summary .stat-label-text { display: block; overflow: visible; }
+  .stage-head--summary .stat-value { font-size: calc(26 * var(--stage-head-unit)); }
+  .stage-head--summary > .stage-controls { gap: calc(12 * var(--stage-head-unit)); }
+  .stage-head--summary > .module-failures { grid-column: 1 / -1; }
+  .stage-head--summary > .module-failures:empty { display: none; }
+  .stage:has(> .stage-head--summary) > .stage-tabs { padding-left: calc(12 * var(--stage-head-unit)); }
+  .stage:has(> .stage-head--summary) :is(.stage-head--summary, .stage-tabs) .stage-views { gap: calc(2 * var(--stage-head-unit)); padding: calc(3 * var(--stage-head-unit)); }
+  .stage:has(> .stage-head--summary) :is(.stage-head--summary, .stage-tabs) .stage-views button { font-size: calc(12.5 * var(--stage-head-unit)); padding: calc(5 * var(--stage-head-unit)) calc(13 * var(--stage-head-unit)); white-space: nowrap; }
+}
 /* Metric picker beside the heading: the pill shape of the view toggle, as a native select. */
 .metric-select select { max-width: 160px; padding: 3px 24px 3px 10px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23888' stroke-width='1.5'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center; appearance: none; color: var(--foreground); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .metric-select select:hover { border-color: var(--border); }
