@@ -48,11 +48,11 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
     "What are the terms in the filing's own words: who, what, how much, under what plan or agreement?",
     "How does the event change the figures it touches: shares outstanding, holdings, debt, buyback capacity?",
     "What is the base rate: how often has this insider or this company done this before, and under a plan or not?",
-  ], evidence: "the event's own figures ({event} references), the filed exhibit's text through find_sections and read_section, the company's earlier events of the same class" },
+  ], evidence: "the event's own figures ({event} references), the filing README (the exhibit is part of it), the company's earlier events of the same class" },
   peers: { key: "peers", questions: [
     "How does the same ratio look at each tracked peer over the same span, and is the company's move company-specific or industry-wide?",
     "What do peers say in their own filings about the same mechanism: who owns, who leases, who borrows, who is paid in advance?",
-  ], evidence: "the comparable peers and their basis (peers), the peers table (peer references) for peers of basis company, peers' filings through find_sections with peers; the divergence table" },
+  ], evidence: "the comparable peers and their basis (peers), the peers table (peer references) for peers of basis company, peers' filing READMEs; the divergence table" },
 };
 
 const refs = (f: VerifiedFindingLead): FindingRef[] => f.evidence.map(e => e.ref);

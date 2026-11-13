@@ -1,16 +1,13 @@
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
-import { renderTable } from "../analyst/agent.ts";
-import { libraryPassages, listLibraryDocuments, readLibraryDocument } from "../filing-library/store.ts";
-import { libraryFindAcross, libraryRead } from "../filing-library/tool.ts";
+import { listFilingReadmes, readFilingReadme, readmePage, resolveReadmeAccession } from "../filing-library/readme.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { defineTool, type AnyTool } from "../tools/registry.ts";
 
 /**
- * The SEC resource as a tool set every agent mounts (docs/sec-archive.md): the company's filings as the filing library
- * holds them in D1, split into verbatim passages. Three tools, one contract: `list_filings` says which filings exist,
- * `find_sections` finds the sections about a topic, `read_section` reads passages and registers each as a material a
- * quote may cite. Nothing here reaches EDGAR or the web; a filing the library does not hold is not readable.
+ * The SEC resource as a tool set every agent mounts (docs/sec-archive.md). Two tools: `list_filings` says which
+ * filings have a README, `read_filing` returns that README (the filing's own text with boilerplate removed and its
+ * exhibits included) and registers it as one material a quote may cite. Nothing here reaches EDGAR or the web.
  */
 export type SecToolState = { used: { finds: number; reads: number } };
 export type SecToolBudget = { finds: number; reads: number };
@@ -29,35 +26,33 @@ export function secFilingTools<S extends SecToolState>(input: SecToolInput<S>): 
   const { env, ticker, budget } = input;
   const db = env.DB!;
   return [
-    tool({ name: "list_filings", description: "The company's filings the library holds, newest first: form, dates and documentId. forms narrows to some forms (10-K, 10-Q, 8-K, 20-F, 6-K).",
-      parameters: z.object({ forms: z.array(z.string().max(8)).max(6).optional(), limit: z.number().int().min(1).max(40).optional() }), concurrencySafe: true,
+    tool({ name: "list_filings", description: "The company's filing READMEs, newest first: form, dates, accession and length. forms narrows to some forms (10-K, 10-Q, 8-K, 20-F, 6-K).",
+      parameters: z.object({ forms: z.array(z.string().max(12)).max(8).optional(), limit: z.number().int().min(1).max(40).optional() }), concurrencySafe: true,
       execute: async (args, ctx) => {
-        const documents = await ctx.stage("list-filings", () => listLibraryDocuments(db, { ticker, forms: args.forms, limit: args.limit ?? 12 }));
-        return documents.map(d => `${d.form} filed ${d.filedAt} for ${d.reportDate} · ${d.docType} · documentId ${d.documentId}`).join("\n") || "The library holds no filing of this company yet.";
+        const filings = await ctx.stage("list-filings", () => listFilingReadmes(db, ticker, { forms: args.forms, limit: args.limit ?? 12 }));
+        return filings.map(d => `${d.form} filed ${d.filedAt.slice(0, 10)} for ${d.reportDate} · accession ${d.accession} · ${d.chars} characters · ${d.passages} passages`).join("\n") || "No filing README is ready for this company yet.";
       }, observe: (_a, v) => v }),
-    tool({ name: "find_sections", description: "Find sections of the company's filings by topic, keywords or a question.", parameters: z.object({ topic: z.string().max(120).optional(), keywords: z.string().max(200).optional(), question: z.string().max(300).optional() }), concurrencySafe: true,
+    tool({ name: "read_filing", description: "Read one filing's README: boilerplate removed, this filing's exhibits included, each passage marked [p…], figures followed by their period. previous: true reads the earlier filing's README. offset continues a long README. The whole README becomes one material a quote may cite.",
+      parameters: z.object({ accession: z.string().max(32).optional(), documentId: z.string().max(80).optional(), previous: z.boolean().optional(), offset: z.number().int().min(0).optional() }),
       execute: async (args, ctx) => {
-        if (ctx.state.used.finds >= budget.finds) throw new Error(`no finds left; ${input.spent.finds}`);
-        ctx.state.used.finds++;
-        const found = await ctx.stage("find", () => libraryFindAcross(env, { tickers: [ticker], ...args, limit: 8 }));
-        return found.found.map(s => `${s.form} ${s.filedAt} · documentId ${s.documentId} · sectionId ${s.sectionId} · ${s.path.join(" › ")}${s.gist ? ` · ${s.gist}` : ""}`).join("\n") || "No sections found; try other keywords.";
-      }, observe: (_a, v) => v }),
-    tool({ name: "read_section", description: "Read a section of a filing; previous: true reads the same section in the earlier filing. Each passage read becomes a material m<n> a quote may cite.", parameters: z.object({ documentId: z.string().max(80), sectionId: z.string().max(80).optional(), focus: z.array(z.string().max(60)).max(8).optional(), previous: z.boolean().optional() }),
-      execute: async (args, ctx) => {
+        if (!args.accession && !args.documentId) throw new Error("name the filing by accession (list_filings) or documentId");
         if (ctx.state.used.reads >= budget.reads) throw new Error(`no reads left; ${input.spent.reads}`);
         ctx.state.used.reads++;
         const read = await ctx.stage("read", async () => {
-          let target = args.documentId;
-          if (args.previous) target = (await readLibraryDocument(db, args.documentId))?.previousDocumentId ?? args.documentId;
-          const document = await readLibraryDocument(db, target);
-          if (!document || document.ticker !== ticker) return null;
-          const read = await libraryRead(db, { documentId: target, sectionId: args.sectionId, focus: args.focus, maxChars: 7000 });
-          const full = await libraryPassages(db, read.passages.map(p => p.passageId));
-          return { document, passages: read.passages.map(p => { const row = full.find(f => f.passageId === p.passageId); return { passageId: p.passageId, documentId: target, title: `${document.ticker} ${document.form} ${document.reportDate}`, form: document.form, filedAt: document.filedAt, url: document.documentUrl, path: p.path.split(" › "), text: p.text,
-            table: row?.table ? { unit: row.table.unit, columns: row.table.columns, rows: row.table.rows.map(r => ({ label: r.label, cells: r.cells.map(c => ({ text: c.text, value: c.value })) })) } : null } satisfies FindingPassage; }), omitted: read.omitted };
+          const accession = await resolveReadmeAccession(db, ticker, args);
+          if (!accession) return { missing: args.previous ? "no earlier filing" : "no such filing" } as const;
+          const readme = await readFilingReadme(env, ticker, accession);
+          if (!readme) return { missing: "README not ready" } as const;
+          const passage: FindingPassage = {
+            passageId: `readme:${ticker}:${accession}`, documentId: accession, title: `${ticker} ${readme.form} ${readme.reportDate}`,
+            form: readme.form, filedAt: readme.filedAt, url: readme.url, path: ["README"], text: "", table: null,
+          };
+          return { readme, passage };
         });
-        if (!read) throw new Error(`no filing ${args.documentId} of ${ticker}`);
-        return read.passages.map(p => { const id = input.register(ctx.state, p); return `[${id}] ${p.title} › ${p.path.join(" › ")}\n${p.table ? renderTable(p.table, args.focus ?? []) : p.text.slice(0, 2400)}`; }).join("\n\n") + (read.omitted ? `\n(${read.omitted} passages omitted; narrow with focus)` : "");
+        if ("missing" in read) throw new Error(`${read.missing} for ${ticker}`);
+        const id = input.register(ctx.state, read.passage);
+        const page = readmePage(read.readme.markdown, args.offset ?? 0);
+        return `[${id}] ${read.passage.title}\n${page.text}`;
       }, observe: (_a, v) => v }),
   ];
 }

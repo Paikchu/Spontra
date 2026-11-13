@@ -1,5 +1,6 @@
 import { checkBlock, figureInText, quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { readPublishedDocument, readWorkState, recordCheck, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { readFilingReadme } from "../filing-library/readme.ts";
 import { librarySectionPassages } from "../filing-library/store.ts";
 import { evaluate, factsById, factSourceText } from "./facts.ts";
 import type { FilingWork } from "./recipe.ts";
@@ -44,7 +45,11 @@ export async function recheckFiling(env: ArtifactStoreEnv, ticker: string, acces
     } else if (work?.periodic?.texts?.[id] !== undefined && !/#\d+$/.test(id)) found = { text: work.periodic.texts[id]! };
     else if (work?.data?.[id] !== undefined) found = { text: work.data[id]! };
     else if (work?.web?.[id] !== undefined) found = { text: work.web[id]! };
-    else {
+    else if (id === "readme" || id.startsWith("readme:")) {
+      const target = id === "readme" ? accession : id.slice("readme:".length);
+      const readme = /^\d{10}-\d{2}-\d{6}$/.test(target) ? await readFilingReadme(env, ticker, target) : null;
+      found = readme ? { text: readme.markdown } : null;
+    } else {
       const part = /^(.+)#(\d+)$/.exec(id);
       const text = part ? await sectionText(part[1]!, Number(part[2])) : await sectionText(id);
       found = text === null ? null : { text };
