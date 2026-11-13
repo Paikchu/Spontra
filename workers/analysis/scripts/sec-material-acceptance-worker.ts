@@ -32,6 +32,8 @@ type Entry = { filing: SecFiling; sessionId: string; material: MaterialRef | nul
 type Run = { id: string; discoveredAt: string; entries: Entry[] };
 type Summary = { run_id: string; status: string; settled_by: string | null; tools: string; degraded: string; detail: string; blocks: number };
 type Turn = { turn: number; action: string; input: string; failed: number; at: string };
+type ModelCall = Pick<AiUsageRow, "at" | "runId" | "stage" | "provider" | "model" | "reasoning" | "inputTokens" | "cachedTokens" | "outputTokens" | "reasoningTokens" | "durationMs" | "outcome">;
+const semanticAuditPointerSchema = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/), key: z.string().min(1), verdict: z.literal("pass"), complete: z.literal(true) });
 const requestSchema = z.object({ runId: z.string().min(1), accession: z.string().optional(), maxDocuments: z.number().int().positive().optional() });
 const submissionsSchema = z.object({ name: z.string(), filings: z.object({ recent: z.object({
   accessionNumber: z.array(z.string()), form: z.array(z.string()), filingDate: z.array(z.string()),
@@ -55,6 +57,23 @@ async function loadRun(env: Env, id: string): Promise<Run> {
 
 async function saveRun(env: Env, run: Run): Promise<void> {
   await new D1SecRepository(env.DB!).setCache(runKey(run.id), run, new Date().toISOString());
+}
+
+function acceptedSemanticAudit(work: FilingWork | null, entry: Entry) {
+  if (!entry.material || !work || !sameMaterial(work.material, entry.material)) throw new Error("Report work does not use the run's pinned material version");
+  const pointer = semanticAuditPointerSchema.parse(work.periodic?.semanticAuditReceipt);
+  if (pointer.key !== `filing-semantic-audits/${entry.material.ticker}/${entry.material.accession}/${pointer.digest}.json`) throw new Error("Semantic audit receipt key differs from the accepted filing and digest");
+  return pointer;
+}
+
+async function sessionChecks(env: Env, entry: Entry) {
+  return (await env.DB!.prepare("SELECT version, stage, round, result, created_at FROM analysis_artifact_checks WHERE artifact_id = ? AND created_at >= (SELECT MIN(at) FROM filing_run_turns WHERE run_id = ?) ORDER BY created_at, version, stage, round")
+    .bind(`filing-report:AMZN:${entry.filing.accessionNumber}`, entry.sessionId).all()).results;
+}
+
+async function analysisModelCalls(env: Env, entry: Entry) {
+  return (await env.DB!.prepare("SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = 'AMZN' AND run_id = ? ORDER BY at, id")
+    .bind(entry.sessionId).all<ModelCall>()).results;
 }
 
 async function discover(env: Env): Promise<Run> {
@@ -198,7 +217,6 @@ async function preprocessingRecords(env: Env, snapshot: MaterialSnapshot) {
   } while (cursor);
   const currentMaterialRunId = `material-${snapshot.ref.accession}-${snapshot.ref.version}`;
   const modelRunIds = [...new Set([currentMaterialRunId, ...migrations.map(migration => migration.modelRunId)])];
-  type ModelCall = Pick<AiUsageRow, "at" | "runId" | "stage" | "provider" | "model" | "reasoning" | "inputTokens" | "cachedTokens" | "outputTokens" | "reasoningTokens" | "durationMs" | "outcome">;
   const calls = await env.DB!.prepare(`SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = ? AND stage = 'filing-material-organize' AND run_id IN (${modelRunIds.map(() => "?").join(",")}) ORDER BY at`)
     .bind(snapshot.ref.ticker, ...modelRunIds).all<ModelCall>();
   return { material: snapshot.ref, currentMaterialRunId, receipts, migrations, modelCalls: calls.results,
@@ -231,15 +249,17 @@ async function exported(env: Env, run: Run, entry: Entry) {
   const api = await handleMapRead(new Request(`https://acceptance.invalid/api/v1/companies/AMZN/filings/${accession}`), env);
   if (!api.ok) throw new Error(`Formal report read failed HTTP ${api.status}`);
   const formalRead: unknown = await api.json();
-  const [artifact, document, work, turns, checks, recheck] = await Promise.all([
+  const [artifact, document, work, turns, recheck, modelCalls] = await Promise.all([
     readPublishedArtifact(env, "filing-report", "AMZN", accession),
     readPublishedDocument(env, "filing-report", "AMZN", accession),
     readWorkState<FilingWork>(env, "filing-report", "AMZN", accession),
     env.DB!.prepare("SELECT turn, action, input, failed, at FROM filing_run_turns WHERE run_id = ? ORDER BY id").bind(entry.sessionId).all<Turn>(),
-    env.DB!.prepare("SELECT version, stage, round, result, created_at FROM analysis_artifact_checks WHERE artifact_id = ? ORDER BY version, stage, round").bind(`filing-report:AMZN:${accession}`).all(),
     recheckFiling(env, "AMZN", accession),
+    analysisModelCalls(env, entry),
   ]);
   if (!artifact || !document) throw new Error("Published report cannot be read back");
+  const semanticAuditReceipt = acceptedSemanticAudit(work, entry);
+  const checks = await sessionChecks(env, entry);
   const status = (await runStatus(env, run)).find(item => item.sessionId === entry.sessionId)!;
   const formal = z.object({ artifact: z.object({ hash: z.string() }), filing: z.object({ summary: z.object({ report: z.string().min(1) }) }) }).safeParse(formalRead);
   if (!formal.success || formal.data.artifact.hash !== artifact.hash) status.issues.push("Formal read API did not return this published report");
@@ -267,7 +287,7 @@ async function exported(env: Env, run: Run, entry: Entry) {
     computationInputs: sources.filter(source => Object.values(work?.periodic?.computed ?? {}).some(computed => source.id in computed.inputs)) };
   const preprocessing = await preprocessingRecords(env, snapshot);
   return { run, filing: entry.filing, snapshot, tableCatalog, csvFiles, artifact, document, work, formalRead, turns: turns.results,
-    checks: checks.results, recheck, sourceCheck, preprocessing, status: { ...status, passed: status.passed && !status.issues.length } };
+    checks, modelCalls, semanticAuditReceipt, recheck, sourceCheck, preprocessing, status: { ...status, passed: status.passed && !status.issues.length } };
 }
 
 const acceptanceWorker = {
@@ -350,13 +370,25 @@ const acceptanceWorker = {
       if (url.pathname === "/acceptance/status") return json(await runStatus(env, run));
       if (url.pathname === "/acceptance/records") return json(await Promise.all(entries.map(async entry => ({ sessionId: entry.sessionId,
         turns: (await env.DB!.prepare("SELECT turn, action, input, failed, at FROM filing_run_turns WHERE run_id = ? ORDER BY id").bind(entry.sessionId).all<Turn>()).results,
-        checks: (await env.DB!.prepare("SELECT version, stage, round, result, created_at FROM analysis_artifact_checks WHERE artifact_id = ? ORDER BY version, stage, round").bind(`filing-report:AMZN:${entry.filing.accessionNumber}`).all()).results,
+        checks: await sessionChecks(env, entry), modelCalls: await analysisModelCalls(env, entry),
       }))));
       if (url.pathname === "/acceptance/file" && request.method === "GET") {
         if (entries.length !== 1) throw new Error("Choose one accession to download");
-        if (url.searchParams.get("kind") !== "markdown") throw new Error("Unknown acceptance file kind");
         const entry = entries[0]!;
         if (!entry.material) throw new Error("The run has no pinned material version");
+        if (url.searchParams.get("kind") === "semantic-audit") {
+          const work = await readWorkState<FilingWork>(env, "filing-report", "AMZN", entry.filing.accessionNumber);
+          const pointer = acceptedSemanticAudit(work, entry);
+          const artifact = await readPublishedArtifact(env, "filing-report", "AMZN", entry.filing.accessionNumber);
+          const version = artifact ? await env.DB!.prepare("SELECT run_id FROM analysis_artifact_versions WHERE artifact_id = ? AND version = ?").bind(artifact.id, artifact.version).first<{ run_id: string | null }>() : null;
+          if (version?.run_id !== entry.sessionId) throw new Error("Published artifact does not belong to the accepted run");
+          const object = await env.SEC_FILINGS.get(pointer.key);
+          if (!object) throw new Error("Accepted semantic audit receipt is missing");
+          if (!("body" in object) || !(object.body instanceof ReadableStream)) throw new Error("Semantic audit receipt streaming body is unavailable");
+          return new Response(object.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store",
+            "content-disposition": `attachment; filename="AMZN_${entry.filing.filingDate}_${entry.filing.form}_semantic-audit.json"` } });
+        }
+        if (url.searchParams.get("kind") !== "markdown") throw new Error("Unknown acceptance file kind");
         const snapshot = await readMaterialSnapshot(env, entry.material);
         const object = await env.SEC_FILINGS.get(snapshot.markdown.key);
         if (!object) throw new Error("Prepared Markdown object is missing");

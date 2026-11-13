@@ -43,7 +43,7 @@ type AuditAnswer = z.infer<typeof answerSchema>;
 export type FilingAuditState = { composer: ComposerState; periodic?: PeriodicState; web?: Record<string, string> };
 type AuditDeps = { env: AnalysisEnv; snapshot: MaterialSnapshot; runId?: string; required?: readonly string[] };
 
-function reportSemantics(state: FilingAuditState) {
+export function filingReportSemantics(state: { composer: Pick<ComposerState, "blocks"> }) {
   return state.composer.blocks.map(block => {
     const bindings: Array<{ kind: string; ref: string; text: string; value: string | null; unit: string | null }> = [];
     const attributes: Array<{ attribute: string; trigger: string; text: string }> = [];
@@ -69,7 +69,7 @@ function reportSemantics(state: FilingAuditState) {
 
 /** Builds the same complete, pinned evidence request used by the publication gate. */
 export async function filingSemanticInput(deps: Pick<AuditDeps, "env" | "snapshot" | "required">, state: FilingAuditState) {
-  const report = reportSemantics(state);
+  const report = filingReportSemantics(state);
   const chartIds = [...new Set(report.flatMap(block => block.charts))].sort();
   const reachable = new Set<string>();
   const usedBy = new Map<string, Set<string>>();
@@ -273,7 +273,7 @@ export async function filingSemanticAudit(deps: AuditDeps, state: FilingAuditSta
     const issues = unavailable(state, reason);
     const c = state.composer;
     const receipt = JSON.stringify({ digest, policy: SEMANTIC_AUDIT_POLICY, model, at: new Date().toISOString(), input, rawAnswer,
-      request: input ? null : { material: deps.snapshot.ref, frozenMaterials: state.periodic?.materials ?? [], report: reportSemantics(state), computations: state.periodic?.computed ?? {}, chartRefs: state.periodic?.chartRefs ?? {} },
+      request: input ? null : { material: deps.snapshot.ref, frozenMaterials: state.periodic?.materials ?? [], report: filingReportSemantics(state), computations: state.periodic?.computed ?? {}, chartRefs: state.periodic?.chartRefs ?? {} },
       answer: { verdict: "unavailable", complete: false, summary: reason, issues: [], computations: [] } });
     key = `filing-semantic-audits/${deps.snapshot.ref.ticker}/${deps.snapshot.ref.accession}/unavailable/${await sha256(receipt)}.json`;
     await deps.env.SEC_FILINGS.put(key, receipt, { httpMetadata: { contentType: "application/json" } }).catch(() => undefined);

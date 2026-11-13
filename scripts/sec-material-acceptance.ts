@@ -2,6 +2,8 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { z } from "zod";
+import { documentHtml } from "../workers/analysis/src/artifact/document.ts";
+import { filingReportSemantics } from "../workers/analysis/src/filing-analysis/semantic-audit.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
@@ -10,6 +12,20 @@ const output = resolve(option("--output") ?? ".audit/amzn-sec-material-acceptanc
 const key = process.env[option("--key-env") ?? "SEC_ACCEPTANCE_KEY"];
 const maxMinutes = Number(option("--timeout-minutes") ?? "240");
 const deadline = Date.now() + maxMinutes * 60_000;
+const materialRefSchema = z.object({ ticker: z.string(), accession: z.string(), version: z.string() });
+const semanticAuditPointerSchema = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/), key: z.string().min(1), verdict: z.literal("pass"), complete: z.literal(true) });
+const reportBlockSchema = z.object({ id: z.string(), title: z.string(), sources: z.array(z.string()), html: z.string(), state: z.enum(["draft", "passed", "conservative", "safe-layout"]) }).passthrough();
+const documentSchema = z.object({ schema: z.literal("analysis-artifact.v1"), kind: z.literal("filing-report"), ticker: z.string(), subject: z.string(), version: z.number().int(),
+  lang: z.string(), title: z.string(), blocks: z.array(reportBlockSchema),
+  charts: z.array(z.object({ id: z.string(), title: z.string(), svg: z.string(), points: z.array(z.object({ series: z.string(), period: z.string(), text: z.string() })) }).passthrough()),
+  sources: z.array(z.object({ id: z.string(), title: z.string(), url: z.string().nullable(), kind: z.enum(["sec", "web", "data"]) }).passthrough()) }).passthrough();
+const modelCallSchema = z.object({ at: z.string(), runId: z.string().nullable(), stage: z.string(), provider: z.string(), model: z.string(), reasoning: z.string().nullable(),
+  inputTokens: z.number().int().nonnegative(), cachedTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), reasoningTokens: z.number().int().nonnegative().nullable(), durationMs: z.number().int().nonnegative(), outcome: z.enum(["ok", "error", "timeout"]) }).strict();
+const semanticReportSchema = z.array(z.object({ id: z.string(), title: z.string(), text: z.string(), attributes: z.array(z.unknown()), sources: z.array(z.string()), bindings: z.array(z.unknown()), charts: z.array(z.string()) }).passthrough());
+const semanticReceiptSchema = z.object({ digest: z.string(), model: z.string().nullable(), policy: z.string(), policyHash: z.string(), evidenceHash: z.string(), requestHash: z.string(), at: z.string(),
+  input: z.object({ materials: z.array(materialRefSchema), report: semanticReportSchema, computations: z.array(z.object({ id: z.string() }).passthrough()), evidence: z.unknown(), aliases: z.record(z.string(), z.string()) }).passthrough(),
+  answer: z.object({ verdict: z.literal("pass"), complete: z.literal(true), summary: z.string(), issues: z.array(z.unknown()).length(0),
+    computations: z.array(z.object({ id: z.string(), status: z.literal("holds"), problem: z.string().min(1), sources: z.array(z.string()).min(1) }).passthrough()) }).passthrough() }).passthrough();
 const entrySchema = z.object({ filing: z.object({ ticker: z.string(), form: z.string(), filingDate: z.string(), accessionNumber: z.string() }).passthrough(), sessionId: z.string(), material: z.unknown() }).passthrough();
 const runSchema = z.object({ id: z.string(), discoveredAt: z.string(), entries: z.array(entrySchema) }).passthrough();
 const statusSchema = z.array(z.object({ filing: z.object({ accessionNumber: z.string(), form: z.string() }).passthrough(), sessionId: z.string(),
@@ -22,13 +38,15 @@ const tableCatalogSchema = z.array(z.object({ tableId: z.string(), documentId: z
   unit: z.string().nullable(), notes: z.array(z.string()), rowHeader: z.string(), columns: z.array(z.string()), rowCount: z.number().int().nonnegative(), columnCount: z.number().int().positive(),
   locator: z.object({ start: z.number().nullable(), end: z.number().nullable(), page: z.number().nullable() }), markdownRange: textRangeSchema.nullable() }).passthrough());
 const exportSchema = z.object({ filing: entrySchema.shape.filing,
-  snapshot: z.object({ format: z.literal("filing-material.index.v2"), markdown: markdownSchema,
+  snapshot: z.object({ format: z.literal("filing-material.index.v2"), ref: materialRefSchema, markdown: markdownSchema,
     blocks: z.array(z.object({ id: z.string(), range: textRangeSchema.nullable() }).passthrough()),
     coverage: z.unknown(), documents: z.array(z.unknown()), tables: z.array(z.object({ tableId: z.string(), filename: z.string(), description: z.string() }).passthrough()) }).passthrough(),
   csvFiles: z.array(z.object({ tableId: z.string(), filename: z.string(), csv: z.string(), sha256: z.string() })),
   tableCatalog: tableCatalogSchema,
   artifact: z.object({ title: z.string(), html: z.string(), css: z.string(), hash: z.string() }).passthrough(),
-  document: z.unknown(), work: z.unknown(), formalRead: z.unknown(), turns: z.array(z.unknown()), checks: z.array(z.unknown()), recheck: z.unknown(),
+  document: documentSchema, work: z.object({ material: materialRefSchema, periodic: z.object({ materials: z.array(materialRefSchema), semanticAuditReceipt: semanticAuditPointerSchema }).passthrough() }).passthrough(),
+  semanticAuditReceipt: semanticAuditPointerSchema, modelCalls: z.array(modelCallSchema),
+  formalRead: z.unknown(), turns: z.array(z.unknown()), checks: z.array(z.unknown()), recheck: z.unknown(),
   sourceCheck: z.object({ markdownRead: z.boolean(), tablesRead: z.array(z.string()), successfulTools: z.record(z.string(), z.number().int().nonnegative()), citations: z.array(z.unknown()), claims: z.array(z.unknown()) }).passthrough(),
   preprocessing: z.object({ currentMaterialRunId: z.string(), receipts: z.array(z.object({ index: z.number().int(), key: z.string(), inputHash: z.string(), decisions: z.array(z.unknown()), tableDescriptions: z.array(z.unknown()) }).passthrough()),
     modelCalls: z.array(z.unknown()), currentMaterialModelCalls: z.number().int().nonnegative() }).passthrough(),
@@ -83,6 +101,44 @@ async function downloadMarkdown(runId: string, accession: string, snapshot: z.in
   }
   await writeFile(join(directory, "filing.md"), bytes);
   await saveJson(join(directory, "markdown-check.json"), { bytes: bytes.byteLength, chars: text.length, checkedRanges, sha256: createHash("sha256").update(bytes).digest("hex") });
+}
+
+const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
+const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => item && typeof item === "object" && !Array.isArray(item)
+  ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+
+async function downloadSemanticAudit(runId: string, payload: z.infer<typeof exportSchema>, directory: string): Promise<void> {
+  const accession = payload.filing.accessionNumber;
+  const path = `/acceptance/file?runId=${encodeURIComponent(runId)}&accession=${encodeURIComponent(accession)}&kind=semantic-audit`;
+  const headers = new Headers();
+  if (key) headers.set("x-acceptance-key", key);
+  const response = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(10 * 60_000) });
+  const type = response.headers.get("content-type") ?? "unknown";
+  if (!response.ok || !type.toLowerCase().includes("json")) throw new Error(`Acceptance ${path} HTTP ${response.status}, expected JSON but received ${type}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  await writeFile(join(directory, "semantic-audit.json"), bytes);
+  const receipt = semanticReceiptSchema.parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+  const pointer = payload.work.periodic.semanticAuditReceipt;
+  if (stable(pointer) !== stable(payload.semanticAuditReceipt) || receipt.digest !== pointer.digest
+    || pointer.key !== `filing-semantic-audits/${payload.work.material.ticker}/${accession}/${receipt.digest}.json`) throw new Error(`Semantic audit pointer differs from accepted work: ${accession}`);
+  if (digest(JSON.stringify({ model: receipt.model, policyHash: receipt.policyHash, evidenceHash: receipt.evidenceHash, requestHash: receipt.requestHash })) !== receipt.digest) throw new Error(`Semantic audit digest differs from recorded hashes: ${accession}`);
+  if (digest(JSON.stringify({ evidence: receipt.input.evidence, aliases: receipt.input.aliases })) !== receipt.evidenceHash) throw new Error(`Semantic audit evidence differs from its recorded hash: ${accession}`);
+  const material = payload.work.material;
+  if (stable(material) !== stable(payload.snapshot.ref) || material.accession !== accession || material.ticker !== payload.filing.ticker) throw new Error(`Semantic audit work material differs from accepted filing: ${accession}`);
+  const pinned = new Set([material, ...payload.work.periodic.materials].map(stable));
+  if (!receipt.input.materials.some(ref => stable(ref) === stable(material)) || receipt.input.materials.some(ref => !pinned.has(stable(ref)) || ref.accession === accession && stable(ref) !== stable(material))) throw new Error(`Semantic audit uses material outside accepted work: ${accession}`);
+  const document = payload.document;
+  if (document.ticker !== material.ticker || document.subject !== accession || documentHtml(document) !== payload.artifact.html
+    || digest(`${payload.artifact.html}\n${payload.artifact.css}`) !== payload.artifact.hash) throw new Error(`Published report differs from exported document: ${accession}`);
+  const report = filingReportSemantics({ composer: { blocks: document.blocks } });
+  if (stable(report) !== stable(receipt.input.report)) throw new Error(`Semantic audit report differs from published report: ${accession}`);
+  const inputIds = receipt.input.computations.map(computation => computation.id).sort();
+  const reviewIds = receipt.answer.computations.map(computation => computation.id).sort();
+  if (new Set(inputIds).size !== inputIds.length || new Set(reviewIds).size !== reviewIds.length || stable(inputIds) !== stable(reviewIds)) throw new Error(`Semantic audit did not review every used computation exactly once: ${accession}`);
+  await saveJson(join(directory, "semantic-audit-check.json"), { passed: true, pointer, bytes: bytes.byteLength, sha256: digest(bytes), evidenceHash: receipt.evidenceHash,
+    requestHash: receipt.requestHash, policyHash: receipt.policyHash, reportBlocks: report.length, computations: inputIds.length,
+    checks: ["work-pointer", "digest", "evidence-hash", "pinned-materials", "published-html-hash", "published-report-semantics", "complete-pass", "zero-issues", "exact-computation-coverage", "all-computations-hold"],
+    hashMeaning: "The evidence hash and receipt digest were independently recomputed. Request and policy hashes are recorded from the immutable receipt." });
 }
 
 await mkdir(output, { recursive: true });
@@ -142,6 +198,7 @@ for (const entry of run.entries) {
   const directory = join(output, `${entry.filing.filingDate}_${entry.filing.form}_${entry.filing.accessionNumber}`);
   await mkdir(directory, { recursive: true });
   await downloadMarkdown(run.id, entry.filing.accessionNumber, payload.snapshot, directory);
+  await downloadSemanticAudit(run.id, payload, directory);
   await saveJson(join(directory, "manifest.json"), payload.snapshot.documents);
   await saveJson(join(directory, "coverage.json"), payload.snapshot.coverage);
   await saveJson(join(directory, "snapshot.json"), payload.snapshot);
@@ -159,6 +216,7 @@ for (const entry of run.entries) {
   await saveJson(join(directory, "work.json"), payload.work);
   await saveJson(join(directory, "turns.json"), payload.turns);
   await saveJson(join(directory, "checks.json"), payload.checks);
+  await saveJson(join(directory, "model-calls.json"), payload.modelCalls);
   await saveJson(join(directory, "recheck.json"), payload.recheck);
   await saveJson(join(directory, "source-check.json"), payload.sourceCheck);
   await saveJson(join(directory, "preprocessing.json"), payload.preprocessing);
