@@ -28,6 +28,10 @@
       "node"
     ]
   },
+  "files": [
+    "workers/analysis/src/artifact/text-modules.d.ts",
+    "workers/analysis/src/filing-material/pdfjs-text.d.ts"
+  ],
   "include": [
     "packages/web/**/*.ts",
     "packages/web/**/*.tsx",

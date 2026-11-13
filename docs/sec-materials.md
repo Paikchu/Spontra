@@ -43,3 +43,5 @@ SEC 网关合并提交目录、filing index 和完整 submission，归档原始�
 运行记录包含每次工具调用和当期检查。现有 D1 工具参数日志上限为 2,000 字符；完整报告、计算状态和全文审核输入另存。用量账本包含模型、effort、token、耗时和结果，不包含模型思维过程或密钥。
 
 生产验收入口仅由 `workers/analysis/scripts/sec-material-acceptance-worker.ts` 的临时包装提供，并使用独立访问密钥。正常入口不包含验收路由。
+
+两份真实 AMZN 披露的覆盖数量、正常报告发布、独立复核和正式读回结果见 [AMZN SEC 全链路验收](sec-material-acceptance.md)。
