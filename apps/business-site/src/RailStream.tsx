@@ -27,7 +27,7 @@ const m = messages({
   watchOutcome: "Watch outcome",
   tabs: "Show in the list",
   tabReports: "Reports", tabManagement: "Management",
-  findings: "Findings",
+  findings: "Key information",
   moreFindings: (n: number) => `${n} more`,
   fewerFindings: "Show fewer",
 }, {
@@ -41,7 +41,7 @@ const m = messages({
   watchOutcome: "跟踪结果",
   tabs: "列表显示内容",
   tabReports: "财报", tabManagement: "管理层动态",
-  findings: "要点",
+  findings: "重点信息",
   moreFindings: (n: number) => `另外 ${n} 条`,
   fewerFindings: "收起",
 });
@@ -143,10 +143,13 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   const renderRow = (r: NoiseRow) => <NoiseBlock key={r.id} row={r} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
     {findings.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
+      <div className="guidance-head">
+        <h3>{m.findings}</h3>
+        {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="icon-button guidance-more" aria-expanded={allFindings} aria-label={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} title={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} onClick={() => setAllFindings(v => !v)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+        </Button>}
+      </div>
       {findingsShown.map(f => <FindingRow key={f.id} finding={f} verdict={verdicts?.[f.id]} checked={focus === f.id} arrive={arrived.get(f.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === f.id ? null : f.id)} />)}
-      {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="icon-button guidance-more" aria-expanded={allFindings} aria-label={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} title={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} onClick={() => setAllFindings(v => !v)}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
-      </Button>}
     </div>}
     <div className="stream-tabs" role="group" aria-label={m.tabs}>
       {RAIL_TABS.map(tab => <Button key={tab} variant="unstyled" type="button" className="stream-tab" aria-pressed={tabs.has(tab)} onClick={() => toggleTab(tab)}>

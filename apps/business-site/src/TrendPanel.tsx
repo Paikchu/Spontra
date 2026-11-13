@@ -22,8 +22,7 @@ const m = messages({
   otherCurrency: "Other reporting currency", notDisclosed: "Not disclosed", notReported: "Not reported", afterEliminations: "Consolidated revenue after adjustments",
   segmentsAsReported: "Segments as reported", totalOnly: "Total revenue only",
   businessRevenue: "Business revenue", totalRevenue: "Total revenue",
-  derivedQ4: "Derived Q4 · ",
-  secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
+  derivedQ4: "Derived Q4",
   comma: ", ",
   basisChanged: "About business comparisons", basisWhy: (since: string) => `Segments reported on a new basis from ${since}. Growth by business is only computed within one basis; a year-ago quarter restated in the latest filing is on the new basis.`,
   earlierBasis: "Earlier segment basis", currentBasis: "Current segment basis",
@@ -38,8 +37,7 @@ const m = messages({
   otherCurrency: "其他报告货币", notDisclosed: "未披露", notReported: "未报告", afterEliminations: "调节后的合并营收",
   segmentsAsReported: "按披露的分部", totalOnly: "仅披露总营收",
   businessRevenue: "业务营收", totalRevenue: "总营收",
-  derivedQ4: "推算 Q4 · ",
-  secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
+  derivedQ4: "推算 Q4",
   comma: "，",
   basisChanged: "查看业务比较说明", basisWhy: (since: string) => `公司自 ${since} 起重新划分业务分类。各项业务的增长率只比较分类一致的数据；如财报重新计算了去年同期数据，则使用该可比数据。`,
   earlierBasis: "原分部口径", currentBasis: "现分部口径",
@@ -276,9 +274,9 @@ function Bar({ column, index, basisBreak = false, order, scale, hue, money, curr
       {!onLine && column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: config[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? m.businessRevenue : m.totalRevenue}</span><b>{money(column.total)}</b></div>}
       {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale())}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
-      {label && <p>{label}{column.state === "basis" && q && !selected ? `: ${q.segments.map(s => s.name).join(", ")}` : ""}</p>}
+      {label && (column.state === "missing" || selected) && <p>{label}</p>}
       {column.segmentBasis === "earlier" && <p className="trend-tip-basis">{m.earlierBasis}</p>}
-      {q && <p className="trend-tip-source">{q.basis === "derived" ? m.derivedQ4 : ""}{m.secFiling(q.source.form, q.source.filedAt)}</p>}
+      {q?.basis === "derived" && <p className="trend-tip-source">{m.derivedQ4}</p>}
     </div></ChartTooltipContent>}
   </div>;
 }

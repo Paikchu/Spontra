@@ -749,10 +749,12 @@ button { cursor: pointer; }
 .stream-end { height: 1px; }
 /* The tabs: any of findings, reports and management at once. They stay at the top of the rail while it scrolls. */
 .stream-tabs { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; padding: 8px 6px 8px; background: var(--surface); }
-.stream-tab { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 13px; font-weight: 500; white-space: nowrap; transition: background .16s, border-color .16s, color .16s; }
-.stream-tab:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--foreground) 24%, transparent); }
-.stream-tab[aria-pressed="true"] { background: color-mix(in srgb, var(--brand) 14%, transparent); border-color: color-mix(in srgb, var(--brand) 45%, transparent); color: var(--foreground); }
-.stream-tab svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+.stream-tab { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 500; white-space: nowrap; transition: color .16s; }
+.stream-tab:hover { color: var(--foreground); }
+.stream-tab[aria-pressed="true"] { color: var(--foreground); }
+.stream-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (pointer: coarse) { .stream-tab { min-height: 44px; } }
+.stream-tab svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
 /* One fiscal quarter's findings and filings, framed together. */
 .quarter-frame { display: flex; flex-direction: column; min-width: 0; margin: 6px 2px; padding: 2px 0 4px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--foreground) 2.5%, transparent); }
 .quarter-frame-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 9px 12px 5px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -760,7 +762,9 @@ button { cursor: pointer; }
 .quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
 /* The findings, the standing read of the company, between the businesses and the tabs. */
 .guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
-.guidance-more { align-self: flex-end; margin: 2px 6px 0 0; }
+.guidance-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 0 10px 4px; }
+.guidance-head h3 { margin: 0; font-size: 13px; font-weight: 650; line-height: 1.4; color: var(--foreground); }
+.guidance-more { margin: 0; }
 .guidance-more[aria-expanded="true"] svg { transform: rotate(180deg); }
 @media (max-width: 960px) { .stream-tabs { position: static; } }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
