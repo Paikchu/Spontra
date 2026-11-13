@@ -1,3 +1,5 @@
+import type { MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
+import { materialBlockId } from "../filing-material/read.ts";
 import { buildPeriodIdentity } from "../sec/analysis.ts";
 import type { SecFiling, SecFilingSummary } from "../sec/sec.ts";
 
@@ -16,30 +18,19 @@ export type FilingMemorySource = {
 
 const memorySourceKey = (ticker: string, accession: string, sessionId: string) => `filing-memory/${ticker}/${accession}/${sessionId}.json`;
 
-/** Paths of the sections read, in reading order; an id the library no longer holds is not citable and is left out. */
-async function readSections(db: D1Database, ids: readonly string[]): Promise<FilingMemorySource["evidence"]> {
-  if (!ids.length) return [];
-  const rows = (await db.prepare("SELECT section_id id, title, path FROM sec_sections WHERE section_id IN (SELECT value FROM json_each(?))")
-    .bind(JSON.stringify([...ids])).all<{ id: string; title: string; path: string }>()).results;
-  const byId = new Map(rows.map((row) => {
-    let path = row.title;
-    try { const parts = JSON.parse(row.path) as unknown; if (Array.isArray(parts) && parts.length) path = parts.map(String).join(" › "); } catch { /* a plain title */ }
-    return [row.id, path];
-  }));
-  return ids.flatMap((id) => byId.has(id) ? [{ id, path: byId.get(id)! }] : []);
-}
-
 /**
  * Stores the report as a memory source in R2 and returns the statements that publish it with the report: the period the
  * filing covers, the filing's membership in it, and a pending memory job. The `memory` task (on `report.published`)
  * starts the job; the company analysis follows memory.
  */
 export async function filingMemoryStatements(env: { DB?: D1Database; SEC_FILINGS: { put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> } }, input: {
-  filing: SecFiling; summary: SecFilingSummary; sessionId: string; readSectionIds: readonly string[];
+  filing: SecFiling; summary: SecFilingSummary; sessionId: string; readSectionIds: readonly string[]; material: MaterialSnapshot;
 }): Promise<D1PreparedStatement[]> {
   const db = env.DB!;
   const { filing, summary, sessionId } = input;
-  const evidence = await readSections(db, [...new Set(input.readSectionIds)]);
+  const read = new Set(input.readSectionIds.map(materialBlockId));
+  const evidence = input.material.blocks.filter(b => read.has(b.id) || input.material.facts.some(f => read.has(f.factId) && f.passageId === b.id))
+    .map(b => ({ id: b.id, path: b.path.join(" › ") || b.title }));
   // Memory items must cite evidence; a report written without reading any section has nothing to cite.
   if (!evidence.length || !/^\d{4}-\d{2}-\d{2}$/.test(filing.reportDate)) return [];
   const { periodId, periodScope } = buildPeriodIdentity(filing.ticker, filing.form, filing.reportDate);

@@ -3,7 +3,7 @@ import { nodeText, parseHtml, serializeHtml, type HtmlNode } from "../../../../s
 
 /** A problem held against a block until it is fixed, contested or settled by the harness. */
 /** `replacement`: the review's own correction, a rewritten sentence or DELETE, that apply_fixes can put in. */
-export type TrackedIssue = ArtifactIssue & { key: string; quote?: string; contested?: boolean; replacement?: string };
+export type TrackedIssue = ArtifactIssue & { key: string; quote?: string; contested?: boolean; replacement?: string; origin?: "semantic" };
 /** Where a block stands on its ladder (docs/analysis-html-artifact.md §6.3, §7.6). */
 export type LadderStep = { level: number; attempts: number; keys: string[] };
 

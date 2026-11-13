@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "spontra-sec-material-acceptance-local",
+  "main": "sec-material-acceptance-worker.ts",
+  "build": { "command": "npm run analysis:prepare" },
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js", "**/pdfjs-source.txt"], "fallthrough": true }],
+  "limits": { "cpu_ms": 300000 },
+  "vars": {
+    "SEC_USER_AGENT": "Spontra SEC acceptance max.zhangyuchen@gmail.com",
+    "SEC_AI_ENABLED": "true",
+    "SEC_AI_TICKERS": "AMZN",
+    "SEC_DATA_TICKERS": "AMZN",
+    "SEC_ANALYSIS_MODEL": "deepseek-flash",
+    "SEC_REASONING_MODEL": "deepseek-flash",
+    "BUSINESS_SITE_ORIGIN": "http://127.0.0.1:8799"
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "sec-material-acceptance-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "../migrations" }],
+  "r2_buckets": [{ "binding": "SEC_FILINGS", "bucket_name": "sec-material-acceptance-local" }],
+  "ai": { "binding": "AI", "remote": true },
+  "browser": { "binding": "BROWSER", "remote": true },
+  "durable_objects": { "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }, { "name": "TASK_RUNS", "class_name": "TaskRunner" }] },
+  "migrations": [{ "tag": "acceptance-v1", "new_sqlite_classes": ["StageAgent", "TaskRunner"] }],
+  "assets": { "directory": "../../../apps/business-site/dist", "binding": "ASSETS", "run_worker_first": true },
+  "dev": { "port": 8799, "local_protocol": "http" }
+}

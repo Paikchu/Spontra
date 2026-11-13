@@ -2,9 +2,10 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "spontra-analysis",
   "main": "src/index.ts",
+  "build": { "command": "npm run analysis:prepare" },
   // Stylesheets are bundled as text: analysis artifacts are compiled with the site's Tailwind theme (src/artifact/theme.ts),
   // and the browser checks inject axe-core into the rendered artifact.
-  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js"], "fallthrough": true }],
+  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js", "**/pdfjs-source.txt"], "fallthrough": true }],
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "limits": { "cpu_ms": 300000 },
@@ -32,9 +33,6 @@
       "bucket_name": "earning-report-analysis-sec-filings"
     }
   ],
-  // The filing library's recall layer: one AI Search instance with built-in storage,
-  // created by the Worker on first use inside the account's `default` namespace. It holds copies of library
-  // sections for semantic search only; D1 stays the source of every text and number.
   "ai_search_namespaces": [
     { "binding": "AI_SEARCH", "namespace": "default" }
   ],

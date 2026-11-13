@@ -15,7 +15,7 @@ import { readFiscalFocus } from "../read-api/fiscal-periods.ts";
 import { sha256 } from "../sha256.ts";
 import { companyName } from "../catalog/issuer-directory.ts";
 import { requireDb } from "../core.ts";
-import { listLibraryDocuments } from "../filing-library/store.ts";
+import { listFilingMaterials } from "../filing-material/index.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -288,7 +288,7 @@ export function buildDiagnostics(facts: ValuationFact[], snapshot: SecHistorySna
 
 const DOCUMENT_FORMS = ["10-K", "10-Q", "20-F", "40-F", "8-K", "6-K", "10-K/A", "10-Q/A"];
 /** The filings a run may read: the newest two annual reports, the newest four quarterlies and the newest six current reports, all filed by the research date. */
-export function selectDocuments(documents: LibraryDocumentSummary[], researchAsOf: string): ValuationDocument[] {
+export function selectDocuments(documents: Pick<LibraryDocumentSummary, "status" | "filedAt" | "form" | "documentId" | "accessionNumber" | "docType" | "reportDate" | "documentUrl">[], researchAsOf: string): ValuationDocument[] {
   const ready = documents.filter(d => d.status === "ready" && d.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).sort((a, b) => b.filedAt.localeCompare(a.filedAt));
   const take = (test: (form: string) => boolean, n: number) => ready.filter(d => test(d.form)).slice(0, n);
   const chosen = [...take(f => /^(10-K|20-F|40-F)/.test(f), 2), ...take(f => /^10-Q/.test(f), 4), ...take(f => /^(8-K|6-K)/.test(f), 6)];
@@ -387,7 +387,9 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
   const [library, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
-    listLibraryDocuments(db, { ticker, forms: DOCUMENT_FORMS, limit: 120 }).catch(() => [] as LibraryDocumentSummary[]),
+    listFilingMaterials(env, ticker).then(states => states.filter(state => state.status === "ready" && DOCUMENT_FORMS.includes(state.filing.form)).map((state): Parameters<typeof selectDocuments>[0][number] => ({ status: "ready",
+      filedAt: state.filing.filedAt, form: state.filing.form, documentId: state.filing.accession, accessionNumber: state.filing.accession,
+      docType: "primary", reportDate: state.filing.reportDate, documentUrl: state.filing.documentUrl }))),
     readyTranscripts(db, ticker, new Date(Date.parse(newest.periodEnd) - 400 * DAY).toISOString().slice(0, 10)).catch(() => []),
     knownCik(db, ticker).catch(() => null),
     readPeersResponse(db).then(r => r.peers).catch(() => null),

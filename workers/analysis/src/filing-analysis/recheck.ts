@@ -1,53 +1,45 @@
 import { checkBlock, figureInText, quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
-import { readPublishedDocument, readWorkState, recordCheck, type ArtifactStoreEnv } from "../artifact/store.ts";
-import { librarySectionPassages } from "../filing-library/store.ts";
-import { evaluate, factsById, factSourceText } from "./facts.ts";
+import { readPublishedDocument, readWorkState, recordCheck } from "../artifact/store.ts";
+import { readMaterialSnapshot } from "../filing-material/index.ts";
+import { sourceText } from "../filing-material/read.ts";
+import type { AnalysisEnv } from "../operations.ts";
+import { evaluate, namesIn } from "./facts.ts";
 import type { FilingWork } from "./recipe.ts";
-import { sectionDocuments } from "./store.ts";
 
 export type RecheckItem = { block: string; kind: "figure" | "quote"; ref: string; shown: string; status: "holds" | "differs" | "unreadable"; reason?: string };
 export type RecheckResult = { version: number; checked: number; holds: number; differs: number; unreadable: number; items: RecheckItem[] };
 
-/**
- * Reads a published filing report against its sources again, by code alone (docs/filing-analysis-optimization.md §4.6):
- * every figure and quotation is looked up where the report says it is from — a fact row, a paragraph, a section, a
- * figure computed from facts, a text the session read — as the library holds it now. A parser that changed what a
- * source says shows up here as a figure that differs; no model is called.
- */
-export async function recheckFiling(env: ArtifactStoreEnv, ticker: string, accession: string): Promise<RecheckResult | null> {
-  const db = env.DB!;
+export async function recheckFiling(env: AnalysisEnv, ticker: string, accession: string): Promise<RecheckResult | null> {
   const document = await readPublishedDocument(env, "filing-report", ticker, accession);
   if (!document) return null;
   const work = await readWorkState<FilingWork>(env, "filing-report", ticker, accession);
   const known = new Map(document.sources.map(s => [s.id, s]));
   const texts = new Map<string, { text: string; exact?: number } | null>();
-  const sectionText = async (sectionId: string, ordinal?: number) => {
-    const [pair] = await sectionDocuments(db, [sectionId]);
-    if (!pair) return null;
-    const passages = await librarySectionPassages(db, pair[1], [sectionId]);
-    const kept = ordinal === undefined ? passages : passages.filter(p => p.ordinal === ordinal);
-    return kept.length ? kept.map(p => p.text).join("\n\n") : null;
+  const refs = [work?.material, ...(work?.periodic?.materials ?? [])].filter((ref): ref is NonNullable<typeof ref> => !!ref);
+  const snapshots = await Promise.all([...new Map(refs.map(ref => [`${ref.accession}:${ref.version}`, ref])).values()].map(ref => readMaterialSnapshot(env, ref)));
+  const facts = new Map(snapshots.flatMap(material => material.facts.map(f => [f.factId, f.value] as const)));
+  const recompute = (id: string, seen = new Set<string>()): number | undefined => {
+    if (facts.has(id)) return facts.get(id);
+    if (seen.has(id)) return undefined;
+    const computed = work?.periodic?.computed[id];
+    if (!computed) return undefined;
+    const inputs: Record<string, number> = {};
+    for (const name of namesIn(computed.formula)) { const value = recompute(name, new Set([...seen, id])); if (value === undefined) return undefined; inputs[name] = value; }
+    return evaluate(computed.formula, inputs);
   };
   const read = async (id: string): Promise<{ text: string; exact?: number } | null> => {
     if (texts.has(id)) return texts.get(id)!;
     let found: { text: string; exact?: number } | null = null;
     const computed = work?.periodic?.computed?.[id];
     if (computed) {
-      // A computed figure is worked out again from what its facts hold now.
-      const names = Object.keys(computed.inputs);
-      const facts = new Map((await factsById(db, names.filter(n => /^f[0-9a-f]{14}$/.test(n)))).map(f => [f.factId, f.value]));
-      const inputs = Object.fromEntries(names.map(n => [n, facts.get(n) ?? computed.inputs[n]!]));
-      try { const value = evaluate(computed.formula, inputs); found = { text: `${computed.label}: ${value} ${computed.unit}`, exact: value }; } catch { found = null; }
-    } else if (/^f[0-9a-f]{14}$/.test(id)) {
-      const [fact] = await factsById(db, [id]);
-      found = fact ? { text: factSourceText(fact), exact: fact.value } : null;
-    } else if (work?.periodic?.texts?.[id] !== undefined && !/#\d+$/.test(id)) found = { text: work.periodic.texts[id]! };
-    else if (work?.data?.[id] !== undefined) found = { text: work.data[id]! };
-    else if (work?.web?.[id] !== undefined) found = { text: work.web[id]! };
-    else {
-      const part = /^(.+)#(\d+)$/.exec(id);
-      const text = part ? await sectionText(part[1]!, Number(part[2])) : await sectionText(id);
-      found = text === null ? null : { text };
+      const value = recompute(id);
+      found = value === undefined ? null : { text: `${computed.label}: ${value} ${computed.unit}`, exact: value };
+    } else {
+      let source: Awaited<ReturnType<typeof sourceText>> = null;
+      for (const material of snapshots) { source = await sourceText(env, material, id); if (source) break; }
+      if (source) found = { text: source.text, ...(source.exact === undefined ? {} : { exact: source.exact }) };
+      else if (work?.periodic?.texts?.[id] !== undefined) found = { text: work.periodic.texts[id]! };
+      else if (work?.web?.[id] !== undefined) found = { text: work.web[id]! };
     }
     texts.set(id, found);
     return found;

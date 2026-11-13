@@ -15,6 +15,7 @@ import { LIBRARY_TASKS } from "./library-tasks.ts";
 import { TRANSLATION_TASKS } from "./translation-tasks.ts";
 import { PEERS_VERSION, publishPeers } from "../peers/projection.ts";
 import { ARCHIVE_TASKS } from "../sec-archive/task.ts";
+import { MATERIAL_TASKS } from "../filing-material/task.ts";
 import { buildPeriodExtract, EXTRACT_VERSION, periodExtractKey, readPeriodExtract } from "../extract/period-extract.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { emit } from "./outbox.ts";
@@ -44,6 +45,7 @@ type R2Prunable = AnalysisEnv["SEC_FILINGS"] & {
 export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...FINANCIAL_TASKS,
   ...ARCHIVE_TASKS,
+  ...MATERIAL_TASKS,
   ...SEC_TASKS,
   ...AI_TASKS,
   ...LIBRARY_TASKS,

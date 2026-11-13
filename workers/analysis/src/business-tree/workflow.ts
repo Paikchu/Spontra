@@ -78,7 +78,7 @@ export async function businessTreeFingerprint(env: AnalysisEnv, ticker: string):
 export async function treeLoader(spec: TreeSpec, env: AnalysisEnv): Promise<PiLoaded<TreeState>> {
   const ctx: BranchStatic = {
     ticker: spec.ticker, companyName: spec.companyName, periodEnd: spec.periodEnd, businesses: [], filings: spec.filings, search: researchSearch(env),
-    modelVersion: spec.modelVersion, fingerprint: spec.fingerprint, now: spec.now, filingLibrary: treeLibrary(requireDb(env), spec.ticker, spec.filings, { headings: true }),
+    modelVersion: spec.modelVersion, fingerprint: spec.fingerprint, now: spec.now, filingLibrary: treeLibrary(env, spec.ticker, spec.filings, { headings: true, pinKey: spec.runId ?? spec.fingerprint }),
     // The reviews run after the session, in the run itself.
     model: { judge: async () => { throw new Error("business tree: no review inside a session"); } },
     run: async () => { throw new Error("business tree: no nested session"); },
@@ -103,7 +103,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
-    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings, { headings: true }),
+    filingLibrary: treeLibrary(env, params.ticker, input.filings, { headings: true, pinKey: runId ?? params.fingerprint }),
     // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
     model: {
       judge: async (stage, system, payload) => {

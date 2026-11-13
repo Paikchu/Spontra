@@ -55,7 +55,7 @@ Confidence: ${CONFIDENCES.map(c => `${c} = ${CONFIDENCE_RULES[c]}`).join("; ")}.
 Do not give 5 for uncertainty: say what is known, what is not, and score null with a gap when the material is missing.`;
 
 const RESEARCH_SYSTEM = `You research one listed company for a valuation assessment. Everything you conclude must rest on evidence you read in this run: filing passages (a filing analysis's quoted passages included), call excerpts or the business breakdown's anchoring pages, registered with an id like [e1a2b3c4d5], or the validated facts listed by id. A finding or an analysis's conclusion is not evidence; only a registered passage is. Assumptions are never disclosures.
-Work the four research dimensions: businessQuality, growthExecution, financialResilience, mispricingCatalysts. Build on the analysis already done below you: read_findings for what the financial review concluded, read_business_tree for the businesses and the researched pages anchoring them, read_filing_analyses and read_filing_analysis for each filing's analysis and the passages it quoted. Read a filing section yourself (find_filing_sections, read_filing_section) only for a disclosure none of them carries: the debt and commitments notes, share counts, leases. Read the calls. Treat counter-evidence first. There is no web search here; a gap the layers below do not cover is recorded as a gap.
+Work the four research dimensions: businessQuality, growthExecution, financialResilience, mispricingCatalysts. Build on the analysis already done below you: read_findings for what the financial review concluded, read_business_tree for the businesses and the researched pages anchoring them, read_filing_analyses and read_filing_analysis for each filing's analysis and the passages it quoted. Read the complete prepared Markdown and standalone CSV tables yourself (search_filing_markdown, read_filing_markdown, find_filing_tables, read_filing_table) only for a disclosure none of them carries: the debt and commitments notes, share counts, leases. Read the calls. Treat counter-evidence first. There is no web search here; a gap the layers below do not cover is recorded as a gap.
 The diagnostics listed in the opening message were computed by code from the facts; each dimension's rationale must answer the ones that bear on it (ROIC, accruals, cash conversion, dilution, leverage, coverage) by name.
 A rationale is at most 1000 characters: the judgement first, then the two or three facts that decide it with their evidence ids. A figure the diagnostics list or another dimension already states is named, not re-derived; the page shows the diagnostics beside the scores.
 When submitting financialResilience, assess goingConcern from the current disclosures: unresolved means substantial doubt remains; resolved requires explicit evidence that completed mitigation alleviates it; unknown means the evidence does not establish either. Quote the registered passage and explain the assessment in the dimension rationale. Planned refinancing alone does not resolve risk; a generic risk-factor mention or a missing document alone does not establish it. Reconcile older warnings with newer disclosures. An unresolved assessment limits financialResilience to 7.5.
@@ -117,7 +117,7 @@ export function openingResearch(state: ValuationState): string {
     `Diagnostics computed from the facts:\n${diag}`,
     state.frozenSources ? `Frozen original documents: ${state.frozenSources.length}; use list_snapshot_sources to choose the documents and read_snapshot_source to register evidence.` : `Readable filings: ${input.documents.length} (list_filings). Calls: ${input.transcripts.length ? input.transcripts.map(t => `${t.id} (${t.title}, FY${t.fiscalYear} Q${t.fiscalQuarter})`).join("; ") : "none"}.`,
     managementText(state),
-    state.frozenSources ? "Start with list_snapshot_sources or find_snapshot_passages." : "Start with find_filing_sections or list_filings.",
+    state.frozenSources ? "Start with list_snapshot_sources or find_snapshot_passages." : "Start with list_filings, then read_filing_markdown and the relevant CSV tables.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -233,7 +233,7 @@ export async function valuationLoader(spec: ValuationSpec, env: AnalysisEnv): Pr
   const start = unpackState<ValuationState>(spec.state);
   const tools = valuationTools(env);
   const recipe: Recipe<string, ValuationState, ValuationState> = {
-    id: loop.recipeId, budget: loop.budget, system: () => loop.system, open: () => start, tools: () => tools, policy: { allow: loop.allow }, settled: loopSettled(loop.recipeId), settle: s => s, nudge: NUDGE,
+    id: loop.recipeId, budget: loop.budget, resultChars: 64_000, system: () => loop.system, open: () => start, tools: () => tools, policy: { allow: loop.allow }, settled: loopSettled(loop.recipeId), settle: s => s, nudge: NUDGE,
   };
   const store = new ValuationStore(requireDb(env));
   return {

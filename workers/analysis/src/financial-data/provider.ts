@@ -11,6 +11,7 @@ import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financ
 import {releaseQuarter} from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 export interface SecReader {
+ material?(filing:{accession:string;form:string;filedAt:string;reportDate:string|null;url:string;cik?:string}):Promise<import('../../../../shared/analysis-contract/filing-material.ts').MaterialSnapshot>;
  /** One filing document by its EDGAR URL. The implementation lives in `sec-archive/`; nothing else downloads from EDGAR. */
  read(url:string):Promise<Response>;
  /** The issuer's submission list, or one of its continuation pages, parsed. */
@@ -61,27 +62,13 @@ export function reportsFinancials(form:string|undefined,html:string):boolean{
  return /financial\s+(?:statements|results|information)|earnings|(?:quarterly|interim|half[- ]year)\s+(?:results|report)|consolidated\s+report|management\s+report/i.test(exhibits)
   ||/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|profit\s+or\s+loss)/i.test(plain(html));
 }
-/**
- * The Exhibit 99 documents a filing body links, at most two, in the filing's own folder: what a read of the filing
- * follows, and what the archive must hold for the filing to count as complete. Never an arbitrary outbound URL.
- */
-export function exhibitLinks(html:string,primaryUrl:string):string[]{
- const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
- const candidates=[...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-  .filter(row=>/\b99(?:\.\d+)?\b/.test(row[1].replace(/<[^>]*>/g,' ')))
-  .flatMap(row=>[...row[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(link=>link[1]));
- candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
- return [...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
-  .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
-}
-/** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded; archived ones are not downloaded again.
- * A 6-K that reports no financials yields its cover alone. */
-export async function readFilingDocuments(primaryUrl:string,reader:SecReader,accession?:string,form?:string):Promise<Array<{url:string;html:string;memberLabels?:Record<string,string>}>>{
- const html=await readDocument(primaryUrl,reader);const documents:Array<{url:string;html:string;memberLabels?:Record<string,string>}>=[{url:primaryUrl,html}];
- if(!reportsFinancials(form,html))return documents;
- for(const url of exhibitLinks(html,primaryUrl)){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_TOO_LARGE');documents.push({url,html:body});}
- // One label set covers the filing; only a document that names members needs it.
- if(accession&&reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
+export async function readFilingDocuments(primaryUrl:string,reader:SecReader,accession?:string,form?:string,metadata?:{filedAt:string;reportDate:string|null;cik?:string}):Promise<Array<{url:string;html:string;memberLabels?:Record<string,string>}>>{
+ if(!reader.material||!accession)throw new Error('FILING_MATERIAL_READER_REQUIRED');
+ const snapshot=await reader.material({accession,form:form??'SEC',filedAt:metadata?.filedAt??'',reportDate:metadata?.reportDate??null,url:primaryUrl,...(metadata?.cik?{cik:metadata.cik}:{})});
+ const documents:Array<{url:string;html:string;memberLabels?:Record<string,string>}>=[];
+ for(const source of snapshot.documents.filter(s=>s.contentType==='text/html'))documents.push({url:source.url,html:await readDocument(source.url,reader)});
+ documents.sort((a,b)=>Number(b.url===primaryUrl)-Number(a.url===primaryUrl));
+ if(reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
  return documents;
 }
 /** A scan reads at most MAX_REPORTS financial reports. A foreign issuer's 6-Ks are listed when filed within the lookback of
@@ -117,7 +104,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  const quarters=[];cursor.index??=0;let read=0,skipped=0;
  while(cursor.index<cursor.documents.length&&(cursor.reports??0)<MAX_REPORTS&&read<Math.max(1,Math.min(3,maxDocuments))&&skipped<NOTICES_PER_STEP){
   const document=cursor.documents[cursor.index];
-  const documents=await readFilingDocuments(document.url,reader,document.accession,document.form);
+  const documents=await readFilingDocuments(document.url,reader,document.accession,document.form,{filedAt:document.filedAt,reportDate:document.periodEnd,cik});
   // A notice is archived like any filing, but neither parsed nor counted.
   if(!reportsFinancials(document.form,documents[0].html)){await reader.archive?.({...document,cik,industry:cursor.industry??'unknown'},documents[0].html,{form:document.form,reportDate:document.periodEnd});cursor.index++;skipped++;continue;}
   read++;cursor.reports=(cursor.reports??0)+1;
@@ -154,7 +141,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
 export async function readReleaseQuarter(job:Job,previous:BusinessFlowQuarter,reader:SecReader):Promise<{quarter:BusinessFlowQuarter|null;issues:string[]}>{
  const release=(JSON.parse(job.cursor||'{}') as {release?:{url:string;accession:string;filedAt:string}}).release;
  if(!release)return {quarter:null,issues:[]};
- const documents=await readFilingDocuments(release.url,reader,release.accession);
+ const documents=await readFilingDocuments(release.url,reader,release.accession,'8-K',{filedAt:release.filedAt,reportDate:null,cik:job.cik});
  const result=releaseQuarter(documents.map(d=>({url:d.url,html:d.html})),previous,{accession:release.accession,filedAt:release.filedAt,parserVersion:SEC_FLOW_PARSER_VERSION});
  return result.quarter&&result.quarter.periodEnd>previous.periodEnd?result:{quarter:null,issues:result.issues};
 }

@@ -24,7 +24,7 @@ export async function collectNewFilings<F extends {accession:string}>(job:Job,cu
    const pair:PublicBusinessFlow={...flow,fetchedAt:new Date().toISOString(),quarters:[outcome.quarter,outcome.replaces?flow.quarters[1]!:flow.quarters[0]!]};
    if(checkCompleteFlow(pair).complete)flow=pair;
   }
- }catch{await store.defer(job,['SOURCE_TEMPORARILY_UNAVAILABLE'],job.cursor);return {published:false,reasons:['SOURCE_TEMPORARILY_UNAVAILABLE'],read};}
+ }catch(error){const reasons=[error instanceof Error&&error.message==='FILING_MATERIAL_PENDING'?'MATERIAL_PENDING':'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(job,reasons,job.cursor);return {published:false,reasons,read};}
  if(flow.quarters[0]?.periodEnd===newestPair(current).quarters[0]?.periodEnd&&flow.quarters[0]?.sources[0]?.id===newestPair(current).quarters[0]?.sources[0]?.id){
   const reasons=read.some(r=>r.issues.length)?['NEW_FILING_UNRESOLVED']:['UP_TO_DATE'];
   if(store.finish)await store.finish(job,reasons);else await store.defer({...job,attempt:3},reasons,job.cursor);
@@ -68,5 +68,5 @@ export async function collectComplete(job:Job,dataTickers:ReadonlySet<string>,st
   if(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd!==batch.expectedPeriodEnd){await store.defer(job,['LATEST_PERIOD_NOT_COLLECTED'],batch.nextCursor);return {published:false,reasons:['LATEST_PERIOD_NOT_COLLECTED']};}
   if(!check.complete){await store.defer(job,check.reasons,batch.nextCursor);return {published:false,reasons:check.reasons};}
   return await publish({...job,cursor:batch.nextCursor},flow);
- }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS','SEC_DOCUMENT_TOO_LARGE'].includes(code);const reasons=[terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
+ }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS','SEC_DOCUMENT_TOO_LARGE'].includes(code);const reasons=[code==='FILING_MATERIAL_PENDING'?'MATERIAL_PENDING':terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
 }

@@ -32,8 +32,8 @@ export class D1CompleteStore implements CompleteStore{
    .bind(job.cursor,JSON.stringify(reasons),now,job.id,job.lease,now).run();
  }
  async defer(job:Job,reasons:string[],cursor:string){
-  const now=new Date(),continuation=reasons.length===1&&reasons[0]==='PREPARING';
+  const now=new Date(),continuation=reasons.length===1&&['PREPARING','MATERIAL_PENDING'].includes(reasons[0]!);
   await this.db.prepare(`UPDATE financial_collection_jobs SET status=?,cursor_json=?,reasons_json=?,next_attempt_at=?,updated_at=?,attempt=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND status='running' AND lease_until>?`)
-   .bind(continuation?'queued':job.attempt>=3?'unavailable':'retry',cursor,JSON.stringify(reasons),new Date(now.getTime()+(continuation?0:Math.min(86400000,60000*2**job.attempt))).toISOString(),now.toISOString(),continuation?0:job.attempt,job.id,job.lease,now.toISOString()).run();
+   .bind(continuation?'queued':job.attempt>=3?'unavailable':'retry',cursor,JSON.stringify(reasons),new Date(now.getTime()+(reasons[0]==='MATERIAL_PENDING'?60000:continuation?0:Math.min(86400000,60000*2**job.attempt))).toISOString(),now.toISOString(),continuation?0:job.attempt,job.id,job.lease,now.toISOString()).run();
  }
 }

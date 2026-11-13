@@ -1,5 +1,7 @@
 # 单文件分析流程优化
 
+2026-11-13 更新。材料预读与读取入口已由 [SEC 披露材料与表格](sec-materials.md) 取代。本文中的 research pack 设计保留为历史记录。
+
 本文说明 SEC 单文件分析（`workers/analysis/src/filing-analysis/`）与产物编排（`workers/analysis/src/artifact/`）要做的改动。验收方法见 [filing-analysis-optimization-acceptance.md](filing-analysis-optimization-acceptance.md)。现有设计见 [filing-analysis-design.md](filing-analysis-design.md) 与 [analysis-html-artifact.md](analysis-html-artifact.md)。
 
 估值报告不在本文范围内。

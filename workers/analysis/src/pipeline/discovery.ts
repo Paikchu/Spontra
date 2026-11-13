@@ -9,6 +9,7 @@ import { knownCik } from "./identity.ts";
 import { outboxStatement } from "./outbox.ts";
 import { scopeTickers } from "./router.ts";
 import { scheduledAnalysisPauses } from "./scheduled-analysis.ts";
+import { requestFilingMaterial } from "../filing-material/index.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
 export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
@@ -97,6 +98,14 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       // the SEC report reads its own window of filings, so a run of other forms never pushes a filing out of them.
       const remembered = filings.slice(0, REMEMBERED);
       const fresh = previous && announcing ? remembered.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
+      for (const filing of fresh) {
+        const root = secArchiveRoot(Number(cik), filing.accession);
+        await requestFilingMaterial(env, { ticker, accession: filing.accession, cik,
+          form: filing.form, filedAt: filing.filingDate, reportDate: filing.reportDate,
+          companyName: typeof submissions?.name === "string" ? submissions.name : ticker,
+          primaryDocument: filing.primaryDocument, documentUrl: secArchiveDocumentUrl(root, filing.primaryDocument),
+          indexUrl: secArchiveDocumentUrl(root, `${filing.accession}-index.htm`) });
+      }
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
