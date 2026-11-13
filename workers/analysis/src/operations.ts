@@ -1,4 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import type { ChatCompletionChunk, ChatCompletionCreateParamsStreaming, ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { Stream } from "openai/core/streaming";
 import { type ReasoningEffort } from "./ai-config.ts";
 import { aiUsageFromMetrics, recordAiUsage } from "./ai-runs/usage.ts";
 import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
@@ -109,10 +111,11 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   TRANSCRIPT_DAILY_CALLS?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
-  /** Every model call and web search goes to DeepSeek's Anthropic-format API with this key. */
+  /** DeepSeek model calls and the independent Search/Fetch APIs use this key. */
   DEEPSEEK_API_KEY?: string;
-  /** Anthropic's API, for the artifact arbiter and visual review (artifact/anthropic.ts). */
-  ANTHROPIC_API_KEY?: string;
+  /** OpenAI's independent artifact arbiter and visual review (artifact/openai.ts). */
+  OPENAI_API_KEY?: string;
+  OPENAI_REVIEW_MODEL?: string;
   /** The business map's public origin, where the visual review loads an artifact draft in the real stage. */
   BUSINESS_SITE_ORIGIN?: string;
   /** Signs artifact preview links; the admin password's secret doubles as the key material. */
@@ -267,11 +270,14 @@ async function requestWorkerSecModelContent(
   const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
   const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(payload).length };
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
-  // Pings count as liveness: an adaptive-thinking model can think for minutes without emitting a visible delta.
+  // Keepalive bytes count as liveness while the model is reasoning.
   let liveAt = Date.now();
   const client = modelClient(apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
   try {
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: JSON.stringify(payload) }];
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: `${system}\nReturn one valid JSON object only.` },
+    { role: "user", content: JSON.stringify(payload) },
+  ];
   if (options?.continuation) messages.push(
     { role: "assistant", content: options.continuation },
     { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },
@@ -283,24 +289,22 @@ async function requestWorkerSecModelContent(
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
   metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
-  // The Anthropic format has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
-  let stream: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent> & { controller: AbortController };
+  let stream: Stream<ChatCompletionChunk>;
   try {
-    stream = await client.beta.messages.create({
-      model,
-      // A stable system block lets repeated calls of the same stage read it from the prompt cache.
-      system: [{ type: "text", text: `${system}\nReturn one valid JSON object only.`, cache_control: { type: "ephemeral" } }],
-      messages,
-      // Adaptive thinking is the default; effort sets how deep it goes.
-      output_config: { effort: options?.reasoning ?? "high" },
+    const request: ChatCompletionCreateParamsStreaming & { thinking: { type: "enabled" } } = {
+      model, messages,
+      thinking: { type: "enabled" },
+      reasoning_effort: options?.reasoning ?? "high",
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
-      // Streaming keeps bytes flowing on long generations and lets a stalled connection be detected.
+      ...(options?.continuation ? {} : { response_format: { type: "json_object" } }),
       stream: true,
-    }, { signal: controller.signal }) as typeof stream;
+      stream_options: { include_usage: true },
+    };
+    stream = await client.chat.completions.create(request, { signal: controller.signal });
   } catch (error) {
-    if (!(error instanceof Anthropic.APIError) || error instanceof Anthropic.APIUserAbortError) throw error;
+    if (!(error instanceof OpenAI.APIError) || error instanceof OpenAI.APIUserAbortError) throw error;
     // Transport failures carry no status; the recovery loop retries them as it retries a failed fetch.
-    if (error instanceof Anthropic.APIConnectionError || error.status === undefined) throw new TypeError(`Model ${model} ${stage} transport: ${error.message}`);
+    if (error instanceof OpenAI.APIConnectionError || error.status === undefined) throw new TypeError(`Model ${model} ${stage} transport: ${error.message}`);
     const failure = httpFailure(error, model, stage, apiKey);
     metrics.providerCode = failure.providerCode;
     throw failure;
@@ -325,13 +329,13 @@ async function requestWorkerSecModelContent(
   }
 }
 
-/** DeepSeek's Anthropic-format endpoint, which the SDK speaks unchanged. */
-export const DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic";
+/** DeepSeek's OpenAI-compatible Chat Completions endpoint. */
+export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 /** The client every model call uses: DeepSeek's endpoint, no SDK retries, and a body watcher for liveness. */
-function modelClient(apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): Anthropic {
-  return new Anthropic({
-    apiKey, baseURL: DEEPSEEK_ANTHROPIC_BASE_URL, maxRetries: 0, timeout,
+function modelClient(apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): OpenAI {
+  return new OpenAI({
+    apiKey, baseURL: DEEPSEEK_BASE_URL, maxRetries: 0, timeout,
     fetch: async (input, init) => {
       const response = await fetcher(input, init);
       onHeaders?.();
@@ -345,10 +349,10 @@ function modelClient(apiKey: string, timeout: number, fetcher: typeof fetch, met
 }
 
 /** An HTTP failure with its status, provider code and retry-after, for the recovery loop; the key never reaches the message. */
-function httpFailure(error: InstanceType<typeof Anthropic.APIError>, model: string, stage: string, apiKey: string): SecModelHttpError {
+function httpFailure(error: InstanceType<typeof OpenAI.APIError>, model: string, stage: string, apiKey: string): SecModelHttpError {
   const retryAfter = error.headers?.get("retry-after");
   const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
-  const code = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;
+  const code = error.code ?? error.type;
   const providerCode = typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : undefined;
   return new SecModelHttpError(error.status!, `Model ${model} ${stage} HTTP ${error.status}: ${error.message.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
 }

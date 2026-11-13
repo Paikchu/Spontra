@@ -30,4 +30,4 @@ Spontra Analysis 的网页搜索不再运行独立的中间模型，也不再有
 - 原始 Search/Fetch 请求单独记录接口用量，标记 `search-fetch-api`，不虚构模型 token。
 - `AI_TOOLS` 已移除 `web`。后台列表不再显示该配置，更新旧配置的请求返回 404；数据库里已有的旧 `web` 设置不再参与模型解析。无须数据库迁移。
 
-官方接口：[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/)、[Anthropic 格式](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api/)、[Search/Fetch](https://api-docs.deepseek.com/zh-cn/guides/search/)。
+官方接口：[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/)、[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)、[Search/Fetch](https://api-docs.deepseek.com/zh-cn/guides/search/)。

@@ -1,6 +1,6 @@
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
-import { judge, AnthropicUnavailable } from "./anthropic.ts";
+import { judge, JudgeUnavailable } from "./openai.ts";
 import { blockText, issueKey, sentencesOf, type TrackedIssue } from "./document.ts";
 import type { ArtifactBlock } from "../../../../shared/analysis-contract/artifact.ts";
 import { figureInText, quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
@@ -104,7 +104,7 @@ export async function arbitrate(env: AnalysisEnv, issue: TrackedIssue, block: Ar
       text: JSON.stringify({ issue: { problem: issue.problem, quote: issue.quote ?? null, suggestion: issue.suggestion ?? null }, passage: blockText(block.html), argument: argument.slice(0, 3000), quotations: checked, sources: excerpts }),
     });
   } catch (error) {
-    if (error instanceof AnthropicUnavailable) return null;
+    if (error instanceof JudgeUnavailable) return null;
     throw error;
   }
 }

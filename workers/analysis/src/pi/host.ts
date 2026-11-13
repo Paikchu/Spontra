@@ -1,4 +1,5 @@
 import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
+import type { Message } from "@earendil-works/pi-ai";
 import { within } from "./within.ts";
 import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
@@ -9,7 +10,7 @@ import { NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
 import { DeepSeekWebProvider } from "../web-search/deepseek.ts";
 import { SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { aiUsageFromMetrics, recordAiUsage } from "../ai-runs/usage.ts";
-import { PI_PROVIDER, piModels, shapePayload } from "./model.ts";
+import { PI_PROVIDER, piModels, shapePayload, migrateMessages } from "./model.ts";
 import { packState, unpackState } from "./state.ts";
 
 /**
@@ -428,7 +429,10 @@ export class PiHost {
       sections: [{ key: "recipe", tag: false, render: async (input: { conversationId: ConversationId }) => (await this.bound(String(input.conversationId)))?.system }],
       tools: [...tools.values()],
       hooks: [hook(GenerationTask, {
-        beforeRequest: async (_request: unknown, api: { conversationId: ConversationId }) => { await this.guard(() => this.beforeRequest(String(api.conversationId))); return undefined; },
+        beforeRequest: async (request: { messages: readonly Message[] }, api: { conversationId: ConversationId }) => {
+          await this.guard(() => this.beforeRequest(String(api.conversationId)));
+          return { messages: migrateMessages(request.messages) };
+        },
         beforeProviderRequest: async (request: { payload: unknown }, api: { conversationId: ConversationId }) => {
           const b = await this.bound(String(api.conversationId));
           this.assertRunning();
@@ -502,7 +506,11 @@ export class PiHost {
     if (failed) this.trail(b, { turn: b.turns, thought: "", action: "invalid", input: "", observation: String(message.errorMessage ?? message.stopReason).slice(0, 1000) });
     await recordAiUsage(this.env, aiUsageFromMetrics({
       stage: `${b.loaded.ledger.kind}-t${b.turns}`, model: b.loaded.model, mode: "pi-turn", finishReason: message.stopReason,
-      usage: { input_tokens: u.input ?? 0, output_tokens: u.output ?? 0, cache_read_input_tokens: u.cacheRead ?? 0, cache_creation_input_tokens: u.cacheWrite ?? 0 },
+      usage: {
+        prompt_tokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), completion_tokens: u.output ?? 0,
+        prompt_tokens_details: { cached_tokens: u.cacheRead ?? 0 },
+        ...(u.reasoning === undefined ? {} : { completion_tokens_details: { reasoning_tokens: u.reasoning } }),
+      },
       ...(failed ? { error: String(message.errorMessage ?? message.stopReason).slice(0, 200) } : {}),
     }, { at: new Date(Date.now() - durationMs).toISOString(), durationMs, provider: "deepseek", ...b.loaded.ledger }));
   }
@@ -618,5 +626,5 @@ export class PiHost {
   }
 }
 
-type PiAssistant = { content?: Array<{ type: string; text?: unknown; id?: unknown; name?: unknown; arguments?: unknown }>; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+type PiAssistant = { content?: Array<{ type: string; text?: unknown; id?: unknown; name?: unknown; arguments?: unknown }>; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; reasoning?: number };
   stopReason?: string; errorMessage?: string };

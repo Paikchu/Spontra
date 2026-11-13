@@ -1,5 +1,5 @@
 import { boundedModelIO } from "./model-io.ts";
-import type { BetaRawMessageStreamEvent } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { ChatCompletionChunk } from "openai/resources/chat/completions";
 import { SEC_MODEL_MAX_CONTENT_BYTES, SEC_MODEL_STALL_MS } from "./retry-policy.ts";
 
 export type ModelFailureCode = "output_token_limit" | "stream_incomplete" | "stream_stall" | "invalid_json" | "invalid_stream" | "content_limit";
@@ -24,23 +24,12 @@ export type StreamOptions = {
 };
 const meaningful = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const encoder = new TextEncoder();
-type Usage = Record<string, unknown>;
-/** `message_start` carries the input side, `message_delta` the cumulative output side; later fields win. */
-const mergeUsage = (into: unknown, from: unknown): Usage => {
-  const merged: Usage = { ...(into && typeof into === "object" ? into as Usage : {}) };
-  if (from && typeof from === "object") for (const [key, value] of Object.entries(from)) if (value !== null && value !== undefined) merged[key] = value;
-  return merged;
-};
-
-/**
- * Reads a Messages API event stream into the text it carries. Text from every text block is joined: after a mid-stream
- * server-side fallback the fallback model continues the partial text it was handed. Thinking is never retained.
- */
-export async function readModelContent(events: AsyncIterable<BetaRawMessageStreamEvent>, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = SEC_MODEL_STALL_MS, options: StreamOptions = {}): Promise<string> {
+/** Reads Chat Completions chunks into their visible text. Reasoning is never retained. */
+export async function readModelContent(events: AsyncIterable<ChatCompletionChunk>, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = SEC_MODEL_STALL_MS, options: StreamOptions = {}): Promise<string> {
   const contentLimit = options.contentLimit ?? SEC_MODEL_MAX_CONTENT_BYTES;
   const liveAt = options.liveAt ?? (() => Date.now());
   let content = "", contentBytes = 0;
-  let stopReason: string | null = null, done = false;
+  let stopReason: ChatCompletionChunk.Choice["finish_reason"] = null;
   let lastCheckpointAt = Date.now(), lastCheckpointLength = 0;
   let heartbeatAt = Date.now();
   const checkpoint = async (force = false) => {
@@ -69,28 +58,21 @@ export async function readModelContent(events: AsyncIterable<BetaRawMessageStrea
       const next = await nextBeforeStall(iterator, idleMs, liveAt, options);
       if (next.done) break;
       const event = next.value;
-      if (event.type === "message_start") {
-        metrics.servedModel = event.message.model;
-        metrics.usage = mergeUsage(metrics.usage, event.message.usage);
-      } else if (event.type === "content_block_start") {
-        const block = event.content_block as { type: string; text?: unknown };
-        if (block.type === "fallback") metrics.fallbacks = Number(metrics.fallbacks ?? 0) + 1;
-        if (block.type === "text" && typeof block.text === "string" && block.text) append(block.text);
-      } else if (event.type === "content_block_delta") {
-        if (event.delta.type === "text_delta") append(event.delta.text);
-        else if (event.delta.type === "thinking_delta" || event.delta.type === "signature_delta") progress();
-      } else if (event.type === "message_delta") {
-        if (event.delta.stop_reason) stopReason = event.delta.stop_reason;
-        const details = (event.delta as { stop_details?: { category?: unknown } | null }).stop_details;
-        if (details) metrics.refusalCategory = details.category ?? null;
-        metrics.usage = mergeUsage(metrics.usage, event.usage);
-      } else if (event.type === "message_stop") done = true;
+      metrics.servedModel = event.model;
+      if (event.usage) metrics.usage = event.usage;
+      const choice = event.choices[0];
+      if (choice) {
+        if (choice.delta.content) append(choice.delta.content);
+        if ("reasoning_content" in choice.delta && meaningful(choice.delta.reasoning_content)) progress();
+        if (choice.delta.refusal) metrics.refusal = choice.delta.refusal;
+        if (choice.finish_reason) stopReason = choice.finish_reason;
+      }
       await checkpoint();
     }
     metrics.finishReason = stopReason;
-    if (!done && !stopReason) throw new SecModelOutputError("stream_incomplete", `Model ${stage} stream ended before completion after ${content.length} characters`);
-    if (stopReason === "max_tokens") throw new SecModelOutputError("output_token_limit", `Model ${stage} stream hit the output token limit after ${content.length} characters`);
-    if (stopReason && stopReason !== "end_turn") throw new SecModelOutputError("invalid_stream", `Model ${stage} ended with ${stopReason}${metrics.refusalCategory ? ` (${String(metrics.refusalCategory)})` : ""}`);
+    if (!stopReason) throw new SecModelOutputError("stream_incomplete", `Model ${stage} stream ended before completion after ${content.length} characters`);
+    if (stopReason === "length") throw new SecModelOutputError("output_token_limit", `Model ${stage} stream hit the output token limit after ${content.length} characters`);
+    if (stopReason !== "stop") throw new SecModelOutputError("invalid_stream", `Model ${stage} ended with ${stopReason}`);
     if (!content) throw new SecModelOutputError("stream_incomplete", `Model ${stage} returned empty content`);
     return content;
   } catch (error) {
