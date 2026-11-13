@@ -101,7 +101,7 @@ Required blocks, with these ids, in this order; add others where the content nee
 - highlights: what is better than it looks, or simply good and durable.
 - risks: what is worse than it looks, with what would trigger it.
 - overlooked: findings that come from the notes, subsequent events, commitments or changed wording, and that the headline figures do not show.
-- versus-prior: what the last report said to watch and what happened; what management said before and what the figures now show; which earlier judgment needs revising. Cite the earlier filings and reports you read.
+- versus-prior: what the earlier filing said to watch and what happened; what management said before and what the figures now show; which earlier judgment needs revising. Cite the prepared earlier filings you read.
 - what-to-watch: the specific figures and clauses to check in the next filing, each with the level or direction that would confirm or refute a finding above.
 
 Each item in highlights, risks and overlooked states the finding in one sentence, then its size, its history, its source, and why it matters to a holder. If an item has no size or no history, say why.
@@ -112,6 +112,8 @@ ${CHECKLIST}`;
 
 /** What the periodic session is told about figures and sources, on top of the composer's guide. */
 export const PERIODIC_EVIDENCE = `Figures and sources in this session:
+- For ratios, read and cite the disclosed numerator and denominator for the same period, scope and unit. Use a disclosed subtotal directly. If a subtotal must be reconstructed, reconcile the signed components to the statement before using it; a negative line below tax must be reversed when working back to income before tax.
+- Identify the largest driver from absolute contributions to the change. A widening margin alone does not establish the largest contribution. State the assumptions behind a forward comparison, including its revenue assumption.
 - A figure from a fact: <data value="168.7" data-ref="f1a2b3c4d5e6f7">$168.7m</data>. value is the number as you show it (168.7 for $168.7m); it is checked against the fact, in units, thousands, millions or billions.
 - A figure you computed: <data value="39.2" data-ref="c3">39.2%</data>.
 - A figure that exists only in a sentence of the filing: cite its paragraph, <data value="10.7" data-ref="SOURCE_BLOCK_ID">$10.7m</data> (the source block id).
