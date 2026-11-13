@@ -25,10 +25,10 @@ import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_O
 import type { AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
 
-type R2ObjectLike = { etag?: string; text(): Promise<string> };
+type R2ObjectLike = { etag?: string; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
 type R2BucketLike = {
-  get(key: string): Promise<R2ObjectLike | null>;
-  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
+  get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectLike | null>;
+  put(key: string, value: string | Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
   list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: Array<{ key: string; uploaded: Date }>; truncated: boolean; cursor?: string }>;
   delete(keys: string[]): Promise<unknown>;
 };
@@ -40,7 +40,7 @@ export type AiWorkflowBinding<P> = {
 };
 
 /** The slice of the Workers AI binding the tags use. */
-export type TagEmbedder = { run(model: string, input: { text: string[] }): Promise<unknown> };
+export type TagEmbedder = { run(model: string, input: { text: string[] } | { messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; max_tokens?: number; response_format?: { type: string } }): Promise<unknown> };
 /** The slice of a Vectorize index the tags use. */
 export type TagIndex = {
   upsert(vectors: Array<{ id: string; values: number[]; namespace?: string; metadata?: Record<string, string> }>): Promise<unknown>;

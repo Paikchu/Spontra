@@ -70,7 +70,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   const explainer = await runBusinessExplainer({
     ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
-    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
+    filingLibrary: treeLibrary(env, params.ticker, input.filings, { pinKey: runId ?? params.fingerprint }),
     model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });

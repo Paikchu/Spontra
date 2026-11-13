@@ -1,99 +1,44 @@
-import { archiveFilingDisclosures, disclosureAuditPrefix, readArchivedDocument, ARCHIVE_PREFIX, type StoredAudit } from "../financial-data/disclosure-audit.ts";
+import { archiveFilingDisclosures, readArchivedDocument } from "../financial-data/disclosure-audit.ts";
 import { withFilingStructure } from "../financial-data/presentation.ts";
 import type { DocumentSource } from "../financial-data/parser.ts";
-import { canonicalSecHtml, exhibitLinks, type SecReader } from "../financial-data/provider.ts";
+import { canonicalSecHtml, type SecReader } from "../financial-data/provider.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { edgarDocumentReader, type GatewayOptions } from "./gateway.ts";
 
-/** Written by the archive task once a filing's documents are all stored, or when the filing is recorded as one that cannot be. */
-export const archiveCompleteKey = (ticker: string, accession: string) => `sec-archive:complete:v1:${ticker}:${accession}`;
-export type ArchiveCompletion = { documents: number } | { unsupported: string; attempts: number };
-
-/** Why the archive task gave the filing up (a document over the size cap, reads that kept failing), or null. */
-export async function archiveUnsupported(env: Pick<ArchiveEnv, "DB">, ticker: string, accession: string): Promise<string | null> {
-  const marker = (await new D1SecRepository(env.DB).getCache<ArchiveCompletion>(archiveCompleteKey(ticker, accession)))?.payload;
-  return marker && "unsupported" in marker ? marker.unsupported : null;
-}
-
 /** What the archive needs: the pointers in D1 and the documents in R2. */
 export type ArchiveEnv = { DB: D1Database; SEC_FILINGS: AnalysisEnv["SEC_FILINGS"]; SEC_USER_AGENT: string };
 
-/** One archived document of a filing: the body, or an exhibit the collector followed from it. */
 export type ArchivedDocument = {
   url: string;
   filename: string;
-  /** The filing's own form for the body, the exhibit's type (`EX-99.1`) as its file name says it, else `EX-99`. */
   type: string;
   role: "primary" | "exhibit";
   html: string;
 };
-/**
- * A filing as the archive holds it: every document stored for the accession, the body first. `complete` says the body
- * and every exhibit it names are stored; a batch interrupted between them is not, and its readers wait.
- */
 type ArchivedFiling = { ticker: string; accession: string; form: string; filedAt: string; reportDate: string; complete: boolean; documents: ArchivedDocument[] };
 
 const fileOf = (url: string) => decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
-const exhibitLike = (file: string) => /ex[-_]?\d|exhibit|\b99\b/i.test(file);
-/** A filing body opens with its cover: the form named, then the commission file number or an item. Exhibits do not. */
-const coverPage = (html: string) => { const head = html.slice(0, 60_000).replace(/<[^>]+>/g, " ").replace(/\s+/g, " "); return /\bform\s+(?:8-k|6-k|10-q|10-k|20-f|40-f)\b/i.test(head) && /commission file number|\bitem\s*\d\.\d{2}\b|pursuant to (?:section|rule)/i.test(head); };
-/** `EX-99.1` from `orcl-ex99_1.htm`, `ex991.htm`, `exhibit99-1.htm`; `EX-99` when the file names no sub-number. */
-export function exhibitType(file: string): string {
-  const match = /ex(?:hibit)?[-_]?(\d{1,2})(?:[-_.]?(\d))?(?=\D|$)/i.exec(file);
-  if (!match) return "EX-99";
-  return match[2] ? `EX-${match[1]}.${match[2]}` : `EX-${match[1]}`;
-}
-
-async function pointers(env: ArchiveEnv, ticker: string, accession: string): Promise<StoredAudit[]> {
-  const prefix = disclosureAuditPrefix(ticker);
-  const { results } = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ? AND json_extract(payload, '$.source.accessionNumber') = ? ORDER BY cache_key")
-    .bind(prefix, prefix + "￿", accession).all<{ payload: string }>();
-  const out: StoredAudit[] = [];
-  for (const row of results) {
-    try { const record = JSON.parse(row.payload) as StoredAudit; if (record.ticker === ticker && record.rawKey?.startsWith(ARCHIVE_PREFIX)) out.push(record); } catch { /* a malformed row is not a document */ }
-  }
-  return out;
-}
-
-/**
- * True when the archive holds the whole filing: its body and the exhibits the body names (`exhibitLinks`). A body stored
- * before its exhibits (the collector and the archive task commit one document at a time) does not count yet, so the
- * report that follows `filing.archived` read the filing only once it is all there.
- */
 export async function archiveHolds(env: ArchiveEnv, ticker: string, accession: string, primaryUrl?: string): Promise<boolean> {
-  return (await archivedFiling(env, ticker, accession, primaryUrl))?.complete ?? false;
+  const { getFilingMaterial } = await import("../filing-material/index.ts");
+  const material = await getFilingMaterial(env, ticker, accession);
+  return material?.status === "ready" && (!primaryUrl || material.filing.documentUrl === primaryUrl);
 }
 
-/**
- * The filing as archived, or null when the archive holds nothing for the accession yet (the collector or the archive
- * task stores it; the caller waits for `filing.archived`). Documents come back as filed, the body first.
- *
- * `primaryUrl` is the filing's own primary document as EDGAR lists it: with it, that document is the body and every
- * other one an exhibit, whatever their file names (an earnings release can be `coreweave4q25earningspress.htm`).
- * Without it, the body is the document that opens with the filing's cover page, else the one not named as an exhibit.
- */
 export async function archivedFiling(env: ArchiveEnv, ticker: string, accession: string, primaryUrl?: string): Promise<ArchivedFiling | null> {
-  const records = await pointers(env, ticker, accession);
-  if (!records.length) return null;
-  const read: Array<{ url: string; file: string; form: string; html: string }> = [];
-  for (const record of records) {
-    const object = await env.SEC_FILINGS.get(record.rawKey);
-    if (!object) continue;
-    read.push({ url: record.source.documentUrl, file: fileOf(record.source.documentUrl), form: record.source.form, html: canonicalSecHtml(await object.text()) });
+  const { getFilingMaterial, readMaterialSnapshot } = await import("../filing-material/index.ts");
+  const material = await getFilingMaterial(env, ticker, accession);
+  if (material?.status !== "ready") return null;
+  const snapshot = await readMaterialSnapshot(env, material.ref);
+  const body = primaryUrl ?? snapshot.filing.documentUrl;
+  const documents: ArchivedDocument[] = [];
+  for (const source of snapshot.documents.filter(source => source.contentType === "text/html")) {
+    const raw = await env.SEC_FILINGS.get(source.rawKey);
+    if (!raw) throw new Error(`MATERIAL_SOURCE_MISSING:${source.filename}`);
+    documents.push({ url: source.url, filename: source.filename, role: source.url === body ? "primary" : "exhibit", type: source.type, html: canonicalSecHtml(await raw.text()) });
   }
-  if (!read.length) return null;
-  const listed = primaryUrl && read.some(d => d.url === primaryUrl) ? primaryUrl : null;
-  const covered = listed ? null : read.find(d => coverPage(d.html))?.url ?? null;
-  const body = listed ?? covered ?? read.find(d => !exhibitLike(d.file))?.url ?? read[0]!.url;
-  const documents: ArchivedDocument[] = read.map(d => d.url === body
-    ? { url: d.url, filename: d.file, role: "primary", type: d.form, html: d.html }
-    : { url: d.url, filename: d.file, role: "exhibit", type: exhibitType(d.file), html: d.html });
   documents.sort((a, b) => Number(a.role === "exhibit") - Number(b.role === "exhibit") || a.url.localeCompare(b.url));
-  const bodyRecord = records.find(r => r.source.documentUrl === body) ?? records[0]!;
-  const held = new Set(documents.map(d => d.url));
-  const complete = exhibitLinks(documents[0]!.html, documents[0]!.url).every(url => held.has(url));
-  return { ticker, accession, form: bodyRecord.source.form, filedAt: bodyRecord.source.filedAt ?? "", reportDate: bodyRecord.source.reportDate ?? "", complete, documents };
+  return { ticker, accession, form: snapshot.filing.form, filedAt: snapshot.filing.filedAt, reportDate: snapshot.filing.reportDate, complete: true, documents };
 }
 
 export { readArchivedDocument };
@@ -108,7 +53,39 @@ export function archivingReader(env: ArchiveEnv, ticker: string, causeId: string
   const reader = edgarDocumentReader(env.SEC_USER_AGENT, { delayMs: 1000, ...gateway });
   const archive = { DB: env.DB, SEC_FILINGS: env.SEC_FILINGS };
   reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId, { announce: announce ?? true }).then(() => undefined);
-  reader.archived = url => readArchivedDocument(archive, ticker, url);
+  reader.archived = async url => {
+    const digits = /\/data\/\d+\/(\d{18})\//.exec(url)?.[1];
+    if (digits) {
+      const { getFilingMaterial, readMaterialSnapshot } = await import("../filing-material/index.ts");
+      const accession = `${digits.slice(0, 10)}-${digits.slice(10, 12)}-${digits.slice(12)}`;
+      const state = await getFilingMaterial(env, ticker, accession);
+      if (state?.status === "ready") {
+        const snapshot = await readMaterialSnapshot(env, state.ref);
+        const source = snapshot.documents.find(source => source.url === url);
+        if (source) {
+          const object = await env.SEC_FILINGS.get(source.rawKey);
+          if (!object) throw new Error(`MATERIAL_SOURCE_MISSING:${source.filename}`);
+          return object.text();
+        }
+      }
+    }
+    return readArchivedDocument(archive, ticker, url);
+  };
+  reader.material = async filing => {
+    const { getFilingMaterial, requestFilingMaterial, readMaterialSnapshot } = await import("../filing-material/index.ts");
+    const materialEnv = { ...env, DB: env.DB };
+    const state = await getFilingMaterial(materialEnv, ticker, filing.accession);
+    if (state?.status === "ready") return readMaterialSnapshot(materialEnv, state.ref);
+    const discovered = (await new D1SecRepository(env.DB).getCache<import("../pipeline/discovery.ts").DiscoveryState>(`sec:discovery:v1:${ticker}`))?.payload;
+    const known = discovered?.current?.find(item => item.accession === filing.accession);
+    await requestFilingMaterial(materialEnv, {
+      ticker, accession: filing.accession, cik: filing.cik ?? filing.url.match(/\/data\/(\d+)\//)?.[1]?.padStart(10, "0") ?? "",
+      form: known?.form ?? filing.form, filedAt: known?.filingDate ?? filing.filedAt, reportDate: known?.reportDate ?? filing.reportDate ?? "", companyName: discovered?.name ?? ticker,
+      primaryDocument: fileOf(filing.url), documentUrl: filing.url,
+      indexUrl: `${filing.url.slice(0, filing.url.lastIndexOf("/") + 1)}${filing.accession}-index.htm`,
+    });
+    throw new Error("FILING_MATERIAL_PENDING");
+  };
   return withFilingStructure(reader, env.DB);
 }
 

@@ -150,7 +150,7 @@ export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
     if (blocks.filter(b => b.kind === "figures").length > 1) errors.push("document: one figures block at most; it already lists every figure of the evidence");
     const quotes = blocks.flatMap(b => b.kind === "quote" ? [state.materials.find(m => m.id === b.materialId)] : []);
     if (input.quoteFiling && !quotes.some(m => m?.kind === "sec")) errors.push("document: quote at least one filing material (m<n>) word for word");
-    if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_section with previous: true)");
+    if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_filing_markdown with the earlier accession)");
     for (const line of input.check?.(finding) ?? []) errors.push(line);
     state.draft = { finding, errors };
     if (errors.length && ++state.rejected > REPAIR_ROUNDS) { state.withheld = true; return `errors (${errors.length}):\n  ${errors.join("\n  ")}\nNo repair is left: the analysis is withheld.`; }

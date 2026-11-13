@@ -242,7 +242,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
     try {
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
-      const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
+      const contents = await readFilingDocuments(document.url, reader, document.accession, document.form, { filedAt: document.filedAt, reportDate: document.periodEnd, cik: target.cik });
       // A 6-K notice (monthly revenue, board, dividend) is archived but neither parsed, counted nor reported as an issue.
       if (!reportsFinancials(document.form, contents[0].html)) {
         await reader.archive?.({url: contents[0].url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry}, contents[0].html, {form: document.form, reportDate: document.periodEnd});
@@ -341,7 +341,7 @@ export async function rereadHistoryFiling(db: D1Database, reader: SecReader, tar
     const listing = await listDocuments(target.cik, reader, now);
     const document = listing.documents.find(d => d.accession === accession);
     if (!document) throw new Error('FILING_NOT_IN_HISTORY_WINDOW');
-    const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
+    const contents = await readFilingDocuments(document.url, reader, document.accession, document.form, { filedAt: document.filedAt, reportDate: document.periodEnd, cik: target.cik });
     if (!reportsFinancials(document.form, contents[0].html)) return {accession, form: document.form, filedAt: document.filedAt, replaced: [], quarters: [], issues: [`${accession}:NOT_A_FINANCIAL_REPORT`]};
     const verified = await readRevenueHistory(db, target.cik, target.ticker);
     await options.heartbeat?.();
@@ -355,7 +355,7 @@ export async function rereadHistoryFiling(db: D1Database, reader: SecReader, tar
   while (checkpoint.remaining.length && consumed < (options.maxDocuments ?? Infinity)) {
     const quarterly = checkpoint.remaining[0];
     await options.heartbeat?.();
-    const contents = await readFilingDocuments(quarterly.url, reader, quarterly.accession, quarterly.form);
+    const contents = await readFilingDocuments(quarterly.url, reader, quarterly.accession, quarterly.form, { filedAt: quarterly.filedAt, reportDate: quarterly.periodEnd, cik: target.cik });
     await options.heartbeat?.();
     const quarterlyRead = await readHistoryContents(contents, quarterly, reader, target.cik, checkpoint.industry);
     read.facts = uniqueFacts([...read.facts, ...quarterlyRead.facts]);

@@ -1,6 +1,6 @@
 import type { Feature, Layer } from "../../../../shared/analysis-contract/business-features.ts";
 import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
-import { archivedForm, reportedForm } from "./filing-forms.ts";
+import { reportedForm } from "./filing-forms.ts";
 /**
  * The pipeline's event graph: the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
@@ -10,6 +10,7 @@ import { archivedForm, reportedForm } from "./filing-forms.ts";
 export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
+  "filing.material.requested", "filing.material.ready",
   "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "items.published",
@@ -23,7 +24,7 @@ export const EVENT_TYPES = [
 export type EventType = typeof EVENT_TYPES[number];
 
 export const TASK_NAMES = [
-  "collect", "history", "reproject", "maintenance", "transcript", "archive",
+  "collect", "history", "reproject", "maintenance", "transcript", "archive", "filing-material",
   "map-derive", "archive-prune", "archive-prune-scan",
   "fundamentals", "events", "extract",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "filing-analysis",
@@ -57,7 +58,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved", "content.published"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
   // Stores the current reports collection does not read (8-Ks without Item 2.02), so every filing the SEC report
   // analyses is in the archive (docs/sec-archive.md); no model.
-  "archive": { emits: ["filing.archived", "archive.superseded", "archive.unsupported"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
+  "archive": { emits: ["filing.material.requested"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
+  "filing-material": { emits: ["filing.material.ready"], debounceMs: SECOND, maxWaitMs: MINUTE, scope: "publication" },
   // Brings the company's quarterly revenue history up to date after a publication.
   "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
   // Re-projects archived filings whose capital projection predates the current version.
@@ -124,16 +126,11 @@ export const TASKS: Record<TaskName, TaskMeta> = {
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
 const PERIODIC = /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/;
-const earnings = (event: PipelineEvent) => /^8-K/.test(form(event)) && /(^|,)\s*2\.02\b/.test(event.detail?.items ?? "");
 
 export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => boolean };
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "content.published": [{ task: "translate" }],
   "filing.discovered": [
-    { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    // Every current report (and 40-F) is archived by its own task; collection stores only some of them, and a stored
-    // document is not downloaded again. The SEC report follows `filing.archived`.
-    { task: "archive", when: e => archivedForm(form(e)) },
     // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
     { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
@@ -142,15 +139,17 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "company.added": [{ task: "events" }, { task: "presentation" }],
   // A company's baseline lists current reports no `filing.discovered` announced.
   "archive.requested": [{ task: "archive" }],
+  "filing.material.requested": [{ task: "filing-material" }],
+  "filing.material.ready": [{ task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "collect", when: e => PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e)) },
+    { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "valuation" }],
   // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
-  // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
   "filing.archived": [{ task: "map-derive" },
-    { task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+    { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
-  "library.prepared": [{ task: "library-cards" }, { task: "filing-analysis" }, { task: "valuation" }],
+  "library.prepared": [{ task: "library-cards" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -196,6 +195,7 @@ export const SOURCES: Record<string, readonly EventType[]> = {
   "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
   "publication-store": ["content.published"],
+  "filing-material-store": ["filing.material.requested"],
 };
 
 /** Every problem with the graph: a subscription nobody can trigger, an unknown name, or a loop between tasks. */

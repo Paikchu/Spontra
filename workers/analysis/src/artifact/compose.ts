@@ -20,14 +20,16 @@ import { judge, JudgeUnavailable } from "./openai.ts";
  * document; the producer supplies what only it knows: how to read a source back, chart data, what publishing also
  * writes, and the URL that opens a draft in the real stage.
  */
+export type ComposerSettlement = "harness" | "agent";
 export type ComposerSetup<S extends { composer: ComposerState }> = {
   env: AnalysisEnv;
   /** A cited source's text read back, for the figure, quote and evidence checks. */
   read: (id: string, state: S) => Promise<{ title: string; text: string } | null>;
   chart?: { data: FindingData; periodEnd: string } | null;
   ledger: { ticker: string; runId?: string };
-  /** The session's turn budget; with fewer than six turns left the harness settles what is left. */
+  /** The session's turn budget; harness settlement begins with fewer than six turns left. */
   budgetTurns: number;
+  settlement?: ComposerSettlement;
   /** The producer's research tools, named in the instruction to find more material. */
   research: string[];
   /** The stage query that opens this artifact (e.g. "report=0001…" for a filing report), joined with the preview token. */
@@ -48,9 +50,9 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   find?(terms: string[], state: S): Promise<Array<{ id: string; title: string; text: string }>>;
 };
 
-/** A block is reviewed at most this many times; what is still open in it after the last is settled by the harness (§4.1). */
+/** Harness settlement begins after this many reviews of one block (§4.1). */
 const CONTENT_ROUNDS = 3;
-/** However the blocks are rewritten, a session's reviews end: after this many rounds every open block is settled. */
+/** Harness settlement begins after this many content rounds across the document. */
 const CONTENT_ROUNDS_ALL = 6;
 
 const ok = (observation: string) => ({ observation });
@@ -131,6 +133,10 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
 
   async function publish(state: S): Promise<Result> {
     const c = state.composer;
+    if (setup.settlement === "agent") {
+      const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout");
+      if (degraded.length) return fail(`Rewrite the degraded blocks before publishing: ${degraded.map(b => b.id).join(", ")}.`);
+    }
     const classes = c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes);
     const css = await compileArtifactCss(classes);
     const doc = toDocument(c, 0);
@@ -156,7 +162,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   async function settleContent(state: S, force: boolean): Promise<string[]> {
     const c = state.composer;
     const written = c.blocks.filter(b => b.state === "draft");
-    const advice: string[] = [];
+    const advice: string[] = [], unavailable: string[] = [];
     const reader: SourceReader = id => setup.read(id, state);
     const rounds = c.rounds ??= { content: 0, render: 0 };
     const passed = c.passed ??= {}, reviews = c.reviews ??= {};
@@ -176,6 +182,10 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     });
     const reviewed = await pool(drafts, 8, b => reviewBlock(setup.env, b, reader, ledger(state), context(b)).catch(() => null));
     drafts.forEach((b, i) => {
+      if (reviewed[i] === null && setup.settlement === "agent") {
+        unavailable.push(`Block "${b.id}": the evidence review was unavailable. Retry finish to complete its review.`);
+        return;
+      }
       // A review that could not run leaves the block as written: the write checks already held its figures and quotes.
       // Only major problems hold a block back; minor ones are passed on once as advice and the block stands.
       const issues = reviewed[i] ?? [];
@@ -197,7 +207,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content");
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
-      if (last(b) || step.level >= 5) {
+      if (setup.settlement !== "agent" && (last(b) || step.level >= 5)) {
         const { empty, ...settled } = conservativeBlock(b, issues);
         delete c.open[b.id];
         c.hidden = c.hidden.filter(h => h !== b.id);
@@ -216,7 +226,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       log(c, b.id, "content", step.level, issues.map(i => i.problem).join(" | "));
       notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.replacement ? ` Correction: ${/^delete\.?$/i.test(i.replacement) ? "remove the sentence" : i.replacement}` : i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
     }
-    return notes.length ? [...notes, ...advice] : [];
+    return notes.length || unavailable.length ? [...notes, ...unavailable, ...advice] : [];
   }
 
   async function settleRendering(state: S, force: boolean): Promise<string[]> {
@@ -229,6 +239,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       if (qa.unavailable) { await new Promise(resolve => setTimeout(resolve, 5000)); qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger); }
       await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", pass, { scores: qa.scores, unavailable: qa.unavailable, shots: qa.shots, covered: qa.covered ?? {}, issues: qa.issues, errors: qa.errors ?? [] });
       if (qa.unavailable) {
+        if (setup.settlement === "agent") return [`The rendering review was unavailable (${qa.unavailable}). Retry finish to complete the rendering checks.`];
         // Without a rendering to look at, every block takes the layout that is known to pass (§6.5).
         for (const b of c.blocks) if (b.state !== "safe-layout") { Object.assign(b, safeLayoutBlock(b)); log(c, b.id, "render", 4, `safe layout: review unavailable (${qa.unavailable})`); }
         return [];
@@ -248,7 +259,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       for (const [id, issues] of byBlock) {
         const b = block(state, id)!;
         const step = climb(c, `render:${id}`, issues);
-        if (force || step.level >= 3 || b.state === "safe-layout") {
+        if (setup.settlement !== "agent" && (force || step.level >= 3 || b.state === "safe-layout")) {
           if (b.state !== "safe-layout") { Object.assign(b, safeLayoutBlock(b)); settled = true; }
           delete c.open[id];
           log(c, id, "render", 4, `safe layout: ${issues.map(i => i.problem).join(" | ")}`);
@@ -266,7 +277,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   }
 
   // The harness settles what is left only when too few turns remain for another round of fixes (§6.4).
-  const lowBudget = (state: S) => state.composer.turns >= setup.budgetTurns - 6;
+  const lowBudget = (state: S) => setup.settlement !== "agent" && state.composer.turns >= setup.budgetTurns - 6;
 
   async function finish(state: S): Promise<Result> {
     const c = state.composer;
@@ -287,7 +298,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     }
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
-    if (content.length) return fail(`Not published yet. The evidence review found problems. A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted:\n\n${content.join("\n\n")}\n\nCall apply_fixes with no arguments to accept every correction at once, change what it could not apply with edit_block, then call finish again.`);
+    if (content.length) return fail(`Not published yet. The evidence review found problems. ${reviewInstructions(setup.settlement ?? "harness")}\n\n${content.join("\n\n")}\n\nCall apply_fixes with no arguments to accept every correction at once, change what it could not apply with edit_block, then call finish again.`);
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, change the layout with edit_block keeping the words exactly, then call finish again.`);
@@ -469,9 +480,10 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   ];
 }
 
-/** When a session ends without publishing, the harness delivers: open problems are settled by code and the result is published. */
+/** Producers that allow harness settlement can publish when their session ends without finishing. */
 export async function deliverComposer<S extends { composer: ComposerState }>(state: S, setup: ComposerSetup<S>): Promise<boolean> {
   if (state.composer.phase === "published" || !state.composer.blocks.length) return state.composer.phase === "published";
+  if (setup.settlement === "agent") return false;
   state.composer.turns = Number.MAX_SAFE_INTEGER;
   state.composer.settledBy = "harness";
   const finish = composerTools(setup).find(t => t.name === "finish")!;
@@ -488,11 +500,16 @@ async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R
 const blockTextOf = (html: string) => checkBlock(html, { sourceUrl: () => null, charts: new Set() }).text;
 
 /** What the composing session is told about the document it builds (docs/analysis-html-artifact.md §4). */
-export const COMPOSER_GUIDE = `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_blocks, edit_block, apply_fixes, remove_block, move_block, view_issue, contest_issue and finish. The document is a file you edit: write several blocks in one write_blocks call, and change a block that exists with edit_block rather than writing it again.
+const reviewInstructions = (settlement: ComposerSettlement) => settlement === "agent"
+  ? "Correct every unresolved major issue with the editing tools and call finish again. Publication waits for the required blocks, evidence checks and rendering checks; the harness does not fill missing blocks, remove unresolved sentences or replace the layout for you. Sentences the review let stand are not judged again, so change only what is faulted."
+  : `A block is reviewed ${CONTENT_ROUNDS} times at most, and after its last review the harness removes the sentences still open; sentences the review let stand are not judged again, so change only what is faulted.`;
+
+export const COMPOSER_GUIDE = composerGuide("harness");
+export function composerGuide(settlement: ComposerSettlement): string { return `You build the report as an HTML document of blocks, one block per section, with the tools outline, read_block, write_blocks, edit_block, apply_fixes, remove_block, move_block, view_issue, contest_issue and finish. The document is a file you edit: write several blocks in one write_blocks call, and change a block that exists with edit_block rather than writing it again.
 Markup: shadcn/ui data-display components, written as their HTML with data-slot and Tailwind classes. Use whatever makes the point clearest: headings (h2 for the block title, h3 inside), paragraphs, lists, tables (<div data-slot="table-container"><table data-slot="table"><thead data-slot="table-header"><tr data-slot="table-row"><th data-slot="table-head">…), charts (<figure data-chart="id"></figure> after add_chart), tabs (<div data-slot="tabs"><div data-slot="tabs-list"><button data-slot="tabs-trigger" data-value="a">…</button></div><div data-slot="tabs-content" data-value="a">…</div></div>), accordions (accordion, accordion-item, accordion-trigger as a button, accordion-content), collapsible, tooltip (<span data-slot="tooltip" data-content="plain text">term</span>), progress (<div data-slot="progress" data-value="62" data-max="100"></div>), badge, alert, item, card, separator.
 Classes: Tailwind utilities from the site theme only. Colours are theme names (foreground, muted-foreground, primary, border, card, muted, chart-1…chart-5, gain, loss, caution, brand, highlight); no palette colours and no arbitrary values in brackets. For responsive layout use container variants (@md:grid-cols-2), never sm:/md:/lg:; no dark: variants, no style attribute, no scripts.
 Layouts: where one fits, use a layout the theme styles at every width instead of arranging classes yourself — ${Object.entries(ARTIFACT_PATTERNS).map(([name, p]) => `${name}: ${p.markup}`).join("; ")}. A report reads best with its key figures in a metrics row near the top, figures compared in a compare table, and things to check as a qa list.
 Limits checked when a block is saved: an h2 under ${ARTIFACT_LAYOUT_LIMITS.headingChars} characters, at most ${ARTIFACT_LAYOUT_LIMITS.tableColumns} table columns, table cells under ${ARTIFACT_LAYOUT_LIMITS.cellChars} characters (prose goes in a qa list or paragraphs, not a table), at most ${ARTIFACT_LAYOUT_LIMITS.cards} cards and ${ARTIFACT_LAYOUT_LIMITS.badges} badges, no card inside a card.
 House style: a research report, not a dashboard, read in one column at most 760px wide and on phones. Tables are for figures and short labels; a comparison made in sentences reads better as a list or short headed paragraphs. Separate sections with headings, text, thin rules and space; use tables, charts, tabs and other components freely where they carry the content; avoid wrapping content in many rounded bordered boxes, decorative badges, gradients and colour fills; use the highlight colour sparingly and gain/loss only for direction.
 Evidence: every block cites the sources it rests on. Write figures as <data value="2876.8" data-ref="SOURCE_ID">$2,876.8m</data>, quotes as <blockquote data-source="SOURCE_ID">exact words</blockquote>, links as <a data-source="SOURCE_ID">text</a>. Write only what the material supports; where it does not settle a question, say what is not disclosed and what to look for next — that is part of the analysis.
-Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. Fix only the sentences it faults and call finish again: a block is reviewed ${CONTENT_ROUNDS} times at most, after which the harness removes the sentences still open, and sentences the review let stand are not judged again. When finish asks for a change of layout, keep the words exactly: the same words laid out again are not reviewed a second time.`;
+Plan the document before writing: a periodic report reads best in four to eight blocks. Write each block once, carefully, from material you have read in this session; when you are no longer sure of a figure or a name, read it again before writing it. Call finish as soon as every block is written, leaving turns for the fixes it may ask for: finish reviews all the blocks at once against their sources, which no tool does before it, and returns the problems that would mislead a reader, block by block. ${reviewInstructions(settlement)} When finish asks for a change of layout, keep the words exactly: the same words laid out again are not reviewed a second time.`; }

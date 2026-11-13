@@ -12,6 +12,22 @@ const COMPANY_FACTS_MAX_BYTES = 20_000_000;
 
 export type GatewayOptions = { fetcher?: typeof fetch; delayMs?: number };
 
+export type MaterialEdgarReader = {
+  index(cik: string, accession: string): Promise<string>;
+  submission(cik: string, accession: string): Promise<Uint8Array>;
+  document(url: string): Promise<Response>;
+};
+
+export function materialEdgarReader(userAgent: string, options: GatewayOptions = {}): MaterialEdgarReader {
+  const request = pacedEdgarRequest(userAgent, options);
+  const root = (cik: string, accession: string) => secArchiveRoot(Number(cik), accession);
+  return {
+    index: (cik, accession) => request(secArchiveDocumentUrl(root(cik, accession), `${accession}-index.htm`), "text/html").then(r => r.text()),
+    submission: (cik, accession) => request(secArchiveDocumentUrl(root(cik, accession), `${accession}.txt`), "text/plain", 60_000).then(async r => new Uint8Array(await r.arrayBuffer())),
+    document: url => request(url, "*/*", 60_000),
+  };
+}
+
 /** A paced EDGAR request: 403/429 is `SEC_ACCESS_PAUSED` (a wait, not a failure), any other error `SEC_SOURCE_UNAVAILABLE`. */
 export function pacedEdgarRequest(userAgent: string, options: GatewayOptions = {}): (url: string, accept?: string, timeoutMs?: number) => Promise<Response> {
   if (!userAgent.trim()) throw new Error("SEC contact user-agent is required");

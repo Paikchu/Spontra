@@ -54,8 +54,10 @@ export const PRESENTATION_TASKS = {
       const profile = await presentationProfile(db, cik);
       if (profile?.accession === line.accession && profile.judge_version === PRESENTATION_VERSION) return { status: "done", detail: { skipped: "this filing was judged", status: profile.status } };
       // The lineage filing is in the archive (the collector stored it); the reader downloads only when it is not.
-      const [document] = await readFilingDocuments(line.url, archivingReader({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker), line.accession);
       const source = newest!.sources.find(s => s.id === line.accession);
+      const form = /\b(?:10-Q|10-K|20-F|40-F|8-K|6-K)\b/.exec(source?.title ?? "")?.[0];
+      const [document] = await readFilingDocuments(line.url, archivingReader({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker), line.accession, form,
+        { filedAt: source?.publishedAt ?? newest!.reportedAt ?? "", reportDate: newest!.periodEnd, cik });
       const { facts } = readReportedFacts(document.html, { url: line.url, accession: line.accession, filedAt: source?.publishedAt ?? newest!.reportedAt ?? "", cik, industry: "standard" });
       const modelVersion = modelFor(env, "presentation");
       const model: JudgeModel = async (stage, system, payload) => {

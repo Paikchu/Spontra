@@ -26,7 +26,7 @@ export type LibraryCanonical = typeof LIBRARY_CANONICALS[number];
 export type LibraryFactRef = { at: number; concept: string; start?: number; end?: number; row?: number; col?: number };
 export type LibraryTableCell = { text: string; value: number | null };
 export type LibraryTableRow = { label: string; path: string[]; cells: LibraryTableCell[] };
-export type LibraryTable = { unit: string | null; columns: string[]; rows: LibraryTableRow[]; notes: string[]; xbrlBlock: string | null };
+export type LibraryTable = { rowHeader?: string; unit: string | null; columns: string[]; rows: LibraryTableRow[]; notes: string[]; xbrlBlock: string | null };
 
 export type LibrarySection = {
   sectionId: string; parentId: string | null; ordinal: number; depth: number; isLeaf: boolean;

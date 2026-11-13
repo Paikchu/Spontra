@@ -1,5 +1,7 @@
 # 文件分析统一路径设计
 
+2026-11-13 更新。当前材料路径见 [SEC 披露材料与表格](sec-materials.md)。本文中的章节读取与 research pack 流程保留为历史记录，不再作为新分析会话的前置依赖。
+
 日期：2026-11-09。状态：第 15 节的单会话版本取代了前文的逐节、校验和分期方案；前文保留作设计记录。
 
 前置文档：[spontra-architecture-upgrade](spontra-architecture-upgrade.md)（五层）、[sec-archive](sec-archive.md)（EDGAR 唯一入口）、[agent-sdk-pi-migration-checklist](agent-sdk-pi-migration-checklist.md)（迁移收尾；本文取代其中第 13–15 项）。

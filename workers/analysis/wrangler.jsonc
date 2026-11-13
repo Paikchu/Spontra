@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   // Stylesheets are bundled as text: analysis artifacts are compiled with the site's Tailwind theme (src/artifact/theme.ts),
   // and the browser checks inject axe-core into the rendered artifact.
-  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js"], "fallthrough": true }],
+  "rules": [{ "type": "Text", "globs": ["**/*.css", "**/axe.min.js", "**/pdfjs-source.txt"], "fallthrough": true }],
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "limits": { "cpu_ms": 300000 },

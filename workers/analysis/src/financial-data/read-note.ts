@@ -1,3 +1,4 @@
+import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { BusinessFlowQuarter, BusinessSegment, FlowAmount, FlowMetric } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { RevenueHistoryQuarter } from '../../../../shared/analysis-contract/revenue-history.ts';
 import { checkCompleteFlow } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -11,25 +12,21 @@ import {omit} from '../../../../shared/analysis-runtime/omit.ts';
  * columns code finds repeating an already published quarter against that quarter. The note carries places, signs and a quoted date,
  * never an amount, so a wrong note fails the check instead of publishing a wrong figure.
  */
-export const READ_NOTE_VERSION = 'read-note.v3';
+export const READ_NOTE_VERSION = 'read-note.material.v1';
 
 /** One table as text: each row's non-empty cells, a parenthesised negative closed into one cell. */
-type FilingTable = { id: number; url: string; rows: string[][] };
-export type FilingDocument = { url: string; html: string };
+export type FilingTable = { id: number; url: string; rows: string[][] };
 export type TablePlace = { table: number; unit: 'units' | 'thousands' | 'millions' | 'billions'; current: number };
 export type NoteItem = { slot: string; table: number; row: number; sign?: 1 | -1 };
 export type NewItem = { group: 'expense' | 'other' | 'afterTax' | 'segment'; name: string; table: number; row: number; sign?: 1 | -1 };
 export type ReadNote = { period: { end: string; quote: string } | null; tables: TablePlace[]; items: NoteItem[]; new?: NewItem[] };
-type NoteSource = { accession: string; url: string; filedAt: string; form: string };
+type NoteSource = { accession: string; url: string; filedAt: string; form: string; material?: MaterialRef };
 /** What a note is checked against: the published pair (newest first) and the revenue history. */
 type NoteContext = { tables: FilingTable[]; text: string; published: BusinessFlowQuarter[]; history: RevenueHistoryQuarter[]; source: NoteSource };
 
 const SCALE = { units: 1, thousands: 1e3, millions: 1e6, billions: 1e9 } as const;
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const DAY = 86_400_000;
-const clean = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10)))
-  .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&rsquo;|&lsquo;/gi, "'").replace(/&ldquo;|&rdquo;|&quot;/gi, '"')
-  .replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim();
 const nextDay = (date: string) => new Date(Date.parse(date) + DAY).toISOString().slice(0, 10);
 /** A printed amount: "1,203,855", "(10,496)", "—" (zero). Null for anything else. */
 export function printed(text: string): number | null {
@@ -44,26 +41,10 @@ const label = (row: string[]) => (row[0] && printed(row[0]) === null ? row[0] : 
 const amounts = (row: string[]) => row.slice(label(row) ? 1 : 0).map(printed).filter((n): n is number => n !== null);
 export const labelKey = (text: string) => text.normalize('NFKC').toLowerCase().replace(/\(\d{1,2}\)\s*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** Every table of the filing's documents, in filing order, with only the text a reader sees. */
-export function filingTables(documents: FilingDocument[]): FilingTable[] {
-  const tables: FilingTable[] = [];
-  for (const document of documents) for (const match of document.html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
-    const rows = [...match[0].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row => {
-      const cells: string[] = [];
-      for (const cell of row[1]!.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
-        const text = clean(cell[1]!);
-        if (!text || /^[$€£¥%]$/.test(text)) continue;
-        // "(10,496" and ")" printed in two cells are one negative amount.
-        if (/^\)%?$/.test(text) && cells.length) { cells[cells.length - 1] += ')'; continue; }
-        cells.push(text);
-      }
-      return cells;
-    }).filter(cells => cells.length);
-    if (rows.length) tables.push({ id: tables.length, url: document.url, rows });
-  }
-  return tables;
+export function materialTables(material: MaterialSnapshot): FilingTable[] {
+  return material.tables.map((asset, id) => ({ id, url: asset.sourceUrl,
+    rows: [["", ...asset.table.columns], ...asset.table.rows.map(row => [[...row.path, row.label].filter(Boolean).join(" › "), ...row.cells.map(cell => cell.text)])] }));
 }
-export const documentText = (documents: FilingDocument[]) => documents.map(d => clean(d.html.replace(/<(?:script|style)\b[\s\S]*?<\/(?:script|style)>/gi, ' ')).normalize('NFKC')).join(' ');
 
 /** Every amount already published, in units: the published pair's every line and the revenue history's revenue and segments. */
 function knownAmounts(context: Pick<NoteContext, 'published' | 'history'>): number[] {
@@ -421,11 +402,11 @@ export async function readWithNote(context: NoteContext, model: NoteModel, optio
   const tables = relevantTables(context.tables, context);
   if (!tables.length) return none({ attempts: 0, issues: [], nothing: true });
   const payload = {
-    filing: { form: context.source.form, accession: context.source.accession, filedAt: context.source.filedAt },
+    filing: { form: context.source.form, accession: context.source.accession, filedAt: context.source.filedAt, material: context.source.material },
     slots: slotsOf(newest), publishedQuarter: { start: newest.periodStart, end: newest.periodEnd, scale: newest.scale },
     known: [...context.published.map(q => ({ end: q.periodEnd, revenue: q.figures.revenue?.value ?? null, net: q.figures.net?.value ?? null, scale: q.scale })),
       ...context.history.slice(-8).map(q => ({ end: q.periodEnd, revenue: q.revenue, scale: q.scale }))],
-    tables: renderTables(tables), dateSentences: sentences,
+    tables: renderTables(tables), dateSentences: sentences, markdownDatePassages: sentences,
   };
   const history: Array<{ note: unknown; problems: string[] }> = [];
   let last: string[] = [];

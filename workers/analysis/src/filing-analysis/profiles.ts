@@ -14,11 +14,11 @@ const REPORT_SHAPE = "Write the report as a document of blocks and call finish. 
 const PROFILES: readonly FilingProfile[] = [
   {
     id: "periodic", match: form => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form), turns: 100, wallMs: 150 * MINUTE, reasoning: "high",
-    prompt: `The subject is a periodic report. The first message lists every section with how it changed against the earlier filing. Read the sections in batches with read_sections, the changed and new ones first, and read_previous when the earlier wording matters; you decide how far to go. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE} ${REPORT_EDITING}`,
+    prompt: `The subject is a periodic report. Read the fixed preprocessed Markdown with read_filing_markdown and the relevant standalone CSV tables with find_filing_tables and read_filing_table. Read earlier prepared material when comparison matters. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE} ${REPORT_EDITING}`,
   },
   {
-    id: "current", match: form => /^(?:8-K|6-K)(?:\/A)?$/.test(form), turns: 50, wallMs: 60 * MINUTE, reasoning: "high",
-    prompt: `The subject is a current report (8-K or 6-K). Read what it actually is and break it down accordingly. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE} ${REPORT_EDITING}`,
+    id: "current", match: form => /^(?:8-K|6-K)(?:\/A)?$/.test(form), turns: 100, wallMs: 60 * MINUTE, reasoning: "high",
+    prompt: `The subject is a current report (8-K or 6-K). Read its complete Markdown and exhibits with read_filing_markdown. Find and read the relevant archived CSV tables with find_filing_tables and read_filing_table. Break it down according to its actual contents. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE} ${REPORT_EDITING}`,
   },
 ];
 

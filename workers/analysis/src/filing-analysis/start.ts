@@ -1,27 +1,23 @@
 import { requireDb } from "../core.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
-import { listLibraryDocuments } from "../filing-library/store.ts";
+import { getFilingMaterial, readMaterialSnapshot, requestFilingMaterial } from "../filing-material/index.ts";
+import { filingMaterialMeta } from "../filing-material/read.ts";
+import type { MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import { jobAnalysisVersionFor, selectLatestWorkflowFilings, type AnalysisOperations } from "../workflow-core.ts";
 import { profileById, profileFor, type FilingProfile } from "./profiles.ts";
 import type { FilingSpec } from "./recipe.ts";
-import { dueFilings, leafSections, registerFilings, updateFiling, type FilingRow } from "./store.ts";
+import { dueFilings, registerFilings, updateFiling, type FilingRow } from "./store.ts";
 
-/** What the session opens with: the filing, and every section it can read. */
-async function opening(db: D1Database, filing: SecFiling, documentIds: string[], profile: FilingProfile, revise: boolean): Promise<string> {
-  const sections = await leafSections(db, documentIds);
-  // A periodic report opens on its research pack, which the session asks for itself; the outline here is by part only.
-  if (profile.id === "periodic") {
-    const parts = new Map<string, { sections: number; chars: number; changed: number }>();
-    for (const s of sections) { const top = s.path[0] ?? "(untitled)"; const p = parts.get(top) ?? { sections: 0, chars: 0, changed: 0 }; p.sections++; p.chars += s.chars; if (s.change !== "unchanged") p.changed++; parts.set(top, p); }
-    return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber },
-      parts: [...parts].map(([part, p]) => ({ part, sections: p.sections, chars: p.chars, sectionsChanged: p.changed })),
-      ...(revise ? { published: "A report on this filing is published and is the document you open on: outline lists its blocks, read_block shows one. Revise it, do not rewrite it. Your leads, notes and computed figures from the session that wrote it are carried (list_leads, read_evidence). Check what a reader would still find wrong or missing — blocks marked conservative or safe-layout were cut by the harness and need their gaps filled, open leads may now be answerable, a figure may deserve a chart — and change only that, with edit_block or write_blocks for a block that needs writing again. Leave every block you have no reason to change exactly as it is. Then call finish.", first: "Call outline." } : { first: "Call research_pack." }) });
-  }
-  return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form, filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
-    sections: sections.map(s => ({ id: s.sectionId, path: s.path.join(" › "), change: s.change, chars: s.chars })) });
+export function filingOpening(filing: SecFiling, material: MaterialSnapshot, revise: boolean): string {
+  return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form,
+    filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
+    material: material.ref, coverage: material.coverage, toc: material.toc,
+    tables: { count: material.tables.length, lookup: "Use find_filing_tables with a table name or content description, then read the returned tableId with read_filing_table." },
+    first: revise ? "Call outline to inspect the published report, then read_filing_markdown for the fixed material version." : "Call read_filing_markdown, then find_filing_tables and read_filing_table for the relevant CSV data.",
+    ...(revise ? { published: "Revise the existing report against this material version. Re-read every source that supports a changed block." } : {}) });
 }
 
 export type StartOptions = { requestedBy: "scheduled" | "manual"; accession?: string; runId?: string; /** A manual run on a published report revises it unless told to rewrite. */ mode?: "revise" | "rewrite" };
@@ -39,11 +35,14 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
   const runId = options.runId ?? `filings-${ticker}-${now.getTime()}`;
   const manual = options.requestedBy === "manual" ? options.accession ?? null : null;
   const operations = deps.operations ?? createAnalysisOperations(env, fetch, runId);
+  const repository = new D1SecRepository(db);
+  const requestKey = (accession: string) => `filing-material:analysis-request:v1:${ticker}:${accession}`;
   let filings: SecFiling[];
   if (manual) {
     const filing = await operations.loadFiling!(ticker, manual);
     if (!filing) throw new Error("Requested filing is no longer available");
     filings = [filing];
+    await repository.setCache(requestKey(manual), { filing, options }, at);
   } else {
     const found = await operations.discover(ticker);
     await operations.publishFeed(found.feed);
@@ -60,24 +59,35 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
   const byAccession = new Map(filings.map(f => [f.accessionNumber, f]));
   const result = { started: [] as string[], waiting: [] as string[] };
   const sessions = deps.sessions ?? filingSessions(env);
-  const start = async (row: FilingRow, profile: FilingProfile, filing: SecFiling, documentIds: string[]) => {
-    const sessionId = manual && options.runId ? options.runId : `${runId}-${row.accession}`;
+  const start = async (row: FilingRow, profile: FilingProfile, filing: SecFiling, material: MaterialSnapshot, request: StartOptions) => {
+    const sessionId = request.requestedBy === "manual" && request.runId ? request.runId : `${runId}-${row.accession}`;
     const jobVersion = jobAnalysisVersionFor(row.form);
     const jobId = `${ticker}:${row.accession}:${jobVersion}:${sessionId}`;
-    const published = options.mode === "revise" && profile.id === "periodic" && !!await db.prepare("SELECT 1 FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(`filing-report:${ticker}:${row.accession}`).first().catch(() => null);
-    const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: options.requestedBy, mode: published ? "revise" : "rewrite" };
+    const published = request.mode === "revise" && profile.id === "periodic" && !!await db.prepare("SELECT 1 FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(`filing-report:${ticker}:${row.accession}`).first().catch(() => null);
+    const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, mode: published ? "revise" : "rewrite" };
     await updateFiling(db, ticker, row.accession, { status: "running", reason: null, runId }, at);
-    await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: options.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
-    await sessions!.start(sessionId, "filing", spec, await opening(db, filing, documentIds, profile, published), `${sessionId}:report`);
+    await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: request.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
+    await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, published), `${sessionId}:report`);
+    await db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(requestKey(row.accession)).run();
     result.started.push(row.accession);
   };
   for (const row of due) {
-    const filing = byAccession.get(row.accession);
-    const documents = await listLibraryDocuments(db, { ticker, accessions: [row.accession], limit: 20 });
-    const ready = documents.filter(d => d.status === "ready");
-    if (documents.length && !ready.length) { await updateFiling(db, ticker, row.accession, { status: "failed", reason: "the library could not read this filing", runId }, at); continue; }
-    if (!filing || !ready.length) { await updateFiling(db, ticker, row.accession, { status: "waiting", reason: filing ? "waiting for the filing library" : "not in the company's filing list yet", runId }, at); result.waiting.push(row.accession); continue; }
-    try { await start(row, profileById(row.profile), filing, ready.map(d => d.documentId)); }
+    const pending = (await repository.getCache<{ filing: SecFiling; options: StartOptions }>(requestKey(row.accession)))?.payload;
+    const material = await getFilingMaterial(env, ticker, row.accession);
+    let filing = byAccession.get(row.accession) ?? pending?.filing;
+    if (!filing && material) {
+      const meta = material.filing;
+      filing = { ticker: meta.ticker, cik: meta.cik, cikNumber: Number(meta.cik), companyName: meta.companyName, form: meta.form,
+        filingDate: meta.filedAt, reportDate: meta.reportDate, accessionNumber: meta.accession, primaryDocument: meta.primaryDocument,
+        documentUrl: meta.documentUrl, indexUrl: meta.indexUrl, description: meta.form, items: "" };
+    }
+    if (!filing) { await updateFiling(db, ticker, row.accession, { status: "waiting", reason: "not in the company's filing list yet", runId }, at); result.waiting.push(row.accession); continue; }
+    if (material?.status !== "ready") {
+      if (!material) await requestFilingMaterial(env, filingMaterialMeta(filing));
+      await updateFiling(db, ticker, row.accession, { status: "waiting", reason: material?.status === "blocked" ? material.issues.join("; ") : "waiting for complete filing material", runId }, at);
+      result.waiting.push(row.accession); continue;
+    }
+    try { await start(row, profileById(row.profile), filing, await readMaterialSnapshot(env, material.ref), pending?.options ?? options); }
     catch (error) { await updateFiling(db, ticker, row.accession, { status: "failed", reason: error instanceof Error ? error.message : String(error), runId }, at); }
   }
   return result;

@@ -115,6 +115,7 @@ export const FINANCIAL_TASKS = {
         const collected = await collectNewFilings({ ...job, cursor: JSON.stringify({ readNotes: true, documents: listed.map(accession => ({ accession })) }) }, current,
           new D1CompleteStore(db, causeId), filings, (filing, published) => readNewFiling(db, reader, model, filing, { cik: job!.cik, ticker, published, history }, () => reserveReadNote(env, now)));
         const detail = { published: collected.published, reasons: collected.reasons, read: collected.read };
+        if (collected.reasons.includes("MATERIAL_PENDING")) return { status: "later", afterMs: MINUTE, detail };
         if (collected.reasons.includes("MODEL_BUDGET_SPENT")) { const tomorrow = new Date(now); tomorrow.setUTCHours(24, 5, 0, 0); return { status: "later", afterMs: tomorrow.getTime() - now.getTime(), detail }; }
         if (collected.reasons.includes("SOURCE_TEMPORARILY_UNAVAILABLE")) return { status: "later", afterMs: HOUR, detail };
         return { status: "done", detail };

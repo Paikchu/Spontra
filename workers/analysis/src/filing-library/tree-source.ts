@@ -1,77 +1,79 @@
 import { compactName } from "../../../../shared/analysis-runtime/business-tree.ts";
+import type { MaterialRef, MaterialSnapshot, MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { TreeFiling, TreeLibrary } from "../business-tree/agent.ts";
-import { rankPassages } from "./tool.ts";
-import { libraryOutline, librarySectionPassages } from "./store.ts";
+import { getFilingMaterial, listFilingMaterials, readMaterialSnapshot, requestFilingMaterial } from "../filing-material/index.ts";
+import { filingMaterialMeta, readFilingMarkdown, searchFilingMarkdown } from "../filing-material/read.ts";
+import { D1SecRepository } from "../sec/d1.ts";
+import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 
-const documentIdOf = async (url: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url)))].map(n => n.toString(16).padStart(2, "0")).join("");
-
-/** A section's title as a Markdown heading; a title the library numbered when it split a long section ("Our Company (2)") reads as the filing writes it. */
-const heading = (title: string | undefined) => title ? `## ${title.replace(/\s*\(\d+\)$/, "")}` : null;
-/** Passages in document order, each run from one section under that section's heading. */
-function withHeadings(passages: Array<{ sectionId: string; text: string }>, titles: Map<string, string>): string {
-  const out: string[] = [];
-  let section = "";
-  for (const p of passages) {
-    const head = p.sectionId !== section ? heading(titles.get(p.sectionId)) : null;
-    if (head) out.push(head);
-    section = p.sectionId;
-    out.push(p.text);
-  }
-  return out.join("\n\n");
-}
-
-/**
- * The business tree's view of the filing library: its filings, verbatim reads of them, and each business's own section of
- * the annual report. With `headings`, reads carry the filing's section headings, so a passage reads with the section it sits in.
- */
-export function treeLibrary(db: D1Database, ticker: string, flowFilings: TreeFiling[], options: { headings?: boolean } = {}): TreeLibrary {
-  const annual = async () => db.prepare(`SELECT document_id, document_url, form, filed_at FROM sec_documents WHERE ticker = ? AND status = 'ready' AND doc_type = 'primary'
-    AND form IN ('10-K', '20-F') ORDER BY filed_at DESC LIMIT 1`).bind(ticker).first<{ document_id: string; document_url: string; form: string; filed_at: string }>();
-  const ready = async (url: string) => {
-    const id = await documentIdOf(url);
-    return (await db.prepare("SELECT document_id FROM sec_documents WHERE document_id = ? AND ticker = ? AND status = 'ready'").bind(id, ticker).first<{ document_id: string }>())?.document_id ?? null;
+export function treeLibrary(env: AnalysisEnv, ticker: string, flowFilings: TreeFiling[], options: { headings?: boolean; pinKey?: string } = {}): TreeLibrary {
+  const snapshots = new Map<string, MaterialSnapshot>();
+  const load = async (state: MaterialState): Promise<MaterialSnapshot> => {
+    if (state.status !== "ready") throw new Error(`FILING_MATERIAL_PENDING: ${state.filing.accession}`);
+    const key = state.filing.documentUrl;
+    const held = snapshots.get(key);
+    if (held) return held;
+    let ref = state.ref;
+    if (options.pinKey) {
+      const pinKey = `reader-pin:material:${ticker}:${options.pinKey}:${state.filing.accession}`;
+      await env.DB!.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO NOTHING")
+        .bind(pinKey, JSON.stringify(ref), new Date().toISOString()).run();
+      const saved = await new D1SecRepository(env.DB!).getCache<MaterialRef>(pinKey);
+      if (!saved) throw new Error(`MATERIAL_PIN_MISSING: ${state.filing.accession}`);
+      ref = saved.payload;
+    }
+    const material = await readMaterialSnapshot(env, ref);
+    snapshots.set(key, material);
+    return material;
   };
-  const annualTitle = (form: string, filed: string) => `Form ${form} annual report (filed ${filed})`;
+  const ready = async (url: string) => {
+    const held = snapshots.get(url);
+    if (held) return held;
+    const compact = /\/(\d{18})\//.exec(url)?.[1];
+    if (!compact) return null;
+    const accession = `${compact.slice(0, 10)}-${compact.slice(10, 12)}-${compact.slice(12)}`;
+    const state = await getFilingMaterial(env, ticker, accession);
+    if (state) return load(state);
+    const filing = await createAnalysisOperations(env, fetch).loadFiling?.(ticker, accession);
+    if (!filing) return null;
+    await requestFilingMaterial(env, filingMaterialMeta(filing));
+    throw new Error(`FILING_MATERIAL_PENDING: ${accession}`);
+  };
+  const annual = async () => {
+    const found = (await listFilingMaterials(env, ticker)).filter(m => /^(?:10-K|20-F)(?:\/A)?$/.test(m.filing.form))
+      .sort((a, b) => b.filing.filedAt.localeCompare(a.filing.filedAt))[0];
+    if (found) return load(found);
+    const discovered = await createAnalysisOperations(env, fetch).discover(ticker);
+    const filing = discovered.filings.find(f => /^(?:10-K|20-F)$/.test(f.form));
+    if (!filing) return null;
+    await requestFilingMaterial(env, filingMaterialMeta(filing));
+    throw new Error(`FILING_MATERIAL_PENDING: ${filing.accessionNumber}`);
+  };
+  const read = async (material: MaterialSnapshot, terms: string[], maxChars: number) => {
+    const words = terms.map(word => word.toLowerCase());
+    let anchor: string | undefined;
+    for (const word of words) {
+      const found = await searchFilingMarkdown(env, material, { query: word, limit: 1 });
+      if (found.matches[0]) { anchor = found.matches[0].anchor; break; }
+    }
+    const page = await readFilingMarkdown(env, material, { ...(anchor ? { anchor } : {}), maxChars: Math.max(1000, maxChars) });
+    return `${page.text}\n\nMaterial ${material.ref.accession} version ${material.ref.version}. ${page.nextCursor ? `More content remains at cursor ${page.nextCursor}; narrow the terms to read other parts.` : "End of material."}`;
+  };
   return {
     async documents() {
       const latest = await annual();
-      const flow = [];
-      for (const f of flowFilings) if (await ready(f.url)) flow.push({ url: f.url, title: f.title, publishedAt: f.publishedAt });
-      return [...(latest ? [{ url: latest.document_url, title: annualTitle(latest.form, latest.filed_at), publishedAt: latest.filed_at ? `${latest.filed_at}T00:00:00.000Z` : null }] : []),
-        ...flow.filter(f => f.url !== latest?.document_url).slice(0, 2)];
+      const materials = latest ? [latest] : [];
+      for (const filing of flowFilings) { const material = await ready(filing.url); if (material && !materials.some(m => m.ref.accession === material.ref.accession)) materials.push(material); }
+      return materials.map(material => ({ url: material.filing.documentUrl, title: `${material.filing.form} filed ${material.filing.filedAt}`, publishedAt: `${material.filing.filedAt.slice(0, 10)}T00:00:00.000Z` }));
     },
-    async read(url, terms, maxChars) {
-      const id = await ready(url);
-      if (!id) return null;
-      const outline = await libraryOutline(db, id);
-      const passages = await librarySectionPassages(db, id, outline.filter(s => s.role !== "boilerplate").map(s => s.sectionId));
-      // A listed item reads with its lead-in: the short passage before it in the same section ("This segment primarily comprises:").
-      const at = new Map(passages.map((p, i) => [p.passageId, i]));
-      const kept = new Set<number>();
-      for (const p of rankPassages(passages, terms, maxChars)) {
-        const i = at.get(p.passageId)!, before = passages[i - 1];
-        if (before && before.sectionId === p.sectionId && before.kind === "paragraph" && before.text.length < 240) kept.add(i - 1);
-        kept.add(i);
-      }
-      const chosen = [...kept].sort((a, b) => a - b).map(i => passages[i]!);
-      return options.headings ? withHeadings(chosen, new Map(outline.map(s => [s.sectionId, s.title]))) : chosen.map(p => p.text).join("\n\n");
-    },
+    async read(url, terms, maxChars) { const material = await ready(url); return material ? read(material, terms, maxChars) : null; },
     async businessSection(names, maxChars) {
-      const latest = await annual();
-      if (!latest) return null;
-      const outline = (await libraryOutline(db, latest.document_id)).filter(s => s.canonical === "business");
-      if (!outline.length) return null;
-      const wanted = names.map(compactName).filter(n => n.length >= 3);
-      // The business's own heading, the deepest one that names it; otherwise the business item ranked by the business's names.
-      const match = outline.filter(s => wanted.some(n => compactName(s.title).includes(n))).sort((a, b) => a.depth - b.depth)[0];
-      const scope = match ? outline.filter(s => JSON.stringify(s.path).startsWith(JSON.stringify(match.path).slice(0, -1))) : outline;
-      const passages = await librarySectionPassages(db, latest.document_id, scope.map(s => s.sectionId));
-      const ranked = match && passages.reduce((n, p) => n + p.text.length, 0) <= maxChars ? passages : rankPassages(passages, names, maxChars);
-      // No passage naming the business: the business item from its start, which is where filings describe what they sell.
-      const kept = ranked.length ? ranked : rankPassages(passages, [], maxChars);
-      if (!kept.length) return null;
-      const text = options.headings ? withHeadings(kept, new Map(outline.map(s => [s.sectionId, s.title]))) : kept.map(p => p.text).join("\n\n");
-      return { url: latest.document_url, title: annualTitle(latest.form, latest.filed_at), text };
+      const material = await annual();
+      if (!material) return null;
+      const wanted = names.map(compactName).filter(name => name.length >= 3);
+      const selected = material.blocks.find(b => wanted.some(name => compactName(b.path.join(" ")).includes(name)));
+      return { url: material.filing.documentUrl, title: `${material.filing.form} annual report filed ${material.filing.filedAt}`,
+        text: await read(material, selected ? [selected.title] : names, maxChars) };
     },
   };
 }

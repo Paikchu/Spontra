@@ -1,3 +1,4 @@
+import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
 import { readStoredFindings } from "../findings/read.ts";
@@ -13,10 +14,9 @@ import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
 import { sha256 } from "../sha256.ts";
-import { libraryFindAcross, libraryRead } from "../filing-library/tool.ts";
-import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
+import { materialTools } from "../filing-material/tools.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { defineTool, type AnyTool } from "../tools/registry.ts";
+import { defineTool, type AnyTool, type ToolContext } from "../tools/registry.ts";
 import { readyTranscripts } from "../transcripts/library.ts";
 import type { SearchHit } from "../web-search/types.ts";
 import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
@@ -43,6 +43,7 @@ type GoingConcernAssessment = z.infer<typeof goingConcernSchema>;
 export type FrozenResearchSource = { sourceId: string; title: string; text: string; url: string; publishedAt: string; form: string; kind: "sec" | "web" };
 
 export type ValuationState = {
+  materialRefs?: Record<string, MaterialRef>;
   frozenSources?: FrozenResearchSource[];
   nearTermForecast?: { status: "unavailable"; reason: string } | { status: "available"; forecasts: Array<{ metric: string; periodStart: string; periodEnd: string; value: number; unit: string; basis: string; rationale: string; evidenceIds: string[] }> };
   input: ValuationInput;
@@ -80,7 +81,8 @@ export const factLine = (f: ValuationInput["facts"][number]) => `${f.id} | ${f.l
 /** Registers a passage once and returns its id: source identity plus content hash, so a re-split passage is new evidence. */
 async function registerEvidence(state: ValuationState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null, displayedExcerpt?: string): Promise<string> {
   const contentSha256 = await sha256(passage.text);
-  const excerpt = (displayedExcerpt ?? (passage.table ? renderTable(passage.table, []) : passage.text)).slice(0, READ_CHARS);
+  const content = displayedExcerpt ?? (passage.table ? renderTable(passage.table, []) : passage.text);
+  const excerpt = kind === "sec" ? passage.text : content.slice(0, READ_CHARS);
   const excerptSha256 = await sha256(excerpt);
   const evidenceId = `e${(await sha256(`${VALUATION_EVIDENCE_VERSION}|${kind}|${passage.documentId}|${passage.passageId}|${contentSha256}|${excerptSha256}`)).slice(0, 10)}`;
   if (!state.evidence.has(evidenceId)) {
@@ -456,38 +458,18 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
       }).join("\n\n"), observe: (_a, v) => v }),
     tool({ name: "read_financials", description: "The validated financial facts (ids, values, periods). Pass ids to read some, none to read all.", parameters: z.object({ ids: z.array(z.string()).max(40).optional() }), concurrencySafe: true,
       execute: ({ ids }, ctx) => { const facts = ctx.state.input.facts.filter(f => !ids?.length || ids.includes(f.id)); return facts.length ? facts.map(factLine).join("\n") : "No such facts."; }, observe: (_a, v) => v }),
-    tool({ name: "list_filings", description: "The filings this run may read, newest first.", parameters: z.object({}), concurrencySafe: true,
-      execute: (_a, ctx) => ctx.state.input.documents.map(d => `${d.form} filed ${d.filedAt} (report ${d.reportDate}) · documentId ${d.documentId}${d.docType !== "primary" ? ` · ${d.docType}` : ""}`).join("\n") || "No filings are available to read.", observe: (_a, v) => v }),
-    tool({ name: "find_filing_sections", description: "Find sections of the readable filings by question, keywords or canonical part (business, risk_factors, mdna, note, press_release...).", parameters: z.object({ question: z.string().max(300).optional(), keywords: z.string().max(200).optional(), canonical: z.string().max(40).optional() }), concurrencySafe: true,
-      execute: async (args, ctx) => {
-        if (ctx.state.used.finds >= RESEARCH_BUDGET.finds) throw new Error("no finds left; read what you found");
-        ctx.state.used.finds++;
-        const allowed = new Set(ctx.state.input.documents.map(d => d.documentId));
-        const found = await ctx.stage("find", () => libraryFindAcross(env, { tickers: [ctx.state.input.ticker], question: args.question, keywords: args.keywords, canonical: args.canonical as never, limit: 12 }));
-        const rows = found.found.filter(s => allowed.has(s.documentId)).slice(0, 8);
-        return rows.map(s => `${s.form} ${s.filedAt} · documentId ${s.documentId} · sectionId ${s.sectionId} · ${s.path.join(" › ")}${s.gist ? ` · ${s.gist.slice(0, 160)}` : ""}`).join("\n") || "No sections found in the readable filings; try other keywords or list_filings.";
-      }, observe: (_a, v) => v }),
-    tool({ name: "read_filing_section", description: "Read a section of a readable filing. Each passage becomes evidence [e…] a score or scenario may cite.", parameters: z.object({ documentId: z.string().max(80), sectionId: z.string().max(80).optional(), focus: z.array(z.string().max(60)).max(8).optional() }),
-      execute: async (args, ctx) => {
-        if (ctx.state.used.reads >= RESEARCH_BUDGET.reads) throw new Error("no filing reads left; score with the evidence you have");
-        if (!ctx.state.input.documents.some(d => d.documentId === args.documentId)) throw new Error("that documentId is not among this run's readable filings (list_filings)");
-        ctx.state.used.reads++;
-        const read = await ctx.stage("read", async () => {
-          const document = await readLibraryDocument(db, args.documentId);
-          if (!document || document.ticker !== ctx.state.input.ticker) return null;
-          const read = await libraryRead(db, { documentId: args.documentId, sectionId: args.sectionId, focus: args.focus, maxChars: READ_CHARS });
-          const full = await libraryPassages(db, read.passages.map(p => p.passageId));
-          return { passages: read.passages.map(p => { const row = full.find(f => f.passageId === p.passageId); return { passageId: p.passageId, documentId: args.documentId, title: `${document.ticker} ${document.form} ${document.reportDate}`, form: document.form, filedAt: document.filedAt, url: document.documentUrl, path: p.path.split(" › "), text: p.text,
-            table: row?.table ? { unit: row.table.unit, columns: row.table.columns, rows: row.table.rows.map(r => ({ label: r.label, cells: r.cells.map(c => ({ text: c.text, value: c.value })) })) } : null } satisfies FindingPassage; }), omitted: read.omitted };
-        });
-        if (!read) throw new Error("the filing could not be read");
-        const out: string[] = [];
-        for (const p of read.passages) {
-          const excerpt = (p.table ? renderTable(p.table, args.focus ?? []) : p.text).slice(0, READ_CHARS);
-          out.push(`[${await registerEvidence(ctx.state, p, "sec", null, excerpt)}] ${p.path.join(" › ")}\n${excerpt}`);
-        }
-        return out.join("\n\n") + (read.omitted ? `\n(${read.omitted} passages omitted; narrow with focus)` : "");
-      }, observe: (_a, v) => v }),
+    tool({ name: "list_filings", description: "The filing accessions this run may read, newest first. Read only their fixed prepared materials.", parameters: z.object({}), concurrencySafe: true,
+      execute: (_a, ctx) => JSON.stringify(ctx.state.input.documents.map(d => ({ accession: d.accession, form: d.form, filedAt: d.filedAt, reportDate: d.reportDate }))), observe: (_a, value) => value }),
+    ...materialTools<ValuationState>({ env, ticker: state => state.input.ticker, pins: state => state.materialRefs ??= {}, register: (state, passage) => registerEvidence(state, passage, "sec", null) })
+      .filter(material => material.name !== "list_filings")
+      .map(material => ({ ...material, execute: async (args: Record<string, unknown>, ctx: ToolContext<ValuationState>) => {
+        const accession = typeof args.accession === "string" ? args.accession : ctx.state.input.documents[0]?.accession;
+        if (!accession || !ctx.state.input.documents.some(d => d.accession === accession)) throw new Error("Choose an accession from this run's list_filings.");
+        const budget = material.name === "find_filing_tables" || material.name === "search_filing_markdown" ? "finds" : "reads";
+        if (ctx.state.used[budget] >= RESEARCH_BUDGET[budget]) throw new Error(`No filing ${budget} left; use the evidence already read.`);
+        ctx.state.used[budget]++;
+        return material.execute({ ...args, accession }, ctx);
+      } })),
     tool({ name: "read_transcript", description: "Read an earnings call around focus terms. The excerpt becomes evidence.", parameters: z.object({ transcriptId: z.string().max(80), focus: z.array(z.string().max(60)).min(1).max(8) }),
       execute: async (args, ctx) => {
         if (ctx.state.used.transcripts >= RESEARCH_BUDGET.transcripts) throw new Error("no transcript reads left");
@@ -643,7 +625,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "find_filing_sections", "read_filing_section", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

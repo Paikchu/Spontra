@@ -1,38 +1,30 @@
 import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
+import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { ValueUnit } from "../../../../shared/analysis-runtime/findings.ts";
 import { chartHeight, compilePoints, type PointSeries } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import { factText, periodText } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
-import { librarySectionPassages } from "../filing-library/store.ts";
-import type { AnalysisEnv } from "../operations.ts";
+import { readMaterialSnapshot, getFilingMaterial, listFilingMaterials, requestFilingMaterial } from "../filing-material/index.ts";
+import { readFilingMarkdown, findFilingTables, readFilingTable, searchFilingMarkdown, sourceText, filingMaterialMeta } from "../filing-material/read.ts";
+import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 import { handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { registerSource, type ComposerState } from "../artifact/document.ts";
-import { computedText, evaluate, factHistory, factLine, factSourceText, factsById, factsOfPassages, namesIn, queryFacts, renderPassage, type Computed } from "./facts.ts";
-import { buildPack, type Evidence, type Lead } from "./pack.ts";
-import { earlierReports, excerpts, grepPassages, sectionChanges, sectionVersions, transcripts, wordingDelta } from "./research.ts";
-import { sectionDocuments } from "./store.ts";
+import { computedText, evaluate, factLine, factSourceText, namesIn, type Computed, type StoredFact, type FactQuery } from "./facts.ts";
+import { excerpts, transcripts } from "./research.ts";
 
-/**
- * The tools of a periodic-report session (docs/filing-analysis-optimization.md §4.10, §4.11): the research pack, reading
- * by passage with each number's fact id, search across the company's filings, a section through its earlier versions,
- * facts and their history, arithmetic, earlier reports and calls, and the two ledgers the session keeps — leads and notes.
- */
+export type Evidence = { id: string; section: string; ordinal: number; statement: string; quote: string; facts: string[]; origin: "session" };
+export type Lead = { id: string; source: "session"; priority: "high" | "normal"; question: string; why: string; refs: string[];
+  verdict?: "highlight" | "risk" | "nothing unusual" | "open"; finding?: string; evidence?: string[] };
 export type PeriodicState = {
   leads: Lead[]; evidence: Evidence[]; computed: Record<string, Computed>;
-  /** Cited facts: what each stands for, read back for the checks. */
-  facts: Record<string, { text: string; value: number }>;
-  /** Earlier reports and calls read, by source id. */
-  texts: Record<string, string>;
-  packed?: boolean; coverage?: Record<string, unknown>;
-  /** Charts drawn from fact rows and computed results. */
-  charted?: string[];
+  facts: Record<string, { text: string; value: number }>; texts: Record<string, string>;
+  materials: MaterialRef[]; markdownRead: boolean; tablesFound: boolean; tablesRead: string[]; charted?: string[];
 };
-export const openPeriodic = (): PeriodicState => ({ leads: [], evidence: [], computed: {}, facts: {}, texts: {} });
+export const openPeriodic = (): PeriodicState => ({ leads: [], evidence: [], computed: {}, facts: {}, texts: {}, materials: [], markdownRead: false, tablesFound: false, tablesRead: [] });
 type State = { composer: ComposerState; read?: string[]; periodic?: PeriodicState };
-
 export const PERIODIC_BLOCKS = ["summary", "highlights", "risks", "overlooked", "versus-prior", "what-to-watch"] as const;
 const FACT_ID = /^f[0-9a-f]{14}$/;
 const ok = (observation: string): HandResult => ({ observation });
@@ -43,158 +35,169 @@ const str = (v: unknown) => typeof v === "string" ? v.trim() : typeof v === "num
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const strings = { type: "array", items: { type: "string" } };
 
-export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
-  tools: AnyTool<S>[];
-  resolve(id: string, state: S): Promise<boolean>;
+export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
+  tools: AnyTool<S>[]; resolve(id: string, state: S): Promise<boolean>;
   figure(id: string, state: S): Promise<number[] | null>;
   read(id: string, state: S): { title: string; text: string } | null;
-  precheck(state: S): string | null;
-  detail(state: S): Record<string, unknown>;
-  /** What every tool result ends with: where the two ledgers stand, so they are in view however much of the conversation was summarised (§4.3). */
-  standing(state: S): string;
+  precheck(state: S): string | null; detail(state: S): Record<string, unknown>; standing(state: S): string;
 } {
+  const { ticker, filing, snapshot } = deps;
   const db = deps.env.DB!;
-  const { ticker, filing } = deps;
   const accession = filing.accessionNumber;
   const p = (state: S) => state.periodic ??= openPeriodic();
-  const documents = async () => (await db.prepare("SELECT document_id FROM sec_documents WHERE ticker = ? AND accession_number = ? AND status = 'ready'").bind(ticker, accession).all<{ document_id: string }>()).results.map(r => r.document_id);
-  // ¶ numbers are the primary document's: the report itself, not the exhibits filed with it.
-  const primary = async () => (await db.prepare("SELECT document_id FROM sec_documents WHERE ticker = ? AND accession_number = ? AND status = 'ready' AND doc_type = 'primary' ORDER BY chars DESC LIMIT 1").bind(ticker, accession).first<{ document_id: string }>())?.document_id ?? null;
-  const publicUrl = /^https:\/\//.test(filing.indexUrl) ? filing.indexUrl : null;
-
-  /** The sections asked for that belong to this company, with the filing each is from. */
-  const sectionsOf = async (ids: string[]) => {
-    if (!ids.length) return [];
-    const rows = await db.prepare(`SELECT s.section_id, s.document_id, s.path, d.accession_number, d.form, d.report_date, d.filed_at FROM sec_sections s JOIN sec_documents d ON d.document_id = s.document_id
-      WHERE d.ticker = ? AND s.section_id IN (SELECT value FROM json_each(?))`).bind(ticker, JSON.stringify(ids)).all<{ section_id: string; document_id: string; path: string; accession_number: string; form: string; report_date: string; filed_at: string }>();
-    const found = new Map(rows.results.map(r => [r.section_id, r]));
-    return ids.flatMap(id => found.has(id) ? [found.get(id)!] : []);
+  const snapshots = new Map<string, MaterialSnapshot>();
+  const indexedFacts = new Map<string, StoredFact & { form: string; filedAt: string }>();
+  const addSnapshot = (material: MaterialSnapshot) => {
+    snapshots.set(material.ref.accession, material);
+    const documentOf = new Map(material.blocks.map(block => [block.id, block.documentId]));
+    for (const fact of material.facts) indexedFacts.set(fact.factId, { ...fact, documentId: documentOf.get(fact.passageId) ?? "", form: material.filing.form, filedAt: material.filing.filedAt });
   };
-  const register = (state: S, s: { section_id: string; accession_number: string; form: string; report_date: string; filed_at: string; path: string }) => {
-    const own = s.accession_number === accession;
-    registerSource(state.composer, s.section_id, { title: `${s.form} ${s.report_date || s.filed_at}${own ? "" : " (earlier filing)"}, ${(JSON.parse(s.path) as string[]).slice(-2).join(" › ")}`, url: own ? publicUrl : null, kind: "sec" });
-    if (own) state.read = [...new Set([...(state.read ?? []), s.section_id])];
+  addSnapshot(snapshot);
+  const restore = async (state: S) => {
+    for (const ref of p(state).materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
+  };
+  const allFacts = () => [...indexedFacts.values()];
+  const factsById = async (_db: D1Database, ids: string[]) => ids.flatMap(id => { const fact = indexedFacts.get(id); return fact ? [fact] : []; });
+  const remember = (state: S) => { p(state).materials = [...new Map([...p(state).materials, ...[...snapshots.values()].map(material => material.ref)].map(ref => [`${ref.accession}:${ref.version}`, ref])).values()]; };
+  const documents = async () => snapshot.documents.map(d => d.id);
+  const queryFacts = async (_db: D1Database, q: FactQuery) => snapshot.facts.filter(f =>
+    (!q.label || q.label.toLowerCase().split(/\s+/).every(w => `${f.label} ${f.concept ?? ""}`.toLowerCase().includes(w))) &&
+    (!q.periodEnd || f.periodEnd === q.periodEnd) && (q.months === undefined || f.periodMonths === q.months) &&
+    (!q.section || f.sectionId === q.section || f.passageId === q.section))
+    .map(f => indexedFacts.get(f.factId)!);
+  const history = async (state: S) => {
+    await restore(state);
+    for (const material of await listFilingMaterials(deps.env, ticker)) if (material.status === "ready" && material.filing.filedAt <= filing.filingDate && !snapshots.has(material.ref.accession)) {
+      addSnapshot(await readMaterialSnapshot(deps.env, material.ref));
+    }
+    remember(state);
+  };
+  const factHistory = async (_db: D1Database, _ticker: string, fact: StoredFact, periods: number, state: S) => {
+    await history(state);
+    const seen = new Set<string>();
+    return allFacts().filter(f => f.concept === fact.concept && f.dimensions === fact.dimensions && f.periodMonths === fact.periodMonths && f.periodEnd && f.periodEnd <= (fact.periodEnd ?? "9999"))
+      .sort((a, b) => (b.periodEnd ?? "").localeCompare(a.periodEnd ?? "") || b.filedAt.localeCompare(a.filedAt))
+      .filter(f => !seen.has(f.periodEnd!) && !!seen.add(f.periodEnd!)).slice(0, periods);
+  };
+  const pick = async (wanted: string, state: S): Promise<MaterialSnapshot> => {
+    await restore(state);
+    const key = wanted || accession;
+    if (!snapshots.has(key)) {
+      const material = await getFilingMaterial(deps.env, ticker, key);
+      if (material?.status !== "ready") {
+        const other = await createAnalysisOperations(deps.env, fetch, deps.runId).loadFiling?.(ticker, key);
+        if (other) await requestFilingMaterial(deps.env, filingMaterialMeta(other));
+        throw new Error(`FILING_MATERIAL_PENDING: ${key}. Its complete material must be prepared before it can be read.`);
+      }
+      addSnapshot(await readMaterialSnapshot(deps.env, material.ref));
+    }
+    const found = snapshots.get(key)!;
+    if (!p(state).materials.some(r => r.accession === found.ref.accession && r.version === found.ref.version)) p(state).materials.push(found.ref);
+    return found;
   };
   const resolve = async (id: string, state: S): Promise<boolean> => {
-    // A source carried over from a published report is known by name but may not be held yet: a fact or a paragraph is read again.
-    const held = p(state).facts[id] !== undefined || p(state).texts[id] !== undefined;
-    if (state.composer.sources[id] !== undefined && (held || !(FACT_ID.test(id) || /#\d+$/.test(id)))) return true;
-    if (FACT_ID.test(id)) {
-      const [fact] = await factsById(db, [id]);
-      if (!fact) return false;
-      p(state).facts[id] = { text: factSourceText(fact), value: fact.value };
-      registerSource(state.composer, id, { title: `${fact.label}, ${periodText(fact)}`, url: publicUrl, kind: "data" });
+    const s = p(state);
+    if (s.facts[id] !== undefined || s.texts[id] !== undefined || s.computed[id] !== undefined) return true;
+    for (const ref of s.materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
+    for (const material of snapshots.values()) {
+      const found = await sourceText(deps.env, material, id);
+      if (!found) continue;
+      s.texts[id] = found.text;
+      if (found.exact !== undefined) s.facts[id] = { text: found.text, value: found.exact };
+      registerSource(state.composer, id, { title: found.title, url: found.url, kind: found.exact === undefined ? "sec" : "data" });
+      if (material.ref.accession === accession) state.read = [...new Set([...(state.read ?? []), id])];
       return true;
     }
-    // One paragraph of a section, cited as SECTION#¶ (§4.4): the claim is then checked against that paragraph alone.
-    const part = /^(.+)#(\d+)$/.exec(id);
-    if (part) {
-      const [section] = await sectionsOf([part[1]!]);
-      const passage = section ? (await librarySectionPassages(db, section.document_id, [section.section_id])).find(x => x.ordinal === Number(part[2])) : null;
-      if (!section || !passage) return false;
-      const own = section.accession_number === accession;
-      p(state).texts[id] = passage.text;
-      registerSource(state.composer, id, { title: `${section.form} ${section.report_date || section.filed_at}${own ? "" : " (earlier filing)"}, ${(JSON.parse(section.path) as string[]).slice(-2).join(" › ")}, ¶${passage.ordinal}`, url: own ? publicUrl : null, kind: "sec" });
-      if (own) state.read = [...new Set([...(state.read ?? []), section.section_id])];
-      return true;
-    }
-    // A section the pack or a search named, cited without a read of its own.
-    const [section] = await sectionsOf([id]);
-    if (!section) return false;
-    register(state, section);
-    return true;
+    return false;
   };
   const valueOf = async (name: string, state: S): Promise<number | undefined> => {
     const s = p(state);
     if (s.computed[name]) return s.computed[name]!.value;
     if (s.facts[name]) return s.facts[name]!.value;
-    if (!FACT_ID.test(name) || !await resolve(name, state)) return undefined;
+    if (!await resolve(name, state)) return undefined;
     return p(state).facts[name]?.value;
   };
-  const sectionText = async (sectionId: string) => {
-    const [pair] = await sectionDocuments(db, [sectionId]);
-    return pair ? (await librarySectionPassages(db, pair[1], [sectionId])).map(x => x.text).join("\n\n") : null;
+  const sectionText = async (id: string) => {
+    for (const material of snapshots.values()) {
+      const source = await sourceText(deps.env, material, id);
+      if (source) return source.text;
+    }
+    return null;
   };
   const leadLine = (l: Lead) => `${l.id} [${l.priority}, ${l.source}${l.verdict ? `, ${l.verdict}` : ", not closed"}] ${l.question}${l.finding ? ` → ${l.finding}` : ""}`;
-
   const tools: AnyTool<S>[] = [
-    handTool<S>({ name: "research_pack", description: "The pack prepared for this filing: leads, the figures that moved most, the wording that changed against the earlier filing, what the last report said to watch, the notes on file, and what else can be read. Call it first; it takes a few minutes the first time.", input_schema: object({}) },
-      async (_args, state) => {
-        const s = p(state);
-        if (s.packed) return ok(`The pack was already given. Leads:\n${s.leads.map(leadLine).join("\n")}\nNotes on file: ${s.evidence.length} (read_evidence).`);
-        const document = await primary();
-        if (!document) return fail("The library holds no readable primary document for this filing.");
-        const pack = await buildPack(deps.env, { ticker, filing, documents: [document], runId: deps.runId, ...(deps.flags ? { flags: deps.flags } : {}) });
-        s.leads = pack.leads; s.evidence = pack.evidence; s.coverage = pack.coverage; s.packed = true;
-        for (const section of await sectionsOf(pack.sections)) register(state, section);
-        return ok(pack.text);
-      }),
-    handTool<S>({ name: "read_sections", description: "Read this filing or an earlier one. Give paragraphs, a list of ¶ numbers of this filing (as the pack and grep give them), to read those paragraphs with the ones around them; or sectionIds, to read whole sections of any of the company's filings. Each paragraph is numbered ¶n; a table shows its merged columns with their periods and each number's fact id (f…). from and to narrow a section to a range of ¶ numbers. Each section read becomes a source a block can cite by its id, shown as [source …]; cite one paragraph of it as SECTION_ID#n (n the ¶ number), which is checked against that paragraph alone and is the better citation. Several reads sent in one turn run together.",
-      input_schema: object({ paragraphs: { type: "array", items: { type: "number" } }, sectionIds: strings, from: { type: "number" }, to: { type: "number" } }) },
+    handTool<S>({ name: "read_filing_markdown", description: "Read the complete preprocessed filing and all its exhibits at the session's fixed material version. Use an anchor or continue with nextCursor. Each returned block is a source id. accession reads a prepared earlier filing; no accession reads this filing.",
+      input_schema: object({ accession: { type: "string" }, anchor: { type: "string" }, cursor: { type: "string" }, maxChars: { type: "number" } }) },
       async (args, state) => {
-        const wanted = list(args.paragraphs).map(v => Number(String(v).replace(/[^\d]/g, ""))).filter(Number.isInteger).slice(0, 40);
-        if (wanted.length) {
-          const document = await primary();
-          if (!document) return fail("The library holds no readable primary document for this filing.");
-          const near = [...new Set(wanted.flatMap(n => [n - 1, n, n + 1]))].filter(n => n >= 0);
-          const rows = await db.prepare("SELECT section_id FROM sec_passages WHERE document_id = ? AND ordinal IN (SELECT value FROM json_each(?)) GROUP BY section_id").bind(document, JSON.stringify(near)).all<{ section_id: string }>();
-          const out: string[] = [];
-          for (const s of await sectionsOf(rows.results.map(r => r.section_id))) {
-            register(state, s);
-            const passages = (await librarySectionPassages(db, s.document_id, [s.section_id])).filter(x => near.includes(x.ordinal));
-            const facts = await factsOfPassages(db, passages.map(x => x.passageId));
-            out.push(`## ${(JSON.parse(s.path) as string[]).join(" › ")} [source ${s.section_id}]\n${passages.map(x => renderPassage(x, facts.get(x.passageId) ?? [])).join("\n\n")}`);
-          }
-          return out.length ? ok(out.join("\n\n")) : fail("No such paragraph in this filing.");
+        const material = await pick(str(args.accession), state);
+        const page = await readFilingMarkdown(deps.env, material, { ...(str(args.anchor) ? { anchor: str(args.anchor) } : {}), ...(str(args.cursor) ? { cursor: str(args.cursor) } : {}), ...(Number(args.maxChars) > 0 ? { maxChars: Math.min(48_000, Number(args.maxChars)) } : {}) });
+        for (const id of page.blockIds) await resolve(id, state);
+        if (material.ref.accession === accession) p(state).markdownRead = true;
+        return ok(`${JSON.stringify({ material: page.ref, nextCursor: page.nextCursor, sources: page.blockIds })}\n\n${page.text}`);
+      }),
+    handTool<S>({ name: "find_filing_tables", description: "Find the filing's standalone CSV tables by title or description. Each result names a tableId, contents, periods and source. Read the needed tables with read_filing_table.",
+      input_schema: object({ accession: { type: "string" }, name: { type: "string" }, description: { type: "string" }, cursor: { type: "string" } }) },
+      async (args, state) => {
+        const material = await pick(str(args.accession), state);
+        const found = findFilingTables(material, { name: str(args.name), description: str(args.description), cursor: str(args.cursor) || undefined });
+        if (material.ref.accession === accession) p(state).tablesFound = true;
+        return ok(JSON.stringify({ ref: material.ref, tables: found.tables.map(t => ({ tableId: t.tableId, name: t.title, description: t.description, filename: t.filename, unit: t.table.unit, reportDate: t.reportDate, source: t.sourceUrl })), nextCursor: found.nextCursor }));
+      }),
+    handTool<S>({ name: "read_filing_table", description: "Read an archived CSV table with units, periods, notes, source and the fact ids used by compute. Continue with nextCursor for every row. The CSV and its source metadata belong to the same fixed material version.",
+      input_schema: object({ accession: { type: "string" }, tableId: { type: "string" }, cursor: { type: "string" }, rows: { type: "number" } }, ["tableId"]) },
+      async (args, state) => {
+        const material = await pick(str(args.accession), state);
+        const start = Number(str(args.cursor) || 0), rows = Number(args.rows) > 0 ? Math.min(40, Number(args.rows)) : 40;
+        const result = readFilingTable(material, str(args.tableId), { cursor: str(args.cursor) || undefined, rows });
+        const block = material.blocks.find(b => b.tableId === result.table.tableId);
+        if (block) await resolve(block.id, state);
+        await resolve(result.table.tableId, state);
+        const end = result.nextCursor === null ? result.table.table.rows.length : Number(result.nextCursor);
+        const facts = material.facts.filter(f => (f.passageId === block?.id || f.passageId === result.table.tableId) && (f.row === null || (f.row >= start && f.row < end)));
+        for (const fact of facts) await resolve(fact.factId, state);
+        if (material.ref.accession === accession) p(state).tablesRead = [...new Set([...p(state).tablesRead, result.table.tableId])];
+        return ok(`${JSON.stringify({ ref: result.ref, tableId: result.table.tableId, filename: result.table.filename, description: result.table.description, unit: result.table.table.unit, notes: result.table.table.notes, source: result.table.sourceUrl, nextCursor: result.nextCursor })}\n\n${result.csv}\n\n${facts.map(f => `${f.factId} row ${f.row} col ${f.col} = ${f.value} ${f.unit}`).join("\n")}`);
+      }),
+    handTool<S>({ name: "grep", description: "Search the fixed filing Markdown by words or phrases. Returns block anchors to read with read_filing_markdown. scope earlier or all searches prepared earlier materials too.",
+      input_schema: object({ terms: strings, scope: { type: "string", enum: ["filing", "earlier", "all"] }, cursor: { type: "string" } }, ["terms"]) },
+      async (args, state) => {
+        const terms = list(args.terms).map(v => String(v).toLowerCase()), scope = str(args.scope) || "filing";
+        if (scope !== "filing") await history(state);
+        const materials = [...snapshots.values()].filter(m => scope === "filing" ? m.ref.accession === accession : scope === "earlier" ? m.ref.accession !== accession : true);
+        const cursor = str(args.cursor) || "0:0";
+        const parts = /^(\d+):(\d+)$/.exec(cursor);
+        if (!parts) return fail("Use the previous grep result's nextCursor.");
+        let index = Number(parts[1]), blockCursor = parts[2]!;
+        const matches: Array<{ accession: string; version: string; anchor: string; title: string; chars: number }> = [];
+        for (; index < materials.length; index++) {
+          const material = materials[index]!;
+          const found = await searchFilingMarkdown(deps.env, material, { query: terms.join(" "), cursor: blockCursor, limit: 20 - matches.length });
+          matches.push(...found.matches.map(match => ({ accession: material.ref.accession, version: material.ref.version, ...match })));
+          if (found.nextCursor) return ok(JSON.stringify({ matches, nextCursor: `${index}:${found.nextCursor}` }));
+          if (matches.length === 20) return ok(JSON.stringify({ matches, nextCursor: index + 1 < materials.length ? `${index + 1}:0` : null }));
+          blockCursor = "0";
         }
-        const sections = await sectionsOf(list(args.sectionIds).map(String));
-        if (!sections.length) return fail("Give paragraphs (¶ numbers of this filing) or sectionIds; ids come from the pack, grep and section_history.");
-        const from = Number(args.from), to = Number(args.to);
-        const out: string[] = [];
-        for (const s of sections) {
-          register(state, s);
-          const passages = (await librarySectionPassages(db, s.document_id, [s.section_id])).filter(x => (!Number.isFinite(from) || x.ordinal >= from) && (!Number.isFinite(to) || x.ordinal <= to));
-          const facts = await factsOfPassages(db, passages.map(x => x.passageId));
-          out.push(`## ${(JSON.parse(s.path) as string[]).join(" › ")} — ${s.form} ${s.report_date || s.filed_at} [source ${s.section_id}]\n${passages.map(x => renderPassage(x, facts.get(x.passageId) ?? [])).join("\n\n") || "(no text)"}`);
-        }
-        return ok(out.join("\n\n"));
+        return ok(JSON.stringify({ matches, nextCursor: null }));
       }),
-    handTool<S>({ name: "grep", description: "Find passages holding every one of up to four terms (plain words or phrases, case ignored). scope: \"filing\" (this filing, the default), \"earlier\" (the company's earlier periodic reports) or \"all\". Returns the section id, the ¶ number and the words around the first term; read the passage with read_sections.",
-      input_schema: object({ terms: strings, scope: { type: "string", enum: ["filing", "earlier", "all"] } }, ["terms"]) },
-      async (args) => {
-        const terms = list(args.terms).map(String);
-        const scope = str(args.scope) || "filing";
-        const own = await documents();
-        const found = await grepPassages(db, ticker, terms, scope === "filing" ? { documents: own, limit: 20 } : { limit: 30 });
-        const kept = scope === "earlier" ? found.filter(f => !own.includes(f.documentId)) : found;
-        return ok(kept.length ? kept.map(f => `${f.form} ${f.reportDate || f.filedAt} · ${f.sectionId} ¶${f.ordinal} · ${f.path}\n  ${f.snippet}`).join("\n") : `Nothing holds ${terms.map(t => `"${t}"`).join(" and ")}${scope === "filing" ? " in this filing; try fewer terms or scope \"all\"" : ""}.`);
-      }),
-    handTool<S>({ name: "section_history", description: "One section of this filing through the filings before it: each earlier version (readable by its id with read_sections) and, against the one just before, the paragraphs added, removed and rewritten.",
-      input_schema: object({ sectionId: { type: "string" }, filings: { type: "number" } }, ["sectionId"]) },
-      async (args) => {
-        const versions = await sectionVersions(db, str(args.sectionId), Math.min(8, Math.max(2, Number(args.filings) || 4)));
-        if (!versions.length) return fail("No such section.");
-        const lines = versions.map(v => `${v.form} ${v.reportDate || v.filedAt}: ${v.sectionId}, ${v.chars} characters, ${v.change} against the one before`);
-        if (versions.length < 2) return ok(`${lines.join("\n")}\nThe earlier filing has no section under this heading.`);
-        const changes = await sectionChanges(db, versions[0]!.sectionId, versions[1]!.sectionId);
-        const shown = changes.slice(0, 30).map(c => c.kind === "rewritten" ? (() => { const d = wordingDelta(c.before ?? "", c.text); return `rewritten ¶${c.ordinal}\n  now: ${d.came || "(only figures changed)"}\n  was: ${d.gone || "(only figures changed)"}`; })() : `${c.kind} ¶${c.ordinal}: ${c.text.slice(0, 500)}`);
-        return ok(`${lines.join("\n")}\n\nAgainst ${versions[1]!.form} ${versions[1]!.reportDate || versions[1]!.filedAt}:\n${shown.join("\n") || "The paragraphs are the same; only tables differ."}${changes.length > 30 ? `\n(${changes.length - 30} more)` : ""}`);
-      }),
+    handTool<S>({ name: "filing_history", description: "List prepared earlier filing materials and their immutable versions for comparisons. Read one with read_filing_markdown and its accession.", input_schema: object({}) },
+      async (_args, state) => { await history(state); return ok(JSON.stringify([...snapshots.values()].filter(m => m.ref.accession !== accession).map(m => ({ material: m.ref, form: m.filing.form, filedAt: m.filing.filedAt, reportDate: m.filing.reportDate, toc: m.toc })))); }),
     handTool<S>({ name: "query_facts", description: "Find figures of this filing by what they are: words of the row label or XBRL concept, a period end (YYYY-MM-DD), the months a flow covers (3, 9, 12; 0 for a balance), or a section. Each line gives the fact id, label, value, period and how the filing prints it.",
-      input_schema: object({ label: { type: "string" }, periodEnd: { type: "string" }, months: { type: "number" }, sectionId: { type: "string" } }) },
+      input_schema: object({ label: { type: "string" }, periodEnd: { type: "string" }, months: { type: "number" }, sectionId: { type: "string" }, cursor: { type: "string" } }) },
       async (args) => {
         const months = args.months === undefined || args.months === null || args.months === "" ? undefined : Number(args.months);
         const found = await queryFacts(db, { documents: await documents(), ...(str(args.label) ? { label: str(args.label) } : {}), ...(str(args.periodEnd) ? { periodEnd: str(args.periodEnd) } : {}),
           ...(months !== undefined && Number.isFinite(months) ? { months } : {}), ...(str(args.sectionId) ? { section: str(args.sectionId) } : {}) });
-        return ok(found.length ? found.map(factLine).join("\n") : "No fact matches; try fewer words, or read the table with read_sections.");
+        const start = Number(str(args.cursor) || 0), end = start + 60;
+        return ok(found.length ? `${found.slice(start, end).map(factLine).join("\n")}\nnextCursor: ${end < found.length ? String(end) : "none"}` : "No fact matches; try fewer words, or read the CSV with read_filing_table.");
       }),
     handTool<S>({ name: "fact_history", description: "The same figure in earlier periods, from the company's earlier filings: same line, same breakdown, same period length, newest first. For a quarter's flow this gives the earlier quarters the company reported as quarters; a fourth quarter is usually reported only inside the year.",
       input_schema: object({ factId: { type: "string" }, periods: { type: "number" } }, ["factId"]) },
       async (args, state) => {
         const [fact] = await factsById(db, [str(args.factId)]);
-        if (!fact) return fail("No such fact; ids come from read_sections and query_facts.");
-        if (!fact.tagged) return ok(`${factLine(fact)}\nThis figure is not tagged, so it cannot be followed by code; use section_history on its section, or grep its label in earlier filings.`);
-        const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(args.periods) || 9)));
+        if (!fact) return fail("No such fact; ids come from read_filing_markdown and query_facts.");
+        if (!fact.tagged) return ok(`${factLine(fact)}\nThis figure is not tagged, so it cannot be followed by code; use filing_history on its section, or grep its label in earlier filings.`);
+        const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(args.periods) || 9)), state);
+        remember(state);
         for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
         return ok(history.length ? history.map(h => `${h.factId} | ${factText(h)} | ${periodText(h)} | ${h.form} filed ${h.filedAt}`).join("\n") : "No earlier filing reports this line.");
       }),
@@ -231,12 +234,13 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
           let unit: ValueUnit | null = null;
           if (str(raw?.factId)) {
             const [fact] = await factsById(db, [str(raw.factId)]);
-            if (!fact) return fail(`${label}: no such fact; ids come from read_sections and query_facts.`);
+            if (!fact) return fail(`${label}: no such fact; ids come from read_filing_markdown and query_facts.`);
             if (!fact.tagged || !fact.periodEnd) return fail(`${label}: ${fact.factId} is not tagged, so it cannot be followed through earlier filings; give points instead.`);
             unit = fact.unit === "percent" || fact.unit === "ratio" ? null : unitOf(fact.unit);
             if (!unit) return fail(`${label}: a ${fact.unit} fact cannot be charted from its history; compute the rate per period and give points.`);
             months ??= fact.periodMonths;
-            const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)));
+            const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)), state);
+            remember(state);
             for (const h of history) {
               s.facts[h.factId] = { text: factSourceText(h), value: h.value };
               registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" });
@@ -270,19 +274,6 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         (s.charted ??= []).push(id);
         return ok(`Chart "${id}" compiled. Place it with <figure data-chart="${id}"></figure>. Points drawn (series | period | value | cite as):\n${lines.join("\n")}`);
       }),
-    handTool<S>({ name: "read_report", description: "The reports written on the company's earlier filings. Without an accession: the list, newest first. With one: that report's text, which becomes a source you can cite.",
-      input_schema: object({ accession: { type: "string" } }) },
-      async (args, state) => {
-        const reports = await earlierReports(db, ticker, accession, 12);
-        const wanted = str(args.accession);
-        if (!wanted) return ok(reports.length ? reports.map(r => `${r.accession} | ${r.form} filed ${r.filingDate} | ${r.headline}`).join("\n") : "No earlier report is on file.");
-        const report = reports.find(r => r.accession === wanted);
-        if (!report) return fail("No report on that filing; call read_report without an accession for the list.");
-        const id = `r${report.accession}`;
-        p(state).texts[id] = report.text.slice(0, 30_000);
-        registerSource(state.composer, id, { title: `Report on the ${report.form} filed ${report.filingDate}`, url: null, kind: "data" });
-        return ok(`[source ${id}] ${report.headline}\n${report.text.slice(0, 14_000)}`);
-      }),
     handTool<S>({ name: "read_transcript", description: "An earnings call around the terms you give. Without a periodEnd: the calls on file. The excerpt becomes a source you can cite.",
       input_schema: object({ periodEnd: { type: "string" }, focus: strings }) },
       async (args, state) => {
@@ -297,7 +288,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         registerSource(state.composer, id, { title: `${call.title}, period ending ${call.periodEnd}`, url: null, kind: "web" });
         return ok(`[source ${id}]\n${text}`);
       }),
-    handTool<S>({ name: "add_lead", description: "Record a lead of your own: something the pack did not raise.", input_schema: object({ question: { type: "string" }, why: { type: "string" }, priority: { type: "string", enum: ["high", "normal"] } }, ["question"]) },
+    handTool<S>({ name: "add_lead", description: "Record a question to investigate from the filing material.", input_schema: object({ question: { type: "string" }, why: { type: "string" }, priority: { type: "string", enum: ["high", "normal"] } }, ["question"]) },
       (args, state) => {
         const s = p(state);
         const lead: Lead = { id: `L${s.leads.length + 1}`, source: "session", priority: args.priority === "high" ? "high" : "normal", question: str(args.question).slice(0, 300), why: str(args.why).slice(0, 300), refs: [] };
@@ -324,7 +315,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const left = s.leads.filter(l => !l.verdict);
         return ok(`${out.join("\n")}\nNot closed: ${left.length ? left.map(l => `${l.id}${l.priority === "high" ? " (high)" : ""}`).join(", ") : "none"}.`);
       }),
-    handTool<S>({ name: "list_leads", description: "The leads and where each stands.", input_schema: object({}) }, (_args, state) => ok(p(state).leads.map(leadLine).join("\n") || "No leads; call research_pack.")),
+    handTool<S>({ name: "list_leads", description: "The leads and where each stands.", input_schema: object({}) }, (_args, state) => ok(p(state).leads.map(leadLine).join("\n") || "No leads recorded yet.")),
     handTool<S>({ name: "note_evidence", description: "Record facts you confirmed, so they outlast the conversation's memory. Each: the section it is in (a section id you have read), the words that state it copied exactly, the fact in one sentence with its period, and the fact ids of its figures. The quote is checked against the section. Send several at once.",
       input_schema: object({ entries: { type: "array", items: object({ section: { type: "string" }, quote: { type: "string" }, statement: { type: "string" }, facts: strings }, ["section", "quote", "statement"]) } }, ["entries"]) },
       async (args, state) => {
@@ -351,8 +342,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   ];
 
   return {
-    // The pack reads the filing with several model calls; it is given the time the review at finish is given.
-    tools: tools.map(t => t.name === "research_pack" ? { ...t, timeoutMs: 14 * 60_000 } : t), resolve,
+    tools, resolve,
     figure: async (id, state) => { const s = p(state); return s.computed[id] ? [s.computed[id]!.value] : s.facts[id] ? [s.facts[id]!.value] : null; },
     read: (id, state) => {
       const s = p(state);
@@ -363,13 +353,15 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     },
     precheck: (state) => {
       const s = p(state);
-      if (!s.packed) return "call research_pack and work its leads before finishing";
+      if (!s.markdownRead) return "Read this filing with read_filing_markdown before finishing.";
+      if (snapshot.tables.length && !s.tablesFound) return "Use find_filing_tables to confirm the relevant CSV by its table name or description before finishing.";
+      if (snapshot.tables.length && !s.tablesRead.length) return "Find and read the relevant archived CSV with find_filing_tables and read_filing_table before finishing.";
       const open = s.leads.filter(l => l.priority === "high" && !l.verdict);
       return open.length ? `these high-priority leads are not closed: ${open.map(l => l.id).join(", ")}. Close each with close_lead (highlight, risk, nothing unusual, or open with what is missing)` : null;
     },
     standing: (state) => {
       const s = p(state);
-      if (!s.packed) return "";
+
       const open = s.leads.filter(l => !l.verdict);
       return ` Notes on file: ${s.evidence.length} (read_evidence), results computed: ${Object.keys(s.computed).length}. Leads not closed: ${open.length ? open.slice(0, 12).map(l => `${l.id}${l.priority === "high" ? "!" : ""}`).join(", ") + (open.length > 12 ? "…" : "") : "none"}.`;
     },
@@ -379,7 +371,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       for (const l of s.leads) verdicts[l.verdict ?? "not closed"] = (verdicts[l.verdict ?? "not closed"] ?? 0) + 1;
       const sources: Record<string, number> = {};
       for (const l of s.leads) sources[l.source] = (sources[l.source] ?? 0) + 1;
-      return { reading: s.coverage ?? null, leads: { total: s.leads.length, high: s.leads.filter(l => l.priority === "high").length, highOpen: s.leads.filter(l => l.priority === "high" && !l.verdict).length, verdicts, sources },
+      return { material: snapshot.ref, reading: snapshot.coverage, tablesRead: s.tablesRead, leads: { total: s.leads.length, high: s.leads.filter(l => l.priority === "high").length, highOpen: s.leads.filter(l => l.priority === "high" && !l.verdict).length, verdicts, sources },
         notes: { total: s.evidence.length, session: s.evidence.filter(e => e.origin === "session").length }, computed: Object.keys(s.computed).length, factsCited: Object.keys(s.facts).length, charts: s.charted ?? [] };
     },
   };
