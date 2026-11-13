@@ -7,6 +7,7 @@ export type ImageInput = { mediaType: "image/jpeg" | "image/png"; base64: string
 export type JudgeCall = {
   stage: string; system: string; text: string; images?: ImageInput[];
   schema: Record<string, unknown>; effort?: "low" | "medium" | "high" | "xhigh" | "max"; maxTokens?: number;
+  timeoutMs?: number; maxRetries?: number;
   ledger: { kind: string; ticker?: string; runId?: string };
 };
 
@@ -17,7 +18,7 @@ export const judgeConfigured = (env: JudgeEnv) => Boolean(env.OPENAI_API_KEY && 
 export async function judge<T>(env: JudgeEnv, call: JudgeCall): Promise<T> {
   const apiKey = env.OPENAI_API_KEY, model = env.OPENAI_REVIEW_MODEL;
   if (!apiKey || !model) throw new JudgeUnavailable("OPENAI_API_KEY and OPENAI_REVIEW_MODEL are required");
-  const client = new OpenAI({ apiKey, maxRetries: 2, timeout: 5 * 60_000 });
+  const client = new OpenAI({ apiKey, maxRetries: call.maxRetries ?? 2, timeout: call.timeoutMs ?? 5 * 60_000 });
   const started = Date.now();
   const content: ChatCompletionContentPart[] = [
     ...(call.images ?? []).map((image): ChatCompletionContentPart => ({ type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.base64}` } })),

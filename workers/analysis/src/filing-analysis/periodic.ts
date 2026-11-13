@@ -22,6 +22,8 @@ export type PeriodicState = {
   leads: Lead[]; evidence: Evidence[]; computed: Record<string, Computed>;
   facts: Record<string, { text: string; value: number }>; texts: Record<string, string>;
   materials: MaterialRef[]; markdownRead: boolean; tablesFound: boolean; tablesRead: string[]; charted?: string[];
+  chartRefs?: Record<string, string[]>;
+  semanticAuditReceipt?: { digest: string | null; key: string | null; verdict: "pass" | "fail" | "unavailable"; complete: boolean };
 };
 export const openPeriodic = (): PeriodicState => ({ leads: [], evidence: [], computed: {}, facts: {}, texts: {}, materials: [], markdownRead: false, tablesFound: false, tablesRead: [] });
 type State = { composer: ComposerState; read?: string[]; periodic?: PeriodicState };
@@ -225,7 +227,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (!ARTIFACT_BLOCK_ID.test(id) || !title) return fail("A chart needs an id (lowercase slug) and a title.");
         const unitOf = (unit: string): ValueUnit | null => unit === "USD" ? "USD" : unit === "shares" ? "shares" : unit === "USD/shares" ? "per_share" : unit === "percent" ? "percent" : unit === "ratio" || unit === "x" ? "ratio" : null;
         const s = p(state);
-        const series: PointSeries[] = [], lines: string[] = [];
+        const series: PointSeries[] = [], lines: string[] = [], refs: string[] = [];
         let months: number | null = null;
         for (const [i, raw] of (list(args.series) as Array<Record<string, unknown>>).slice(0, 5).entries()) {
           const label = str(raw?.label).slice(0, 60) || `Series ${i + 1}`;
@@ -244,6 +246,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
               s.facts[h.factId] = { text: factSourceText(h), value: h.value };
               registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" });
               points.push({ end: h.periodEnd!, value: h.value });
+              refs.push(h.factId);
               lines.push(`${label} | ${h.periodEnd} | ${factText(h)} | ${h.factId}`);
             }
           } else {
@@ -260,6 +263,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
               if (unit && unit !== pointUnit) return fail(`${label}: its points are in different units (${unit}, ${pointUnit}).`);
               unit = pointUnit;
               points.push({ end, value });
+              refs.push(ref);
               lines.push(`${label} | ${end} | ${Number(value.toPrecision(6))} ${computed ? computed.unit : fact?.unit ?? ""} | ${ref}`);
             }
           }
@@ -270,6 +274,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (!result.chart) return fail(`The chart did not compile:\n${result.errors.map(e => `- ${e}`).join("\n")}`);
         const width = 720;
         state.composer.charts[id] = { id, title: result.chart.title ?? title, svg: renderChartSvg(result.chart, { width, height: chartHeight(width, result.chart.aspect) }, { still: true }), points: [], compiled: result.chart };
+        (s.chartRefs ??= {})[id] = [...new Set(refs)];
         (s.charted ??= []).push(id);
         return ok(`Chart "${id}" compiled. Place it with <figure data-chart="${id}"></figure>. Points drawn (series | period | value | cite as):\n${lines.join("\n")}`);
       }),

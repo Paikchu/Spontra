@@ -13,7 +13,7 @@ const REPORT_SHAPE = "Write the report as a document of blocks and call finish. 
 
 const PROFILES: readonly FilingProfile[] = [
   {
-    id: "periodic", match: form => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form), turns: 100, wallMs: 150 * MINUTE, reasoning: "high",
+    id: "periodic", match: form => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form), turns: 140, wallMs: 150 * MINUTE, reasoning: "high",
     prompt: `The subject is a periodic report. Read the fixed preprocessed Markdown with read_filing_markdown and the relevant standalone CSV tables with find_filing_tables and read_filing_table. Read earlier prepared material when comparison matters. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE} ${REPORT_EDITING}`,
   },
   {

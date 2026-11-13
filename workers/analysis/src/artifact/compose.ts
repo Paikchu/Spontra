@@ -40,6 +40,8 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   afterPublish?(state: S): Promise<void>;
   /** A rule of the producer's own the document must meet before review (e.g. quoting an earlier report); the reason when it does not. */
   precheck?(state: S): string | null;
+  /** A producer's full-document publication audit, independent of incremental block reviews. */
+  audit?(state: S): Promise<TrackedIssue[]>;
   /** Registers a source the document cites but the session has not read by name (a fact, a computed figure); false when there is none. */
   resolve?(id: string, state: S): Promise<boolean>;
   /** The exact numbers a cited source stands for (a fact's value), when it is one figure and not a text; a cited figure must be one of them. */
@@ -204,7 +206,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, 0, "content", c.log.length, drafts.map((b, i) => ({ block: b.id, issues: reviewed[i] })));
     const notes: string[] = [];
     for (const b of c.blocks) {
-      const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content");
+      const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content" && i.origin !== "semantic");
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
       if (setup.settlement !== "agent" && (last(b) || step.level >= 5)) {
@@ -299,6 +301,15 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     c.phase = "content";
     const content = await settleContent(state, lowBudget(state));
     if (content.length) return fail(`Not published yet. The evidence review found problems. ${reviewInstructions(setup.settlement ?? "harness")}\n\n${content.join("\n\n")}\n\nCall apply_fixes with no arguments to accept every correction at once, change what it could not apply with edit_block, then call finish again.`);
+    if (setup.audit) {
+      const issues = await setup.audit(state);
+      for (const id of Object.keys(c.open)) {
+        c.open[id] = c.open[id]!.filter(issue => issue.origin !== "semantic");
+        if (!c.open[id]!.length) delete c.open[id];
+      }
+      for (const issue of issues) (c.open[issue.block] ??= []).push(issue);
+      if (issues.length) return fail(`Not published yet. The independent filing audit found problems:\n\n${issues.map(issue => `Block "${issue.block}": ${issue.quote ? `"${issue.quote}". ` : ""}${issue.problem}${issue.replacement ? ` Correction: ${issue.replacement}` : issue.suggestion ? ` Suggestion: ${issue.suggestion}` : ""}`).join("\n\n")}\n\nUse view_issue and the normal research and editing tools to correct the report, then call finish again.`);
+    }
     c.phase = "render";
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, change the layout with edit_block keeping the words exactly, then call finish again.`);

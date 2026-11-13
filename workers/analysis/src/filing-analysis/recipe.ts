@@ -19,6 +19,7 @@ import { PERIODIC_EVIDENCE, PERIODIC_SYSTEM } from "./prompts.ts";
 import { blockText, openComposer, registerSource, sentencesOf, type ComposerState } from "../artifact/document.ts";
 import { readPublishedDocument, readWorkState, saveWorkState } from "../artifact/store.ts";
 import type { ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
+import { filingSemanticAudit } from "./semantic-audit.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef;
@@ -87,6 +88,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
     resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS } : {}), precheck: periodic.precheck,
+    audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"] }, state),
     read: async (id, state) => {
       // A fact or paragraph named by a report opened for revision is read again the first time it is needed.
       const held = periodic?.read(id, state) ?? (periodic && await periodic.resolve(id, state).catch(() => false) ? periodic.read(id, state) : null);
@@ -140,7 +142,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     settled: s => s.composer.phase === "published",
     settle: s => s.composer.phase === "published",
     nudge: periodic ? "Continue: work the leads, record what you confirm, write the blocks, then call finish." : "Continue reading and writing blocks, then call finish.",
-    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && left <= profile.turns * 0.45 ? " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && left <= profile.turns * 0.3 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
+    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && s.composer.turns >= 45 ? " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && s.composer.turns >= 70 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
     afterRun: async (s) => {
       if (s.composer.phase === "published") { await summarise(s, "published"); return; }
       const now = new Date().toISOString();
