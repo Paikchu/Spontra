@@ -143,7 +143,9 @@ export async function archiveZipEntries(env: AnalysisEnv, filing: MaterialFiling
   for (const [filename, content] of Object.entries(entries)) {
     if (filename.endsWith("/")) continue;
     const type = sourceMimeType(filename);
-    sources.push(await putSource(env, filing, { filename, type: type === "application/xml" ? "XML" : "ZIP-ENTRY", url: `${source.url}#zip/${encodeURIComponent(filename)}`, start: null, end: null, container: source.id }, content));
+    const child = await putSource(env, filing, { filename, type: type === "application/xml" ? "XML" : "ZIP-ENTRY", url: `${source.url}#zip/${encodeURIComponent(filename)}`, start: null, end: null, container: source.id }, content);
+    sources.push(child);
+    if (type === "application/zip") sources.push(...await archiveZipEntries(env, filing, child, content));
   }
   return sources;
 }

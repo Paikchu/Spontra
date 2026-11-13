@@ -3,8 +3,10 @@ import { z } from "zod";
 import type { MaterialFiling, MaterialSource, ParsedMaterialDocument } from "../../../../shared/analysis-contract/filing-material.ts";
 import { MATERIAL_PARSER_VERSION, createMaterialTable, documentCoverage, materialBlock, parseMaterialHtml, parseMaterialText, tableMarkdown, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
+import { materialDigest } from "./store.ts";
 
 const VISION_MODEL = "@cf/google/gemma-4-26b-a4b-it";
+const PDF_PAGE_VERSION = "pdf-pages.v1";
 const rowSchema = z.object({ label: z.string(), cells: z.array(z.string()) });
 const imageSchema = z.object({
   title: z.string(), description: z.string(), text: z.string(), unreadable: z.boolean(),
@@ -83,7 +85,8 @@ async function parsePdf(env: AnalysisEnv, filing: MaterialFiling, source: Materi
     }, { encoded: Buffer.from(bytes).toString("base64") });
     combined.coverage.pages = total;
     for (let number = 1; number <= total; number++) {
-      const cacheKey = `sec-materials/conversion/${MATERIAL_PARSER_VERSION}/${source.id}/${source.sha256}/pdf-${number}.json`;
+      const assetBase = `sec-materials/conversion/${MATERIAL_PARSER_VERSION}/${PDF_PAGE_VERSION}/${source.id}/${source.sha256}/page-${number}`;
+      const cacheKey = `${assetBase}.json`;
       const cached = await env.SEC_FILINGS.get(cacheKey);
       let extracted: ParsedMaterialDocument;
       if (cached) extracted = JSON.parse(await cached.text());
@@ -97,15 +100,30 @@ async function parsePdf(env: AnalysisEnv, filing: MaterialFiling, source: Materi
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
           await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-          return { text, image: canvas.toDataURL("image/png") };
+          return { text, image: canvas.toDataURL("image/png"),
+            viewport: { width: viewport.width, height: viewport.height, scale: viewport.scale, rotation: viewport.rotation,
+              offsetX: viewport.offsetX, offsetY: viewport.offsetY, transform: viewport.transform, viewBox: page.view, userUnit: page.userUnit },
+            textContent: { items: content.items, styles: content.styles, lang: content.lang },
+          };
         }, number);
+        const imageBytes = new Uint8Array(Buffer.from(rendered.image.slice(rendered.image.indexOf(",") + 1), "base64"));
+        const imageSha256 = await materialDigest(imageBytes), imageKey = `${assetBase}-${imageSha256}.png`;
+        const coordinates = { converter: PDF_PAGE_VERSION, page: number, sourceUrl: `${source.url}#page=${number}`, sourceSha256: source.sha256,
+          viewport: rendered.viewport, textContent: rendered.textContent };
+        const coordinateJson = JSON.stringify(coordinates), coordinateSha256 = await materialDigest(coordinateJson);
+        const coordinateKey = `${assetBase}-${coordinateSha256}.text.json`;
+        await env.SEC_FILINGS.put(imageKey, imageBytes, { httpMetadata: { contentType: "image/png" }, onlyIf: { etagDoesNotMatch: "*" } });
+        await env.SEC_FILINGS.put(coordinateKey, coordinateJson, { httpMetadata: { contentType: "application/json" }, onlyIf: { etagDoesNotMatch: "*" } });
         extracted = await parseImage(env, filing, source, rendered.image, number);
+        extracted.blocks.push(materialBlock(source, { kind: "code", title: `Page ${number} original image and text coordinates`,
+          text: `\`\`\`json\n${JSON.stringify({ ...coordinates, image: { key: imageKey, sha256: imageSha256, bytes: imageBytes.byteLength },
+            coordinates: { key: coordinateKey, sha256: coordinateSha256 } })}\n\`\`\``, start: number * 1_000_000 + 999_998, page: number }));
         if (rendered.text) extracted.blocks.push(materialBlock(source, { kind: "paragraph", title: `Page ${number} original text layer`, text: rendered.text, start: number * 1_000_000 + 999_999, page: number }));
         extracted.coverage.sourceTextChars = rendered.text.length;
         extracted.coverage.retainedTextChars = rendered.text.length;
         extracted.coverage.pages = 1;
         extracted.coverage.retainedPages = extracted.coverage.issues.length ? 0 : 1;
-        if (!extracted.coverage.issues.length) await env.SEC_FILINGS.put(cacheKey, JSON.stringify(extracted), { httpMetadata: { contentType: "application/json" } });
+        if (!extracted.coverage.issues.length) await env.SEC_FILINGS.put(cacheKey, JSON.stringify(extracted), { httpMetadata: { contentType: "application/json" }, onlyIf: { etagDoesNotMatch: "*" } });
       }
       combined.blocks.push(...extracted.blocks);
       combined.tables.push(...extracted.tables);
