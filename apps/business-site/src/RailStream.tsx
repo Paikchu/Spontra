@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CompanyEvent, EventClass } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
@@ -134,12 +135,6 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
     if (focusedRow && focusedRow.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
   }
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  // A tab turns off only while another stays on, so the list always reads something.
-  const toggleTab = (tab: RailTab) => {
-    const next = new Set(tabs);
-    if (next.has(tab)) next.delete(tab); else next.add(tab);
-    if (next.size) onTabs?.(next);
-  };
   const renderRow = (r: NoiseRow) => <NoiseBlock key={r.id} row={r} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
     {findings.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
@@ -151,11 +146,15 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
       </div>
       {findingsShown.map(f => <FindingRow key={f.id} finding={f} verdict={verdicts?.[f.id]} checked={focus === f.id} arrive={arrived.get(f.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === f.id ? null : f.id)} />)}
     </div>}
-    <div className="stream-tabs" role="group" aria-label={m.tabs}>
-      {RAIL_TABS.map(tab => <Button key={tab} variant="unstyled" type="button" className="stream-tab" aria-pressed={tabs.has(tab)} onClick={() => toggleTab(tab)}>
-        {tabs.has(tab) && <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>}
-        {tab === "reports" ? m.tabReports : m.tabManagement}
-      </Button>)}
+    <div className="stream-tabs">
+      <ToggleGroup type="multiple" variant="default" size="sm" spacing={1} aria-label={m.tabs} value={RAIL_TABS.filter(tab => tabs.has(tab))} onValueChange={values => {
+        // Keep at least one category visible, as before.
+        if (values.length) onTabs?.(new Set(values as RailTab[]));
+      }}>
+        {RAIL_TABS.map(tab => <ToggleGroupItem key={tab} value={tab}>
+          {tab === "reports" ? m.tabReports : m.tabManagement}
+        </ToggleGroupItem>)}
+      </ToggleGroup>
     </div>
     {phase === "loading" ? <StreamSkeleton /> : phase === "error" ? <div className="event-state">
       <p>{m.loadFailed}</p>
