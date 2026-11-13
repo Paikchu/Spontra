@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
@@ -152,6 +153,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
         if (values.length) onTabs?.(new Set(values as RailTab[]));
       }}>
         {RAIL_TABS.map(tab => <ToggleGroupItem key={tab} value={tab}>
+          <Check data-icon="inline-start" aria-hidden="true" />
           {tab === "reports" ? m.tabReports : m.tabManagement}
         </ToggleGroupItem>)}
       </ToggleGroup>

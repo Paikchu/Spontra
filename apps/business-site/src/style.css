@@ -748,12 +748,14 @@ button { cursor: pointer; }
 .stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
 .stream-end { height: 1px; }
 /* The tabs: any of findings, reports and management at once. They stay at the top of the rail while it scrolls. */
-.stream-tabs { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; padding: 8px 6px 8px; background: var(--surface); }
+.stream-tabs { position: sticky; top: -4px; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; padding: 8px 6px 8px; border-top: 1px solid var(--hairline); background: var(--surface); }
 /* This standalone shell does not compile Tailwind. Mirror shadcn's default/sm
    ToggleGroup tokens locally rather than importing the full app stylesheet. */
 .stream-tabs [data-slot="toggle-group"] { display: flex; align-items: center; gap: 4px; width: fit-content; }
-.stream-tabs [data-slot="toggle-group-item"] { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 28px; min-width: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background .16s, color .16s; }
-.stream-tabs [data-slot="toggle-group-item"]:hover, .stream-tabs [data-slot="toggle-group-item"][data-state="on"] { background: var(--surface-raised); color: var(--foreground); }
+.stream-tabs [data-slot="toggle-group-item"] { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex-shrink: 0; height: 28px; min-width: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background .16s, color .16s; }
+.stream-tabs [data-slot="toggle-group-item"]:hover, .stream-tabs [data-slot="toggle-group-item"][data-state="on"] { color: var(--foreground); }
+.stream-tabs [data-slot="toggle-group-item"] svg { width: 12px; height: 12px; flex-shrink: 0; }
+.stream-tabs [data-slot="toggle-group-item"][data-state="off"] svg { visibility: hidden; }
 .stream-tabs [data-slot="toggle-group-item"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (pointer: coarse) { .stream-tabs [data-slot="toggle-group-item"] { min-height: 44px; } }
 
@@ -763,7 +765,7 @@ button { cursor: pointer; }
 .quarter-frame-title { flex: none; font-size: 13px; font-weight: 650; color: var(--foreground); }
 .quarter-frame-end { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); }
 /* The findings, the standing read of the company, between the businesses and the tabs. */
-.guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.guidance { display: flex; flex-direction: column; margin: 0 0 6px; padding: 8px 0 8px; border-top: 1px solid var(--hairline); }
 .guidance-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 0 10px 4px; }
 .guidance-head h3 { margin: 0; font-size: 13px; font-weight: 650; line-height: 1.4; color: var(--foreground); }
 .guidance-more { margin: 0; }
