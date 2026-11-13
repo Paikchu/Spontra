@@ -11,9 +11,9 @@ export type ArtifactTranslationPlan = {
 };
 
 const TOKEN = /\{[ocx]\d+\}/g;
-const NUMBER = /(?:\b(?:10-[KQ]|8-K|20-F|6-K)\b|(?:[$€£¥]\s*)?(?:[+−]|(?<![A-Za-z0-9])[-])?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?:\s?(?:trillion|billion|million|thousand|bn|mn|[BMKbm]|%|bps|pp|x|×)(?![A-Za-z]))?)/g;
+const NUMBER = /(?:\b(?:[369]|12)M\s+20\d{2}\b|\b(?:10-[KQ]|8-K|20-F|6-K)\b|(?:[$€£]\([\d,.]+\)|\([$€£][\d,.]+)(?:\s?(?:million|billion|mn|bn|[mb]))?\)?|(?:[$€£¥]\s*)?(?:[+−]|(?<![A-Za-z0-9])[-])?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?:\s?(?:trillion|billion|million|thousand|bn|mn|[BMKbm]|%|bps|pp|x|×)(?![A-Za-z]))?)/g;
 const INLINE = new Set(["span", "strong", "em", "small", "sub", "sup", "a", "cite", "data", "kbd", "mark", "abbr", "br"]);
-const PROTECTED = new Set(["data", "kbd"]);
+const PROTECTED = new Set(["kbd"]);
 const TEXT_ATTRIBUTES = new Set(["title", "data-content"]);
 const SEGMENT_CHARS = 3500;
 const ORIGINAL_TERMS = new Set("gaap non-gaap rpo eps ebitda fcf arr ttm usd eur gbp cny hkd twd ai api cpu gpu cdn ceo cfo sec fy q".split(" "));
@@ -82,8 +82,10 @@ function encodeRich(nodes: HtmlNode[]): RichText {
   const encode = (children: HtmlNode[]): string => children.map(node => {
     if (node.type === "text") return node.text.replace(/\s+/g, " ").replace(NUMBER, (value: string, offset: number, text: string) => {
       const scaled = /(?:trillion|billion|million|thousand|bn|mn|[BMK])$/i.test(value);
-      const range = /(?:[–—-]|\bto)\s*$/i.test(text.slice(0, offset)) || /^\s*(?:[–—-]|to\b)/i.test(text.slice(offset + value.length));
-      return literal({ type: "text", value, formatted: scaled && !range ? localizeFinancialLabel(value) : null });
+      // A prose "to $980m" is not a range. Only preserve a shared scale
+      // when a second numeric endpoint is actually present.
+      const range = /\d\s*(?:[–—-]|\bto)\s*$/i.test(text.slice(0, offset)) || /^\s*(?:[–—-]|to\b)\s*[$€£]?\d/i.test(text.slice(offset + value.length));
+      return literal({ type: "text", value, formatted: !range && (scaled || /^\d+M\s+20\d{2}$/.test(value) || /[$€£]/.test(value)) ? localizeFinancialLabel(value) : null });
     });
     if (PROTECTED.has(node.tag) || node.tag === "br") return literal({ type: "node", value: node });
     const id = elements.size;
@@ -115,15 +117,7 @@ function decodeRich(rich: RichText, text: string, localized: boolean): HtmlNode[
       if (!value) throw new Error(`Unknown artifact literal ${token}`);
       if (literalParents.get(id) !== (stack.at(-1)?.id ?? null)) throw new Error(`Artifact figure or literal moved outside its inline element at ${token}`);
       if (value.type === "text") append({ type: "text", text: localized ? value.formatted ?? value.value : value.value });
-      else {
-        const node = structuredClone(value.value);
-        if (localized && node.type === "element" && node.tag === "data" && node.children.every(child => child.type === "text")) {
-          const shown = node.children.map(child => child.type === "text" ? child.text : "").join("");
-          const formatted = localizeFinancialLabel(shown);
-          if (formatted !== null) node.children = [{ type: "text", text: formatted }];
-        }
-        append(node);
-      }
+      else append(structuredClone(value.value));
     } else if (token[1] === "o") {
       const original = rich.elements.get(id);
       if (!original || originalParents.get(id) !== (stack.at(-1)?.id ?? null)) throw new Error(`Artifact inline structure changed at ${token}`);

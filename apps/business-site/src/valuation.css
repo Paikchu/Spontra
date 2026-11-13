@@ -53,6 +53,7 @@
 
 /* Five dimensions: the fixed radar on the left, one row per dimension on the right. */
 .val-scores { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 8px 40px; align-items: start; }
+.val-scores[data-incomplete] { grid-template-columns: minmax(0, 1fr); }
 .val-scores .val-radar { position: sticky; top: 0; }
 .val-radar { display: grid; gap: 6px; margin: 0; padding: 0 48px; }
 .val-radar-plot { position: relative; }

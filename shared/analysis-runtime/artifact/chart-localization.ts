@@ -1,6 +1,6 @@
 import type { ArtifactChart } from "../../analysis-contract/artifact.ts";
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
-import { compactMoney, compactNumber } from "../locale.ts";
+import { compactMoney, compactNumber, currencyName } from "../locale.ts";
 import { chartHeight } from "../lens/compile.ts";
 import { formatFigure, periodLabel, tickLabel } from "../lens/format.ts";
 import { renderChartSvg } from "../lens/render.ts";
@@ -16,12 +16,20 @@ const escape = (text: string) => text.replace(/[&<>"']/g, c => ({ "&": "&amp;", 
 /** Numeric labels in older SVGs have no frozen chart object. Only unambiguous display forms are reformatted. */
 export function localizeFinancialLabel(source: string): string | null {
   const text = source.trim();
+  // Filing periods are durations, never monetary M (million) suffixes.
+  const period = /^(3|6|9|12)M\s+(20\d{2})$/.exec(text);
+  if (period) return `${period[2]}年前${period[1]}个月`;
+  const accounting = /^(HK\$|NT\$|[$€£])\(([\d,.]+)\)(\s*(?:trillion|billion|million|thousand|bn|mn|[KMBT]))?$/i.exec(text)
+    ?? /^\((HK\$|NT\$|[$€£])([\d,.]+)(\s*(?:trillion|billion|million|thousand|bn|mn|[KMBT]))?\)$/i.exec(text);
+  if (accounting) return localizeFinancialLabel(`-${accounting[1]}${accounting[2]}${accounting[3] ?? ""}`);
   const symbols: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP", "HK$": "HKD", "NT$": "TWD" };
   const scale: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9, T: 1e12, THOUSAND: 1e3, MILLION: 1e6, BILLION: 1e9, TRILLION: 1e12, BN: 1e9, MN: 1e6 };
   const money = /^([+−-]?)(HK\$|NT\$|[$€£])([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|mn|[KMBT])?$/i.exec(text);
   if (money) {
     const value = Number(money[3]!.replace(/,/g, "")) * (scale[money[4]?.toUpperCase() ?? ""] ?? 1) * (money[1] === "−" || money[1] === "-" ? -1 : 1);
-    return (money[1] === "+" ? "+" : "") + compactMoney(value, symbols[money[2]!.toUpperCase()]!, "zh-CN");
+    const currency = symbols[money[2]!.toUpperCase()]!;
+    if (!money[4]) return (money[1] === "+" ? "+" : value < 0 ? "−" : "") + Math.abs(value).toLocaleString("zh-CN", { maximumFractionDigits: Math.min(20, money[3]!.split(".")[1]?.length ?? 0) }) + currencyName(currency, "zh-CN");
+    return (money[1] === "+" ? "+" : "") + compactMoney(value, currency, "zh-CN");
   }
   const code = /^([+−-]?)([\d,]+(?:\.\d+)?)([KMBT])? ([A-Z]{3})$/.exec(text);
   if (code) {

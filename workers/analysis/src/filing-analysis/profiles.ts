@@ -6,16 +6,19 @@ export type ProfileId = "periodic" | "current";
 export type FilingProfile = { id: ProfileId; match(form: string): boolean; turns: number; wallMs: number; reasoning: "low" | "medium" | "high"; prompt: string };
 
 const MINUTE = 60_000;
+export const REPORT_EDITING = `Write for someone scanning a company workspace, not an essay. The title and summary heading name the most consequential specific change, in a short clause (aim for at most 12 English words), without the company name, filing type or date already supplied by the interface. Avoid generic frames such as "what this filing reveals", "a closer look", "key takeaways" or "strong momentum". Keep the distinction between separate disclosures; do not merge them just because their headlines are similar.
+Open with the implication and the evidence needed to understand it. Put detailed comparisons in a table or chart beside the relevant finding; do not repeat every table cell in an introductory paragraph. Retain material caveats, periods, units, sources and contradictory evidence. Resolve units from the source table header and document-wide notes: a standalone amount needs currency and scale, and 9M means nine months, not nine million. Never guess omitted units; verify the original and accurately paraphrase with its qualifications. Every section must add a distinct fact, inference or watch condition; omit empty filler sections rather than describe your research process.`;
+
 const REPORT_SHAPE = "Write the report as a document of blocks and call finish. The first block, \"summary\", is required: its h2 is the report's one-line headline and its text opens with the conclusions. The report is all a reader gets for this filing, so it holds everything worth saying; there is no separate summary.";
 
 const PROFILES: readonly FilingProfile[] = [
   {
     id: "periodic", match: form => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form), turns: 100, wallMs: 150 * MINUTE, reasoning: "high",
-    prompt: `The subject is a periodic report. The first message lists every section with how it changed against the earlier filing. Read the sections in batches with read_sections, the changed and new ones first, and read_previous when the earlier wording matters; you decide how far to go. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE}`,
+    prompt: `The subject is a periodic report. The first message lists every section with how it changed against the earlier filing. Read the sections in batches with read_sections, the changed and new ones first, and read_previous when the earlier wording matters; you decide how far to go. Say which figures moved and why, what management says changed, what is new in the risks, liquidity and contracts, and what to watch in the next report. ${REPORT_SHAPE} ${REPORT_EDITING}`,
   },
   {
     id: "current", match: form => /^(?:8-K|6-K)(?:\/A)?$/.test(form), turns: 50, wallMs: 60 * MINUTE, reasoning: "high",
-    prompt: `The subject is a current report (8-K or 6-K). Read what it actually is and break it down accordingly. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE}`,
+    prompt: `The subject is a current report (8-K or 6-K). Read what it actually is and break it down accordingly. When it reports a period's results, say which figures moved and why, what the outlook changed, and what to watch in the next report. When it states an event, say what it discloses and why it matters to a holder. ${REPORT_SHAPE} ${REPORT_EDITING}`,
   },
 ];
 

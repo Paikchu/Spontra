@@ -271,7 +271,7 @@ function ReportRow({ report, ticker, checked, onClick, arrive, motion, tip }: Ro
     {...tip(title, reportTitleLang(report), meta)} aria-label={`${m.report} ${shortDate(report.date)} ${title}`}>
     <Mark cls="report" />
     <span className="stream-body">
-      <span className="stream-title" lang={reportTitleLang(report)}>{title}</span>
+      <span className="stream-title" lang={reportTitleLang(report)} title={title}>{title}</span>
       <span className="stream-meta">{meta}</span>
     </span>
   </RailRow>;
@@ -283,7 +283,7 @@ function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & {
   const direction = insider?.bought ? "buy" : insider?.sold ? "sell" : null;
   const planned = isPlannedInsiderTrade(event), espp = isEsppTransaction(event);
   const role = insider ? insider.title ?? (insider.isDirector ? m.director : insider.isTenPercentOwner ? m.tenPercent : null) : null;
-  const meta = join([shortDate(event.filedAt), eventClassLabel(event.class, locale), role, formName(event.form)]);
+  const meta = join([shortDate(event.filedAt), event.class === "other" ? null : eventClassLabel(event.class, locale), role, formName(event.form)]);
   const title = eventTitle(event);
   const shown = insiderRailTitle(event) ?? title;
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row" data-class={event.class} onClick={onClick}

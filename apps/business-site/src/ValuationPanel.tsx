@@ -20,7 +20,7 @@ import "./valuation.css";
 const m = messages({
   title: "Valuation assessment",
   compositeScore: "Composite score", outOfTen: "/ 10", sourcesCount: (n: number) => `${n} sources`,
-  scores: "Five-dimension research score", researched: (date: string) => `Researched ${date}`,
+  scores: "Five-dimension research score", partialResearch: "Research so far", researched: (date: string) => `Researched ${date}`,
   template: "Scoring template", templateNote: "The same five dimensions, weights and anchors for every company; a score names the anchor it was given against.", phaseResearch: "research phase", phaseAssumptions: "assumptions phase",
   compositeRule: "Composite is the weighted sum to one decimal, empty while any dimension is unscored; overall confidence is the lowest of the five.",
   report: "Assessment report", valueSource: "Where the value comes from", horizonNote: (months: number, rate: string) => `Every value is the equity's value ${months} months after the research date: the present-value model rolled forward at its ${rate} discount rate; dividends and buybacks within the period are not deducted.`,
@@ -28,8 +28,8 @@ const m = messages({
   researchDate: "Research date", financialBase: "Statements to", generated: (date: string) => `Generated ${date}`,
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
-  insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
-  updating: "A newer assessment is in progress", attemptNotPublished: (date: string) => `The assessment of ${date} was not published.`, attemptFailed: "The run failed before it could finish.", attemptCounterEvidence: "Its review left decisive counter-evidence unanswered, so its assumptions need another look.", attemptIncomplete: "It did not finish within its run.", attemptReview: "Its review did not complete.", attemptInsufficient: "It did not establish enough to replace the current report.", retained: (date: string) => `The report researched on ${date} stays in force.`,
+  insufficient: "Assessment incomplete", insufficientNote: "The available research is shown below; scores are withheld until the assessment is complete.",
+  updating: "A newer assessment is in progress", attemptNotPublished: (date: string) => `The assessment of ${date} was not published.`, attemptFailed: "The latest assessment could not be completed.", attemptCounterEvidence: "Its review left decisive counter-evidence unanswered, so its assumptions need another look.", attemptIncomplete: "The latest assessment is incomplete.", attemptReview: "Its review did not complete.", attemptInsufficient: "It did not establish enough to replace the current report.", retained: (date: string) => `The report researched on ${date} stays in force.`,
   dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
   readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
 
@@ -61,7 +61,7 @@ const m = messages({
 }, {
   title: "估值评估",
   compositeScore: "综合评分", outOfTen: "/ 10", sourcesCount: (n: number) => `来源 ${n} 条`,
-  scores: "五维研究评分", researched: (date: string) => `${date} 研究`,
+  scores: "五维研究评分", partialResearch: "已获取的研究信息", researched: (date: string) => `${date} 研究`,
   template: "评分模板", templateNote: "每家公司都用同一组维度、权重与锚点；每个分值对应其所落的档位。", phaseResearch: "研究阶段", phaseAssumptions: "假设阶段",
   compositeRule: "综合为加权和，一位小数，任一维度未评分则为空；整体信心取五项中最低。",
   report: "评估报告", valueSource: "价值来源", horizonNote: (months: number, rate: string) => `所有价值均为研究日期之后 ${months} 个月的股权价值：现值模型按 ${rate} 的折现率向前滚动；期内分红与回购未扣除。`,
@@ -69,8 +69,8 @@ const m = messages({
   researchDate: "研究日期", financialBase: "财务基期", generated: (date: string) => `生成于 ${date}`,
   preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
   failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
-  insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
-  updating: "新的评估正在进行", attemptNotPublished: (date: string) => `${date} 的评估未发布。`, attemptFailed: "运行在完成前失败。", attemptCounterEvidence: "复核发现决定性的反方证据未被回应，假设需要重新审视。", attemptIncomplete: "运行未在预算内完成。", attemptReview: "复核未完成。", attemptInsufficient: "结论不足以替换当前报告。", retained: (date: string) => `沿用 ${date} 研究的报告。`,
+  insufficient: "评估尚未完成", insufficientNote: "下方保留已有研究信息；评估完成前不展示评分。",
+  updating: "新的评估正在进行", attemptNotPublished: (date: string) => `${date} 的评估未发布。`, attemptFailed: "本次评估未能完成。", attemptCounterEvidence: "复核发现决定性的反方证据未被回应，假设需要重新审视。", attemptIncomplete: "本次评估尚未完成。", attemptReview: "复核未完成。", attemptInsufficient: "结论不足以替换当前报告。", retained: (date: string) => `沿用 ${date} 研究的报告。`,
   dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
   readThesis: "展开完整论证", hideThesis: "收起完整论证",
 
@@ -158,9 +158,24 @@ function Cites({ ids, onCite }: { ids: string[]; onCite: (id: string) => void })
   </sup>;
 }
 
+/** Legacy report wording is presented without implementation identifiers; figures and citations are untouched. */
+function readerText(text: string): string {
+  const zh = /[\u3400-\u9fff]/.test(text);
+  return text
+    .replace(/\bdebtDueCoverage\b/g, zh ? "短期到期债务覆盖倍数" : "short-term debt coverage")
+    .replace(/\bcashRunway(?:Years|Months)?\b/g, key => zh ? `现金可支撑时长${key.endsWith("Years") ? "（年）" : key.endsWith("Months") ? "（月）" : ""}` : `cash runway${key.endsWith("Years") ? " (years)" : key.endsWith("Months") ? " (months)" : ""}`)
+    .replace(/事实集中/g, "现有财务资料中").replace(/验证集中/g, "已核实资料中")
+    .replace(/研究阶段在该维度记录之前结束[。.]?/g, "该项评估尚未完成。")
+    .replace(/Not assessed: the research phase ended before this dimension was recorded\./g, "This part of the assessment is not yet complete.");
+}
+
+const hasCompleteScores = (report: ValuationPublication) => report.reportStatus === "ready"
+  && report.weightedScore != null && Number.isFinite(report.weightedScore)
+  && VALUATION_DIMENSIONS.every(key => report.dimensions.some(d => d.key === key && d.score != null && Number.isFinite(d.score)));
+
 /** Generated prose with its evidence citations turned into footnote numbers. */
 function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" | "span" }) {
-  return <Tag lang={langOf(text)}>{proseParts(text).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
+  return <Tag lang={langOf(text)}>{proseParts(readerText(text)).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
 }
 
 /** A long section: paragraphs, with the report's run-in capitalised headings lifted out as headings. */
@@ -184,8 +199,8 @@ function Head({ report, guide }: { report: ValuationPublication; guide: Valuatio
       <span className="val-company" lang="en">{report.companyName}</span>
     </div>
     <div className="val-headline">
-      <span className="val-headline-label">{m.compositeScore}</span>
-      <span className="val-composite"><strong>{report.weightedScore != null ? report.weightedScore.toFixed(1) : "—"}</strong><small>{m.outOfTen}</small></span>
+      {hasCompleteScores(report) && <><span className="val-headline-label">{m.compositeScore}</span>
+      <span className="val-composite"><strong>{report.weightedScore!.toFixed(1)}</strong><small>{m.outOfTen}</small></span></>}
       <span className="val-quote">{guide.quote ? <><b>{perShare(guide.quote.price, guide.quote.currency, locale)}</b><small>{guide.quote.priceDate}</small></> : <small>{m.noQuote}</small>}</span>
       <span className="val-position" data-tone={guide.status === "available" ? PRICE_TONE[guide.position] : "neutral"}>{guide.status === "available" ? m[guide.position] : m.unable}</span>
     </div>
@@ -194,17 +209,18 @@ function Head({ report, guide }: { report: ValuationPublication; guide: Valuatio
 
 /** The five dimensions: the fixed radar beside one row per dimension, each with its judgement in full; the template folded under them. */
 function Scores({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
-  return <section className="val-block val-scores" aria-label={m.scores}>
-    <Radar report={report} label={key => DIM[key]} compact />
+  const complete = hasCompleteScores(report);
+  return <section className="val-block val-scores" data-incomplete={!complete || undefined} aria-label={complete ? m.scores : m.partialResearch}>
+    {complete && <Radar report={report} label={key => DIM[key]} compact />}
     <div className="val-score-rows">
-      <span className="val-score-caption">{m.scores} · {m.researched(day(report.researchAsOf))}{report.confidence !== "medium" && ` · ${m.confidence} ${CONF[report.confidence]}`}</span>
+      <span className="val-score-caption">{complete ? m.scores : m.partialResearch} · {m.researched(day(report.researchAsOf))}{report.confidence !== "medium" && ` · ${m.confidence} ${CONF[report.confidence]}`}</span>
       <ol className="val-dims" aria-label={m.dimensions}>
         {report.dimensions.map(d => <li key={d.key} className="val-dim">
-          <span className="val-dim-name">{DIM[d.key]}<small>{pct(DIMENSION_WEIGHTS[d.key], 0)}</small>{d.confidence !== "medium" && <small>{m.confidence} {CONF[d.confidence]}</small>}</span>
-          <span className="val-dim-score">{d.score != null ? <>{d.score.toFixed(1)}<small>/10</small></> : <small>{m.unscored}</small>}</span>
+          <span className="val-dim-name">{DIM[d.key]}{complete && <small>{pct(DIMENSION_WEIGHTS[d.key], 0)}</small>}{d.confidence !== "medium" && <small>{m.confidence} {CONF[d.confidence]}</small>}</span>
+          {complete && <span className="val-dim-score">{d.score!.toFixed(1)}<small>/10</small></span>}
           <div className="val-dim-judgement">
             <Prose text={d.rationale} onCite={onCite} />
-            {d.gaps.length > 0 && <p className="val-note"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{g}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
+            {d.gaps.length > 0 && <p className="val-note"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{readerText(g)}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
           </div>
         </li>)}
       </ol>
@@ -378,10 +394,11 @@ function Report({ report, onCite }: { report: ValuationPublication; onCite: (id:
   const s = report.sections;
   const notes = legacyNotes(s.modelNotes);
   const lists: Array<[label: string, items: string[]]> = [[m.catalysts, s.catalysts], [m.nextChecks, s.nextChecks], [m.counterEvidence, s.counterEvidence]];
+  if (!s.summary && !s.thesis && !s.expectationsGap && !notes && !lists.some(([, items]) => items.length) && !report.model?.methodWeights && !report.model?.managementComparison && !report.model?.consensusNote) return null;
   return <section className="val-block val-report">
     <h3>{m.report}<SourceLanguage of={[s.summary, s.thesis]} /></h3>
     <div className="val-prose">
-      <h4>{m.summary}</h4><ProseBlocks text={s.summary} onCite={onCite} />
+      {s.summary && <><h4>{m.summary}</h4><ProseBlocks text={s.summary} onCite={onCite} /></>}
       {s.thesis && <><h4>{m.thesis}</h4><ProseBlocks text={s.thesis} onCite={onCite} /></>}
       {s.expectationsGap && <><h4>{m.expectationsGap}</h4><ProseBlocks text={s.expectationsGap} onCite={onCite} /></>}
       <ValueSource report={report} onCite={onCite} />

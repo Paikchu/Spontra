@@ -7,11 +7,11 @@ import { Button } from "@/packages/web/src/ui/button";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import { deficitFinancialGraph, financialGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
-import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
+import { compactFlowValue, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
 import { adjustmentName, formatFlowValue, formatReconciliation, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
-import { FlowChart, layoutFor, type CompareBasis, type NodeCopy, type Tip } from "./FlowChart";
+import { FlowChart, layoutFor, statementLabel, type CompareBasis, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
@@ -136,8 +136,6 @@ const hue = (slot: number) => `var(--biz-${slot >= 1 && slot <= HUES ? slot : 0}
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const percent = (v: number | null) => v == null || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}%`;
 const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null });
-/** Chart labels keep about thirteen ems of name; the tooltip carries the full one. */
-const shortName = (name: string) => truncateToWidth(name, 13);
 type View = "profit" | "cash" | "balance" | "valuation" | "company";
 type StatementView = Exclude<View, "valuation" | "company">;
 const VIEWS: readonly View[] = ["valuation", "company", "profit", "cash", "balance"];
@@ -455,7 +453,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const priorOf = useCallback((n: PlacedNode) => { const c = comparisonOf(n); return c && c.percent != null && c.previous != null ? Math.abs(c.previous) : null; }, [comparisonOf]);
   const copy = useCallback((n: PlacedNode): NodeCopy => {
     const change = changeOf(n);
-    return { name: shortName(n.label), value: money(amountOf(n)), ...(change.comparable ? { change: { label: change.label, trend: change.trend ?? undefined } } : {}) };
+    return { name: statementLabel(n.label), value: money(amountOf(n)), ...(change.comparable ? { change: { label: change.label, trend: change.trend ?? undefined } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
   // A bank's statement draws in the main chart like any other once its graph reconciles; an insurer keeps the equation cards.

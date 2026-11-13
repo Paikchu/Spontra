@@ -21,6 +21,26 @@ const m = messages({
   components: "其他构成", flow: "金额", lastQuarter: "上季度",
 });
 
+/** Translate only unambiguous statement terms; preserve issuer-specific lines verbatim. */
+export function statementLabel(name: string): string {
+  if (getLocale() !== "zh-CN") return name;
+  const known: Record<string, string> = {
+    "depreciation and amortization": "折旧与摊销",
+    "research and development": "研发费用",
+    "selling, general and administrative": "销售及管理费用",
+    "general and administrative": "管理费用",
+    "sales and marketing": "销售及市场费用",
+    "income / (loss) from equity method investments": "权益法投资损益",
+    "interest income": "利息收入",
+    "interest expense": "利息费用",
+    "other income, net": "其他收入净额",
+    "other expense, net": "其他支出净额",
+    "income tax expense": "所得税费用",
+    "income tax benefit": "所得税收益",
+  };
+  return known[name.trim().toLowerCase()] ?? name;
+}
+
 /** `change` is the comparable change against the comparison quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
 export type Tip = { title: string; color: string; rows: Array<[string, string]> };
@@ -28,7 +48,7 @@ export type Tip = { title: string; color: string; rows: Array<[string, string]> 
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 15 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
+const typeFor = (k: number) => ({ name: 17 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
 /** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
 const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 const SCREEN_VALUE_PX = 17;
@@ -405,19 +425,20 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 
   const compactNode = (n: PlacedNode) => {
     const text = copy(n), interactive = Boolean(n.segmentId) || n.name === "revenue";
-    const content = <><span className="fc-compact-name">{text.name}</span><span className="fc-compact-value">{text.value}</span>{text.change && <span className="fc-compact-change">{basis.change} {text.change.label}</span>}<span className="fc-compact-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.abs(n.value) / Math.max(1, revenue?.value ?? n.value) * 100)}%`, background: colorOf(n.name) }} /></span></>;
+    const content = <><span className="fc-compact-name" title={n.label}>{text.name}</span><span className="fc-compact-value">{text.value}</span>{text.change && <span className="fc-compact-change">{basis.change} {text.change.label}</span>}<span className="fc-compact-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.abs(n.value) / Math.max(1, revenue?.value ?? n.value) * 100)}%`, background: colorOf(n.name) }} /></span></>;
     return <div className="fc-compact-node" key={n.name} data-owner={n.name} data-tone={n.tone}>
       {interactive ? <button type="button" onClick={() => onPick(n)}>{content}</button> : <div>{content}</div>}
     </div>;
   };
   const primaryNodes = ["revenue", "gross", "operating", "net"];
-  // Only narrow panes swap the Sankey for the compact list; desktop always draws the chart.
-  const compact = narrowPane;
+  // Dense statements must not shrink names below a readable size, even on a desktop with an open sidebar.
+  const fittedNamePx = size ? type.name * Math.min(size.w / worldW, size.h / worldH) : Infinity;
+  const compact = narrowPane || (!expanded && fittedNamePx < 9);
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-compact" role="group" aria-label={label}>
       {primaryNodes.flatMap(name => { const node = byName.get(name); return node ? [compactNode(node)] : []; })}
-      <details className="fc-compact-details"><summary>{m.components}</summary>
+      <details className="fc-compact-details" open><summary>{m.components}</summary>
         {layout.nodes.filter(n => !primaryNodes.includes(n.name)).map(compactNode)}
       </details>
     </div>
@@ -499,7 +520,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         <g className="fc-flow" aria-hidden="true">
           {focus
             ? [...bands.filter(b => focus.links.has(b.key) && !focus.trace.some(t => t.key === "trace:" + b.key)), ...focus.trace].map(b => <Streams key={b.key} band={b} strength="lit" />)
-            : bands.map(b => <Streams key={b.key} band={b} strength="ambient" />)}
+            : null}
         </g>
       </g>
       <g className="fc-nodes">
@@ -516,6 +537,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
             {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
+            <title>{n.label}: {text.value}</title>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
             {mark && <g className="fc-prior" aria-hidden="true">

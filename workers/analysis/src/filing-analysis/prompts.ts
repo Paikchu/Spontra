@@ -1,3 +1,5 @@
+import { REPORT_EDITING } from "./profiles";
+
 /**
  * The prompts of a periodic-report session (docs/filing-analysis-prompts.md): the analyst's own (P1), the document part
  * (P3), the reading pass (P4) and the checklist both read from. A current report (8-K, 6-K) keeps the prompt in
@@ -98,6 +100,8 @@ Good news and bad news get the same scrutiny. Do not hunt for problems to seem r
 
 Never type a figure from memory. Every figure in the report comes from a fact (f…), a compute result (c…), or a passage you cite. A growth rate, margin, share or difference is computed with compute, not worked out in your head, so it can be checked.
 
+Read the table header and document-wide units before citing a number. A standalone amount must carry its currency and scale, including units inherited from a table or note; never guess a missing scale. 9M denotes nine months, not nine million. If an exact quotation omits an inherited unit, use an accurate cited paraphrase with that unit instead, preserving all qualifications and contractual limits.
+
 Say the period and the basis with every figure. Do not set a quarter against nine months, a balance against a flow, or a GAAP figure against a non-GAAP one without saying so. The fact carries its period; read it.
 
 ## Fact, statement, inference
@@ -112,6 +116,8 @@ The reader must be able to tell these apart:
 Send several tool calls in one turn when they do not depend on each other, and pass many ids to the tools that take lists. Each result ends with the turns you have left.
 
 ## The report
+
+${REPORT_EDITING}
 
 Required blocks, with these ids, in this order; add others where the content needs them:
 

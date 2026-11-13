@@ -24,7 +24,7 @@ const ring = (radius: number) => VALUATION_DIMENSIONS.map((_, i) => { const v = 
 
 /**
  * The same axes, order and weights for every company, rings at the scoring anchors, the scored polygon as one series.
- * An unscored dimension sits at the centre and is labelled as such. Compact, the labels carry only the names: the rows
+ * An incomplete set is not plotted: missing evidence is not a zero score. Compact labels carry only the names: the rows
  * beside the chart say the scores.
  */
 export function Radar({ report, label, confidence, compact }: {
@@ -34,6 +34,7 @@ export function Radar({ report, label, confidence, compact }: {
   compact?: boolean;
 }) {
   const byKey = new Map(report.dimensions.map(d => [d.key, d]));
+  if (VALUATION_DIMENSIONS.some(key => !finite(byKey.get(key)?.score))) return null;
   const points = VALUATION_DIMENSIONS.map((key, i) => {
     const d = byKey.get(key);
     const score = d && finite(d.score) ? Math.max(0, Math.min(10, d.score)) : null;
