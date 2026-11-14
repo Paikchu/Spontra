@@ -532,7 +532,7 @@ const CAPITAL_LABEL: Record<CapitalMetric, string> = {
   acquisitions: "Acquisitions", investmentsNet: "Net purchases of investments", leasePrincipal: "Lease principal repaid", depreciation: "Depreciation and amortization", stockCompensation: "Stock-based compensation",
   interestPaid: "Cash interest paid", taxesPaid: "Cash taxes paid", unpaidCapex: "Capex incurred but unpaid", leaseAssetsObtained: "Lease assets obtained",
   totalAssets: "Total assets", debt: "Total debt", cash: "Cash and short-term investments", equity: "Shareholders' equity", totalLiabilities: "Total liabilities", currentAssets: "Current assets", currentLiabilities: "Current liabilities",
-  receivables: "Receivables", inventory: "Inventory", productive: "Property and equipment", leaseAssets: "Lease right-of-use assets", intangibles: "Goodwill and intangibles", investments: "Investments", leases: "Lease liabilities", customerAdvances: "Deferred revenue and customer advances", payables: "Accounts payable and accrued liabilities", deferredTax: "Deferred tax liabilities",
+  receivables: "Receivables", inventory: "Inventory", productive: "Property and equipment", leaseAssets: "Lease right-of-use assets", intangibles: "Goodwill and intangibles", investments: "Investments", leases: "Total lease liabilities (operating and finance)", customerAdvances: "Deferred revenue and customer advances", payables: "Accounts payable and accrued liabilities", deferredTax: "Deferred tax liabilities",
   rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months",
 };
 
@@ -543,7 +543,7 @@ const CAPITAL_LABEL_ZH: Record<CapitalMetric, string> = {
   acquisitions: "收购支出", investmentsNet: "投资净买入", leasePrincipal: "偿还租赁本金", depreciation: "折旧与摊销", stockCompensation: "股权激励费用",
   interestPaid: "现金支付利息", taxesPaid: "现金支付所得税", unpaidCapex: "已发生未支付的资本开支", leaseAssetsObtained: "新增租赁资产",
   totalAssets: "总资产", debt: "总债务", cash: "现金及短期投资", equity: "股东权益", totalLiabilities: "总负债", currentAssets: "流动资产", currentLiabilities: "流动负债",
-  receivables: "应收账款", inventory: "存货", productive: "固定资产", leaseAssets: "租赁使用权资产", intangibles: "商誉及无形资产", investments: "投资", leases: "租赁负债", customerAdvances: "递延收入及客户预付款", payables: "应付账款及应计负债", deferredTax: "递延所得税负债",
+  receivables: "应收账款", inventory: "存货", productive: "固定资产", leaseAssets: "租赁使用权资产", intangibles: "商誉及无形资产", investments: "投资", leases: "租赁负债合计（经营及融资租赁）", customerAdvances: "递延收入及客户预付款", payables: "应付账款及应计负债", deferredTax: "递延所得税负债",
   rpo: "剩余履约义务（RPO）", rpoNext12MonthsShare: "12 个月内确认的 RPO",
 };
 const DERIVED_LABEL: Record<DerivedMetric, [string, string]> = {
