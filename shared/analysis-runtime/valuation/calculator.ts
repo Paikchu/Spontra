@@ -7,7 +7,7 @@ import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
  * The deterministic valuation calculator. Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v10";
+export const CALCULATOR_VERSION = "valuation.calc.v11";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years. */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -132,7 +132,9 @@ function rollForward(model: ValuationModelResult, months: number, r: number): Va
   const factor = requireFinite((1 + r) ** (months / 12), "forward factor");
   const scale = (v: number) => v * factor;
   const nullable = (v: number | null) => v == null ? null : scale(v);
-  const scenario = <T extends ScenarioEntry>(s: T): T => ({ ...s, result: { ...s.result, perShare: scale(s.result.perShare) }, ...(s.valuation ? { valuation: { ...s.valuation, perShare: scale(s.valuation.perShare) } } : {}) });
+  const scenario = <T extends ScenarioEntry>(s: T): T => ({ ...s, result: { ...s.result, perShare: scale(s.result.perShare) }, ...(s.valuation ? { valuation: { ...s.valuation,
+    methods: { dcf: nullable(s.valuation.methods.dcf), ev_ebitda_forward: nullable(s.valuation.methods.ev_ebitda_forward), pe_forward: nullable(s.valuation.methods.pe_forward) },
+    perShare: scale(s.valuation.perShare) } } : {}) });
   const scenarios = Object.fromEntries(SCENARIO_KEYS.map(k => [k, scenario(model.scenarios[k])])) as Record<ScenarioKey, ScenarioEntry>;
   const range = valuationRange({ bear: scale(model.range.low), base: scale(model.range.base), bull: scale(model.range.high) }, nullable(model.range.expected), model.range.price);
   const forward: ForwardRoll = { months, factor, basis: "discount_rate" };
@@ -367,7 +369,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   } else if (probabilities.some(finite)) throw new ValuationCalcError("invalid_input", "give a probability for every scenario or for none");
   const range = valuationRange(values, expected, request.price);
   const sensitivities = sensitivitiesOf(request, r, shares.economic);
-  const implied = request.price != null && request.modelType === "fcff" ? impliedGrowth(request, r, shares.economic, request.price) : null;
+  const implied = request.price != null && request.modelType === "fcff" ? impliedGrowth(request, r, shares.economic, request.price / (1 + r) ** ((request.horizonMonths ?? 0) / 12)) : null;
   const baseDrivers = request.scenarios.base.drivers;
   const horizonYears = baseDrivers.modelType === "fcff" ? horizonOf(baseDrivers.path) : FORECAST_YEARS;
   const limitations: string[] = [midYear ? "Cash flows are discounted mid-year; no stub period." : "Cash flows are discounted at year end; no mid-year convention and no stub period."];
@@ -772,7 +774,7 @@ function checkScenarioConsistency(scenarios: Record<ScenarioKey, ScenarioAssumpt
   }
 }
 
-function valuationRange(values: Record<ScenarioKey, number>, expected: number | null, price: number | null): ValuationRange {
+export function valuationRange(values: Record<ScenarioKey, number>, expected: number | null, price: number | null): ValuationRange {
   const ratio = (numerator: number | null, denominator: number | null) => numerator != null && denominator != null && denominator > 0 && numerator >= 0 ? numerator / denominator - 1 : null;
   return {
     low: values.bear, high: values.bull, base: values.base, expected, price,
@@ -847,7 +849,7 @@ export function sensitivitiesOf(request: CalcRequest, r: number, shares: number)
  * base per-share value equal the price. Solved by bisection on a monotone interval; `converged` false when the price
  * sits outside what any growth in [−50%, +100%] produces.
  */
-function impliedGrowth(request: CalcRequest, r: number, shares: number, price: number): ImpliedPath | null {
+export function impliedGrowth(request: Pick<CalcRequest, "scenarios" | "bridge" | "midYear">, r: number, shares: number, price: number): ImpliedPath | null {
   const base = request.scenarios.base.drivers;
   if (base.modelType !== "fcff" || !(price > 0)) return null;
   const years = horizonOf(base.path);

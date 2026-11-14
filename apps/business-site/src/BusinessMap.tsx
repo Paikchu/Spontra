@@ -400,14 +400,12 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const companyReport = companyPreview ?? companyArtifact;
   // A reader's report drafted for the visual review opens on the stage by itself.
   const stageDraft = usePreview("stage-report", "*");
-  // The page opens on the valuation when a report is published for it; otherwise (hidden, preparing, failed) on the
-  // income statement. The opening read settles before the map mounts, so the default is known at first paint.
-  const homeView: View = valuationShown && valuation?.report ? "valuation" : "profit";
+  // Start with the income statement; valuation remains an explicit tab or deep link.
+  const homeView: View = "profit";
   const [chosenView, setView] = useState<View>(() => {
     const params = new URLSearchParams(location.search), v = params.get("view");
     if (VIEWS.includes(v as View)) return v as View;
-    // A link to a business, finding, flag, report or event reads on the statements.
-    return ["business", "finding", "check", "event", "report", "metric"].some(k => params.has(k)) ? "profit" : homeView;
+    return homeView;
   });
   const view: View = chosenView === "company" && companyReport ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures under the valuation refer to: the one the reader comes back to.

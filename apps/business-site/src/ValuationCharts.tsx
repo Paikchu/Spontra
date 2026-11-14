@@ -14,11 +14,11 @@ const m = messages({
 const pct = (v: number, digits = 0) => `${v < 0 ? "−" : ""}${(Math.abs(v) * 100).toFixed(digits)}%`;
 const finite = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 
-const RADAR = { w: 400, h: 360, cx: 200, cy: 190, r: 120 } as const;
+const RADAR = { w: 400, h: 360, cx: 200, cy: 190, r: 100, labelRadius: 156 } as const;
 /** A vertex on the fixed pentagon: the five axes in contract order, clockwise from the top. */
-function vertex(index: number, radius: number): { x: number; y: number; cos: number } {
+function vertex(index: number, radius: number): { x: number; y: number } {
   const angle = (index * 72 - 90) * Math.PI / 180;
-  return { x: RADAR.cx + radius * Math.cos(angle), y: RADAR.cy + radius * Math.sin(angle), cos: Math.cos(angle) };
+  return { x: RADAR.cx + radius * Math.cos(angle), y: RADAR.cy + radius * Math.sin(angle) };
 }
 const ring = (radius: number) => VALUATION_DIMENSIONS.map((_, i) => { const v = vertex(i, radius); return `${v.x.toFixed(1)},${v.y.toFixed(1)}`; }).join(" ");
 
@@ -38,7 +38,7 @@ export function Radar({ report, label, confidence, compact }: {
   const points = VALUATION_DIMENSIONS.map((key, i) => {
     const d = byKey.get(key);
     const score = d && finite(d.score) ? Math.max(0, Math.min(10, d.score)) : null;
-    const v = vertex(i, RADAR.r * (score ?? 0) / 10), at = vertex(i, RADAR.r + 16);
+    const v = vertex(i, RADAR.r * (score ?? 0) / 10), at = vertex(i, RADAR.labelRadius);
     return { key, score, confidence: d?.confidence ?? null, v, at };
   });
   const summary = points.map(p => `${label(p.key)} ${p.score != null ? p.score.toFixed(1) : m.unscored}`).join(" · ");
@@ -50,7 +50,7 @@ export function Radar({ report, label, confidence, compact }: {
       <polygon className="val-radar-area" points={points.map(p => `${p.v.x.toFixed(1)},${p.v.y.toFixed(1)}`).join(" ")} />
       {points.map(p => <circle key={p.key} className="val-radar-dot" data-unscored={p.score == null ? "" : undefined} cx={p.v.x.toFixed(1)} cy={p.v.y.toFixed(1)} r={4}><title>{`${label(p.key)} · ${p.score != null ? p.score.toFixed(1) : m.unscored}`}</title></circle>)}
     </svg>
-    {points.map(p => <span key={p.key} className="val-radar-label" data-side={p.at.cos > 0.1 ? "right" : p.at.cos < -0.1 ? "left" : "top"} style={{ left: `${(p.at.x / RADAR.w * 100).toFixed(1)}%`, top: `${(p.at.y / RADAR.h * 100).toFixed(1)}%` }}>
+    {points.map(p => <span key={p.key} className="val-radar-label" style={{ left: `${(p.at.x / RADAR.w * 100).toFixed(1)}%`, top: `${(p.at.y / RADAR.h * 100).toFixed(1)}%` }}>
       <b>{label(p.key)}{!compact && <em> {p.score != null ? p.score.toFixed(1) : "—"}</em>}</b>
       {!compact && <small>{m.weight(pct(DIMENSION_WEIGHTS[p.key]))}{conf(p.confidence)}</small>}
     </span>)}</div>

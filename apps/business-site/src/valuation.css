@@ -13,6 +13,7 @@
 .val-ticker { margin: 0; font-size: 32px; line-height: 1; font-weight: 700; letter-spacing: -.02em; }
 .val-company { font-size: 13px; color: var(--muted-foreground); }
 .val-headline { display: grid; justify-items: end; gap: 6px; text-align: right; }
+.val-summary { flex-basis: 100%; margin: 0; font-size: 15px; line-height: 1.6; text-wrap: pretty; }
 .val-headline-label { font-size: 12px; color: var(--faint); }
 .val-composite { display: flex; align-items: baseline; gap: 6px; }
 .val-composite strong { font-family: var(--mono); font-size: 38px; line-height: 1; font-weight: 600; }
@@ -55,22 +56,20 @@
 .val-scores { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 8px 40px; align-items: start; }
 .val-scores[data-incomplete] { grid-template-columns: minmax(0, 1fr); }
 .val-scores .val-radar { position: sticky; top: 0; }
-.val-radar { display: grid; gap: 6px; margin: 0; padding: 0 48px; }
+.val-radar { display: grid; gap: 6px; margin: 0; }
 .val-radar-plot { position: relative; }
 .val-radar-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .val-radar-ring, .val-radar-axis { fill: none; stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .val-radar-area { fill: color-mix(in srgb, var(--foreground) 10%, transparent); stroke: var(--muted-foreground); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .val-radar-dot { fill: var(--foreground); stroke: var(--background); stroke-width: 2; }
 .val-radar-dot[data-unscored] { fill: var(--background); stroke: var(--faint); stroke-dasharray: 2 2; }
-.val-radar-label { position: absolute; display: grid; gap: 1px; font-size: 12.5px; line-height: 1.25; white-space: nowrap; color: var(--muted-foreground); pointer-events: none; }
+.val-radar-label { position: absolute; display: grid; gap: 1px; width: 26%; transform: translate(-50%, -50%); text-align: center; font-size: 12.5px; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; text-wrap: balance; color: var(--muted-foreground); pointer-events: none; }
 .val-radar-label b { font-weight: 500; }
 .val-radar-label em { font-style: normal; font-weight: 620; color: var(--foreground); }
 .val-radar-label small { font-size: 11px; color: var(--faint); }
-.val-radar-label[data-side="top"] { transform: translate(-50%, -100%); text-align: center; }
-.val-radar-label[data-side="right"] { transform: translate(0, -50%); }
-.val-radar-label[data-side="left"] { transform: translate(-100%, -50%); text-align: right; }
-.val-radar figcaption { margin-left: -48px; font-size: 11.5px; color: var(--faint); }
+.val-radar figcaption { font-size: 11.5px; color: var(--faint); }
 .val-score-rows { display: grid; gap: 0; }
+.val-research-note { grid-column: 1 / -1; }
 .val-score-caption { padding: 2px 0 8px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .val-dims { display: grid; margin: 0; padding: 0; list-style: none; }
 .val-dim { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--hairline); font-size: 14px; }
@@ -95,6 +94,9 @@
 /* The valuation as the live page draws it: the range as display type, the stress fold, the scenario table, the sensitivity bars. */
 .val-fair .val-fair-value { margin: 0; font-family: var(--display); font-size: 28px; font-weight: 500; line-height: 1.3; letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
 .val-list-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
+.val-composition { display: grid; gap: 6px; min-inline-size: 0; }
+.val-formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.val-formula-term { min-inline-size: 0; overflow-wrap: anywhere; }
 .val-list-line b { margin-right: 6px; font-weight: 620; color: var(--foreground); }
 .val-model-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
 .val-implied { padding: 8px 12px; border-radius: 10px; background: var(--fill); font-size: 13px !important; }

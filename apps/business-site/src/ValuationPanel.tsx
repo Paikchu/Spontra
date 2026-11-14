@@ -6,6 +6,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
 import { CONFIDENCES, CONFIDENCE_RULES, DIMENSION_TEMPLATE, DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, SCORE_ANCHOR_LEVELS, VALUATION_DIMENSIONS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
 import type { ValuationPriceGuide } from "@/shared/analysis-contract/price-guide";
+import { modelAtReferencePrice } from "@/shared/analysis-runtime/valuation/current-price";
 import { track } from "./track";
 import { citationOrder, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
 import { Radar } from "./ValuationCharts";
@@ -56,7 +57,15 @@ const m = messages({
   managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
   pricePosition: "Price relative to the 12-month fair value", fairRange: "Fair value range, 12 months out", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment",
-  below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
+  below: "Below normal operating range", within: "Within normal operating range", above: "Above normal operating range", unable: "Unable to assess",
+  lowConfidence: "Low confidence", methodDisagreement: "The valuation methods differ substantially, so confidence in the price comparison is low.",
+  lowConfidenceReason: "Key evidence or assumptions remain uncertain, so confidence in the price comparison is low.",
+  priceConclusion: (position: string) => `The current price is ${position.toLowerCase()}.`,
+  normalRangeNote: "This range covers normal operating assumptions. The bear and bull scenarios below test more adverse or favourable outcomes and can fall outside it; the base value is shared.",
+  baseComposition: "Base value by method", compositionEquals: "=", compositionPlus: "+",
+  reportSnapshot: (date: string) => `Research written on ${date}. Its commentary records the conditions at that time; the reference close and price comparisons above are updated separately.`,
+  reportSnapshotPrice: (price: string, date: string) => `Price used in the original commentary: ${price}, close of ${date}.`,
+  impliedBasis: "Implied growth uses the cash-flow method alone, at the same valuation horizon.",
   noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
 }, {
   title: "估值评估",
@@ -96,7 +105,15 @@ const m = messages({
   managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
   pricePosition: "股价相对 12 个月合理价值", fairRange: "12 个月合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价",
-  below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
+  below: "低于正常经营区间", within: "处于正常经营区间", above: "高于正常经营区间", unable: "暂无法判断",
+  lowConfidence: "置信度低", methodDisagreement: "不同估值方法的结果分歧较大，因此当前价格比较的置信度低。",
+  lowConfidenceReason: "部分关键证据或假设仍不确定，因此当前价格比较的置信度低。",
+  priceConclusion: (position: string) => `当前股价${position}。`,
+  normalRangeNote: "此区间对应正常经营假设。下方悲观与乐观情景分别检验更不利和更有利的结果，可以落在该区间之外；两者共用同一基准价值。",
+  baseComposition: "基准价值的计算构成", compositionEquals: "=", compositionPlus: "+",
+  reportSnapshot: (date: string) => `研究撰写于 ${date}，正文保留当时的判断；上方参考收盘价及价格比较单独更新。`,
+  reportSnapshotPrice: (price: string, date: string) => `原文采用的历史价格：${price}（${date} 收盘）。`,
+  impliedBasis: "隐含增长仅使用现金流法，与页面采用相同估值期限。",
   noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
   noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "当前估值需要重新评估。",
 });
@@ -173,6 +190,26 @@ const hasCompleteScores = (report: ValuationPublication) => report.reportStatus 
   && report.weightedScore != null && Number.isFinite(report.weightedScore)
   && VALUATION_DIMENSIONS.every(key => report.dimensions.some(d => d.key === key && d.score != null && Number.isFinite(d.score)));
 
+function baseMethods(report: ValuationPublication) {
+  const valuation = report.model?.scenarios.base.valuation;
+  return valuation ? VALUATION_METHODS.flatMap(key => {
+    const value = valuation.methods[key], weight = valuation.weights[key];
+    return value != null && weight > 0 ? [{ key, value, weight }] : [];
+  }) : [];
+}
+
+function methodsDisagree(report: ValuationPublication): boolean {
+  const values = baseMethods(report).map(method => method.value);
+  if (values.length < 2) return false;
+  const low = Math.min(...values), high = Math.max(...values);
+  return low <= 0 ? high > 0 : high / low > 3;
+}
+
+function ResearchSnapshot({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  return <p className="val-note val-research-note">{m.reportSnapshot(day(report.generatedAt))} {report.quote && m.reportSnapshotPrice(perShare(report.quote.price, report.quote.currency, locale), report.quote.priceDate)}</p>;
+}
+
 /** Generated prose with its evidence citations turned into footnote numbers. */
 function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" | "span" }) {
   return <Tag lang={langOf(text)}>{proseParts(readerText(text)).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
@@ -193,6 +230,8 @@ const legacyNotes = (notes: string) => notes.split(/\n*JUDGEMENTS\. /)[0]!.trim(
 /** The head: ticker and name; the composite score, the reference close and where it sits against the normal range. */
 function Head({ report, guide }: { report: ValuationPublication; guide: ValuationPriceGuide }) {
   const locale = useLocale();
+  const disagreement = methodsDisagree(report);
+  const lowConfidence = report.confidence === "low" || disagreement;
   return <header className="val-head">
     <div className="val-identity">
       <h2 className="val-ticker">{report.ticker}</h2>
@@ -202,8 +241,9 @@ function Head({ report, guide }: { report: ValuationPublication; guide: Valuatio
       {hasCompleteScores(report) && <><span className="val-headline-label">{m.compositeScore}</span>
       <span className="val-composite"><strong>{report.weightedScore!.toFixed(1)}</strong><small>{m.outOfTen}</small></span></>}
       <span className="val-quote">{guide.quote ? <><b>{perShare(guide.quote.price, guide.quote.currency, locale)}</b><small>{guide.quote.priceDate}</small></> : <small>{m.noQuote}</small>}</span>
-      <span className="val-position" data-tone={guide.status === "available" ? PRICE_TONE[guide.position] : "neutral"}>{guide.status === "available" ? m[guide.position] : m.unable}</span>
+      <span className="val-position" data-tone={guide.status === "available" && !lowConfidence ? PRICE_TONE[guide.position] : "neutral"}>{guide.status === "available" ? m[guide.position] : m.unable}{lowConfidence && ` · ${m.lowConfidence}`}</span>
     </div>
+    <p className="val-summary">{guide.status === "available" ? m.priceConclusion(m[guide.position]) : guideReason(guide.reason)} {lowConfidence && (disagreement ? m.methodDisagreement : m.lowConfidenceReason)}</p>
   </header>;
 }
 
@@ -211,6 +251,7 @@ function Head({ report, guide }: { report: ValuationPublication; guide: Valuatio
 function Scores({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   const complete = hasCompleteScores(report);
   return <section className="val-block val-scores" data-incomplete={!complete || undefined} aria-label={complete ? m.scores : m.partialResearch}>
+    <ResearchSnapshot report={report} />
     {complete && <Radar report={report} label={key => DIM[key]} compact />}
     <div className="val-score-rows">
       <span className="val-score-caption">{complete ? m.scores : m.partialResearch} · {m.researched(day(report.researchAsOf))}{report.confidence !== "medium" && ` · ${m.confidence} ${CONF[report.confidence]}`}</span>
@@ -248,6 +289,7 @@ function FairValue({ report, guide, onCite }: { report: ValuationPublication; gu
   const fair = report.model?.fairValueRange;
   const supported = fair?.status === "available" && (guide.status === "available" || guide.reason === "no_quote" || guide.reason === "unusable_quote" || guide.reason === "stale_quote" || guide.reason === "currency_mismatch");
   const assumptions = supported ? report.model?.scenarios.base.assumptions : null;
+  const methods = baseMethods(report);
   return <section className="val-block val-fair" aria-label={m.pricePosition}>
     <h3>{m.fairRange}</h3>
     <p className="val-fair-value">{supported ? `${perShare(fair.low, report.currency, locale)} – ${perShare(fair.high, report.currency, locale)}` : "—"}</p>
@@ -255,6 +297,13 @@ function FairValue({ report, guide, onCite }: { report: ValuationPublication; gu
       <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
       {supported && <div><dt>{m.centralValue}</dt><dd>{perShare(fair.base, report.currency, locale)}</dd></div>}
     </dl>
+    {supported && <p className="val-note">{m.normalRangeNote}</p>}
+    {supported && methods.length > 0 && <div className="val-composition">
+      <h4>{m.baseComposition}</h4>
+      <p className="val-formula"><strong>{perShare(fair.base, report.currency, locale)}</strong><span>{m.compositionEquals}</span>{methods.map((method, index) => <Fragment key={method.key}>
+        {index > 0 && <span>{m.compositionPlus}</span>}<span className="val-formula-term">{METHOD[method.key]} {perShare(method.value, report.currency, locale)} × {pct(method.weight, 0)}</span>
+      </Fragment>)}</p>
+    </div>}
     {report.model?.forward && <p className="val-list-line">{m.horizonNote(report.model.forward.months, pct(report.model.discountRate.value))}</p>}
     {guide.status === "unavailable" && <p className="val-list-line">{guideReason(guide.reason)}</p>}
     {fair?.status === "unavailable" && fair.reason && <Prose text={fair.reason} onCite={onCite} />}
@@ -351,11 +400,12 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
     {model.scenarioProbabilities && <div className="val-why-list"><h5>{m.probabilities}</h5>
       {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
     </div>}
-    {model.implied && <p className="val-implied"><b>{m.implied}</b> {model.implied.converged ? m.impliedText(pct(model.implied.implied), pct(model.implied.baseAverage)) : m.impliedNotConverged}</p>}
+    {model.implied && <p className="val-implied"><b>{m.implied}</b> {model.implied.converged ? m.impliedText(pct(model.implied.implied), pct(model.implied.baseAverage)) : m.impliedNotConverged} {m.impliedBasis}</p>}
     <h4>{m.sensitivities}</h4>
     <Sensitivities report={report} />
     <Button variant="unstyled" type="button" className="val-toggle" aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? m.hideModel : m.showModel}</Button>
     {open && <div className="val-model-detail">
+      <ResearchSnapshot report={report} />
       {rows.map(([key, s]) => <div key={key} className="val-scenario">
         <h5>{m[key]}</h5>
         {key === "management" && <p className="val-list-line">{m.managementScenarioNote}</p>}
@@ -397,6 +447,7 @@ function Report({ report, onCite }: { report: ValuationPublication; onCite: (id:
   if (!s.summary && !s.thesis && !s.expectationsGap && !notes && !lists.some(([, items]) => items.length) && !report.model?.methodWeights && !report.model?.managementComparison && !report.model?.consensusNote) return null;
   return <section className="val-block val-report">
     <h3>{m.report}<SourceLanguage of={[s.summary, s.thesis]} /></h3>
+    <ResearchSnapshot report={report} />
     <div className="val-prose">
       {s.summary && <><h4>{m.summary}</h4><ProseBlocks text={s.summary} onCite={onCite} /></>}
       {s.thesis && <><h4>{m.thesis}</h4><ProseBlocks text={s.thesis} onCite={onCite} /></>}
@@ -485,21 +536,23 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   if (shownTicker !== ticker) { setShownTicker(ticker); setOpen(null); }
   // One report per period: the current publication, never a picked older version.
   const locale = useLocale();
-  const report = valuation.report;
+  const storedReport = valuation.report;
+  const guide: ValuationPriceGuide = valuation.priceGuide && valuation.priceGuide.reportVersionId === storedReport?.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: storedReport?.versionId ?? null, quote: null, reason: storedReport?.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" };
+  const price = guide.status === "available" ? guide.quote.price : null;
+  const model = useMemo(() => storedReport?.model ? modelAtReferencePrice(storedReport.model, price) : null, [storedReport?.model, price]);
+  const report = storedReport ? { ...storedReport, model } : null;
   const range = report?.model?.range;
-  const footnotes = useMemo(() => report ? footnotesOf(report) : null, [report]);
+  const footnotes = useMemo(() => storedReport ? footnotesOf(storedReport) : null, [storedReport]);
   if (!report || !footnotes) {
     const failed = valuation.availability === "failed";
     return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
       <div className="lens-empty val-empty"><h2>{failed ? m.failed : m.preparing}</h2><p>{failed ? m.failedNote : m.preparingNote}</p>{!failed && <i className="lens-loading" />}</div>
     </section>;
   }
-  const guide: ValuationPriceGuide = valuation.priceGuide?.reportVersionId === report.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: report.versionId, quote: null, reason: report.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" };
   return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
     <div className="lens-doc val-doc">
       <Head report={report} guide={guide} />
       <Status valuation={valuation} />
-      <Scores report={report} onCite={setOpen} />
       <FairValue report={report} guide={guide} onCite={setOpen} />
       {report.model && <section className="val-block"><details className="val-fold val-stress" open>
         <summary>{m.stressScenarios}</summary>
@@ -508,7 +561,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <RangeBar report={report} />
         {range && range.low < 0 && <p className="val-list-line">{m.equityShortfall}</p>}
         <dl className="val-stats">
-          <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+          <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
           {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}
           {has(range?.marginOfSafety) && <div><dt>{m.marginOfSafety}</dt><dd data-sign={range!.marginOfSafety! >= 0 ? "up" : "down"}>{pct(range!.marginOfSafety)}</dd></div>}
           {has(range?.baseUpside) && <div><dt>{m.baseUpside}</dt><dd>{signedPct(range!.baseUpside)}</dd></div>}
@@ -519,6 +572,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <Model report={report} onCite={setOpen} />
         </div>
       </details></section>}
+      <Scores report={report} onCite={setOpen} />
       <Report report={report} onCite={setOpen} />
       <Sources report={report} open={open} onOpen={setOpen} onClose={() => setOpen(null)} />
     </div>

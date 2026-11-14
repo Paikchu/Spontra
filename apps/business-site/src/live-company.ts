@@ -99,8 +99,7 @@ function primaryResources(search: string, valuation: ValuationResponse | null): 
   if (["finding", "check", "report"].some(key => params.has(key))) return MAP_RESOURCES;
   if (params.has("event")) return MAP_RESOURCES.filter(resource => resource !== "filings");
   const requestedView = params.get("view");
-  const statementLink = ["business", "metric"].some(key => params.has(key));
-  const opensValuation = !!valuation && valuation.availability !== "hidden" && (requestedView === "valuation" || (!requestedView && !statementLink && !!valuation?.report));
+  const opensValuation = !!valuation && valuation.availability !== "hidden" && requestedView === "valuation";
   if (opensValuation) return ["company", "valuation"];
   // Tabs, headline figures and checks are part of the first statement frame. Keep their geometry and meaning stable;
   // the filing/event history can arrive later without blocking them.

@@ -1,6 +1,6 @@
 # Current-price valuation guide
 
-The product compares a dated reference close with an evidence-backed range of present equity values. It does not promise a future price or infer a buy/sell recommendation from the research score.
+The product compares a dated reference close with an evidence-backed range of equity values at the report's stated valuation horizon. It does not promise a future price or infer a buy/sell recommendation from the research score.
 
 ## Contract and ownership
 
@@ -13,6 +13,8 @@ Enterprise and equity claims retain their own discount basis. FCFF and an EV/EBI
 `ValuationResponse.priceGuide` is a separate dated comparison tied to `reportVersionId`. A valid range plus a usable, same-currency quote produces below/within/above and arithmetic value gaps. Missing evidence, unfinished review, stale or missing prices and an updating report produce unavailable with a typed reason. These gaps are value comparisons, not expected holding-period returns.
 
 Current reads use the newer of the immutable report quote and the independent stored close. The existing schedule refreshes closes for visible companies with usable published ranges; it does not call a model or rewrite research. Historical versions compare against their own frozen quote at their research date. The reader labels the quote date and keeps the research date separate.
+
+The reader projects the stress-scenario price comparisons and cash-flow-implied growth from that same current reference close, without changing the published assumptions or values. It shows the normal-range and stress-scenario distinction, the base value's weighted method contributions, and low confidence when the applied method values differ by more than threefold. Original commentary is identified by its research date and historical price. Calculator v11 rolls each method contribution to the same horizon as its scenario total; the reader applies that unit correction to v10 reports in memory.
 
 ## Research and publishing
 
