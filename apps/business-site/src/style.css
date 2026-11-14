@@ -490,6 +490,10 @@ button { cursor: pointer; }
   border: 0; background: none; color: var(--foreground); font-family: var(--sans); overflow: visible;
 }
 .search-dialog::backdrop { background: color-mix(in srgb, var(--background) 62%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.search-dialog:modal { overscroll-behavior: contain; }
+.search-dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.search-close { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font-size: 24px; }
+.search-close:hover { background: var(--fill); color: var(--foreground); }
 .search-dialog[open] { animation: pop .24s var(--ease) both; }
 .search-dialog[open]::backdrop { animation: fade-in .2s ease both; }
 .search-panel { overflow: hidden; border-radius: 24px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); }

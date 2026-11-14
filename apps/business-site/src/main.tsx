@@ -83,6 +83,7 @@ function showTicker(next: string | null, set: (ticker: string | null) => void) {
 }
 function App() {
   const locale = useLocale();
+  const focusRoute = useRef(false);
   const [ticker, setTicker] = useState(() => {
       const initialTicker = tickerFromUrl();
       if (initialTicker) preloadCompanyPage();
@@ -157,9 +158,11 @@ function App() {
   useEffect(() => {
     // A browser that already animated the swipe back or forward gets no second animation.
     const changed = (e: PopStateEvent) => {
-      setPath(location.pathname);
-      if ((e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition) setTicker(tickerFromUrl());
-      else showTicker(tickerFromUrl(), setTicker);
+      focusRoute.current = true;
+      setSearching(false);
+      const update = (next: string | null) => { setPath(location.pathname); setTicker(next); };
+      if ((e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition) update(tickerFromUrl());
+      else showTicker(tickerFromUrl(), update);
     };
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
@@ -186,6 +189,13 @@ function App() {
     document.querySelector('meta[name="description"]')?.setAttribute("content", m.description);
   }, [ticker, locale, path]);
   useEffect(() => {
+    if (!focusRoute.current) return;
+    focusRoute.current = false;
+    if (focusSearch.current) return;
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>("main")?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [ticker, path]);
+  useEffect(() => {
     if (!focusSearch.current || ticker || !isHomePath(path)) return;
     focusSearch.current = false;
     document.querySelector<HTMLInputElement>(".home .search-field input")?.focus();
@@ -205,8 +215,9 @@ function App() {
   /** In-app links: a company, optionally opened at a finding, or home. */
   const navigate = useCallback((href: string) => {
     if (href !== location.pathname + location.search) history.pushState(null, "", href);
-    setPath(location.pathname);
-    showTicker(tickerFromUrl(), setTicker);
+    focusRoute.current = true;
+    setSearching(false);
+    showTicker(tickerFromUrl(), next => { setPath(location.pathname); setTicker(next); });
   }, []);
   const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   const goHome = useCallback(() => navigate("/"), [navigate]);
@@ -254,7 +265,7 @@ function App() {
   const picks = featuredCompanies(home.digest?.companies ?? [], home.digest?.popular ?? [], locale);
   // Home remounts so its memos pick up the new locale. The company page stays mounted and refetches in place.
   if (!ticker && !isHomePath(path))
-    return <ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} />;
+    return <main tabIndex={-1}><ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} /></main>;
   if (!ticker)
     return <Fragment key={locale}>
       <Home light={light} onToggleTheme={toggleTheme} recent={shownRecent} onPick={openCompany} digest={home.digest} digestStatus={home.status} onRetry={home.retry} onSearch={() => setSearching(true)} />
@@ -271,7 +282,7 @@ function App() {
   return (
     <>
       <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
-        <main data-rail={railCollapsed ? "collapsed" : undefined}>
+        <main tabIndex={-1} aria-label={`${ticker} · ${m.title}`} data-rail={railCollapsed ? "collapsed" : undefined}>
           <CompanyRouteBoundary key={ticker} ticker={ticker} companies={picks} onHome={goHome} onSearch={searchFromError}>
             <Suspense fallback={<CompanySkeleton ticker={ticker} tools={actions} />}>
               <Company key={ticker} ticker={ticker} opening={opening!} tools={actions} onSeen={remember} covered={home.covered} companies={picks} onHome={goHome} onSearch={searchFromError} />

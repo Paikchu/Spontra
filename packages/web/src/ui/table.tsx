@@ -1,9 +1,30 @@
 import * as React from "react"
 import { cn } from "cn"
+import { messages, useLocale } from "../i18n"
+
+const m = messages({ table: "Data table" }, { table: "数据表格" })
 
 /** Table parts in the shadcn shape; each page styles them through `data-slot` and its own class. */
 function Table({ className, ...props }: React.ComponentProps<"table">) {
-  return <div data-slot="table-container" className="ui-table-container"><table data-slot="table" className={cn("ui-table", className)} {...props} /></div>
+  useLocale()
+  const container = React.useRef<HTMLDivElement>(null)
+  const [scrollable, setScrollable] = React.useState(false)
+  React.useEffect(() => {
+    const element = container.current
+    if (!element) return
+    const update = () => setScrollable(element.scrollWidth > element.clientWidth)
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    const table = element.querySelector("table")
+    if (table) observer.observe(table)
+    update()
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={container} data-slot="table-container" className="ui-table-container"
+    tabIndex={scrollable ? 0 : undefined} role={scrollable ? "region" : undefined}
+    aria-labelledby={scrollable ? props["aria-labelledby"] : undefined}
+    aria-label={scrollable && !props["aria-labelledby"] ? props["aria-label"] ?? m.table : undefined}
+  ><table data-slot="table" className={cn("ui-table", className)} {...props} /></div>
 }
 
 function TableHeader(props: React.ComponentProps<"thead">) {

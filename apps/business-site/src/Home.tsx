@@ -278,7 +278,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     return { text: company.name, lang: langOf(company.name) };
   }
 
-  return <main className="home">
+  return <main className="home" tabIndex={-1}>
     <header className="home-nav" data-stuck={stuck || undefined}>
       <a className="home-brand" href="/" data-nav>
         <span className="home-mark" lang="en">{m.brand.replace(/[^A-Z]/g, "")}</span>

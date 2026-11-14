@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type RefObject, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type PointerEvent, type RefObject, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -38,10 +38,11 @@ function highlight(text: string, query: string): ReactNode {
  * Covered-company search. Enter opens the selected company only. An uncovered ticker stays in the list
  * and does not navigate. The dialog shows the panel in the top layer; the home page places it inline.
  */
-export function SearchPanel({ current, recent, onPick, inputRef, inline = false, catalog = [], popular = [], catalogStatus = "loading" }: {
+export function SearchPanel({ current, recent, onPick, onClose, inputRef, inline = false, catalog = [], popular = [], catalogStatus = "loading" }: {
   current: string | null;
   recent: string[];
   onPick: (ticker: string) => void;
+  onClose?: () => void;
   inputRef?: RefObject<HTMLInputElement | null>;
   inline?: boolean;
   catalog?: CatalogCompany[];
@@ -87,7 +88,7 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false,
         <circle cx="11" cy="11" r="6.5" />
         <path d="m16 16 4 4" />
       </svg>
-      <input ref={inputRef} role="combobox" aria-label={m.search} aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
+      <input ref={inputRef} autoFocus={!inline} role="combobox" aria-label={m.search} aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
         aria-activedescendant={open && options[selected] ? `${listId}-${selected}` : undefined}
         value={input} placeholder={m.placeholder} maxLength={80} autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
         onFocus={() => { if (inline && matchMedia("(max-width: 960px)").matches) inputRef?.current?.scrollIntoView({ block: "start" }); }}
@@ -96,6 +97,7 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false,
           if (e.nativeEvent.isComposing || e.key === "Process") return;
           if (e.key === "Tab") { setExpanded(false); return; }
           if (e.key === "Escape") {
+            if (!inline) return;
             if (input) { e.preventDefault(); e.stopPropagation(); setInput(""); setActive(0); return; }
             if (open) { e.preventDefault(); e.stopPropagation(); setExpanded(false); return; }
             if (inline) { e.preventDefault(); inputRef?.current?.blur(); }
@@ -112,7 +114,7 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false,
           setExpanded(true);
           if (options.length) setActive((selected + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
         }} />
-      {inline ? <kbd aria-hidden="true">/</kbd> : <kbd>esc</kbd>}
+      {inline ? <kbd aria-hidden="true">/</kbd> : <button type="button" className="search-close" aria-label={m.close} onClick={onClose}><span aria-hidden="true">×</span></button>}
     </form>
     <div className="search-drop" hidden={!open}>
       <div className="search-body">
@@ -165,21 +167,25 @@ export function SearchDialog({ open, current, recent, onClose, onPick, catalog, 
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [session, setSession] = useState(0);
+  const pressedOutside = useRef(false);
+
+  function outside(event: PointerEvent<HTMLDialogElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+  }
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) {
-      setSession(n => n + 1);
       dialog.showModal();
-      requestAnimationFrame(() => inputRef.current?.focus());
     } else if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  return <dialog ref={ref} className="search-dialog" aria-label={m.search} onClose={onClose}
-    onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-    <SearchPanel key={session} current={current} recent={recent} inputRef={inputRef} catalog={catalog} popular={popular} catalogStatus={catalogStatus}
-      onPick={ticker => { onPick(ticker); onClose(); }} />
+  return <dialog ref={ref} className="search-dialog" aria-label={m.search} closedby="any" onClose={onClose}
+    onPointerDown={event => { pressedOutside.current = outside(event); }}
+    onPointerUp={event => { if (!("closedBy" in HTMLDialogElement.prototype) && pressedOutside.current && outside(event)) event.currentTarget.close(); }}>
+    {open && <SearchPanel current={current} recent={recent} inputRef={inputRef} catalog={catalog} popular={popular} catalogStatus={catalogStatus}
+      onClose={onClose} onPick={ticker => { onPick(ticker); onClose(); }} />}
   </dialog>;
 }
