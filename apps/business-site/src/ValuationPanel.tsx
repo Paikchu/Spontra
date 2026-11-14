@@ -40,6 +40,7 @@ const m = messages({
   discountRate: "Discount rate", wacc: "WACC", costOfEquity: "Cost of equity", shares: "Economic shares", dilution: (value: string) => ` (incl. dilution reserve ${value})`, rateBasis: (basis: string) => ` (${basis})`, bridge: "Equity bridge", nonOperating: "Non-operating assets", claims: "Debt and other claims",
   scenarios: "Scenarios", probability: "Probability", perShareValue: "Per share", terminalShare: "Terminal value share", growth: "Revenue growth", margin: "Operating margin", drivers: "Average over five years",
   sensitivities: "Sensitivity of the base value", implied: "What the price implies", impliedText: (implied: string, base: string) => `A constant revenue growth of ${implied} a year reproduces the reference close; the base case averages ${base}.`, impliedNotConverged: "The reference close lies outside what the model's growth range can reproduce.",
+  cashFlowSensitivities: "Sensitivity of the base cash-flow value", sensitivityBase: (value: string) => `Calculated from the base cash-flow value of ${value}.`,
   limitations: "Model limitations", inputs: "Model inputs", triggers: "Triggers", invalidation: "Invalidation", showModel: "Show model inputs", hideModel: "Hide model inputs",
   summary: "Summary", thesis: "Thesis", expectationsGap: "Expectations gap", catalysts: "Catalysts", counterEvidence: "Counter-evidence", nextChecks: "Next checks", modelNotes: "Model notes",
   evidence: "Supporting evidence", counter: "Against", gaps: "Gaps", nextCheck: "Next check", diagnostics: "Diagnostics", sources: "Sources", source: "Source", openSource: "Open the filing", snapshot: "As read when the report was written", close: "Close",
@@ -89,6 +90,7 @@ const m = messages({
   discountRate: "折现率", wacc: "加权平均资本成本", costOfEquity: "权益成本", shares: "经济股数", dilution: (value: string) => `（含稀释储备 ${value}）`, rateBasis: (basis: string) => `（${basis}）`, bridge: "股权桥接", nonOperating: "非经营资产", claims: "债务及其他索偿",
   scenarios: "情景", probability: "概率", perShareValue: "每股", terminalShare: "终值占比", growth: "收入增长", margin: "营业利润率", drivers: "五年平均",
   sensitivities: "基准价值的敏感性", implied: "现价隐含的预期", impliedText: (implied: string, base: string) => `收入每年恒定增长 ${implied} 即可复现参考收盘价；基准情景平均为 ${base}。`, impliedNotConverged: "参考收盘价超出模型增长区间能复现的范围。",
+  cashFlowSensitivities: "基准现金流估值的敏感性", sensitivityBase: (value: string) => `以基准现金流估值 ${value} 为计算基数。`,
   limitations: "模型局限", inputs: "模型输入", triggers: "触发信号", invalidation: "失效条件", showModel: "展开模型输入", hideModel: "收起模型输入",
   summary: "结论", thesis: "论证", expectationsGap: "预期差", catalysts: "催化", counterEvidence: "反证", nextChecks: "下一验证点", modelNotes: "模型说明",
   evidence: "支持证据", counter: "反证", gaps: "缺口", nextCheck: "下一验证点", diagnostics: "诊断指标", sources: "来源", source: "来源", openSource: "打开申报原文", snapshot: "报告写成时读取的快照", close: "关闭",
@@ -345,13 +347,13 @@ function Sensitivities({ report }: { report: ValuationPublication }) {
   const model = report.model;
   if (!model?.sensitivities.length) return null;
   const max = Math.max(...model.sensitivities.map(s => Math.abs(s.changePercent)), 1);
-  return <ol className="val-sens" aria-label={m.sensitivities}>
+  return <>{model.modelType === "fcff" && <p className="val-note">{m.sensitivityBase(perShare(model.scenarios.base.result.perShare, model.currency, locale))}</p>}<ol className="val-sens" aria-label={model.modelType === "fcff" ? m.cashFlowSensitivities : m.sensitivities}>
     {model.sensitivities.map(s => <li key={s.factor}>
       <span className="val-sens-label">{FACTOR[s.factor as keyof typeof FACTOR] ?? s.factor} <small>{s.step}</small></span>
       <span className="val-sens-bar"><i data-sign={s.changePercent >= 0 ? "up" : "down"} style={{ width: `${Math.abs(s.changePercent) / max * 100}%` }} /></span>
       <b>{s.changePercent >= 0 ? "+" : "−"}{Math.abs(s.changePercent).toFixed(1)}% · {perShare(s.perShare, model.currency, locale)}</b>
     </li>)}
-  </ol>;
+  </ol></>;
 }
 
 const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / Math.max(list.length, 1);
@@ -401,7 +403,7 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
       {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
     </div>}
     {model.implied && <p className="val-implied"><b>{m.implied}</b> {model.implied.converged ? m.impliedText(pct(model.implied.implied), pct(model.implied.baseAverage)) : m.impliedNotConverged} {m.impliedBasis}</p>}
-    <h4>{m.sensitivities}</h4>
+    <h4>{model.modelType === "fcff" ? m.cashFlowSensitivities : m.sensitivities}</h4>
     <Sensitivities report={report} />
     <Button variant="unstyled" type="button" className="val-toggle" aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? m.hideModel : m.showModel}</Button>
     {open && <div className="val-model-detail">
