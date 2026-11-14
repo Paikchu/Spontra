@@ -135,7 +135,10 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   for (const metric of FLOW) series({ metric });
   const nodes = ledgerNodes(newest);
   for (const node of nodes.slice(0, 12)) series({ nodeId: node.nodeId });
-  for (const [form, numerator, denominator] of RATIOS) series({ ratio: { numerator, denominator } }, ["quarter", "fiscal_year"], form);
+  for (const [form, numerator, denominator] of RATIOS) {
+    const leverage = "derived" in numerator && numerator.derived === "netDebt" && "derived" in denominator && denominator.derived === "ebitda";
+    series({ ratio: { numerator, denominator } }, leverage ? ["fiscal_year"] : ["quarter", "fiscal_year"], form);
+  }
   for (const capital of CAPITAL_METRICS as readonly CapitalMetric[]) {
     const instant = (CAPITAL_INSTANTS as readonly CapitalMetric[]).includes(capital);
     // Instants have no span; flows are shown as the quarter and the fiscal year.

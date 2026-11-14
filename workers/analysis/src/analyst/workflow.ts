@@ -25,6 +25,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { analystRecipe, hydrateAnalyst, runAnalyst, type AnalystOutcome, type AnalystRunInput, type AnalystSpec, type AnalystState } from "./agent.ts";
 import { loadStageData } from "../stage/data.ts";
 import { planFinding } from "./plan.ts";
+import { NonRetryableError } from "../durable-runs/engine.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
 export const ANALYST_VERSION = "analyst.artifact.v2";
@@ -38,6 +39,17 @@ export type AnalystDeps = { run?: SessionRunner; sleep?: (name: string, ms: numb
 const OUTAGE_WAITS_MS = [30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
 /** Model turns per UTC day across all companies; a cap, not a target. */
 const DEFAULT_DAILY_TURNS = 300;
+
+/** An operator's approval for one run; its counter stays on the approval day across retries. */
+export type AnalystApprovedBudget = { ticker: string; maxTurns: number; approvedAt: string };
+export const analystApprovedBudgetKey = (runId: string) => `analyst:approved-budget:v1:${runId}`;
+type ApprovedTurnBudget = { day: string; feature: string; maxTurns: number };
+
+async function approvedRunBudget(env: AnalysisEnv, ticker: string, runId?: string): Promise<ApprovedTurnBudget | null> {
+  if (!runId) return null;
+  const grant = (await new D1SecRepository(requireDb(env)).getCache<AnalystApprovedBudget>(analystApprovedBudgetKey(runId)))?.payload;
+  return grant?.ticker === ticker ? { day: grant.approvedAt.slice(0, 10), feature: `analyst-approved:${runId}`, maxTurns: grant.maxTurns } : null;
+}
 
 export type AnalystTrace = { version: string; generatedAt: string; findings: AnalystOutcome[] };
 
@@ -103,22 +115,23 @@ function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "a
   return { artifacts, materials: [] };
 }
 
-/** Atomic daily counter on the feature_budget table; false once the cap is reached. */
-async function reserveTurn(env: AnalysisEnv, now: string): Promise<boolean> {
-  const cap = Number(env.ANALYST_DAILY_TURNS) || DEFAULT_DAILY_TURNS;
+/** Reserves from the operator's fixed run allowance, or the unchanged global daily allowance. */
+async function reserveTurn(env: AnalysisEnv, now: string, approved: ApprovedTurnBudget | null): Promise<boolean> {
+  const cap = approved?.maxTurns ?? (Number(env.ANALYST_DAILY_TURNS) || DEFAULT_DAILY_TURNS);
   const row = await requireDb(env).prepare("INSERT INTO feature_budget (day,feature,units) VALUES (?,?,1) ON CONFLICT(day,feature) DO UPDATE SET units=units+1 WHERE units<? RETURNING units")
-    .bind(now.slice(0, 10), "analyst-turns", cap).first<{ units: number }>();
+    .bind(approved?.day ?? now.slice(0, 10), approved?.feature ?? "analyst-turns", cap).first<{ units: number }>();
   return !!row;
 }
 
 /** One finding's session, rebuilt from its spec; each model call is reserved against the day's allowance. */
 export async function analystLoader(spec: AnalystSpec, env: AnalysisEnv): Promise<PiLoaded<AnalystState>> {
   const stage = await loadStageData(env, spec.ticker, { findings: false }).catch(() => null);
+  const approved = await approvedRunBudget(env, spec.ticker, spec.runId);
   return { recipe: analystRecipe(spec, env, stage), input: spec, hydrate: hydrateAnalyst(spec), model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
-    ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: (_state, now) => reserveTurn(env, new Date(now).toISOString()),
+    ledger: { kind: "analyst", ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, reserve: (_state, now) => reserveTurn(env, new Date(now).toISOString(), approved),
     refund: async (_state, reservedAt) => {
-      await requireDb(env).prepare("UPDATE feature_budget SET units=max(0,units-1) WHERE day=? AND feature='analyst-turns'")
-        .bind(new Date(reservedAt).toISOString().slice(0, 10)).run();
+      await requireDb(env).prepare("UPDATE feature_budget SET units=max(0,units-1) WHERE day=? AND feature=?")
+        .bind(approved?.day ?? new Date(reservedAt).toISOString().slice(0, 10), approved?.feature ?? "analyst-turns").run();
     } };
 }
 
@@ -139,6 +152,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const now = await step.do("analyst-time", async () => new Date().toISOString());
   const input = await step.do("analyst-input", () => readInput(env, params.ticker));
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
+  const approved = await step.do("analyst-approved-budget", () => approvedRunBudget(env, params.ticker, deps.runId));
   const db = requireDb(env);
   const peers = await readPeersResponse(db).then(r => r.peers).catch(() => null);
   const events = await readEventsResponse(db, params.ticker).then(r => r.events).catch(() => null);
@@ -180,6 +194,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     settled.forEach((result, index) => byId.set(pending[index]!.id, result.status === "fulfilled" ? result.value : { id: pending[index]!.id, tier: planFinding(pending[index]!, data, peerTickers).tier, lines: [], artifact: null, materials: [], turns: [], warnings: [`failed: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] }));
     const settledClock = await step.do(`analyst-settled-clock-${attempt}`, async () => new Date().toISOString());
     const budgetWait = budgetRetryDelay([...byId.values()], settledClock);
+    if (budgetWait !== null && approved) throw new NonRetryableError(`Approved analyst turn allowance exhausted for run ${deps.runId}.`);
     if (budgetWait !== null && deps.sleep) {
       await deps.sleep(`analyst-budget-wait-${attempt + 1}`, budgetWait);
       continue;
