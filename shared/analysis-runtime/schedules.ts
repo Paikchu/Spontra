@@ -1,5 +1,8 @@
 import type { CapitalSchedule, PublicCapitalStructure, ScheduleBucket, ScheduleKind } from "../analysis-contract/capital-structure.ts";
+import type { FindingRef } from "../analysis-contract/findings.ts";
 import type { Locale } from "./locale.ts";
+
+export const DEBT_DUE_12M_REF = { schedule: { kind: "debtMaturities", bucket: 0 } } satisfies FindingRef;
 
 /**
  * Payment schedules resolved for a finding: a debt maturity, lease or purchase-obligation figure read from the

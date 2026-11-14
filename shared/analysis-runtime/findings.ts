@@ -10,9 +10,10 @@ import type { BalanceSheet, CashFlowStatement, PublicCapitalStructure, RpoDisclo
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
 import type { LensDocument } from "../analysis-contract/lens.ts";
 import { lensDocumentSchemaFor } from "./lens/schema.ts";
-import { scheduleBucketAt, scheduleBucketLabel, scheduleTotalAt } from "./schedules.ts";
+import { DEBT_DUE_12M_REF, scheduleBucketAt, scheduleBucketLabel, scheduleTotalAt } from "./schedules.ts";
 import type { Locale } from "./locale.ts";
 import { TICKER_PATTERN } from "./financial-data/policy.ts";
+import { balanceSheetFinancingFacts, NET_DEBT_FORMULA, NET_DEBT_LABEL, operatingExpenseNetDebt } from "./valuation/lease-basis.ts";
 
 /* ---------- Schema ---------- */
 
@@ -377,7 +378,11 @@ function derivedAt(data: FindingData, metric: DerivedMetric, periodEnd: string, 
     case "depreciationAmortization": return statementOrSeries("depreciation", "depreciation_and_amortization");
     case "stockCompensationExpense": return statementOrSeries("stockCompensation", "stock_based_compensation");
     case "ebitda": { const o = at({ metric: "operating" }), d = at({ derived: "depreciationAmortization" }); return join(v(o) + v(d), "USD", [o, d]); }
-    case "netDebt": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) - v(cash), "USD", [debt, leases, cash]); }
+    case "netDebt": {
+      const sheet = data.capital?.quarters.find(q => near(q.periodEnd, periodEnd))?.balanceSheet;
+      const value = operatingExpenseNetDebt(balanceSheetFinancingFacts(sheet ?? null));
+      return sheet && value != null ? { value, unit: "USD", currency: sheet.currency, periodStart: null, periodEnd: sheet.asOf, span, accessions: [sheet.source.accession] } : null;
+    }
     case "investedCapital": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), equity = at({ capital: "equity" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) + v(equity) - v(cash), "USD", [debt, leases, equity, cash]); }
     case "nopat": {
       // The effective rate of the same span, held between zero and 35%; a pretax loss shields nothing.
@@ -404,7 +409,7 @@ function derivedAt(data: FindingData, metric: DerivedMetric, periodEnd: string, 
       return v(fcf) < 0 && v(cash) >= 0 ? join(v(cash) / (-v(fcf) / 12), "ratio", [cash, fcf]) : null;
     }
     case "debtDueCoverage": {
-      const cash = at({ capital: "cash" }), fcf = at({ capital: "freeCashFlow" }, periodEnd, "fiscal_year"), due = at({ schedule: { kind: "debtMaturities", bucket: 0 } });
+      const cash = at({ capital: "cash" }), fcf = at({ capital: "freeCashFlow" }, periodEnd, "fiscal_year"), due = at(DEBT_DUE_12M_REF);
       return v(due) > 0 ? join((v(cash) + v(fcf)) / v(due), "ratio", [cash, fcf, due]) : null;
     }
   }
@@ -542,18 +547,18 @@ const CAPITAL_LABEL_ZH: Record<CapitalMetric, string> = {
   rpo: "剩余履约义务（RPO）", rpoNext12MonthsShare: "12 个月内确认的 RPO",
 };
 const DERIVED_LABEL: Record<DerivedMetric, [string, string]> = {
-  ebitda: ["EBITDA", "EBITDA"], netDebt: ["Net debt", "净债务"], investedCapital: ["Invested capital", "投入资本"], nopat: ["After-tax operating income (NOPAT)", "税后经营利润（NOPAT）"],
+  ebitda: ["EBITDA", "EBITDA"], netDebt: NET_DEBT_LABEL, investedCapital: ["Invested capital", "投入资本"], nopat: ["After-tax operating income (NOPAT)", "税后经营利润（NOPAT）"],
   accruals: ["Accruals ratio", "应计项比率"], nonCashCharges: ["Non-cash charges", "非现金项目"], workingCapitalChange: ["Working-capital change", "营运资本变动"],
   averageEquity: ["Average shareholders' equity", "平均股东权益"], averageAssets: ["Average total assets", "平均总资产"], averageInvestedCapital: ["Average invested capital", "平均投入资本"],
   incrementalReturn: ["Return on added capital", "增量资本回报"], interestExpense: ["Interest expense", "利息费用"], netExternalFunding: ["Net external funding", "净外部融资"],
-  cashRunwayMonths: ["Cash runway (months)", "现金跑道（月）"], debtDueCoverage: ["Coverage of debt due within 12 months", "12 个月内到期债务覆盖倍数"],
+  cashRunwayMonths: ["Cash runway (months)", "现金跑道（月）"], debtDueCoverage: ["Cash plus free cash flow / debt due within 12 months", "现金与自由现金流之和 ÷ 12 个月内到期债务"],
   depreciationAmortization: ["Depreciation and amortization", "折旧与摊销"], stockCompensationExpense: ["Stock-based compensation", "股权激励费用"],
 };
 /** The formula behind a derived figure, in the names its inputs carry; for the page's lineage line and the ledger. */
 export const DERIVED_FORMULA: Record<DerivedMetric, string> = {
   ebitda: "operating income + depreciation and amortization",
   depreciationAmortization: "the cash-flow statement's depreciation and amortization lines, or the SEC series where those lines do not reconcile",
-  stockCompensationExpense: "the cash-flow statement's stock-based compensation lines, or the SEC series where those lines do not reconcile", netDebt: "debt + lease liabilities − cash", investedCapital: "debt + lease liabilities + equity − cash",
+  stockCompensationExpense: "the cash-flow statement's stock-based compensation lines, or the SEC series where those lines do not reconcile", netDebt: NET_DEBT_FORMULA, investedCapital: "debt + lease liabilities + equity − cash",
   nopat: "operating income × (1 − income tax ÷ pretax income), rate held between 0 and 35%", accruals: "(net income − operating cash flow) ÷ average total assets",
   nonCashCharges: "operating-section non-cash lines", workingCapitalChange: "operating-section working-capital lines",
   averageEquity: "(equity + equity a year earlier) ÷ 2", averageAssets: "(total assets + total assets a year earlier) ÷ 2", averageInvestedCapital: "(invested capital + invested capital a year earlier) ÷ 2",

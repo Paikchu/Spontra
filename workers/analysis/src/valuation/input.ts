@@ -7,7 +7,8 @@ import { readFindingFundamentals, resolveRef, type FindingData } from "../../../
 import { readFilingLeaseFacts } from "./filing-lease-facts.ts";
 import { selectPeers } from "../../../../shared/analysis-runtime/valuation/peers.ts";
 import { coreEquityEarnings, distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
-import { financeLeaseAmount, operatingExpenseNetDebt } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
+import { balanceSheetFinancingFacts, financeLeaseAmount, NET_DEBT_FORMULA, NET_DEBT_LABEL, operatingExpenseNetDebt } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
+import { DEBT_DUE_12M_REF } from "../../../../shared/analysis-runtime/schedules.ts";
 import { lifecycleOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { managementTargetSet, readValuationCompanyInputs } from "./curated.ts";
@@ -112,13 +113,10 @@ const FACT_SPECS: FactSpec[] = [
   { id: "total_liabilities", label: "Total liabilities, newest balance sheet", ref: { capital: "totalLiabilities" }, span: "quarter", periodType: "instant" },
   { id: "current_assets", label: "Current assets, newest balance sheet", ref: { capital: "currentAssets" }, span: "quarter", periodType: "instant" },
   { id: "current_liabilities", label: "Current liabilities, newest balance sheet", ref: { capital: "currentLiabilities" }, span: "quarter", periodType: "instant" },
-  { id: "debt_due_12m", label: "Debt due within twelve months", ref: { schedule: { kind: "debtMaturities", bucket: 1 } }, span: "quarter", periodType: "instant" },
+  { id: "debt_due_12m", label: "Debt due within twelve months", ref: DEBT_DUE_12M_REF, span: "quarter", periodType: "instant" },
   { id: "rpo_total", label: "Remaining performance obligations, newest disclosure", ref: { capital: "rpo" }, span: "quarter", periodType: "instant" },
   { id: "rpo_next_12m_share", label: "Share of RPO recognized within twelve months", ref: { capital: "rpoNext12MonthsShare" }, span: "quarter", periodType: "instant" },
 ];
-/** Claims ahead of common equity the balance sheet carries under equity: preferred stock and minority interests, by concept. */
-const SENIOR_EQUITY = { preferred: /Preferred/i, minority: /MinorityInterest|Noncontrolling/i };
-
 const SHARE_CONCEPTS = {
   diluted: /WeightedAverageNumberOfDilutedSharesOutstanding/i, basic: /WeightedAverageNumberOfSharesOutstandingBasic/i, outstanding: /CommonStockSharesOutstanding|EntityCommonStockSharesOutstanding/i,
 };
@@ -140,32 +138,6 @@ function shareFacts(snapshot: SecHistorySnapshot | null, periodEnd: string): Val
   ].filter((f): f is ValuationFact => f != null);
 }
 
-/** Classified lease amounts from the reconciled balance sheet. An unclassified row keeps the split unknown. */
-function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
-  if (!sheet) return [];
-  const rows = sheet.liabilities.filter(l => l.group === "leases");
-  const classified = rows.map(l => {
-    const text = `${l.concept} ${l.label}`;
-    const kind = /Debt.*(?:Finance|Capital)Lease|debt.*(?:finance|capital) lease/i.test(text) ? null : /OperatingLease|operating lease/i.test(text) ? "operating" : /FinanceLease|CapitalLease|financ(?:e|ing) lease|capital lease/i.test(text) ? "finance" : null;
-    return { line: l, kind, value: num(l.value) };
-  });
-  const fact = (id: string, label: string, value: number, lines: typeof rows, rationale: string | null = null): ValuationFact => ({ id, label, value, unit: sheet.currency, currency: sheet.currency, periodType: "instant", periodStart: null, periodEnd: sheet.asOf, basis: "derived", formula: `sum(${lines.map(l => l.concept).join(", ")})`, sourceRefs: [...lines.map(l => l.concept), sheet.source.accession], rationale });
-  const out: ValuationFact[] = [];
-  if (classified.length && classified.every(l => l.kind && l.value != null)) {
-    for (const kind of ["operating", "finance"] as const) {
-      const matching = classified.filter(l => l.kind === kind);
-      const totals = matching.filter(l => /(?:Operating|Finance)LeaseLiability$|CapitalLeaseObligations?$/i.test(l.line.concept.split(":").at(-1)!));
-      const current = matching.filter(l => /Current$/i.test(l.line.concept) && !/Noncurrent$/i.test(l.line.concept));
-      const noncurrent = matching.filter(l => /Noncurrent$/i.test(l.line.concept));
-      const complete = totals.length ? totals : current.length && noncurrent.length ? [...current, ...noncurrent] : [];
-      if (complete.length) out.push(fact(`${kind}_leases`, `${kind === "operating" ? "Operating" : "Finance"} lease liabilities, newest balance sheet`, complete.reduce((sum, l) => sum + l.value!, 0), complete.map(l => l.line)));
-    }
-  }
-  const overlap = sheet.liabilities.filter(l => l.group === "debt" && /Debt.*(?:Finance|Capital)Lease|debt.*(?:finance|capital) lease/i.test(`${l.concept} ${l.label}`));
-  if (overlap.length) out.push({ ...fact("finance_lease_debt_overlap", "Debt may already include finance leases", 1, overlap, "The debt rows combine debt and finance leases; their overlapping amount must be reconciled before adding finance leases."), unit: "ratio", currency: null });
-  return out;
-}
-
 const sheetAt = (data: FindingData, periodEnd: string) => data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(periodEnd)) <= 20 * DAY)?.balanceSheet ?? null;
 
 /** Every fact the specs name that the stored data can resolve at the newest quarter, with what is missing. */
@@ -181,15 +153,9 @@ function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, peri
       periodType: spec.periodType, periodStart: resolved.periodStart, periodEnd: resolved.periodEnd, basis: "derived" in spec.ref ? "derived" : "reported", formula: "derived" in spec.ref ? spec.ref.derived : null, sourceRefs: resolved.accessions, rationale: null });
   }
   const sheet = sheetAt(data, periodEnd);
-  facts.push(...leaseFactsOf(sheet));
-  if (sheet) {
-    const senior = (id: string, label: string, test: RegExp) => {
-      const lines = sheet.equity.filter(l => test.test(l.concept) || test.test(l.id));
-      const value = lines.reduce((sum, l) => sum + (num(l.value) ?? 0), 0);
-      if (lines.length && value > 0) facts.push({ id, label, value, unit: currency, currency, periodType: "instant", periodStart: null, periodEnd: sheet.asOf, basis: "reported", formula: null, sourceRefs: [...lines.map(l => l.concept), sheet.source.accession], rationale: null });
-    };
-    senior("preferred_stock", "Preferred stock, newest balance sheet", SENIOR_EQUITY.preferred);
-    senior("minority_interest", "Noncontrolling interests, newest balance sheet", SENIOR_EQUITY.minority);
+  for (const fact of balanceSheetFinancingFacts(sheet)) {
+    const index = facts.findIndex(f => f.id === fact.id);
+    if (index >= 0) facts[index] = fact; else facts.push(fact);
   }
   for (const disclosed of disclosedLeases) {
     const index = facts.findIndex(f => f.id === disclosed.id);
@@ -203,7 +169,7 @@ function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, peri
   const claims = operatingExpenseNetDebt(facts);
   const bridgeSources = facts.filter(f => ["debt", "finance_leases", "cash", "investments", "preferred_stock", "minority_interest"].includes(f.id)).flatMap(f => f.sourceRefs);
   const bridgeFact = (id: string, label: string, amount: number, formula: string) => facts.push({ id, label, value: amount, unit: currency, currency, periodType: "instant", periodStart: null, periodEnd, basis: "derived", formula, sourceRefs: [...new Set(bridgeSources)], rationale: "Operating rent remains an expense; operating lease liabilities are excluded." });
-  if (claims != null) bridgeFact("net_debt", "Financing claims net of cash and investments", claims, "debt + finance_leases + preferred_stock + minority_interest − cash − investments");
+  if (claims != null) bridgeFact("net_debt", NET_DEBT_LABEL[0], claims, NET_DEBT_FORMULA);
   if (financeLeases != null && value("debt") != null && value("equity") != null && value("cash") != null && value("finance_lease_debt_overlap") !== 1) bridgeFact("invested_capital", "Invested capital excluding operating leases", value("debt")! + financeLeases + value("equity")! - value("cash")! - (value("investments") ?? 0), "debt + finance_leases + equity − cash − investments");
   const shares = shareFacts(snapshot, periodEnd);
   facts.push(...shares);
@@ -278,7 +244,7 @@ export function buildDiagnostics(facts: ValuationFact[], snapshot: SecHistorySna
     metric("fcfConversion", "Free cash flow conversion (FCF / net income)", fcf != null && net && net > 0 ? fcf / net : null, "x", periodEnd, net != null && net <= 0 ? "not computed: net income is not positive" : null),
     metric("sbcToRevenue", "Stock-based compensation / revenue", sbc != null && revenue ? sbc / revenue : null, "percent", periodEnd),
     metric("capexToDa", "Capex / depreciation and amortization", capex != null && da ? capex / da : null, "x", periodEnd),
-    metric("netDebtToEbitda", "Net debt / EBITDA", netDebt != null && ebitda ? netDebt / ebitda : null, "x", periodEnd, ebitda != null && ebitda <= 0 ? "EBITDA not positive" : null),
+    metric("netDebtToEbitda", "Net debt excluding operating leases / EBITDA", netDebt != null && ebitda ? netDebt / ebitda : null, "x", periodEnd, ebitda != null && ebitda <= 0 ? "EBITDA not positive" : null),
     metric("interestCoverage", "Interest coverage (operating income / interest expense)", operating != null && interest ? operating / interest : null, "x", periodEnd, interest === 0 ? "no interest expense reported" : null),
     metric("dilutionCagr", "Shares outstanding, annual change", dilution, "percent", last?.endDate ?? null, first && last ? `${first.endDate} to ${last.endDate}` : "fewer than two annual share counts"),
     metric("cashRunwayYears", "Cash runway at the trailing cash burn", fcf != null && fcf < 0 && by("cash") != null ? by("cash")! / -fcf : null, "years", periodEnd, fcf != null && fcf >= 0 ? "not computed: free cash flow is positive" : null),
@@ -341,9 +307,8 @@ async function buildPeerFundamentals(db: D1Database, ticker: string, peers: Peer
     try { if (disclosedLeasesOf) disclosed = await disclosedLeasesOf(peer, newest.periodEnd, sheet); }
     catch (error) { notes.push(`${peer}: archived lease disclosure unavailable (${error instanceof Error ? error.message : String(error)}); omitted from the comparison`); continue; }
     const disclosedIds = new Set(disclosed.map(f => f.id));
-    const leaseFacts = [...leaseFactsOf(sheet).filter(f => !disclosedIds.has(f.id)), ...disclosed];
-    const senior = (test: RegExp) => sheet?.equity.filter(l => test.test(l.concept) || test.test(l.id)).reduce((sum, l) => sum + (num(l.value) ?? 0), 0) ?? 0;
-    const financing = [...leaseFacts, ...(debt != null ? [{ id: "debt", value: debt }] : []), ...(cash != null ? [{ id: "cash", value: cash }] : []), { id: "investments", value: sheet?.assets.filter(l => l.group === "investments").reduce((sum, l) => sum + (num(l.value) ?? 0), 0) ?? 0 }, { id: "preferred_stock", value: senior(SENIOR_EQUITY.preferred) }, { id: "minority_interest", value: senior(SENIOR_EQUITY.minority) }];
+    const financing = [...balanceSheetFinancingFacts(sheet).filter(f => f.id !== "debt" && f.id !== "cash" && !disclosedIds.has(f.id)), ...disclosed,
+      ...(debt != null ? [{ id: "debt", value: debt }] : []), ...(cash != null ? [{ id: "cash", value: cash }] : [])];
     if (financeLeaseAmount(financing) == null || financing.some(f => f.id === "finance_lease_debt_overlap" && f.value === 1)) notes.push(`${peer}: lease classification or finance-lease/debt overlap is unresolved; omitted from the operating-expense EV comparison`);
     const ebitda = operating != null && depreciation != null ? operating + depreciation : null, netDebt = operatingExpenseNetDebt(financing);
     if (operating == null || ebitda == null || netDebt == null || count == null) { notes.push(`${peer}: incomplete figures (${[operating == null && "operating income", depreciation == null && "D&A", netDebt == null && "net debt", count == null && "shares"].filter(Boolean).join(", ")})`); continue; }

@@ -43,7 +43,7 @@ export async function buildPeriodExtract(env: AnalysisEnv, ticker: string, now =
   // By what it says: the periods covered, and the newest backlog, not when anything was rebuilt.
   const fingerprint = await sha256(JSON.stringify({ version: EXTRACT_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: newest.periodEnd,
     quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null,
-    fundamentals: fundamentals ? await sha256(JSON.stringify(fundamentals)) : null }));
+    fundamentals: fundamentals ? await sha256(JSON.stringify(fundamentals)) : null, ledger: await sha256(JSON.stringify(ledger)) }));
   return { schemaVersion: EXTRACT_VERSION, ticker, periodEnd: newest.periodEnd, generatedAt: now.toISOString(), data, ledger, fingerprint };
 }
 
