@@ -2,6 +2,7 @@ import { datedHits } from "../web-search/native.ts";
 import type { FindingMaterial, FindingPassage, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { resolveRef, type FindingData, type VerifiedFindingLead } from "../../../../shared/analysis-runtime/findings.ts";
+import { NET_DEBT_FORMULA } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
 import { formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
 import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
@@ -45,7 +46,9 @@ Write a self-contained article. The required thesis block opens with your own co
 
 Use the prepared net-debt and leverage figures: operating rent remains an operating expense, so operating lease liabilities are excluded from net debt and its EBITDA multiple. Net debt / EBITDA uses trailing-twelve-month EBITDA, not a single quarter. State this basis beside the first net-debt or leverage figure. A separately discussed total including operating leases must have a distinct name and must not be called net debt / EBITDA. Debt due within twelve months means the first maturity bucket; keep later maturities separate. Distinguish cash-only debt coverage from coverage including trailing free cash flow.
 The supplied total lease liabilities include both operating and finance leases; do not label that total as operating leases alone. Finance leases remain included in net debt. Spell out "excluding operating leases" in net-debt and leverage labels, including tables and metric cards; "ex-lease" leaves the basis ambiguous.
+The prepared net-debt formula is: ${NET_DEBT_FORMULA}. Do not add total lease liabilities to prepared net debt: that counts finance leases twice. A broader measure requires the separately classified operating-lease amount, not an invented proxy.
 Keep RPO recognition windows exactly as disclosed. A share over 24 months is not a 12-month share, and recognition within a multi-year window does not disclose its annual split. Separate any uniform annual allocation you assume from company disclosures. Compare historical shares only after verifying the same windows and totals; do not inherit an earlier lead's timing or trend claim.
+A timing window omitted from structured figures is an input coverage gap, not evidence that the company omitted it. Check the original quoted disclosure before calling a remaining RPO balance undated.
 
 Method:
 1. Prioritize the lead's question and the strongest lines. Explain what caused the figures, what is structural or one-off, and what the evidence does and does not establish. A line without support gets a short explicit limitation rather than an invented answer.
