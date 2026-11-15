@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isSecUrl } from "../sec-sources.ts";
+import { isSecUrl, SEC_INLINE_TRANSFORM_NAMESPACE } from "../sec-sources.ts";
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
 import type { DisclosureFact, FilingDisclosures } from "./disclosure-extraction.ts";
 import type {
@@ -381,12 +381,13 @@ const RPO = "RevenueRemainingPerformanceObligation", RPO_SHARE = RPO + "Percenta
 const RPO_AXIS = RPO + "ExpectedTimingOfSatisfactionStartDateAxis";
 const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, eighteen: 18, "twenty-four": 24, "thirty-six": 36, "forty-eight": 48, sixty: 60 };
 
-/** "P2Y", "P12M", "twelve months", "2 years" → months; anything else is unknown rather than guessed. */
-function timingMonths(text: string | null): number | null {
+/** ISO/word durations, or whole months tagged with the SEC's durmonth transform. */
+function timingMonths(text: string | null, format: DisclosureFact["format"] = null): number | null {
   if (!text) return null;
   const value = text.trim().toLowerCase();
   const iso = value.match(/^p(?:(\d+)y)?(?:(\d+)m)?$/);
   if (iso && (iso[1] || iso[2])) return Number(iso[1] ?? 0) * 12 + Number(iso[2] ?? 0);
+  if (format?.namespaceUri === SEC_INLINE_TRANSFORM_NAMESPACE && local(format.name).toLowerCase() === "durmonth" && /^\d+$/.test(value)) return Number(value);
   const words = value.match(/^([a-z-]+|\d+)\s+(year|month)s?$/);
   if (!words) return null;
   const count = /^\d+$/.test(words[1]) ? Number(words[1]) : WORDS[words[1]];
@@ -416,11 +417,21 @@ function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoD
     const bucket = byContext.get(key) ?? { start: f.context!.dimensions.find(d => d.kind === "typed")?.value.trim() || null, months: null, share: null, amount: null };
     if (usGaap(f, RPO_SHARE) && f.kind === "numeric" && f.numericValue != null) bucket.share = f.numericValue;
     else if (usGaap(f, RPO) && f.kind === "numeric" && f.numericValue != null) bucket.amount = f.numericValue;
-    else if (usGaap(f, RPO_PERIOD)) bucket.months = timingMonths(f.normalizedValue ?? f.rawValue);
+    else if (usGaap(f, RPO_PERIOD)) bucket.months = timingMonths(f.normalizedValue ?? f.rawValue, f.format);
     byContext.set(key, bucket);
   }
   const buckets = [...byContext.values()].filter(b => b.share != null || b.amount != null)
     .sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "") || (a.months ?? 0) - (b.months ?? 0));
+  const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
+  const ranges = [...disclosures.documentText.matchAll(/(\d+(?:\.\d+)?)\s*%\s+(?:[a-z]+\s+){0,12}between\s+months?\s+(\d+)\s+and\s+(\d+)/gi)]
+    .map(match => ({ share: Number(match[1]) / 100, from: Number(match[2]) - 1, to: Number(match[3]) }));
+  // Visible ranges resolve a conflicting tag only when both the percentage and typed start identify the same bucket.
+  for (const bucket of buckets) {
+    if (!bucket.start || bucket.share == null) continue;
+    const from = Math.max(0, monthIndex(bucket.start) - monthIndex(asOf) - 1);
+    const lengths = new Set(ranges.filter(range => range.share === Number(bucket.share) && range.from === from && range.to > from).map(range => range.to - range.from));
+    if (lengths.size) bucket.months = lengths.size === 1 ? [...lengths][0] : null;
+  }
   return { asOf, currency: factCurrency(total)!, total: total.numericValue!, buckets, source };
 }
 

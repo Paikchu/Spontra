@@ -2,6 +2,7 @@ import { VALUATION_HORIZON_MONTHS } from "../../analysis-contract/valuation.ts";
 import type { FactorDistribution, RevenueAnchor } from "../../analysis-contract/valuation.ts";
 import { financeLeaseAmount } from "./lease-basis.ts";
 import { rpoRevenueFloor, type CalcRequest, type Lifecycle } from "./calculator.ts";
+import { resolveRpoWindows } from "../rpo.ts";
 
 /**
  * The deterministic prior: a first pass from the company's own history, its RPO and its
@@ -29,8 +30,6 @@ export type PriorInput = {
   capexShape?: number[] | null;
 };
 
-const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
-
 /** Build: capex far above depreciation and the cash flow negative or capex above 30% of revenue. Growth: trailing revenue growth above 15%. Else mature. */
 export function lifecycleOf(input: { facts: PriorFact[]; diagnostics: Array<{ key: string; value: number | null }> }): Lifecycle {
   const fact = (id: string) => input.facts.find(f => f.id === id)?.value ?? null;
@@ -42,11 +41,10 @@ export function lifecycleOf(input: { facts: PriorFact[]; diagnostics: Array<{ ke
   return "mature";
 }
 
-/** The contracted-revenue floor over `years` from the newest RPO disclosure; null without a total or a stated timing. */
+/** An annual RPO allocation reference; recognition within each disclosed window is a modelling assumption. */
 export function anchorOf(rpo: PriorInput["rpo"], years: number, revenue0: number): RevenueAnchor | null {
   if (!rpo || !(rpo.total > 0)) return null;
-  const base = monthIndex(rpo.asOf);
-  const buckets = rpo.buckets.flatMap(b => b.share != null && b.share > 0 ? [{ startMonths: b.start ? Math.max(0, monthIndex(b.start) - base - 1) : 0, months: b.months, share: b.share }] : []);
+  const buckets = resolveRpoWindows(rpo).flatMap(({ bucket, from, to }) => bucket.share != null && bucket.share > 0 ? [{ startMonths: from, months: to == null ? null : to - from, share: bucket.share }] : []);
   if (!buckets.length) return null;
   return rpoRevenueFloor({ asOf: rpo.asOf, total: rpo.total, buckets, years, revenue0 });
 }
@@ -54,7 +52,7 @@ export function anchorOf(rpo: PriorInput["rpo"], years: number, revenue0: number
 /** The forecast horizon by life cycle: a build phase needs the years for capex to normalize. */
 export const horizonFor = (lifecycle: Lifecycle) => lifecycle === "build" ? 7 : 5;
 
-/** Two years at the starting rate (the contracted horizon), then a straight fade to the ending rate. */
+/** Two years at the starting rate, then a straight fade to the ending rate. */
 const fade = (from: number, to: number, years: number) => Array.from({ length: years }, (_, i) => i < 2 || years <= 3 ? from : from + (to - from) * (i - 2) / (years - 3));
 
 /** The prior request, or null when revenue, shares, history, the risk-free rate or a beta is missing. */
@@ -86,9 +84,7 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
   const roic = input.diagnostics.find(m => m.key === "roic")?.value ?? null;
   const terminalRoic = Math.max(roic ?? r + 0.02, r + 0.005);
   const anchor = anchorOf(input.rpo, years, revenue);
-  // Contracted revenue already above this year's revenue is growth the history cannot deny: the floor's compound rate to each of the first two years.
-  const anchoredGrowth = anchor ? Math.max(...anchor.floorToRevenue0.slice(0, 2).map((ratio, i) => ratio > 1 ? ratio ** (1 / (i + 1)) - 1 : -Infinity)) : -Infinity;
-  const start = (history: number) => Math.max(history, anchoredGrowth, -0.3);
+  const start = (history: number) => Math.max(history, -0.3);
   // Capital spent ahead of revenue: capex beyond one and a half times depreciation, tapering off over four years.
   const capex = fact("capex_ttm") != null ? Math.abs(fact("capex_ttm")!) : null, da = fact("da_ttm");
   const excess = lifecycle === "build" && capex != null && da != null ? Math.max(capex - 1.5 * da, 0) : 0;
@@ -106,7 +102,7 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
   });
   const scenario = (narrative: string, gr0: number, grN: number, mg: number) => ({ narrative, probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers: { modelType: "fcff" as const, revenue0: revenue, path: path(gr0, grN, mg), terminalGrowth: g, terminalRoic } });
   const notes = [`prior: ${lifecycle} life cycle, ${years}-year horizon`, "operating rent stays in earnings; cash and investments versus debt, finance leases, preferred and minority claims"];
-  if (anchor) notes.push(`RPO floor years 1–2: ${anchor.floorToRevenue0.slice(0, 2).map(v => `${(v * 100).toFixed(0)}% of trailing revenue`).join(", ")}`);
+  if (anchor) notes.push(`RPO uniform-allocation reference years 1–2: ${anchor.floorToRevenue0.slice(0, 2).map(v => `${(v * 100).toFixed(0)}% of trailing revenue`).join(", ")}; not disclosed annual revenue or a minimum`);
   if (buildCapex) notes.push(shape !== taper ? `build capex ${excess.toExponential(2)} × ${shape.map(k => k.toFixed(2)).join(", ")} (the cited capex plan's timing, scaled to the taper's total)` : `build capex ${excess.toExponential(2)} tapering over four years`);
   return {
     modelType: "fcff", currency: input.currency, midYear: input.midYear === true, horizonMonths: VALUATION_HORIZON_MONTHS,

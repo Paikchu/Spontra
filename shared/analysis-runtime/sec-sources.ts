@@ -5,6 +5,8 @@
 
 /** The domain every SEC host sits under, as a search filter takes it. */
 export const SEC_DOMAIN = "sec.gov";
+/** SEC's namespace for inline transformations such as durmonth. */
+export const SEC_INLINE_TRANSFORM_NAMESPACE = `http://www.${SEC_DOMAIN}/inlineXBRL/transformation/2015-08-31`;
 const SEC_WWW = `https://www.${SEC_DOMAIN}`;
 const SEC_DATA = `https://data.${SEC_DOMAIN}`;
 

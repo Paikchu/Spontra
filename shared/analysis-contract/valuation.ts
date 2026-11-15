@@ -236,7 +236,7 @@ export const GATE_STATUSES = ["pass", "flag", "fail"] as const;
 export type GateStatus = typeof GATE_STATUSES[number];
 /** A sanity gate: `fail` rejects the calculation, `flag` annotates it; `value` and `limit` are the figures compared. */
 export type SanityGate = { key: string; status: GateStatus; detail: string; value: number | null; limit: number | null };
-/** Contracted revenue by forecast year from the RPO buckets: a floor the revenue path should not fall under. */
+/** `floor` retains its historical wire name: it is a uniform timing reference, not disclosed annual or guaranteed revenue. */
 export type RevenueAnchor = { source: "rpo"; asOf: string; total: number; floor: number[]; floorToRevenue0: number[]; notes: string[] };
 export type InputCheck = { field: string; cited: number; expected: number | null; factIds: string[]; tolerance: number; status: GateStatus; detail: string };
 /** The cited inputs checked against the registered facts: revenue, shares, the bridge against debt, leases, preferred and minority claims. */

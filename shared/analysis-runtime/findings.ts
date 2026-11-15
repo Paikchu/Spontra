@@ -14,6 +14,7 @@ import { DEBT_DUE_12M_REF, scheduleBucketAt, scheduleBucketLabel, scheduleTotalA
 import type { Locale } from "./locale.ts";
 import { TICKER_PATTERN } from "./financial-data/policy.ts";
 import { balanceSheetFinancingFacts, NET_DEBT_FORMULA, NET_DEBT_LABEL, operatingExpenseNetDebt } from "./valuation/lease-basis.ts";
+import { resolveRpoWindows } from "./rpo.ts";
 
 /* ---------- Schema ---------- */
 
@@ -260,10 +261,9 @@ function nodeAt(data: FindingData, id: string, periodEnd: string): Point | null 
 const BALANCE: readonly CapitalMetric[] = CAPITAL_INSTANTS.filter(m => m !== "rpo" && m !== "rpoNext12MonthsShare");
 const NON_CASH = { depreciation: /Depreciation|Amortization|Depletion/i, stockCompensation: /ShareBasedCompensation|StockBasedCompensation|ShareBasedPayment/i } as const;
 
-/** The bucket covering the first twelve months after the period end, by its tagged length or its start date. */
+/** A disclosed window covering exactly the next twelve months, never an annual slice of a longer period. */
 export function rpoNextYearShare(rpo: RpoDisclosure): number | null {
-  const soon = (b: { start: string | null }) => !b.start || monthIndex(b.start) - monthIndex(rpo.asOf) <= 1;
-  const bucket = rpo.buckets.find(b => b.months === 12 && soon(b)) ?? rpo.buckets.find(b => b.months == null && b.start != null && soon(b));
+  const bucket = resolveRpoWindows(rpo).find(rung => rung.from === 0 && rung.to === 12)?.bucket;
   return bucket?.share != null ? Number(bucket.share) * 100 : null;
 }
 function cashMetric(c: CashFlowStatement, metric: CapitalMetric): number | null {
@@ -472,13 +472,11 @@ function eventAt(data: FindingData, id: string, field: EventField, span: Finding
 /** The rungs of a filing's RPO schedule, nearest first, each as the months after the period end it covers and the amount expected in it. */
 export function rpoBuckets(rpo: RpoDisclosure): Array<{ from: number; to: number | null; amount: number | null; share: number | null }> {
   const total = Number(rpo.total);
-  return rpo.buckets.map(b => {
-    // A bucket starts the month after the period end unless its start says otherwise; its end is its tagged length later.
-    const from = b.start ? Math.max(0, monthIndex(b.start) - monthIndex(rpo.asOf) - 1) : 0;
+  return resolveRpoWindows(rpo).map(({ bucket: b, from, to }) => {
     const share = b.share != null ? Number(b.share) * 100 : b.amount != null && total ? Number(b.amount) / total * 100 : null;
     const amount = b.amount != null ? Number(b.amount) : share != null ? total * share / 100 : null;
-    return { from, to: b.months == null ? null : from + b.months, amount: amount != null && Number.isFinite(amount) ? amount : null, share: share != null && Number.isFinite(share) ? share : null };
-  }).sort((a, b) => a.from - b.from);
+    return { from, to, amount: amount != null && Number.isFinite(amount) ? amount : null, share: share != null && Number.isFinite(share) ? share : null };
+  });
 }
 /** "within 12 months", "13–24 months", "after 24 months" / "12 个月内", "13–24 个月", "24 个月后". */
 export const rpoBucketSpan = (b: { from: number; to: number | null }, locale: Locale = "en") => locale === "zh-CN"

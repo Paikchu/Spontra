@@ -7,7 +7,7 @@ import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
  * The deterministic valuation calculator. Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v11";
+export const CALCULATOR_VERSION = "valuation.calc.v12";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years. */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -640,23 +640,23 @@ export function peerMultiplesOf(peers: Array<{ ticker: string; price: number | n
 }
 
 /**
- * Contracted revenue by forecast year from the RPO buckets. A bucket of `months` starting `startMonths` after the period
- * end is spread evenly over the months it covers; a bucket without a length runs to the next bucket's start, or, when it
- * is the only or the last one, over `openMonths` (default 24, the usual "over the next 24 months" wording).
+ * A uniform annual allocation of known RPO windows for comparison with a forecast. Timing within each window is a
+ * model assumption, not disclosed annual revenue or a guaranteed floor. An unknown tail is left unallocated.
  */
-export function rpoRevenueFloor(input: { asOf: string; total: number; buckets: Array<{ startMonths: number; months: number | null; share: number }>; years: number; revenue0: number; openMonths?: number }): RevenueAnchor {
+export function rpoRevenueFloor(input: { asOf: string; total: number; buckets: Array<{ startMonths: number; months: number | null; share: number }>; years: number; revenue0: number }): RevenueAnchor {
   const { total, years, revenue0 } = input;
   requireFinite(total, "rpo total"); requireFinite(revenue0, "revenue0");
   const floor = new Array<number>(years).fill(0);
-  const notes: string[] = [];
+  const notes: string[] = ["Annual amounts assume uniform recognition within each known window; they are not disclosed annual revenue or guaranteed minimum revenue."];
   const buckets = [...input.buckets].sort((a, b) => a.startMonths - b.startMonths);
   const shareSum = buckets.reduce((sum, b) => sum + b.share, 0);
   if (shareSum > 1.001) throw new ValuationCalcError("invalid_input", "RPO bucket shares exceed 100%");
-  if (shareSum < 0.999) notes.push(`${((1 - shareSum) * 100).toFixed(0)}% of the RPO has no stated timing and is left out of the floor`);
+  if (shareSum < 0.999) notes.push(`${((1 - shareSum) * 100).toFixed(0)}% of the RPO has no structured timing window in this input and is left out of this allocation`);
   buckets.forEach((b, i) => {
     const next = buckets[i + 1];
     let months = b.months;
-    if (months == null) { months = next ? next.startMonths - b.startMonths : (input.openMonths ?? 24); notes.push(`bucket from month ${b.startMonths} has no stated length; spread over ${months} months`); }
+    if (months == null && next) { months = next.startMonths - b.startMonths; notes.push(`window from month ${b.startMonths} ends at the next disclosed start, month ${next.startMonths}`); }
+    if (months == null) { notes.push(`${(b.share * 100).toFixed(0)}% from month ${b.startMonths} has no known end and is not allocated by year`); return; }
     if (!(months > 0)) return;
     const amount = total * b.share, perMonth = amount / months;
     for (let m = b.startMonths; m < b.startMonths + months; m++) { const year = Math.floor(m / 12); if (year < years) floor[year]! += perMonth; }
@@ -665,7 +665,7 @@ export function rpoRevenueFloor(input: { asOf: string; total: number; buckets: A
   return { source: "rpo", asOf: input.asOf, total, floor, floorToRevenue0: floor.map(f => revenue0 > 0 ? f / revenue0 : 0), notes };
 }
 
-/** The base revenue path against the contracted floor: years whose revenue falls under what is already contracted. */
+/** The forecast against the uniform timing reference, without treating that assumption as a contractual minimum. */
 function floorBreaches(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, anchor: RevenueAnchor): Array<{ year: number; revenue: number; floor: number }> {
   const out: Array<{ year: number; revenue: number; floor: number }> = [];
   let revenue = drivers.revenue0;
@@ -725,7 +725,7 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
   if (input.anchor) {
     const base = result.scenarios.base.drivers;
     const breaches = base.modelType === "fcff" ? floorBreaches(base, input.anchor) : [];
-    gate("rpo_floor", breaches.length ? "flag" : "pass", breaches.length ? `base revenue falls under contracted revenue in year ${breaches.map(b => `${b.year} (${b.revenue.toExponential(3)} < ${b.floor.toExponential(3)})`).join(", ")}` : `base revenue stays above the contracted floor (${input.anchor.floor.map(f => f.toExponential(2)).join(", ")})`, breaches.length ? breaches[0]!.revenue : null, breaches.length ? breaches[0]!.floor : null);
+    gate("rpo_floor", breaches.length ? "flag" : "pass", breaches.length ? `base revenue is below the uniform RPO timing reference in year ${breaches.map(b => `${b.year} (${b.revenue.toExponential(3)} < ${b.floor.toExponential(3)})`).join(", ")}; annual recognition is assumed, not disclosed or guaranteed` : `base revenue is above the uniform RPO timing reference (${input.anchor.floor.map(f => f.toExponential(2)).join(", ")}); this is not a guaranteed revenue floor`, breaches.length ? breaches[0]!.revenue : null, breaches.length ? breaches[0]!.floor : null);
   }
   if (input.multipleHistory && input.impliedMultiple != null) {
     const h = input.multipleHistory;

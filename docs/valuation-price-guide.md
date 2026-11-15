@@ -16,6 +16,8 @@ Current reads use the newer of the immutable report quote and the independent st
 
 The reader projects the stress-scenario price comparisons and cash-flow-implied growth from that same current reference close, without changing the published assumptions or values. It shows the normal-range and stress-scenario distinction, the base value's weighted method contributions, and low confidence when the applied method values differ by more than threefold. Original commentary is identified by its research date and historical price. Calculator v11 rolls each method contribution to the same horizon as its scenario total; the reader applies that unit correction to v10 reports in memory.
 
+RPO percentages retain their disclosed recognition windows. A 24-month percentage does not establish the next twelve months' percentage. Calculator v12 uses uniform allocation within known windows only as a model timing reference, leaves unknown tails unallocated, and does not force forecast growth up to that reference. The historical `floor` wire fields carry this reference, not disclosed annual revenue, cash collections or guaranteed minimum revenue.
+
 ## Research and publishing
 
 The assumptions agent supplies normal boundaries with full drivers and evidence, or explicitly declares that the normal range cannot be supported. The report preserves the pressure scenarios and management reference independently. Qualitative confidence is not a statistical coverage probability.

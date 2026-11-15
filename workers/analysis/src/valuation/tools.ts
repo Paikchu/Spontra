@@ -399,7 +399,7 @@ function runCalculation(state: ValuationState, args: CalcArgs, calculatorTool: "
   ].filter(Boolean).join("\n");
 }
 
-/** What the calculator may compare the model against: facts, the RPO floor over the chosen horizon, peers, history, the trailing figures and the judgements. */
+/** What the calculator compares the model against: facts, an assumed uniform RPO timing reference, peers and history. */
 function calcContext(state: ValuationState, args: CalcArgs, consensus: ConsensusTarget | null, consensusNote: ConsensusNote): CalcContext {
   const fact = (id: string) => state.input.facts.find(f => f.id === id)?.value ?? null;
   const base = args.scenarios.base.drivers;

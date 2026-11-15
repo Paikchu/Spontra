@@ -58,7 +58,7 @@ export type ValuationInput = {
   /** Why a figure the models need is missing, by fact id. */
   missing: string[];
   fingerprint: string;
-  /** The newest RPO disclosure, for the contracted-revenue floor. */
+  /** The newest RPO disclosure, for recognition windows and the assumed uniform timing reference. */
   rpo: RpoDisclosure | null;
   lifecycle: Lifecycle;
   /** The comparable set (shared/analysis-runtime/valuation/peers.ts): the admin's set, business-tag pairs, else shared categories; not part of the fingerprint. */

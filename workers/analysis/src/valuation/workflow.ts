@@ -17,6 +17,7 @@ import { CALCULATOR_VERSION, calculateValuation, dimensionCeilings, multipleHist
 import { horizonFor, priorRequest as priorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { managementCapexShape, managementFactsOf } from "../../../../shared/analysis-runtime/valuation/management.ts";
 import { readValuationPublication } from "../../../../shared/analysis-runtime/valuation/read.ts";
+import { rpoBuckets, rpoBucketSpan } from "../../../../shared/analysis-runtime/findings.ts";
 import { buildValuationInput, type ValuationInput } from "./input.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "./market.ts";
 import { ValuationStore } from "./store.ts";
@@ -46,7 +47,7 @@ export async function valuationFingerprint(env: AnalysisEnv, ticker: string): Pr
 const pct = (v: number | null | undefined) => v == null ? "n/a" : `${(v * 100).toFixed(1)}%`;
 const anchorLine = (key: ValuationDimensionKey) => `${key}${DIMENSION_TEMPLATE[key].phase === "assumptions" ? " (assumptions phase)" : ""}: ${DIMENSION_TEMPLATE[key].anchors.join(" / ")}`;
 /** The fixed template from the contract, so the rubric the researcher scores against is the one the page shows. */
-const READER_LANGUAGE = `All rationales, gaps, next checks and report sections are read by investors. Use plain financial names, never JSON identifiers (for example debtDueCoverage or cashRunwayYears), internal fact/validation sets, tool budgets or workflow stages. Explain which financial information is missing or not applicable and how that limits the conclusion. If the assessment itself is unfinished, say so without implying the company failed to disclose data. Do not invent a financial reason for a technical interruption. Preserve qualifications, units, dates and citations. Use the prepared net-debt and leverage figures and state beside their first appearance that operating lease liabilities are excluded because rent remains an operating expense. Keep debt due within twelve months separate from later maturity buckets. Debt coverage here is cash divided by debt due within twelve months; any measure adding trailing free cash flow needs its own name and formula.`;
+const READER_LANGUAGE = `All rationales, gaps, next checks and report sections are read by investors. Use plain financial names, never JSON identifiers (for example debtDueCoverage or cashRunwayYears), internal fact/validation sets, tool budgets or workflow stages. Explain which financial information is missing or not applicable and how that limits the conclusion. If the assessment itself is unfinished, say so without implying the company failed to disclose data. Do not invent a financial reason for a technical interruption. Preserve qualifications, units, dates and citations. Use the prepared net-debt and leverage figures and state beside their first appearance that operating lease liabilities are excluded because rent remains an operating expense. Keep debt due within twelve months separate from later maturity buckets. Debt coverage here is cash divided by debt due within twelve months; any measure adding trailing free cash flow needs its own name and formula. Preserve the disclosed RPO recognition windows: a 24-month share is not a 12-month share. Annual amounts obtained by uniform allocation are modelling assumptions, not disclosed annual recognition, cash collection or guaranteed revenue. An unknown annual split stays unknown.`;
 
 const SCORING = `${READER_LANGUAGE}
 Score each dimension 0–10 in 0.5 steps against these anchors (${SCORE_ANCHOR_LEVELS.join(" / ")}):
@@ -105,6 +106,14 @@ Set coreLogicFailed only when the evidence shows the long-term thesis has failed
 
 const NUDGE = "Reply with a tool call; prose alone is not recorded.";
 
+function rpoTimingText(input: Pick<ValuationInput, "rpo" | "facts">): string {
+  const rpo = input.rpo;
+  if (!rpo) return "RPO recognition timing is not available in the prepared data.";
+  const annual = input.facts.find(fact => fact.id === "rpo_next_12m_share");
+  const windows = rpoBuckets(rpo).map(bucket => `${bucket.share == null ? "share unknown" : `${bucket.share}%`} ${rpoBucketSpan(bucket)}${bucket.to == null ? "; end unknown" : ""}`).join("; ");
+  return `RPO recognition windows as of ${rpo.asOf}, total ${rpo.total} ${rpo.currency}: ${windows}. ${annual ? `The disclosed twelve-month share is ${pct(annual.value)}.` : "No twelve-month share is disclosed in these windows; do not invent one by halving a multi-year share."} Annual allocations inside these windows are assumptions; read the original revenue note for any timing not structured here.`;
+}
+
 export function openingResearch(state: ValuationState): string {
   const { input } = state;
   const dist = input.distributions.map(d => `${d.factor}: min ${pct(d.min)} · p25 ${pct(d.p25)} · median ${pct(d.median)} · p75 ${pct(d.p75)} · max ${pct(d.max)} (${d.periods.length} years, latest ${d.periods.at(-1)?.periodEnd})`).join("\n");
@@ -113,6 +122,7 @@ export function openingResearch(state: ValuationState): string {
     `Company: ${input.companyName} (${input.ticker}${input.cik ? `, CIK ${input.cik}` : ""}). Statements in ${input.currency}; newest complete quarter ${input.financialPeriodEnd}; income model ${input.incomeModel}. Research date ${state.researchAsOf.slice(0, 10)}.`,
     state.quote ? `Reference close ${state.quote.price} ${state.quote.currency} on ${state.quote.priceDate}${state.quote.usable ? "" : ` (not usable: ${state.quote.limitations.join("; ")})`}.` : "No reference quote.",
     `Facts (id | label | value | period | basis):\n${input.facts.map(factLine).join("\n")}`,
+    rpoTimingText(input),
     input.missing.length ? `Missing required facts: ${input.missing.join(", ")}.` : "",
     `Company history by factor:\n${dist || "none"}`,
     `Diagnostics computed from the facts:\n${diag}`,
@@ -147,12 +157,12 @@ function openingAssume(state: ValuationState, prior: CalcRequest | null): string
   const dist = input.distributions.filter(d => ["revenueGrowth", "operatingMargin", "capexToRevenue", "fcfMargin"].includes(d.factor)).map(d => `${d.factor}: p25 ${pct(d.p25)} · median ${pct(d.median)} · p75 ${pct(d.p75)} (${d.periods.length} years)`).join("\n");
   const anchor = prior?.context?.anchor;
   const peers = state.peerMultiples ? `Peers (${input.peerBasis}: ${state.peerMultiples.peers.map(p => `${p}${state.peerMultiples!.weights?.[p] != null && input.peerBasis === "unit" ? ` ${(state.peerMultiples!.weights[p]! * 100).toFixed(0)}%` : ""}`).join(", ")}) trailing EV/EBITDA p25/median/p75 ${state.peerMultiples.evToEbitda ? `${state.peerMultiples.evToEbitda.p25.toFixed(1)}/${state.peerMultiples.evToEbitda.median.toFixed(1)}/${state.peerMultiples.evToEbitda.p75.toFixed(1)}` : "n/a"}; core P/E ${state.peerMultiples.peRatio ? `${state.peerMultiples.peRatio.p25.toFixed(1)}/${state.peerMultiples.peRatio.median.toFixed(1)}/${state.peerMultiples.peRatio.p75.toFixed(1)}` : "n/a"}.` : "Peers: no multiples available; the DCF stands alone.";
-  const priorText = prior ? `Prior (${input.lifecycle} life cycle, ${prior.scenarios.base.drivers.modelType === "fcff" ? prior.scenarios.base.drivers.path.revenueGrowth.length : 5} years; revise, do not copy): ${JSON.stringify({ discountRate: Number(prior.discountRate.value.toFixed(4)), shares: prior.shares.base, bridge: { nonOperatingAssets: prior.bridge.nonOperatingAssets, debtAndClaims: prior.bridge.debtAndClaims }, base: prior.scenarios.base.drivers })}${anchor ? `\nRPO floor (contracted revenue by year, ${anchor.asOf}): ${anchor.floor.map(f => (f / 1e9).toFixed(1)).join(", ")}B = ${anchor.floorToRevenue0.map(v => pct(v)).join(", ")} of trailing revenue.${anchor.notes.length ? ` ${anchor.notes.join("; ")}` : ""}` : ""}` : "No prior could be computed from history.";
+  const priorText = prior ? `Prior (${input.lifecycle} life cycle, ${prior.scenarios.base.drivers.modelType === "fcff" ? prior.scenarios.base.drivers.path.revenueGrowth.length : 5} years; revise, do not copy): ${JSON.stringify({ discountRate: Number(prior.discountRate.value.toFixed(4)), shares: prior.shares.base, bridge: { nonOperatingAssets: prior.bridge.nonOperatingAssets, debtAndClaims: prior.bridge.debtAndClaims }, base: prior.scenarios.base.drivers })}${anchor ? `\nUniform RPO annual allocation reference (${anchor.asOf}; assumed timing, not disclosed annual revenue): ${anchor.floor.map(f => (f / 1e9).toFixed(1)).join(", ")}B = ${anchor.floorToRevenue0.map(v => pct(v)).join(", ")} of trailing revenue.${anchor.notes.length ? ` ${anchor.notes.join("; ")}` : ""}` : ""}` : "No prior could be computed from history.";
   const methodsAvailable = state.peerMultiples ? `Methods available: dcf; ev_ebitda_forward ${state.peerMultiples.evToEbitda ? "yes" : "no (no peer EV/EBITDA)"}; pe_forward ${state.peerMultiples.peRatio ? (input.facts.some(f => f.id === "interest_expense_ttm") ? "yes" : "no (trailing interest expense unknown)") : "no (no peer P/E)"}. Weigh them as you judge (sum 1); an unavailable one gets 0 with the reason.` : "Methods available: dcf only (no peer multiples); ev_ebitda_forward and pe_forward get weight 0 with the reason.";
   const managementNote = input.management ? "Management scenario: computed by code from the targets above; give scenarioProbabilities.management with a rationale citing the management evidence ids, and managementComparison explaining the gap of your base path to the targets." : "Management scenario: none (no cited target set); scenarioProbabilities.management is 0 with the rationale \"no target set\" and managementComparison is null.";
   return [
     `Company: ${input.companyName} (${input.ticker}); statements in ${input.currency} to ${input.financialPeriodEnd}; ${input.lifecycle} life cycle. ${state.quote ? `Reference close ${state.quote.price} ${state.quote.currency} on ${state.quote.priceDate}${state.quote.usable ? "" : " (not usable)"}.` : "No reference quote."}`,
-    `Model facts (id | label | value | period | basis):\n${facts}`, `History:\n${dist || "none"}`, rates, peers, methodsAvailable, managementText(state), managementNote, `Recorded dimensions:\n${dims}`, `Registered evidence:\n${evidence || "none"}`, priorText,
+    `Model facts (id | label | value | period | basis):\n${facts}`, rpoTimingText(input), `History:\n${dist || "none"}`, rates, peers, methodsAvailable, managementText(state), managementNote, `Recorded dimensions:\n${dims}`, `Registered evidence:\n${evidence || "none"}`, priorText,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -196,7 +206,7 @@ export function openingCompose(state: ValuationState): string {
   const red = state.redTeam ? `Counter-evidence review:\n${state.redTeam.weakestAssumptions.map(w => `- ${w.factor}: ${w.why} (${w.evidenceIds.join(", ") || "no evidence"})`).join("\n")}\ndecisive counter-evidence: ${state.redTeam.decisiveCounterEvidence}` : "";
   const evidence = [...state.evidence.values()].map(e => `[${e.evidenceId}] ${e.title}${e.path ? ` › ${e.path}` : ""}`).join("\n");
   const gaps = [...state.modelGaps, ...[...state.dimensions.values()].flatMap(d => d.gaps.map(g => ({ code: "missing_inputs", message: `${d.key}: ${g}` })))].map(g => `${g.code}: ${g.message}`).join("\n");
-  return [`Company: ${state.input.companyName} (${state.input.ticker}), research date ${state.researchAsOf.slice(0, 10)}, statements to ${state.input.financialPeriodEnd}.`, `Dimensions:\n${dims}`, model, red, `Evidence ids:\n${evidence}`, gaps ? `Gaps:\n${gaps}` : "", "Call compose_valuation."].filter(Boolean).join("\n\n");
+  return [`Company: ${state.input.companyName} (${state.input.ticker}), research date ${state.researchAsOf.slice(0, 10)}, statements to ${state.input.financialPeriodEnd}.`, rpoTimingText(state.input), `Dimensions:\n${dims}`, model, red, `Evidence ids:\n${evidence}`, gaps ? `Gaps:\n${gaps}` : "", "Call compose_valuation."].filter(Boolean).join("\n\n");
 }
 
 /** A first pass from the company's own history, RPO and capex cycle, with no model involved (shared/analysis-runtime/valuation/prior.ts). */
