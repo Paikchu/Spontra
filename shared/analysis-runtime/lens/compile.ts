@@ -87,7 +87,7 @@ function axisFor(series: CompiledSeries[], marks: LensMark[], refs: Map<string, 
         for (const s of mine) { const v = s.values[i]; if (v == null) continue; if (v >= 0) up += v; else down += v; }
         min = Math.min(min, down); max = Math.max(max, up);
       }
-    } else for (const s of mine) for (const [i, v] of s.values.entries()) {
+    } else for (const s of mine) for (const v of s.values) {
       if (v == null) continue;
       min = Math.min(min, v); max = Math.max(max, v);
     }

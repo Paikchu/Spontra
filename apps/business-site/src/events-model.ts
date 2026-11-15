@@ -2,7 +2,7 @@ import { insiderCompactMoney } from "./insider-money";
 import type { CompanyEvent, EventClass } from "@/shared/analysis-contract/events";
 import type { InsiderTotals } from "@/shared/analysis-contract/insiders";
 import { isOpenMarketInsiderTrade, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, isQuietInsider } from "@/shared/analysis-runtime/events";
-import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { compactMoney, compactShares } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 

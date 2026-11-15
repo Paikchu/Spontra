@@ -10,7 +10,6 @@ import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
-import type { AgentMessage, AgentReply } from "../tool-loop.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { CONFIDENCES, CONFIDENCE_RULES, DIMENSION_TEMPLATE, EXTENDED_SCENARIO_KEYS, SCORE_ANCHOR_LEVELS, VALUATION_DIMENSIONS, VALUATION_METHODS, type ValuationAttempt, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationPublication } from "../../../../shared/analysis-contract/valuation.ts";
 import { CALCULATOR_VERSION, calculateValuation, dimensionCeilings, multipleHistoryOf, overallConfidence, peerMultiplesOf, verdictOf, weightedScore, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
@@ -28,8 +27,6 @@ export const VALUATION_VERSION = "valuation.v13";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
 const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, researchFinalize: { turns: 8, wallMs: 12 * 60_000 }, configure: { turns: 4, wallMs: 10 * 60_000 }, valuationCase: { turns: 8, wallMs: 15 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
-/** Wait after a model-output failure before the next turn: 20 s, 40 s, 80 s, then 90 s. */
-const MODEL_RETRY_WAIT_MS = 20_000, MODEL_RETRY_WAIT_MAX_MS = 90_000;
 
 export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
   return featureTickersFor(env, "valuation");

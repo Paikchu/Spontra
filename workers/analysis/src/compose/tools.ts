@@ -119,7 +119,6 @@ export function webTools<S extends WebToolState>(input: { env: AnalysisEnv; tick
 
 export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
   const { env, data, budget } = input;
-  const db = env.DB!;
   const ticker = data.ticker;
   // The stage's own reads, answered against the same data the analysis is verified on.
   const stageInput: StageInput = { data, locale: input.locale, scene: [], view: null };

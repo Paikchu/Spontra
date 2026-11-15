@@ -193,7 +193,6 @@ export function assessStatements(data: FindingData, periodEnd: string, locale: L
     id, metrics: metrics.filter(m => m.dimension === id), flags: flags.filter(f => f.dimension === id),
     total: all.filter(s => s.def.dimension === id).length, covered: metrics.filter(m => m.dimension === id).length,
   }));
-  const standard = model === "standard" || model === "direct_operating";
   return {
     version: STATEMENT_ANALYSIS_VERSION, periodEnd, model, dimensions, flags,
   };

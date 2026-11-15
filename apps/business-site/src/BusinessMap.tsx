@@ -54,11 +54,9 @@ import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { usePreview, usePublishedArtifact } from "./artifact-reads";
-import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
 import { useMedia, useSideScroll } from "./side-scroll";
-import type { FindingRef } from "@/shared/analysis-contract/findings";
 
 const m = messages({
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
@@ -265,12 +263,6 @@ function HighlightStats({ tiles }: { tiles: HeroTile[] }) {
     const note = change ? `${named}${basis} ${change}` : r.compare ? `${named}${r.compareLabel} ${level(r.compare)}` : named.slice(0, -3) || undefined;
     return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} />;
   })}</div>;
-}
-
-/** The statement figure a tile shows: a ratio's numerator, or the figure itself. */
-function refFigure(ref: FindingRef): { metric?: string; capital?: string } {
-  if ("ratio" in ref) return refFigure(ref.ratio.numerator);
-  return "metric" in ref ? { metric: ref.metric } : "capital" in ref ? { capital: ref.capital } : {};
 }
 
 function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {

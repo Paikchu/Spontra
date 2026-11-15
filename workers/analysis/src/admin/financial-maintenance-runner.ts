@@ -1,6 +1,5 @@
 import { startFilingRuns } from "../filing-analysis/start.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";

@@ -24,8 +24,6 @@ export type TreeLibrary = {
   /** The annual report's own section on one disclosed business, verbatim. */
   businessSection(names: string[], maxChars: number): Promise<{ url: string; title: string; text: string } | null>;
 };
-/** A content block as the Messages API writes it (`text`, `thinking`, `tool_use`, `tool_result`, …). */
-type TreeBlock = { type: string } & Record<string, unknown>;
 type Schema = { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties: false };
 export type TreeTool = { name: string; description: string; strict: true; input_schema: Schema };
 type TreeModel = {
@@ -115,7 +113,6 @@ const DESCRIBE_PASSAGES = 6;
 /** `own`: one of the company's own filings, as the filing library (or the flow it was read from) holds it. */
 type Material = { id: string; url: string; title: string; publishedAt: string | null; kind: "sec" | "web"; snippet: string; text: string; read: boolean; own: boolean };
 type Draft = { id: string; parentId: string | null; name: string; gloss: string | null; kind: "line" | "product"; flowNodeId: string | null; summary: TreeClaim | null; anchor: TreeClaim | null; revenue: TreeRevenueModel[] };
-type ToolCall = TreeBlock & { id: string; name: string; input: unknown };
 type Outcome = { observation: string; done?: boolean; error?: boolean };
 type TreeRunInput = {
   ticker: string; companyName: string; periodEnd: string; businesses: TreeBusiness[]; filings?: TreeFiling[]; search: TreeSearch; model: TreeModel;
@@ -161,7 +158,7 @@ export async function runBusinessTree(input: TreeRunInput): Promise<BusinessTree
   const businesses = input.businesses.slice(0, TREE_LIMITS.branches);
   if (!businesses.length) throw new Error("Business tree has no businesses to break down.");
   const scope = { scope: `spontra:business-tree:${input.ticker}`, maxAgeMs: 7 * 24 * 60 * 60_000 };
-  const filings = await stage("filings", () => input.filingLibrary ? libraryFilings(input, scope) : collectFilings(input, scope));
+  const filings = await stage("filings", () => input.filingLibrary ? libraryFilings(input) : collectFilings(input));
   const single = businesses.length === 1;
   // Businesses research at once: each has its own sources and step names, so the order steps finish in changes nothing.
   const results = await Promise.all(businesses.map(async (business, index) => {
@@ -776,21 +773,19 @@ function pageExcerpt(text: string, terms: string[], budget: number): string {
   return [...chosen].sort((a, b) => a - b).map(i => paragraphs[i]!.slice(0, 2_500)).join("\n\n");
 }
 
-/** The filings every business starts from, as the filing library holds them; a web search finds the annual report only when the library has none. */
-async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
+/** The filing library supplies the starting documents; the flow's filings supplement it when no annual report is listed. */
+async function libraryFilings(input: TreeRunInput): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
   const documents = await input.filingLibrary!.documents();
   // The library holds only this company's documents.
   if (documents.some(d => /10-K|20-F|annual/i.test(d.title))) return documents.map(d => ({ ...d, snippet: "", own: true }));
-  const searched = await collectFilings(input, scope);
-  return [...documents.map(d => ({ ...d, snippet: "", own: true })), ...searched.filter(f => !documents.some(d => d.url === f.url))];
+  const flowFilings = await collectFilings(input);
+  return [...documents.map(d => ({ ...d, snippet: "", own: true })), ...flowFilings.filter(f => !documents.some(d => d.url === f.url))];
 }
 
 /**
- * The filings every business starts from: the ones the flow was read from, and the newest annual
- * report, whose business section names what each segment sells. They are listed, not read: the model
- * decides what to read.
+ * List the filings the flow was read from; the model decides what to read.
  */
-async function collectFilings(input: TreeRunInput, _scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
+async function collectFilings(input: TreeRunInput): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
   // The flow's own filings are the company's. No annual report is searched for: SEC text reaches the agent only from
   // the library (docs/sec-archive.md), never as a search provider's listing or excerpt.
   return (input.filings ?? []).filter(f => isSecUrl(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));

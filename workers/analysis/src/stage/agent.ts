@@ -163,7 +163,6 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     // A turn Pi resumed after an eviction still holds the conversation's session; a new one waits for it to settle.
     if (this.completions.size) return;
     const env = await companyPolicyEnvironment(this.env as StageEnv);
-    const locale: Locale = owner.locale === "zh-CN" ? "zh-CN" : "en";
     const turnId = uid();
     const userHash = await sha256(owner.user_id);
     const who: Spender = { reader: owner.user_id, address };

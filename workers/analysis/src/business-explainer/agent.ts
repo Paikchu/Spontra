@@ -73,7 +73,7 @@ export async function runBusinessExplainer(input: {
 
   // Filings are shared by every group: the one the flow was read from, and the latest annual report,
   // whose business section says in the company's own words what each line of revenue sells.
-  const filings = await stage("evidence-filing", () => collectFilings(input, allTerms, scope));
+  const filings = await stage("evidence-filing", () => collectFilings(input, allTerms));
   const filingUrls = new Set(filings.map(f => f.url));
 
   const evidence: Array<{ group: Group; documents: EvidenceDocument[] }> = [];
@@ -120,7 +120,7 @@ export async function runBusinessExplainer(input: {
 }
 
 async function collectFilings(input: { companyName: string; filings?: ExplainerFiling[]; search: ExplainerSearch; now: string; filingLibrary?: ExplainerLibrary },
-  terms: string[], scope: { scope: string; maxAgeMs: number }): Promise<EvidenceDocument[]> {
+  terms: string[]): Promise<EvidenceDocument[]> {
   // The library holds the newest annual report and the flow's own filings as verbatim passages: no fetch, no search.
   if (input.filingLibrary) {
     const documents: EvidenceDocument[] = [];

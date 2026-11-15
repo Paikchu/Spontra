@@ -143,7 +143,6 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
   const repository = () => new D1SecRepository(requireDb(env));
   // EDGAR is read for listings only; every filing's text comes from the archive (docs/sec-archive.md).
   const listings = (): EdgarListings => edgarListings(env, { fetcher });
-  const archive = () => ({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT });
   return {
     loadFiling: async (ticker, accession) => {
       assertTrackedTicker(env, ticker);
