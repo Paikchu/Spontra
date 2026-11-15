@@ -36,12 +36,12 @@ SEC 网关合并提交目录、filing index 和完整 submission，归档原始�
 
 ## 验证真实披露
 
-`scripts/sec-material-acceptance.ts` 调用验收 Worker，重新发现 AMZN 最新原始 8-K 和 10-K，执行预处理与真实报告会话，并从正式接口读回成品。
+`scripts/sec-material-acceptance.ts` 可按 ticker/form 验证真实材料和报告，默认准备 CRWV、ORCL 的当前及前一期 10-Q，为当前季报启动新的分析。客户端连续读回 Markdown，并核对原件、CSV、来源引用和报告正式读回结果。
 
 验收导出 Markdown、CSV、表格目录、来源清单、覆盖结果、报告、完整审核收据和模型用量。客户端核对审核内容与实际发布 HTML、材料版本及计算集合一致。新 runId 和 rewrite 禁止旧会话或旧报告满足本次验收。预算耗尽后的强制结算、缺失来源、旧读取工具或省略实质内容的降级均不能通过。
 
 运行记录包含每次工具调用和当期检查。现有 D1 工具参数日志上限为 2,000 字符；完整报告、计算状态和全文审核输入另存。用量账本包含模型、effort、token、耗时和结果，不包含模型思维过程或密钥。
 
-生产验收入口仅由 `workers/analysis/scripts/sec-material-acceptance-worker.ts` 的临时包装提供，并使用独立访问密钥。正常入口不包含验收路由。
+生产验收入口 `/admin/material-acceptance/*` 由管理会话鉴权。本地运行 `wrangler dev --config workers/analysis/scripts/wrangler.acceptance-proxy.jsonc` 后，验收脚本通过仅监听 localhost 的代理调用远端 AdminGateway，复用生产绑定；本地无需复制模型密钥。独立本地材料环境仍由 `workers/analysis/scripts/sec-material-acceptance-worker.ts` 提供。
 
 两份真实 AMZN 披露的覆盖数量、正常报告发布、独立复核和正式读回结果见 [AMZN SEC 全链路验收](sec-material-acceptance.md)。

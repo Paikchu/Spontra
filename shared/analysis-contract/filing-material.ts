@@ -1,7 +1,7 @@
 import type { FilingTable, FilingFactRow } from "./filing-content.ts";
 
 export const MATERIAL_VERSION = "filing-material.v1";
-export const MATERIAL_ORGANIZER_VERSION = "source-organizer.v2";
+export const MATERIAL_ORGANIZER_VERSION = "source-organizer.v3";
 export const MATERIAL_READ_BYTES = 64_000;
 export const MATERIAL_ARCHIVE_INVENTORY_VERSION = "sec-directory-union.v1";
 export type MaterialRef = { ticker: string; accession: string; version: string };

@@ -6,7 +6,7 @@ import { headingPeriod } from "./filing-facts.ts";
 import { contentHash } from "./content-hash.ts";
 import { omit } from "./omit.ts";
 
-export const MATERIAL_PARSER_VERSION = "material-parser.v7";
+export const MATERIAL_PARSER_VERSION = "material-parser.v8";
 const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
 const numeric = (text: string): number | null => {
   const raw = text.replace(/[$€£¥,%\s]/g, "");
@@ -392,7 +392,8 @@ export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource
   coverage.sourceTextChars = inventory.text.reduce((n, leaf) => n + leaf.text.length, 0);
   for (const leaf of inventory.text) {
     const owner = blocks.find(block => block.kind !== "image" && block.locator.start !== null && block.locator.end !== null && leaf.start >= block.locator.start && leaf.end <= block.locator.end);
-    if (owner && normalize(decodeEntities(owner.text)).includes(leaf.text.replace(/\|/g, "\\|"))) coverage.retainedTextChars += leaf.text.length;
+    const retained = owner ? normalize(decodeEntities(owner.text)) : "";
+    if (owner && (retained.includes(leaf.text) || retained.includes(leaf.text.replace(/\|/g, "\\|")))) coverage.retainedTextChars += leaf.text.length;
     else if (owner?.kind === "table") {
       const asset = tables.find(table => table.tableId === owner.tableId);
       if (asset && normalize(csvFromTable(asset.table) + asset.title + owner.text).includes(leaf.text)) coverage.retainedTextChars += leaf.text.length;

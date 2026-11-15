@@ -12,19 +12,14 @@ import { requestFilingMaterial, prepareFilingMaterial, getFilingMaterial, readMa
 import { filingMaterialMeta, materialBlockId, readFilingMarkdown } from "../filing-material/read.ts";
 import { readSourceBytes } from "../filing-material/archive.ts";
 import { organizationBatches, organizationCacheKey, parseOrganizationReceipt } from "../filing-material/prepare.ts";
-import { MATERIAL_PREFIX, materialBase, materialDigest } from "../filing-material/store.ts";
+import { materialBase, materialDigest } from "../filing-material/store.ts";
 import { tableCatalogEntry, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import { startFilingRuns } from "../filing-analysis/start.ts";
 import type { FilingWork } from "../filing-analysis/recipe.ts";
-import { filingSemanticAudit, filingSemanticInput, filingSemanticRequest, type FilingAuditState } from "../filing-analysis/semantic-audit.ts";
-import { openComposer } from "../artifact/document.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
 import { readPublishedArtifact, readPublishedDocument, readWorkState } from "../artifact/store.ts";
 import { recheckFiling } from "../filing-analysis/recheck.ts";
-import { PERIODIC_BLOCKS } from "../filing-analysis/periodic.ts";
 import { handleMapRead } from "../read-api/router.ts";
-import type { ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
-import type { StoredArtifact } from "../artifact/store.ts";
 import type { AiUsageRow } from "../ai-runs/usage.ts";
 
 type Env = AnalysisEnv & { TASK_RUNS?: Cloudflare.Env["TASK_RUNS"]; ACCEPTANCE_STORAGE_MODE?: "isolated" | "production" };
@@ -46,9 +41,6 @@ const forbidden = new Set(["research_pack", "read_section", "read_sections", "re
 const needed = ["read_filing_markdown", "find_filing_tables", "read_filing_table", "compute", "finish"];
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const sameMaterial = (a: MaterialRef, b: MaterialRef) => a.ticker === b.ticker && a.accession === b.accession && a.version === b.version;
-const organizationMigrationPrefix = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/organization/migrations/`;
-const organizationMigrationSchema = z.object({ material: z.object({ ticker: z.string(), accession: z.string(), version: z.string() }), modelRunId: z.string(), complete: z.literal(true),
-  receipts: z.array(z.object({ index: z.number().int(), key: z.string(), status: z.string(), blocks: z.number().int(), decisions: z.number().int() })) });
 
 async function loadRun(env: Env, id: string): Promise<Run> {
   const run = (await new D1SecRepository(env.DB!).getCache<Run>(runKey(id)))?.payload;
@@ -202,25 +194,11 @@ async function preprocessingRecords(env: Env, snapshot: MaterialSnapshot) {
     receipts.push({ index, key, inputHash: key.slice(key.lastIndexOf("/") + 1, -5), blockIds: batch.blocks.map(block => block.id),
       decisions: answer.decisions, tableDescriptions: answer.tables });
   }
-  const migrations = [];
-  let cursor: string | undefined;
-  do {
-    const objects = await env.SEC_FILINGS.list({ prefix: organizationMigrationPrefix(snapshot.ref), ...(cursor ? { cursor } : {}) });
-    for (const item of objects.objects) {
-      const object = await env.SEC_FILINGS.get(item.key);
-      if (!object) throw new Error(`Organization migration record missing: ${item.key}`);
-      const migration = organizationMigrationSchema.parse(JSON.parse(await object.text()));
-      if (migration.material.ticker !== snapshot.ref.ticker || migration.material.accession !== snapshot.ref.accession) throw new Error("Organization migration filing mismatch");
-      const matchingKeys = new Set(receipts.map(receipt => receipt.key));
-      if (migration.receipts.some(receipt => matchingKeys.has(receipt.key))) migrations.push({ key: item.key, ...migration });
-    }
-    cursor = objects.truncated ? objects.cursor : undefined;
-  } while (cursor);
   const currentMaterialRunId = `material-${snapshot.ref.accession}-${snapshot.ref.version}`;
-  const modelRunIds = [...new Set([currentMaterialRunId, ...migrations.map(migration => migration.modelRunId)])];
+  const modelRunIds = [currentMaterialRunId];
   const calls = await env.DB!.prepare(`SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = ? AND stage = 'filing-material-organize' AND run_id IN (${modelRunIds.map(() => "?").join(",")}) ORDER BY at`)
     .bind(snapshot.ref.ticker, ...modelRunIds).all<ModelCall>();
-  return { material: snapshot.ref, currentMaterialRunId, receipts, migrations, modelCalls: calls.results,
+  return { material: snapshot.ref, currentMaterialRunId, receipts, modelCalls: calls.results,
     currentMaterialModelCalls: calls.results.filter(call => call.runId === currentMaterialRunId).length,
     receiptModelRuns: modelRunIds.map(runId => ({ runId, recordedCalls: calls.results.filter(call => call.runId === runId).length })),
     ledgerMeaning: "The ledger contains recorded provider calls. Input-hash receipts may originate in an earlier material version; reusing them does not constitute another model call." };
@@ -315,35 +293,6 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
     if (url.pathname === "/acceptance/discover" && request.method === "POST") return json(await discover(env, discoverSchema.parse(await request.json())));
     const args = request.method === "GET" ? requestSchema.parse({ runId: url.searchParams.get("runId"), accession: url.searchParams.get("accession") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined }) : requestSchema.parse(await request.json());
     const run = await loadRun(env, args.runId), entries = chosen(run, args.accession);
-    if (url.pathname === "/acceptance/semantic-probe" && request.method === "POST") {
-      if (entries.length !== 1) throw new Error("Choose one filing for a semantic probe");
-      const caseId = z.string().regex(/^[a-z0-9-]+$/).parse(url.searchParams.get("caseId"));
-      const fixtureKey = `sec-acceptance/${run.id}/semantic-probes/${caseId}.json`;
-      const fixtureObject = await env.SEC_FILINGS.get(fixtureKey);
-      if (!fixtureObject) throw new Error("Archived semantic fixture is missing");
-      const fixture: { document: ArtifactDocument; work: FilingWork; hash: string } = JSON.parse(await fixtureObject.text());
-      const entry = entries[0]!;
-      if (!entry.material || fixture.document.kind !== "filing-report" || fixture.document.ticker !== entry.filing.ticker || fixture.document.subject !== entry.filing.accessionNumber
-        || !sameMaterial(fixture.work.material, entry.material)) throw new Error("Semantic fixture does not match the pinned filing");
-      const immutable = await env.SEC_FILINGS.get(`artifacts/filing-report/${entry.filing.ticker}/${entry.filing.accessionNumber}/v${fixture.document.version}.json`);
-      if (!immutable) throw new Error("Original report edition is missing");
-      const original: StoredArtifact = JSON.parse(await immutable.text());
-      if (original.hash !== fixture.hash || JSON.stringify(original.document) !== JSON.stringify(fixture.document)) throw new Error("Probe report differs from its immutable edition");
-      const composer = openComposer({ kind: fixture.document.kind, ticker: fixture.document.ticker, subject: fixture.document.subject, title: fixture.document.title, lang: fixture.document.lang });
-      composer.blocks = fixture.document.blocks;
-      composer.charts = Object.fromEntries(fixture.document.charts.map(chart => [chart.id, chart]));
-      composer.sources = Object.fromEntries(fixture.document.sources.map(({ id, ...source }) => [id, source]));
-      const state: FilingAuditState = { composer, periodic: fixture.work.periodic, web: fixture.work.web };
-      const snapshot = await readMaterialSnapshot(env, entry.material);
-      const required = /^(?:10-[KQ]|20-F|40-F)(?:\/A)?$/.test(entry.filing.form) ? PERIODIC_BLOCKS : ["summary"];
-      if (url.searchParams.get("mode") === "input") {
-        const input = await filingSemanticInput({ env, snapshot, required }, state), modelInput = filingSemanticRequest(input);
-        return json({ material: snapshot.ref, requestChars: JSON.stringify(modelInput).length,
-          requestHash: await materialDigest(JSON.stringify(modelInput)), input: modelInput });
-      }
-      const issues = await filingSemanticAudit({ env, snapshot, required, runId: `semantic-probe-${run.id}-${caseId}` }, state);
-      return json({ fixtureKey, originalHash: original.hash, material: snapshot.ref, issues, receipt: state.periodic?.semanticAuditReceipt ?? null });
-    }
     if (url.pathname === "/acceptance/prepare" && request.method === "POST") {
       const result = [];
       for (const entry of entries) {
