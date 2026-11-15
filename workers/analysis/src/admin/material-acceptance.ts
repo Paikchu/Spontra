@@ -297,10 +297,12 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
       const result = [];
       for (const entry of entries) {
         const state = await prepareFilingMaterial(env, filingMaterialMeta(entry.filing), { maxDocuments: args.maxDocuments });
-        if (state.status === "ready") entry.material = state.ref;
+        if (state.status === "ready") {
+          await env.DB!.prepare("UPDATE sec_cache SET payload = json_set(payload, ?, json(?)), fetched_at = ? WHERE cache_key = ?")
+            .bind(`$.entries[${run.entries.indexOf(entry)}].material`, JSON.stringify(state.ref), new Date().toISOString(), runKey(run.id)).run();
+        }
         result.push({ accession: entry.filing.accessionNumber, state });
       }
-      await saveRun(env, run);
       return json(result);
     }
     if (url.pathname === "/acceptance/material" && request.method === "GET") {
