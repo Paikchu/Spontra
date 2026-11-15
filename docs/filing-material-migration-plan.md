@@ -1,6 +1,6 @@
 # 财报材料统一到 Markdown
 
-2026-11-15。按用户收窄后的范围实施：删除旧章节方案，旧资料直接重新生成；验收 CRWV 和 ORCL 的新后端链路，网页展示不作为完成条件。
+2026-11-15，已实施并完成生产验收。按用户收窄后的范围：删除旧章节方案，旧资料直接重新生成；验收 CRWV 和 ORCL 的新后端链路，网页展示不作为完成条件。
 
 ## 实施范围
 
@@ -60,4 +60,21 @@
 
 ## 旧数据清理
 
-独立迁移 `0059_retire_d1_filing_library.sql` 负责删除十张旧表及其528,890条记录、旧引用列、旧任务和缓存、过期材料指针；清理后的正式读回和实际对象删除回执随后补充。
+独立迁移 `0059_retire_d1_filing_library.sql` 已于2026-11-15 10:20:30 UTC应用。十张旧表（迁移前528,890条记录）已不存在；业务单元/标签的旧section_ids、passage_ids列已删除，旧任务和空来源派生行均为0。
+
+| 已删除对象 | 数量 | 字节 |
+| --- | ---: | ---: |
+| 旧analysis/filings/earnings-materials | 2,589 | 241,314,812 |
+| 旧parser/organizer缓存 | 1,513 | 244,905,241 |
+| 25个旧或半成品snapshot前缀 | 1,796 | 130,593,475 |
+| 合计 | 5,898 | 616,813,528 |
+
+所有删除范围重新列举均为空。清理动态保护15份当前v8/v3材料、共享原件、manifest和新报告产物；正常后台生成的其他有效新数据同样保留。
+
+旧AI Search实例default/sec-filing-library已删除，GET确认404。business-tags索引删除341个过期向量，保留当前全部93个有效向量（含本次CRWV12、ORCL41），全量枚举missing=0、invalid=0。
+
+清理后通过现有缓存分支重新匹配并刷新peers projection，未重新生成分类或标签：CRWV与ORCL结果partial、比较口径unit；两侧固定来源逐字读回通过，projection无已删除旧unit引用。
+
+GC后的有限只读验证通过：四份状态/snapshot、Markdown分页、数值CSV及直接R2哈希、两份正式报告HTML+CSS哈希、完整语义回执均保持一致。本轮检查启动模型数为0。
+
+主要回执保存在本地验收目录：verdict.json、post-cleanup-d1-smoke.json、post-gc-smoke.json、post-cleanup-business-verification.json、cleanup-r2.json、cleanup-vectorize.json。类型检查、架构边界、完整构建和Worker dry-run通过；未新增单元测试。
