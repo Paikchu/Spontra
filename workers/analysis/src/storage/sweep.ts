@@ -1,37 +1,17 @@
-import { featureTickersFor } from "../financial-data/company-policy.ts";
-import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { SEC_ANALYSIS_SCHEMA_VERSION } from "../sec/analysis.ts";
 
-/**
- * Deletes stored data no code path can read any more, by rules that each name the reader they rely on. Archived
- * filings are not swept here (`archive-prune` owns them). Nothing is deleted on a guess: a rule that needs a list of
- * live keys or companies deletes nothing when that list comes back empty.
- */
-export const STORAGE_SWEEP_VERSION = "storage-sweep.v1";
+/** Removes expired model checkpoints, replay results and web-search cache objects. */
+export const STORAGE_SWEEP_VERSION = "storage-sweep.v2";
 
 const HOUR = 60 * 60_000, DAY = 24 * HOUR;
 /** R2 list pages one run reads, and keys per delete call (R2 accepts up to 1,000). */
 const PAGES_PER_RUN = 12, DELETE_BATCH = 500;
-const CURSOR_KEY = "storage-sweep:v1:cursor";
+const CURSOR_KEY = "storage-sweep:v2:cursor";
 
-export type SweepContext = { now: number; aiTickers: Set<string>; liveSearchObjects: Set<string>; analysisSchema: string };
+export type SweepContext = { now: number; liveSearchObjects: Set<string> };
 export type SweepRule = { prefix: string; why: string; dead(key: string, uploaded: number, ctx: SweepContext): boolean };
 
 const SWEEP_RULES: SweepRule[] = [
-  {
-    // Prepared SEC filings are read only by the SEC report Workflow, which runs for AI-listed companies.
-    prefix: "filings/", why: "prepared filing of a company outside the AI list",
-    dead: (key, _uploaded, ctx) => ctx.aiTickers.size > 0 && !ctx.aiTickers.has(key.split("/")[1] ?? ""),
-  },
-  {
-    // Analysis artifacts are read back under the current schema version only (`operations.ts`).
-    prefix: "analysis/", why: "analysis artifact of an earlier schema or a company outside the AI list",
-    dead: (key, _uploaded, ctx) => {
-      const [, ticker = "", , schema = ""] = key.split("/");
-      return (ctx.aiTickers.size > 0 && !ctx.aiTickers.has(ticker)) || (/^sec-analysis\.v\d+$/.test(schema) && schema !== ctx.analysisSchema);
-    },
-  },
   {
     // A model checkpoint resumes a call inside a Workflow step; no step retries for a week.
     prefix: "model-recovery/v1/", why: "model checkpoint older than a week",
@@ -57,13 +37,8 @@ export const RETIRED_CACHE_PREFIXES = [
 type Cursor = { rule: number; cursor?: string };
 
 async function context(env: AnalysisEnv, now: number): Promise<SweepContext> {
-  const policy = await companyPolicyEnvironment(env);
-  // Prepared filings and analysis artifacts serve the reports and findings features; both lists, before and after the admin's switches.
-  // An admin "analyze" task runs the SEC report Workflow for a company outside those lists; its prepared filings stay too.
-  const analyzing = (await env.DB!.prepare("SELECT DISTINCT ticker FROM financial_maintenance_tasks WHERE action = 'analyze' AND status IN ('queued','running','cancel_requested')").all<{ ticker: string }>()).results;
-  const aiTickers = new Set([...[env, policy].flatMap(e => [...featureTickersFor(e, "filings"), ...featureTickersFor(e, "findings")]), ...analyzing.map(r => r.ticker)]);
   const live = (await env.DB!.prepare("SELECT object_key FROM web_search_cache WHERE object_key IS NOT NULL").all<{ object_key: string }>()).results;
-  return { now, aiTickers, liveSearchObjects: new Set(live.map(r => r.object_key)), analysisSchema: SEC_ANALYSIS_SCHEMA_VERSION };
+  return { now, liveSearchObjects: new Set(live.map(r => r.object_key)) };
 }
 
 /** One run: a few list pages through the rules in order, resuming where the last run stopped; the cache rows go first. */

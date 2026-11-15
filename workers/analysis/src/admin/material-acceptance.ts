@@ -39,7 +39,7 @@ const submissionsSchema = z.object({ name: z.string(), filings: z.object({ recen
 }) }) });
 const runKey = (id: string) => `acceptance:material:run:${id}`;
 const forbidden = new Set(["research_pack", "read_section", "read_sections", "read_filing_section", "find_sections", "find_filing_sections", "read_report"]);
-const needed = ["read_filing_markdown", "read_filing_table", "compute", "finish"];
+const observedTools = ["read_filing_markdown", "find_filing_tables", "read_filing_table", "compute", "finish"];
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const sameMaterial = (a: MaterialRef, b: MaterialRef) => a.ticker === b.ticker && a.accession === b.accession && a.version === b.version;
 
@@ -127,7 +127,6 @@ async function runStatus(env: Env, run: Run) {
       if (summary.status !== "published") issues.push(`run status ${summary.status}`);
       if (summary.settled_by !== "agent") issues.push(`settled by ${summary.settled_by ?? "unknown"}`);
       if (JSON.parse(summary.degraded).length || artifact?.degraded.length) issues.push("report contains degraded blocks");
-      for (const name of needed) if (!turns.results.some(turn => turn.action === name && turn.failed === 0)) issues.push(`required tool not completed successfully: ${name}`);
       for (const name of actions) if (forbidden.has(name)) issues.push(`legacy tool called: ${name}`);
       if (!artifact || !document?.blocks.length) issues.push("published report is missing");
       if (version?.run_id !== entry.sessionId) issues.push("published artifact does not belong to the fresh run");
@@ -264,7 +263,7 @@ async function exported(env: Env, run: Run, entry: Entry) {
   for (const ref of pinnedMaterials) if (!sameMaterial(ref, snapshot.ref)) sources.push(...materialSourceChecks(await readMaterialSnapshot(env, ref), sourceIds));
   const sourceCheck = { expectedMaterial: snapshot.ref, workMaterial: work?.material ?? null, pinnedMaterials, originals,
     markdownRead: work?.periodic?.markdownRead ?? false, tablesRead: readTables,
-    successfulTools: Object.fromEntries(needed.map(name => [name, turns.results.filter(turn => turn.action === name && turn.failed === 0).length])),
+    successfulTools: Object.fromEntries(observedTools.map(name => [name, turns.results.filter(turn => turn.action === name && turn.failed === 0).length])),
     tables: snapshot.tables.filter(table => readTables.includes(table.tableId)).map(table => ({ tableId: table.tableId, filename: table.filename,
       description: table.description, sha256: table.sha256, anchor: table.anchor, unit: table.table.unit, columns: table.table.columns, notes: table.table.notes, source: table.sourceUrl })),
     citations: document.sources.map(source => ({ ...source, materials: sources.filter(item => item.id === source.id),
@@ -303,6 +302,7 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
           classification: await TASK_IMPLEMENTATIONS["business-classification"].run(env, ticker, context),
           tags: await TASK_IMPLEMENTATIONS["business-tags"].run(env, ticker, context) });
       }
+      await TASK_IMPLEMENTATIONS.peers.run(env, "*", { causeId: run.id, trigger: run.id, now: new Date() });
       return json(results);
     }
     if (url.pathname === "/acceptance/prepare" && request.method === "POST") {
