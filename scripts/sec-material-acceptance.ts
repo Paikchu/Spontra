@@ -114,14 +114,16 @@ async function verifyContinuousMarkdown(runId: string, accession: string, snapsh
   let cursor: string | null = null, bytes = 0, chars = 0;
   do {
     assertTime();
-    const path = `/acceptance/read-markdown?runId=${encodeURIComponent(runId)}&accession=${encodeURIComponent(accession)}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
-    const page = markdownPageSchema.parse(await request(path));
-    if (stable(page.ref) !== stable(snapshot.ref)) throw new Error(`Markdown read changed the pinned version: ${accession}`);
-    const body = new TextEncoder().encode(page.text);
-    hash.update(body); bytes += body.byteLength; chars += page.text.length;
-    pages.push({ cursor, nextCursor: page.nextCursor, bytes: body.byteLength, blockIds: page.blockIds });
-    if (page.nextCursor !== null && Number(page.nextCursor) !== bytes) throw new Error(`Markdown read skipped or repeated bytes: ${accession}`);
-    cursor = page.nextCursor;
+    const path = `/acceptance/read-markdown-pages?runId=${encodeURIComponent(runId)}&accession=${encodeURIComponent(accession)}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
+    const batch = z.array(markdownPageSchema).parse(await request(path));
+    for (const page of batch) {
+      if (stable(page.ref) !== stable(snapshot.ref)) throw new Error(`Markdown read changed the pinned version: ${accession}`);
+      const body = new TextEncoder().encode(page.text);
+      hash.update(body); bytes += body.byteLength; chars += page.text.length;
+      pages.push({ cursor, nextCursor: page.nextCursor, bytes: body.byteLength, blockIds: page.blockIds });
+      if (page.nextCursor !== null && Number(page.nextCursor) !== bytes) throw new Error(`Markdown read skipped or repeated bytes: ${accession}`);
+      cursor = page.nextCursor;
+    }
   } while (cursor !== null);
   const sha256 = hash.digest("hex"), storedHash = digest(await readFile(join(directory, "filing.md")));
   if (bytes !== snapshot.markdown.bytes || chars !== snapshot.markdown.chars || sha256 !== storedHash) throw new Error(`Continuous Markdown read differs from the complete archived file: ${accession}`);
@@ -216,7 +218,7 @@ for (const entry of run.entries) {
   }
 }
 
-for (const entry of run.entries) await saveMaterialPackage(run.id, entry);
+await Promise.all(run.entries.map(entry => saveMaterialPackage(run.id, entry)));
 
 const before = statusSchema.parse(await request(`/acceptance/status?runId=${encodeURIComponent(run.id)}`));
 for (const entry of run.entries.filter(entry => entry.role === "subject")) {

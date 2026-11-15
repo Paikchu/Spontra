@@ -20,6 +20,7 @@ import { filingSessions } from "../durable-runs/binding.ts";
 import { readPublishedArtifact, readPublishedDocument, readWorkState } from "../artifact/store.ts";
 import { recheckFiling } from "../filing-analysis/recheck.ts";
 import { handleMapRead } from "../read-api/router.ts";
+import { TASK_IMPLEMENTATIONS } from "../pipeline/tasks.ts";
 import type { AiUsageRow } from "../ai-runs/usage.ts";
 
 type Env = AnalysisEnv & { TASK_RUNS?: Cloudflare.Env["TASK_RUNS"]; ACCEPTANCE_STORAGE_MODE?: "isolated" | "production" };
@@ -293,6 +294,17 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
     if (url.pathname === "/acceptance/discover" && request.method === "POST") return json(await discover(env, discoverSchema.parse(await request.json())));
     const args = request.method === "GET" ? requestSchema.parse({ runId: url.searchParams.get("runId"), accession: url.searchParams.get("accession") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined }) : requestSchema.parse(await request.json());
     const run = await loadRun(env, args.runId), entries = chosen(run, args.accession);
+    if (url.pathname === "/acceptance/business" && request.method === "POST") {
+      const results = [];
+      for (const entry of entries) {
+        const context = { causeId: run.id, trigger: run.id, now: new Date() };
+        const ticker = entry.filing.ticker;
+        results.push({ ticker,
+          classification: await TASK_IMPLEMENTATIONS["business-classification"].run(env, ticker, context),
+          tags: await TASK_IMPLEMENTATIONS["business-tags"].run(env, ticker, context) });
+      }
+      return json(results);
+    }
     if (url.pathname === "/acceptance/prepare" && request.method === "POST") {
       const result = [];
       for (const entry of entries) {
@@ -314,20 +326,25 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
       const snapshot = await readMaterialSnapshot(env, entries[0]!.material);
       return json(await readFilingMarkdown(env, snapshot, { cursor: args.cursor, maxChars: 64_000 }));
     }
+    if (url.pathname === "/acceptance/read-markdown-pages" && request.method === "GET") {
+      if (entries.length !== 1 || !entries[0]!.material) throw new Error("Choose one pinned material to read");
+      const snapshot = await readMaterialSnapshot(env, entries[0]!.material);
+      const pages: Awaited<ReturnType<typeof readFilingMarkdown>>[] = [];
+      let cursor = args.cursor;
+      for (let index = 0; index < 20; index++) {
+        const page = await readFilingMarkdown(env, snapshot, { cursor, maxChars: 64_000 });
+        pages.push(page);
+        if (page.nextCursor === null) break;
+        cursor = page.nextCursor;
+      }
+      return json(pages);
+    }
     if (url.pathname === "/acceptance/start" && request.method === "POST") {
       const result = [];
       for (const entry of entries) {
         if (!entry.material) throw new Error("Prepare and pin the material before starting the report");
         const ready = await getFilingMaterial(env, entry.filing.ticker, entry.filing.accessionNumber);
         if (ready?.status !== "ready" || !sameMaterial(ready.ref, entry.material)) throw new Error("The ready material differs from this run's pinned version");
-        const receipt = `acceptance:material:prior:${run.id}:${entry.filing.accessionNumber}`;
-        const repository = new D1SecRepository(env.DB!);
-        if (!await repository.getCache(receipt)) {
-          const [artifact, work] = await Promise.all([readPublishedArtifact(env, "filing-report", entry.filing.ticker, entry.filing.accessionNumber), readWorkState(env, "filing-report", entry.filing.ticker, entry.filing.accessionNumber)]);
-          const key = `sec-acceptance/${run.id}/${entry.filing.accessionNumber}/prior-report.json`;
-          await env.SEC_FILINGS.put(key, JSON.stringify({ artifact, work }), { httpMetadata: { contentType: "application/json" } });
-          await repository.setCache(receipt, { key, version: artifact?.version ?? null, hash: artifact?.hash ?? null }, new Date().toISOString());
-        }
         const operations = createAnalysisOperations(env, fetch, entry.sessionId);
         result.push(await startFilingRuns(env, entry.filing.ticker, { requestedBy: "manual", accession: entry.filing.accessionNumber, runId: entry.sessionId, mode: "rewrite" },
           { operations: { ...operations, loadFiling: async (ticker, accession) => ticker === entry.filing.ticker && accession === entry.filing.accessionNumber ? entry.filing : null } }));
