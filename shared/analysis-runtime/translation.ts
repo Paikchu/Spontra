@@ -183,7 +183,7 @@ export function checkTranslation(source: string, target: string): string[] {
   if (source.includes("\n") && outline(source) !== outline(target)) problems.push("markdown outline changed");
   const words = latinWords(source);
   if (words.length >= 2 && !CJK.test(target)) problems.push("not translated");
-  const kept = new Set(words), foreign = latinWords(target).filter(w => !kept.has(w) && !STANDARD_TERMS.has(w));
+  const kept = new Set(words.flatMap(word => [word, ...word.split("-")])), foreign = latinWords(target).filter(w => !kept.has(w) && !STANDARD_TERMS.has(w));
   if (foreign.length) problems.push(`English not in the source: ${[...new Set(foreign)].slice(0, 5).join(", ")}`);
   if (/[!！]/.test(target) && !/!/.test(source)) problems.push("exclamation mark");
   if (target.length > source.length * 1.5 + 40) problems.push("longer than the source allows");

@@ -716,11 +716,13 @@ export function proseFigures(prose: string): Array<{ value: number; tolerance: n
     const number = Number(raw!.replace("−", "-").replace(/,/g, ""));
     if (!Number.isFinite(number)) continue;
     const after = prose.slice(match.index! + match[0].length);
+    // In "year 1 and $10B", 1 is a period ordinal, not a member of the following money range.
+    const periodOrdinal = /\b(?:years?|months?|quarters?)[\s–—-]*$/i.test(prose.slice(0, match.index));
     // A range writes its unit once, after the last number: "$90–95B" and "$2 to $3 billion" scale both ends.
     // A range or a list writes its unit once, after the last number: "$90–95B", "$2 to $3 billion" and "86.3, 122.8 and 112.9 USD billion" scale every member.
-    const unit = /^\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^(?:\s?(?:,|and|or|[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?)+\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
+    const unit = /^\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? (periodOrdinal ? null : /^(?:\s?(?:,|and|or|[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?)+\s?(?:USD|US\$)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1]) ?? "";
     // A Chinese range or list writes its magnitude once too: 900–950亿, 863、1228 和 1129亿 scale every member.
-    const rangeMagnitude = magnitude ? null : /^(?:\s?(?:[–—-]|至|到|、|,|和|及|与|或)\s?\d[\d,]*(?:\.\d+)?)+\s?(万亿|亿|万)/.exec(after)?.[1] ?? null;
+    const rangeMagnitude = magnitude || periodOrdinal ? null : /^(?:\s?(?:[–—-]|至|到|、|,|和|及|与|或)\s?\d[\d,]*(?:\.\d+)?)+\s?(万亿|亿|万)/.exec(after)?.[1] ?? null;
     const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : rangeMagnitude ? ZH_MAGNITUDE[rangeMagnitude]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
     if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
     const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;
