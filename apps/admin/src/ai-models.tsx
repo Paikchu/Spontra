@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react";
-import type { AiEffort, AiModel, AiModelSettings, AiToolModelRow, AiToolModelUpdate } from "@/shared/analysis-contract/ai-models-admin";
+import type { AiEffort, AiEndpointInput, AiModel, AiModelSettings, AiToolModelRow, AiToolModelUpdate } from "@/shared/analysis-contract/ai-models-admin";
 import { adminApi, AdminApiError } from "./admin-api";
 import { financialDate } from "./financial-update-history";
 import "./ai-models.css";
@@ -14,6 +14,7 @@ const modelName = (model: string) => MODEL_LABEL[model as AiModel] ?? model;
 /** The model and effort of every AI tool in Spontra Analysis; an empty choice follows the deployment default. */
 export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: () => void; onAuthenticated: () => void }) {
   const [data, setData] = useState<AiModelSettings | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(""), [refresh, setRefresh] = useState(0);
+  const [draft, setDraft] = useState<AiEndpointInput>({ name: "", url: "", apiKey: "", thinkingLevel: "high" });
   const callbacks = useRef({ onUnauthorized, onAuthenticated });
   useEffect(() => { callbacks.current = { onUnauthorized, onAuthenticated }; }, [onUnauthorized, onAuthenticated]);
   const fail = (e: unknown) => { if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setError((e as Error).message); };
@@ -31,6 +32,23 @@ export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
     finally { setBusy(""); }
   }
 
+  async function connect(event: FormEvent) {
+    event.preventDefault();
+    setBusy("endpoint"); setError("");
+    try { setData(await adminApi<AiModelSettings>("ai/endpoints", { method: "POST", body: JSON.stringify(draft) })); setDraft(d => ({ ...d, apiKey: "" })); }
+    catch (e) { fail(e); }
+    finally { setBusy(""); }
+  }
+
+  async function disconnect(name: string) {
+    setBusy(name); setError("");
+    try { setData(await adminApi<AiModelSettings>("ai/endpoints", { method: "POST", body: JSON.stringify({ name, remove: true }) })); }
+    catch (e) { fail(e); }
+    finally { setBusy(""); }
+  }
+
+  const choices = data ? [...new Set<string>([...data.models, ...data.endpoints.map(endpoint => endpoint.name)])] : [];
+
   return <section className="am-admin" aria-label="模型配置">
     <header className="ra-page-header">
       <div className="ra-page-actions">
@@ -38,6 +56,23 @@ export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
         <button className="ra-icon-button" onClick={() => setRefresh(n => n + 1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16} /></button>
       </div>
     </header>
+    <form className="am-connect ra-panel" onSubmit={e => void connect(e)}>
+      <h2>接入模型</h2>
+      <label>名称<input name="name" value={draft.name} autoComplete="off" required onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} /></label>
+      <label>API 地址<input name="url" type="url" value={draft.url} placeholder="https://" required onChange={e => setDraft(d => ({ ...d, url: e.target.value }))} /></label>
+      <label>API Key<input name="apiKey" type="password" value={draft.apiKey} autoComplete="off" placeholder="再次保存同一名称时留空则保持原密钥" onChange={e => setDraft(d => ({ ...d, apiKey: e.target.value }))} /></label>
+      <label>推理档<select name="thinkingLevel" value={draft.thinkingLevel} onChange={e => setDraft(d => ({ ...d, thinkingLevel: e.target.value as AiEffort }))}>
+        {(data?.efforts ?? ["low", "medium", "high", "xhigh", "max"]).map(effort => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
+      </select></label>
+      <button className="fm-button" type="submit" disabled={busy === "endpoint"}>保存</button>
+    </form>
+    {data && data.endpoints.length > 0 && <ul className="am-endpoints ra-panel">{data.endpoints.map(endpoint => <li key={endpoint.name}>
+      <b>{endpoint.name}</b>
+      <span>{endpoint.url}</span>
+      <span>{EFFORT_LABEL[endpoint.thinkingLevel]}</span>
+      <span>{endpoint.keyHint ? `密钥 …${endpoint.keyHint}` : "已保存密钥"}</span>
+      <button className="fm-button" type="button" disabled={busy === endpoint.name} onClick={() => void disconnect(endpoint.name)}>删除</button>
+    </li>)}</ul>}
     {error && <p className="ra-error ra-error-banner" role="alert">{error}</p>}
     {!data && !error && <p role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>}
     {data && <div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table am-table">
@@ -47,7 +82,7 @@ export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
         <td><select aria-label={`${row.label}的模型`} value={row.model ?? ""} disabled={busy === row.tool}
           onChange={e => void save(row, { model: (e.target.value || null) as AiModel | null, effort: row.effort })}>
           <option value="">默认 · {modelName(row.defaultModel)}</option>
-          {data.models.map(m => <option key={m} value={m}>{MODEL_LABEL[m]}</option>)}
+          {choices.map(m => <option key={m} value={m}>{modelName(m)}</option>)}
         </select></td>
         <td><select aria-label={`${row.label}的推理强度`} value={row.effort ?? ""} disabled={busy === row.tool}
           onChange={e => void save(row, { model: row.model, effort: (e.target.value || null) as AiEffort | null })}>

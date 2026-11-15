@@ -21,6 +21,8 @@ import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
 import { outboxStatement } from "./pipeline/outbox.ts";
+import { endpointFor } from "./pi/endpoints.ts";
+import { reasoningEffort } from "./pi/reasoning.ts";
 import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
@@ -95,6 +97,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   AI_REASONING?: string;
   /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
   AI_TOOL_SETTINGS?: string;
+  /** Models the admin connected (name, url, key, thinking level), set only by `aiToolEnvironment`. */
+  AI_ENDPOINTS?: string;
   /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
   BUSINESS_TREE_ENABLED?: string;
   /** The four feature lists and global switches after the admin's switches (JSON), set only by `companyPolicyEnvironment`. */
@@ -260,18 +264,19 @@ async function requestWorkerSecModelContent(
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
 ): Promise<string> {
-  const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
   const controller = new AbortController();
   let timeoutKind = "execution-budget";
   const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
   const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
   const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+  const connected = endpointFor(env, model);
+  const apiKey = connected?.apiKey || await resolveWorkerModelKey(env, fetcher);
   const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(payload).length };
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   // Keepalive bytes count as liveness while the model is reasoning.
   let liveAt = Date.now();
-  const client = modelClient(apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
+  const client = modelClient(connected?.apiKey || apiKey, connected?.url || DEEPSEEK_BASE_URL, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
   try {
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: `${system}\nReturn one valid JSON object only.` },
@@ -285,15 +290,16 @@ async function requestWorkerSecModelContent(
     { role: "assistant", content: options.repair },
     { role: "user", content: "Repair the previous response into one complete JSON object matching the original schema. Preserve its substantive analysis and evidence; fix syntax and complete missing fields from the original inputs. Do not replace the report with a summary. Output the complete repaired object only." },
   );
+  const effort = connected?.thinkingLevel ?? reasoningEffort(model, options?.reasoning ?? "high");
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
-  metrics.reasoning = options?.reasoning ?? "high";
+  metrics.reasoning = effort;
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   let stream: Stream<ChatCompletionChunk>;
   try {
     const request: ChatCompletionCreateParamsStreaming & { thinking: { type: "enabled" } } = {
       model, messages,
       thinking: { type: "enabled" },
-      reasoning_effort: options?.reasoning ?? "high",
+      reasoning_effort: effort as ChatCompletionCreateParamsStreaming["reasoning_effort"],
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
       ...(options?.continuation ? {} : { response_format: { type: "json_object" } }),
       stream: true,
@@ -332,9 +338,9 @@ async function requestWorkerSecModelContent(
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 /** The client every model call uses: DeepSeek's endpoint, no SDK retries, and a body watcher for liveness. */
-function modelClient(apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): OpenAI {
+function modelClient(apiKey: string, baseURL: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): OpenAI {
   return new OpenAI({
-    apiKey, baseURL: DEEPSEEK_BASE_URL, maxRetries: 0, timeout,
+    apiKey, baseURL, maxRetries: 0, timeout,
     fetch: async (input, init) => {
       const response = await fetcher(input, init);
       onHeaders?.();

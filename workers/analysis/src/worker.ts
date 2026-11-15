@@ -54,7 +54,7 @@ const worker = {
     // The admin's whitelist and AI switch override the deployment's company lists for everything below.
     env = await companyPolicyEnvironment(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
-    if (path === "/admin/ai/models" || path.startsWith("/admin/ai/models/")) return handleAiModelsAdminRequest(request, env);
+    if (path === "/admin/ai/models" || path.startsWith("/admin/ai/models/") || path === "/admin/ai/endpoints" || path.startsWith("/admin/ai/endpoints/")) return handleAiModelsAdminRequest(request, env);
     if (path === "/admin/ai/stage" || path.startsWith("/admin/ai/stage/")) return handleStageAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
     if (path === "/admin/library" || path.startsWith("/admin/library/")) return handleLibraryAdminRequest(request, env);

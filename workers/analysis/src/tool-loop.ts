@@ -1,11 +1,9 @@
 /**
- * What an agent loop acting through Claude client tools needs. The exchange only
- * grows: each reply goes back exactly as it came, thinking included, and each call's result follows it as a
- * tool_result. A loop never asks for its reasoning written out beside a decision (Claude declines that as
- * reasoning_extraction) and never packs past turns into one user message (that reads as a fabricated transcript).
+ * Tool definitions and call shapes a recipe hands the harness. Pi sends them on DeepSeek's Chat Completions API.
+ * A loop never packs past turns into one user message.
  */
 
-/** A content block as the Messages API writes it (`text`, `thinking`, `tool_use`, `tool_result`, …). */
+/** One block of a tool call the harness runs. */
 export type AgentBlock = { type: string } & Record<string, unknown>;
 /** One turn of the exchange: the model's replies, exactly as returned, as assistant turns; what the harness answered as user turns. */
 export type AgentMessage = { role: "user" | "assistant"; content: string | AgentBlock[] };

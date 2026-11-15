@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletion, ChatCompletionContentPart, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 import { aiUsageFromMetrics, recordAiUsage } from "../ai-runs/usage.ts";
+import { reasoningEffort } from "../pi/reasoning.ts";
 
 export type JudgeEnv = { OPENAI_API_KEY?: string; OPENAI_REVIEW_MODEL?: string; DB?: D1Database };
 export type ImageInput = { mediaType: "image/jpeg" | "image/png"; base64: string };
@@ -26,8 +27,9 @@ export async function judge<T>(env: JudgeEnv, call: JudgeCall): Promise<T> {
   ];
   let usage: ChatCompletion["usage"], finish: string | null = null, error: string | undefined;
   try {
+    const effort = reasoningEffort(model, call.effort ?? "medium");
     const request: ChatCompletionCreateParamsNonStreaming = {
-      model, max_completion_tokens: call.maxTokens ?? 16_000, reasoning_effort: call.effort ?? "medium",
+      model, max_completion_tokens: call.maxTokens ?? 16_000, reasoning_effort: effort as ChatCompletionCreateParamsNonStreaming["reasoning_effort"],
       messages: [{ role: "system", content: call.system }, { role: "user", content }],
       response_format: { type: "json_schema", json_schema: { name: "artifact_judgement", strict: true, schema: call.schema } },
     };
@@ -42,7 +44,7 @@ export async function judge<T>(env: JudgeEnv, call: JudgeCall): Promise<T> {
     error = caught instanceof Error ? caught.message.slice(0, 200) : String(caught);
     throw caught instanceof JudgeUnavailable ? caught : new JudgeUnavailable(error);
   } finally {
-    await recordAiUsage(env, aiUsageFromMetrics({ stage: call.stage, model, reasoning: call.effort ?? "medium", finishReason: finish, usage, ...(error ? { error } : {}) },
+    await recordAiUsage(env, aiUsageFromMetrics({ stage: call.stage, model, reasoning: reasoningEffort(model, call.effort ?? "medium"), finishReason: finish, usage, ...(error ? { error } : {}) },
       { at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "openai", ...call.ledger }));
   }
 }

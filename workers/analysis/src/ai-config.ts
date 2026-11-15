@@ -1,4 +1,5 @@
 import { AI_EFFORTS, AI_MODELS, type AiEffort, type AiModel } from "../../../shared/analysis-contract/ai-models-admin.ts";
+import { listEndpoints, readEndpoints } from "./pi/endpoints.ts";
 import { SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 export type ReasoningEffort = AiEffort;
 
@@ -50,18 +51,19 @@ export type AiTool = keyof typeof AI_TOOLS;
 export const AI_TOOL_NAMES = Object.keys(AI_TOOLS) as AiTool[];
 
 type ModelEnv = { SEC_ANALYSIS_MODEL?: string; SEC_REASONING_MODEL?: string };
-type SettingsEnv = { AI_TOOL_SETTINGS?: string; AI_REASONING?: string };
-export type AiToolSetting = { model?: AiModel; effort?: ReasoningEffort };
+type SettingsEnv = { AI_TOOL_SETTINGS?: string; AI_REASONING?: string; AI_ENDPOINTS?: string };
+export type AiToolSetting = { model?: string; effort?: ReasoningEffort };
 
-const isModel = (value: unknown): value is AiModel => typeof value === "string" && (AI_MODELS as readonly string[]).includes(value);
+const isBuiltIn = (value: unknown): value is AiModel => typeof value === "string" && (AI_MODELS as readonly string[]).includes(value);
 const isEffort = (value: unknown): value is ReasoningEffort => typeof value === "string" && (AI_EFFORTS as readonly string[]).includes(value);
+const knownModel = (env: SettingsEnv, value: unknown): value is string => typeof value === "string" && (isBuiltIn(value) || readEndpoints(env).some((endpoint) => endpoint.name === value));
 
 /** The admin's stored choices, carried in the environment as `AI_TOOL_SETTINGS` (JSON) by `aiToolEnvironment`. */
 export function aiToolSetting(env: SettingsEnv, tool: AiTool): AiToolSetting {
   if (!env.AI_TOOL_SETTINGS) return {};
   try {
     const value = (JSON.parse(env.AI_TOOL_SETTINGS) as Record<string, { model?: unknown; effort?: unknown }>)[tool];
-    return { ...(isModel(value?.model) ? { model: value.model } : {}), ...(isEffort(value?.effort) ? { effort: value.effort } : {}) };
+    return { ...(knownModel(env, value?.model) ? { model: value.model } : {}), ...(isEffort(value?.effort) ? { effort: value.effort } : {}) };
   } catch { return {}; }
 }
 
@@ -99,12 +101,15 @@ type Row = { tool: string; model: string | null; effort: string | null };
  */
 export async function aiToolEnvironment<T extends SettingsEnv & { DB?: D1Database }>(env: T): Promise<T> {
   if (!env.DB) return env;
+  const endpoints = await listEndpoints(env.DB);
+  const names = new Set<string>([...AI_MODELS, ...endpoints.map((endpoint) => endpoint.name)]);
+  const withEndpoints = { ...env, AI_ENDPOINTS: JSON.stringify(endpoints) };
   const rows = await env.DB.prepare("SELECT tool, model, effort FROM ai_tool_settings").bind().all<Row>().catch(() => null);
   const settings: Record<string, AiToolSetting> = {};
   for (const row of rows?.results ?? []) {
     if (!(row.tool in AI_TOOLS)) continue;
-    const setting = { ...(isModel(row.model) ? { model: row.model } : {}), ...(isEffort(row.effort) ? { effort: row.effort } : {}) };
+    const setting = { ...(row.model && names.has(row.model) ? { model: row.model } : {}), ...(isEffort(row.effort) ? { effort: row.effort } : {}) };
     if (setting.model || setting.effort) settings[row.tool] = setting;
   }
-  return { ...env, AI_TOOL_SETTINGS: JSON.stringify(settings) };
+  return { ...withEndpoints, AI_TOOL_SETTINGS: JSON.stringify(settings) };
 }

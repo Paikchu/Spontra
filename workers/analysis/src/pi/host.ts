@@ -1,5 +1,5 @@
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
-import type { Message } from "@earendil-works/pi-ai";
 import { within } from "./within.ts";
 import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
@@ -10,7 +10,8 @@ import { NATIVE_SEARCH_INSTRUCTION } from "../web-search/native.ts";
 import { DeepSeekWebProvider } from "../web-search/deepseek.ts";
 import { SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { aiUsageFromMetrics, recordAiUsage } from "../ai-runs/usage.ts";
-import { PI_PROVIDER, piModels, shapePayload, migrateMessages } from "./model.ts";
+import { listEndpoints } from "./endpoints.ts";
+import { PI_PROVIDER, installPiModels, piModels, piThinkingLevel } from "./model.ts";
 import { packState, unpackState } from "./state.ts";
 
 /**
@@ -41,7 +42,7 @@ export type PiLoaded<S = any> = {
   onToolStart?(name: string, args: unknown): void;
 };
 export type PiLoader = (spec: any) => Promise<PiLoaded>;
-type Env = { DB?: D1Database; DEEPSEEK_API_KEY?: string; PI_MODEL_BASE_URL?: string };
+type Env = { DB?: D1Database; DEEPSEEK_API_KEY?: string; PI_MODEL_BASE_URL?: string; PI_ACTIVE_MODEL?: string };
 /** The owning Agent's SQLite and env. */
 type HostAgent = { sql: SqlStorage; env: unknown };
 
@@ -94,6 +95,8 @@ export class PiHost {
   /** Sessions whose afterRun hook is running in this instance; recovery leaves them to it. */
   private readonly ending = new Set<string>();
   private recoveryPending = false;
+  /** The model registry Pi was opened with; replaced in place when the admin connects a model. */
+  private piRegistry: ReturnType<typeof piModels> | null = null;
 
   private readonly traces = new PiTurnTraces((turn) => this.recordTurn(turn));
   private traceFlushPending = false;
@@ -104,8 +107,9 @@ export class PiHost {
     this.harness = new PiHarness({
       harness: async ({ storage, context, onWake }) => {
         await this.restore();
+        await this.mountModels();
         return Harness.open(storage, {
-          models: piModels(this.env, options.models()), registry: this.registry,
+          models: this.piRegistry!, registry: this.registry,
           // Pi idle while a session is still open means its run ended without an answer (a turn limit, a failure), which
           // runs no afterRun hook: the session is settled by recovery instead of waiting for someone to read it.
           onWake: (wake) => { onWake?.(wake); if (!wake.active) this.noticeIdle(); },
@@ -204,7 +208,12 @@ export class PiHost {
     if (startup.phase === "prepared") {
       const b = await this.bound(row.conversation);
       if (!b) throw new Error(`pi: session ${row.conversation} cannot be rebuilt`);
-      await session.setModel({ provider: PI_PROVIDER, id: b.loaded.model });
+      await this.mountModels();
+      this.env.PI_ACTIVE_MODEL = b.loaded.model;
+      await (await this.harness.conversation(session.id)).configure({
+        model: { provider: PI_PROVIDER, modelId: b.loaded.model },
+        thinkingLevel: piThinkingLevel(b.loaded.model, b.loaded.effort),
+      }, BACKGROUND_CONTEXT);
       this.assertRunning();
       this.db().exec("UPDATE pi_bindings SET startup = ? WHERE operation_id = ?", JSON.stringify({ phase: "model-set", opening: startup.opening } satisfies Startup), operationId);
     }
@@ -213,6 +222,14 @@ export class PiHost {
     // Termination can interleave with submit, including a lost acknowledgement.
     finally { if (this.options.isStopped?.()) await session.abort(); }
     this.db().exec("UPDATE pi_bindings SET startup = NULL WHERE operation_id = ?", operationId);
+  }
+
+  /** Loads models the admin connected and puts them on the registry Pi already holds. */
+  private async mountModels() {
+    const endpoints = this.env.DB ? await listEndpoints(this.env.DB) : [];
+    const ids = [...this.options.models(), ...endpoints.map((endpoint) => endpoint.name)];
+    if (this.piRegistry) installPiModels(this.piRegistry, this.env, ids, endpoints);
+    else this.piRegistry = piModels(this.env, ids, endpoints);
   }
 
   private assertRunning() {
@@ -429,14 +446,8 @@ export class PiHost {
       sections: [{ key: "recipe", tag: false, render: async (input: { conversationId: ConversationId }) => (await this.bound(String(input.conversationId)))?.system }],
       tools: [...tools.values()],
       hooks: [hook(GenerationTask, {
-        beforeRequest: async (request: { messages: readonly Message[] }, api: { conversationId: ConversationId }) => {
+        beforeRequest: async (_request: { messages: readonly unknown[] }, api: { conversationId: ConversationId }) => {
           await this.guard(() => this.beforeRequest(String(api.conversationId)));
-          return { messages: migrateMessages(request.messages) };
-        },
-        beforeProviderRequest: async (request: { payload: unknown }, api: { conversationId: ConversationId }) => {
-          const b = await this.bound(String(api.conversationId));
-          this.assertRunning();
-          return b ? { payload: shapePayload(request.payload, b.loaded.effort) } : undefined;
         },
         afterResponse: async (message: PiAssistant, api: { conversationId: ConversationId }) => { await this.guard(() => this.afterResponse(String(api.conversationId), message)); },
         onYield: async (answer: PiAssistant, api: { conversationId: ConversationId }) => this.onYield(String(api.conversationId), answer),
@@ -474,6 +485,7 @@ export class PiHost {
   private async beforeRequest(conversation: string) {
     const b = await this.bound(conversation);
     if (!b) return;
+    this.env.PI_ACTIVE_MODEL = b.loaded.model;
     // Provider retries can arrive without a preceding tool round or yield.
     if (b.reservedAt === null && b.loaded.reserve && !await b.loaded.reserve(b.state, Date.now())) {
       b.lastRound = true;
