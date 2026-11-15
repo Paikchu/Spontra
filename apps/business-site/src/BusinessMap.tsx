@@ -702,7 +702,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
           switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
       {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
-      {stageDraft ? <div className="lens-stage company-report"><ArtifactFrame artifact={stageDraft} /></div>
+      {stageDraft ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={stageDraft} /></div>
       : stageOverride ? stageOverride : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           dossier={{ version: dossiers?.[focused.id] ? revisions.findings ?? dossiers[focused.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${focused.id}` : null }}
@@ -718,7 +718,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens}
         head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
         <EventLens event={focusedEvent} publication={events} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
-      : view === "company" && companyReport ? <div className="lens-stage company-report"><ArtifactFrame artifact={companyReport} /></div>
+      : view === "company" && companyReport ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={companyReport} /></div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary">

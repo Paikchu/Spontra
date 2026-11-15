@@ -832,6 +832,8 @@ button { cursor: pointer; }
 
 /* Side by side: the finding and its counterpart share the trend's row, each with its own chart and figures. */
 .lens-stage { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+/* Artifact frames expand to the report's full height; the stage owns reading scroll. */
+.company-report { align-content: start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 clamp(16px, 2.5vw, 36px); }
 .lens-stage[data-split] .lens { height: clamp(260px, 38vh, 380px); }
 .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
