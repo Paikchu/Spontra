@@ -19,8 +19,10 @@ npm-debug.log*
 
 # typescript
 *.tsbuildinfo
+next-env.d.ts
 /dist/
 /.wrangler/
+/.next/
 
 !workers/analysis/.dev.vars.example
 
@@ -28,9 +30,13 @@ npm-debug.log*
 
 /apps/business-site/dist/
 /apps/business-site/.wrangler/
+/apps/desktop/dist/
 
 apps/admin/dist/
 apps/admin/.wrangler/
 /apps/business-site/dist-desktop/
 /workers/analysis/.generated/
 /.audit/
+/outputs/
+/.qoder/
+/.worktrees/
