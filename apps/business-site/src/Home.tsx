@@ -18,8 +18,6 @@ import { FRESH_DAYS, freshResults, type FreshResult } from "./fresh-results";
 const m = messages({
   brand: "Business View",
   title: "See how a company makes money, and spot the risks early",
-  trust: (count: number, time: string) => `${count} US companies, read from SEC EDGAR · Updated ${time}`,
-  trustStatic: (count: number) => `${count} US companies, read from SEC EDGAR`,
   search: "Search companies",
   recent: "Recently viewed",
   popular: "Popular",
@@ -37,7 +35,7 @@ const m = messages({
   tabShifts: "Shifts",
   signalsEmpty: "Nothing new in this category",
   moreFindings: (n: number) => `${n} more`,
-  companiesTitle: "Companies covered",
+  companiesTitle: "Companies",
   sortLabel: "Sort",
   sortLatest: "Latest report",
   sortYoy: "Revenue YoY",
@@ -60,15 +58,9 @@ const m = messages({
   error: "Couldn't load data",
   retry: "Retry",
   offline: "You are offline",
-  justNow: "just now",
-  minutesAgo: (n: number) => `${n} minutes ago`,
-  hoursAgo: (n: number) => `${n} hours ago`,
-  daysAgo: (n: number) => `${n} days ago`,
 }, {
   brand: "Business View",
   title: "看懂一家公司怎么赚钱，提前发现风险",
-  trust: (count: number, time: string) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR · 最近更新 ${time}`,
-  trustStatic: (count: number) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR`,
   search: "搜索公司",
   recent: "最近查看",
   popular: "热门",
@@ -86,7 +78,7 @@ const m = messages({
   tabShifts: "变化",
   signalsEmpty: "这一类暂时没有新要点",
   moreFindings: (n: number) => `另有 ${n} 条`,
-  companiesTitle: "已覆盖公司",
+  companiesTitle: "公司",
   sortLabel: "排序",
   sortLatest: "最近财报",
   sortYoy: "营收同比",
@@ -109,10 +101,6 @@ const m = messages({
   error: "数据暂时加载失败",
   retry: "重试",
   offline: "网络已断开",
-  justNow: "刚刚",
-  minutesAgo: (n: number) => `${n} 分钟前`,
-  hoursAgo: (n: number) => `${n} 小时前`,
-  daysAgo: (n: number) => `${n} 天前`,
 });
 
 type SortKey = "latest" | "yoy" | "risk" | "ticker";
@@ -120,18 +108,6 @@ type SortKey = "latest" | "yoy" | "risk" | "ticker";
 function money(value: string, currency: string): string {
   const amount = Number(value);
   return Number.isFinite(amount) ? compactMoney(amount, currency, getLocale()) : "—";
-}
-
-function relativeTime(iso: string | null): string | null {
-  if (!iso) return null;
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return null;
-  const minutes = Math.max(0, Math.round((Date.now() - then) / 60_000));
-  if (minutes < 1) return m.justNow;
-  if (minutes < 60) return m.minutesAgo(minutes);
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return m.hoursAgo(hours);
-  return m.daysAgo(Math.round(hours / 24));
 }
 
 function sorted(companies: HomeCompany[], sort: SortKey): HomeCompany[] {
@@ -246,7 +222,6 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const [now] = useState(() => new Date());
   const fresh = digestStatus === "loading" ? [] : freshResults(companies, now);
-  const updated = digest ? relativeTime(digest.coverage.lastUpdatedAt) : null;
   const count = digest?.coverage.count ?? 0;
 
   useEffect(() => { if (matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true }); }, []);
@@ -296,7 +271,6 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
       <section className="home-hero" aria-labelledby="home-title">
         <h1 id="home-title">{m.title}</h1>
         <SearchPanel inline current={null} recent={recent} onPick={onPick} inputRef={inputRef} catalog={catalog} popular={digest?.popular ?? []} catalogStatus={catalogStatus} />
-        {digestStatus !== "loading" && <p className="home-trust">{updated ? m.trust(count, updated) : m.trustStatic(count)}</p>}
       </section>
       {chips.length > 0 && <nav className="home-quick" aria-label={chips[0].popular ? m.popular : m.recent}>
         <span>{chips[0].popular ? m.popular : m.recent}</span>
