@@ -39,7 +39,7 @@ const submissionsSchema = z.object({ name: z.string(), filings: z.object({ recen
 }) }) });
 const runKey = (id: string) => `acceptance:material:run:${id}`;
 const forbidden = new Set(["research_pack", "read_section", "read_sections", "read_filing_section", "find_sections", "find_filing_sections", "read_report"]);
-const needed = ["read_filing_markdown", "find_filing_tables", "read_filing_table", "compute", "finish"];
+const needed = ["read_filing_markdown", "read_filing_table", "compute", "finish"];
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const sameMaterial = (a: MaterialRef, b: MaterialRef) => a.ticker === b.ticker && a.accession === b.accession && a.version === b.version;
 
