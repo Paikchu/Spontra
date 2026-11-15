@@ -15,7 +15,7 @@ import { organizationBatches, organizationCacheKey, parseOrganizationReceipt } f
 import { materialBase, materialDigest } from "../filing-material/store.ts";
 import { tableCatalogEntry, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import { startFilingRuns } from "../filing-analysis/start.ts";
-import type { FilingWork } from "../filing-analysis/recipe.ts";
+import { readFilingCheckpoint, type FilingWork } from "../filing-analysis/recipe.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
 import { readPublishedArtifact, readPublishedDocument, readWorkState } from "../artifact/store.ts";
 import { recheckFiling } from "../filing-analysis/recheck.ts";
@@ -30,7 +30,7 @@ type Summary = { run_id: string; status: string; settled_by: string | null; tool
 type Turn = { turn: number; action: string; input: string; failed: number; at: string };
 type ModelCall = Pick<AiUsageRow, "at" | "runId" | "stage" | "provider" | "model" | "reasoning" | "inputTokens" | "cachedTokens" | "outputTokens" | "reasoningTokens" | "durationMs" | "outcome">;
 const semanticAuditPointerSchema = z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/), key: z.string().min(1), verdict: z.literal("pass"), complete: z.literal(true) });
-const requestSchema = z.object({ runId: z.string().min(1), accession: z.string().optional(), maxDocuments: z.number().int().positive().optional(), cursor: z.string().optional() });
+const requestSchema = z.object({ runId: z.string().min(1), accession: z.string().optional(), maxDocuments: z.number().int().positive().optional(), cursor: z.string().optional(), checkpoint: z.string().min(1).optional() });
 const discoverSchema = z.object({ tickers: z.array(z.string().regex(TICKER_PATTERN)).nonempty(), forms: z.array(z.enum(["10-K", "10-Q", "20-F", "40-F", "8-K", "6-K"])).nonempty().default(["10-Q"]) });
 const submissionsSchema = z.object({ name: z.string(), filings: z.object({ recent: z.object({
   accessionNumber: z.array(z.string()), form: z.array(z.string()), filingDate: z.array(z.string()),
@@ -338,6 +338,22 @@ export async function handleMaterialAcceptance(request: Request, env: Env): Prom
         cursor = page.nextCursor;
       }
       return json(pages);
+    }
+    if (url.pathname === "/acceptance/resume" && request.method === "POST") {
+      if (entries.length !== 1 || !entries[0]!.material) throw new Error("Choose one pinned material to resume");
+      const entry = entries[0]!, checkpoint = z.string().min(1).parse(args.checkpoint);
+      await readFilingCheckpoint(env, checkpoint, entry.material!);
+      const ready = await getFilingMaterial(env, entry.filing.ticker, entry.filing.accessionNumber);
+      if (ready?.status !== "ready" || !sameMaterial(ready.ref, entry.material!)) throw new Error("The ready material differs from the checkpoint's pinned version");
+      const previous = entry.sessionId, sessionId = `${previous}-resume-${crypto.randomUUID().slice(0, 8)}`;
+      const path = `$.entries[${run.entries.indexOf(entry)}].sessionId`;
+      const updated = await env.DB!.prepare("UPDATE sec_cache SET payload = json_set(payload, ?, ?), fetched_at = ? WHERE cache_key = ? AND json_extract(payload, ?) = ?")
+        .bind(path, sessionId, new Date().toISOString(), runKey(run.id), path, previous).run();
+      if (!updated.meta.changes) throw new Error("The acceptance session changed before resuming");
+      const operations = createAnalysisOperations(env, fetch, sessionId);
+      const result = await startFilingRuns(env, entry.filing.ticker, { requestedBy: "manual", accession: entry.filing.accessionNumber, runId: sessionId, mode: "resume", checkpoint },
+        { operations: { ...operations, loadFiling: async (ticker, accession) => ticker === entry.filing.ticker && accession === entry.filing.accessionNumber ? entry.filing : null } });
+      return json({ previousSessionId: previous, sessionId, checkpoint, ...result });
     }
     if (url.pathname === "/acceptance/start" && request.method === "POST") {
       const result = [];

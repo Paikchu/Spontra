@@ -1,8 +1,10 @@
+import { z } from "zod";
 import { modelFor } from "../ai-config.ts";
 import { webTools, type WebToolState } from "../compose/tools.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { handPolicy, handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { PiLoaded } from "../pi/host.ts";
+import { unpackState } from "../pi/state.ts";
 import { defaultBudgetLine, type Recipe } from "../recipe.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { SEC_SUMMARY_VERSION, type SecFiling, type SecFilingSummary } from "../sec/sec.ts";
@@ -22,12 +24,19 @@ import type { ArtifactDocument } from "../../../../shared/analysis-contract/arti
 import { filingSemanticAudit } from "./semantic-audit.ts";
 
 /** What the session is rebuilt from after an eviction. */
-export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef;
-  /** "revise": open on the published report and change it; otherwise start from an empty document (docs/filing-analysis-optimization.md §4.6). */
-  mode?: "revise" | "rewrite" };
+export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string };
+export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
 type FilingState = WebToolState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
+
+export async function readFilingCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string, material: MaterialRef): Promise<FilingState> {
+  const object = await env.SEC_FILINGS.get(key);
+  if (!object) throw new Error(`FILING_CHECKPOINT_MISSING:${key}`);
+  const checkpoint = z.object({ material: z.object({ ticker: z.string(), accession: z.string(), version: z.string() }), state: z.string() }).parse(JSON.parse(await object.text()));
+  if (checkpoint.material.ticker !== material.ticker || checkpoint.material.accession !== material.accession || checkpoint.material.version !== material.version) throw new Error("FILING_CHECKPOINT_MATERIAL_MISMATCH");
+  return unpackState<FilingState>(checkpoint.state);
+}
 
 const ok = (observation: string): HandResult => ({ observation });
 const CATEGORIES = ["earnings_update", "guidance", "m&a", "executive", "legal", "other"] as const;
@@ -45,7 +54,7 @@ export function filingSummary(filing: SecFiling, report: { headline: string; tex
 
 const openState = (spec: FilingSpec): ComposerState => openComposer({ kind: "filing-report", ticker: spec.ticker, subject: spec.filing.accessionNumber, title: `${spec.ticker} ${spec.filing.form} ${spec.filing.reportDate || spec.filing.filingDate}`, lang: "en" });
 
-function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null): Recipe<FilingSpec, boolean, FilingState> {
+function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null, resumed: FilingState | null): Recipe<FilingSpec, boolean, FilingState> {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;
@@ -76,7 +85,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     reviewRounds: state.composer.rounds?.content ?? 0, renderRounds: state.composer.rounds?.render ?? 0, sectionsRead: state.read ?? [],
     charsRead: (state.read ?? []).reduce((sum, id) => sum + (state.periodic?.texts[id]?.length ?? 0), 0),
     blocks: state.composer.blocks.length, degraded: state.composer.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id),
-    detail: { ...(periodic ? periodic.detail(state) : {}), mode: base ? "revise" : "rewrite", ...(state.composer.changes ? { changes: state.composer.changes } : {}), edits: state.composer.log.filter(l => l.phase === "edit").length },
+    detail: { ...(periodic ? periodic.detail(state) : {}), mode: spec.mode === "resume" ? "resume" : base ? "revise" : "rewrite", ...(state.composer.changes ? { changes: state.composer.changes } : {}), edits: state.composer.log.filter(l => l.phase === "edit").length },
   }).catch(error => console.error(JSON.stringify({ event: "filing-run-summary", ticker, accession, error: error instanceof Error ? error.message : String(error) })));
   const own: AnyTool<FilingState>[] = [
     ...(profile.id === "current" ? [handTool<FilingState>({ name: "set_category", description: `What kind of current report this is: ${CATEGORIES.join(", ")}.`, input_schema: { type: "object", properties: { category: { type: "string", enum: [...CATEGORIES] } }, required: ["category"] } },
@@ -124,6 +133,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     concurrent: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript", "read_evidence", "list_leads", "read_block", "outline", "view_issue"],
     system: () => profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}`,
     open: () => {
+      if (resumed) return resumed;
       const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, web: {} };
       if (!base) return state;
       // The published report is the document the session opens on: its blocks stand as they were reviewed, and only
@@ -159,10 +169,11 @@ export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<
   const store = env as unknown as Parameters<typeof readPublishedDocument>[0];
   const document = spec.mode === "revise" && profile.id === "periodic" ? await readPublishedDocument(store, "filing-report", spec.ticker, spec.filing.accessionNumber).catch(() => null) : null;
   const snapshot = await readMaterialSnapshot(env, spec.material);
+  const resumed = spec.mode === "resume" ? await readFilingCheckpoint(env, spec.checkpoint, snapshot.ref) : null;
   const work = document ? await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) : null;
   const base = document && work?.material?.version === spec.material.version ? { document, work } : null;
   return {
-    recipe: filingRecipe(env, spec, profile, snapshot, base), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    recipe: filingRecipe(env, spec, profile, snapshot, base, resumed), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
     hydrate: (state: FilingState) => { state.composer ??= openState(spec); state.web ??= {}; },
     record: entry => { void recordRunTurn(env.DB!, spec.sessionId, entry); },
   };

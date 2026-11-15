@@ -8,19 +8,19 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import { jobAnalysisVersionFor, selectLatestWorkflowFilings, type AnalysisOperations } from "../workflow-core.ts";
 import { profileById, profileFor, type FilingProfile } from "./profiles.ts";
-import type { FilingSpec } from "./recipe.ts";
+import type { FilingMode, FilingSpec } from "./recipe.ts";
 import { dueFilings, registerFilings, updateFiling, type FilingRow } from "./store.ts";
 
-export function filingOpening(filing: SecFiling, material: MaterialSnapshot, revise: boolean): string {
+export function filingOpening(filing: SecFiling, material: MaterialSnapshot, mode: NonNullable<FilingMode["mode"]>): string {
   return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form,
     filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
     material: material.ref, coverage: material.coverage, toc: material.toc,
     tables: { count: material.tables.length, lookup: "Use find_filing_tables with a table name or content description, then read the returned tableId with read_filing_table." },
-    first: revise ? "Call outline to inspect the published report, then read_filing_markdown for the fixed material version." : "Call read_filing_markdown, then find_filing_tables and read_filing_table for the relevant CSV data.",
-    ...(revise ? { published: "Revise the existing report against this material version. Re-read every source that supports a changed block." } : {}) });
+    first: mode === "resume" ? "Continue the saved report and research state in this new session. Call outline, actually read the pinned Markdown and relevant CSV tables, verify the existing computations, then call finish. Resolve the independent audit feedback and call finish again until all publication checks pass." : mode === "revise" ? "Call outline to inspect the published report, then read_filing_markdown for the fixed material version." : "Call read_filing_markdown, then find_filing_tables and read_filing_table for the relevant CSV data.",
+    ...(mode === "revise" ? { published: "Revise the existing report against this material version. Re-read every source that supports a changed block." } : {}) });
 }
 
-export type StartOptions = { requestedBy: "scheduled" | "manual"; accession?: string; runId?: string; /** A manual run on a published report revises it unless told to rewrite. */ mode?: "revise" | "rewrite" };
+export type StartOptions = { requestedBy: "scheduled" | "manual"; accession?: string; runId?: string } & FilingMode;
 type SessionStarter = { start: (id: string, kind: string, spec: unknown, opening: string, operationId: string) => Promise<void> };
 
 /**
@@ -64,10 +64,11 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
     const jobVersion = jobAnalysisVersionFor(row.form);
     const jobId = `${ticker}:${row.accession}:${jobVersion}:${sessionId}`;
     const published = request.mode === "revise" && profile.id === "periodic" && !!await db.prepare("SELECT 1 FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(`filing-report:${ticker}:${row.accession}`).first().catch(() => null);
-    const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, mode: published ? "revise" : "rewrite" };
+    const mode: FilingMode = request.mode === "resume" ? { mode: "resume", checkpoint: request.checkpoint } : { mode: published ? "revise" : "rewrite" };
+    const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, ...mode };
     await updateFiling(db, ticker, row.accession, { status: "running", reason: null, runId }, at);
     await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: request.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
-    await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, published), `${sessionId}:report`);
+    await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, mode.mode ?? "rewrite"), `${sessionId}:report`);
     await db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(requestKey(row.accession)).run();
     result.started.push(row.accession);
   };
