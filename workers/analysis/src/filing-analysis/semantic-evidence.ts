@@ -336,3 +336,53 @@ export async function semanticEvidence(env: Pick<AnalysisEnv, "SEC_FILINGS">, sn
   }
   return { materials: snapshots.map(snapshot => snapshot.ref), corpus, aliases };
 }
+
+/** The audit wire format shares table bodies and uses dictionary indices for repeated source references. */
+export async function semanticCorpusRequest(corpus: SemanticCorpus) {
+  const entryIndices = new Map(corpus.entries.map((entry, index) => [entry.id, index]));
+  const documentIndices = new Map(corpus.documents.map((document, index) => [document.id, index]));
+  const materialIndices = new Map(corpus.filings.map((filing, index) => [stable(jsonSchema.parse(filing.ref)), index]));
+  const tableIndices = new Map<string, number>();
+  const tables: Array<Omit<FilingTable, "rows"> & { rows: Array<[string[], string, ...string[]]> }> = [];
+  const entries = [];
+  for (const entry of corpus.entries) {
+    if (entry.kind === "table") {
+      const hash = await materialDigest(stable(jsonSchema.parse(entry.table)));
+      let index = tableIndices.get(hash);
+      if (index === undefined) {
+        index = tables.length;
+        tableIndices.set(hash, index);
+        tables.push({ ...entry.table, rows: entry.table.rows.map(row => [row.path, row.label, ...row.cells.map(cell => cell.text)]) });
+      }
+      entries.push({ ...entry, table: index });
+    } else if (entry.kind === "residual" && typeof entry.text === "object" && object(entry.text)?.kind === "normalized-xbrl-instance") {
+      const text = object(entry.text)!;
+      const matched = z.record(z.string(), z.string()).parse(text.matched);
+      const groups = new Map<string, { entry: string; collection: string; aliases: Record<string, number> }>();
+      for (const [source, target] of Object.entries(matched)) {
+        const reference = /^(.*):(facts|contexts|units):(\d+)$/.exec(target);
+        if (!reference) throw new Error(`SEMANTIC_INVENTORY_REFERENCE:${target}`);
+        const key = `${reference[1]}:${reference[2]}`;
+        const group = groups.get(key) ?? { entry: reference[1]!, collection: reference[2]!, aliases: {} };
+        group.aliases[source] = Number(reference[3]);
+        groups.set(key, group);
+      }
+      entries.push({ ...entry, text: { ...text, matched: [...groups.values()] } });
+    } else entries.push(entry);
+  }
+  const contexts = new Map<string, { documentId: string; title: string; path: string[]; entries: Set<number> }>();
+  for (const { entry, ...context } of Object.values(corpus.bindings)) {
+    const key = JSON.stringify(context);
+    const held = contexts.get(key) ?? { ...context, entries: new Set<number>() };
+    held.entries.add(entryIndices.get(entry)!);
+    contexts.set(key, held);
+  }
+  return { ...corpus,
+    references: "bindings.entries are zero-based indices into evidence.entries; bindings.documentId are indices into evidence.documents; documents.material are indices into evidence.filings. All original source and entry ids remain in their dictionary records.",
+    tableEncoding: "A table entry's table is an index into evidence.tables. Each row is [hierarchy (string[]), row label, ...original printed cell text], with cells aligned to columns. Numeric cell values are derived from printed text; periods, units, headings, notes and XBRL metadata are retained.",
+    matchedReferences: "A normalized-xbrl-instance matched group maps each original XML source id to its index in the target inventory entry's named facts, contexts or units collection.",
+    entries, tables,
+    documents: corpus.documents.map(document => ({ ...document, material: materialIndices.get(stable(jsonSchema.parse(document.material)))! })),
+    bindings: [...contexts.values()].map(context => ({ ...context, documentId: documentIndices.get(context.documentId)!, entries: [...context.entries] })),
+  };
+}
