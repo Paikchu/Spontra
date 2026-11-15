@@ -1,7 +1,8 @@
-import { factText, periodText, type FilingFactRow } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
+import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
+import type { FilingFactRow } from "../../../../shared/analysis-contract/filing-content.ts";
 
 export type StoredFact = FilingFactRow & { documentId: string };
-export type FactQuery = { documents: string[]; label?: string; concept?: string; section?: string; periodEnd?: string; months?: number; limit?: number };
+export type FactQuery = { label?: string; anchor?: string; periodEnd?: string; months?: number };
 
 export const factLine = (f: StoredFact) => `${f.factId} | ${f.label} | ${factText(f)} | ${periodText(f)}${f.dimensions ? ` | ${f.dimensions}` : ""}${f.tagged ? "" : " | untagged"} | printed "${f.shown}"`;
 /** What a cited fact is checked against: the number and how the filing prints it. */

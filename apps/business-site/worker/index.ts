@@ -25,7 +25,6 @@ import {readInsiderTransactionsPage,readInsidersPublication} from "@/shared/anal
 import type {InsiderTransactionsPage,InsidersPublication} from "@/shared/analysis-contract/insiders";
 import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
-import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
 import {filingFiscalFields,formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
@@ -132,7 +131,7 @@ const asText=(v:unknown)=>typeof v==="string"?v:null;
 function readFindingPassage(value:unknown):FindingPassage|null{
  const p=value as Record<string,unknown>|null;
  const passageId=asText(p?.passageId),documentId=asText(p?.documentId),title=asText(p?.title),form=asText(p?.form),filedAt=asText(p?.filedAt),url=asText(p?.url),text=asText(p?.text);
- if(!p||!passageId||!/^p[0-9a-f]{14,32}$/.test(passageId)||!documentId||!title||!form||!filedAt||!url||!text||text.length>20000)return null;
+ if(!p||!passageId||!documentId||!title||!form||!filedAt||!url||!text||text.length>20000)return null;
  const path=Array.isArray(p.path)?p.path.filter((x):x is string=>typeof x==="string").slice(0,12):[];
  const t=p.table as Record<string,unknown>|null;
  const rows=t&&Array.isArray(t.rows)?t.rows.map(r=>{const row=r as Record<string,unknown>;const label=asText(row?.label);const cells=Array.isArray(row?.cells)?row.cells.map(c=>{const cell=c as Record<string,unknown>;const text=asText(cell?.text);return text==null?null:{text,value:typeof cell.value==="number"&&Number.isFinite(cell.value)?cell.value:null};}):null;return label==null||!cells||cells.some(c=>c==null)?null:{label,cells:cells as Array<{text:string;value:number|null}>};}):null;
@@ -265,32 +264,6 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
   return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing,artifact};
 }
 
-/** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
-const PASSAGE_ID=/^p[0-9a-f]{14,32}$/;
-const str=(v:unknown):v is string=>typeof v==="string";
-const strings=(v:unknown):string[]=>Array.isArray(v)?v.filter(str):[];
-const neighbours=(v:unknown):Array<{passageId:string;text:string}>=>Array.isArray(v)?v.flatMap(n=>n&&typeof n==="object"&&PASSAGE_ID.test(String((n as {passageId?:unknown}).passageId))&&str((n as {text?:unknown}).text)?[{passageId:(n as {passageId:string}).passageId,text:(n as {text:string}).text}]:[]):[];
-/** A passage table rebuilt cell by cell; a row or cell of the wrong shape drops the whole table rather than passing through. */
-function readTable(v:unknown):LibraryTable|null{
- if(!v||typeof v!=="object")return null;
- const t=v as {unit?:unknown;columns?:unknown;rows?:unknown;notes?:unknown;xbrlBlock?:unknown};
- if(!Array.isArray(t.columns)||!t.columns.every(str)||!Array.isArray(t.rows))return null;
- const rows:LibraryTable["rows"]=[];
- for(const r of t.rows as unknown[]){
-  if(!r||typeof r!=="object")return null;
-  const row=r as {label?:unknown;path?:unknown;cells?:unknown};
-  if(!str(row.label)||!Array.isArray(row.cells))return null;
-  const cells:LibraryTable["rows"][number]["cells"]=[];
-  for(const c of row.cells as unknown[]){
-   if(!c||typeof c!=="object")return null;
-   const cell=c as {text?:unknown;value?:unknown};
-   if(!str(cell.text)||!(cell.value===null||typeof cell.value==="number"&&Number.isFinite(cell.value)))return null;
-   cells.push({text:cell.text,value:cell.value});
-  }
-  rows.push({label:row.label,path:strings(row.path),cells});
- }
- return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
-}
 /** One filing rail row's analysis, re-checked for shape; null when the row has none (the map shows the filing digest). */
 export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<ItemAnalysis|null>{
  if(!ACCESSION.test(id))return null;
@@ -300,22 +273,6 @@ export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fe
   const body=await response.json() as {schemaVersion?:string;status?:string;analysis?:ItemAnalysis|null};
   const a=body.analysis;
   return body.schemaVersion==="item-analysis-response.v1"&&body.status==="ready"&&a&&a.schemaVersion==="item-analysis.v1"&&a.ticker===ticker&&a.itemId===id&&a.finding?.lens?.type==="document"?a:null;
- }catch{return null;}
-}
-
-/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
-export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
- if(!PASSAGE_ID.test(passageId))return null;
- try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/passages/${passageId}`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:unknown;status?:unknown;passage?:unknown};
-  if(body.schemaVersion!=="passage-response.v1"||body.status!=="ready"||!body.passage||typeof body.passage!=="object")return null;
-  const p=body.passage as {passageId?:unknown;ticker?:unknown;document?:unknown;path?:unknown;text?:unknown;table?:unknown;before?:unknown;after?:unknown};
-  const d=(p.document&&typeof p.document==="object"?p.document:{}) as {documentId?:unknown;form?:unknown;docType?:unknown;filedAt?:unknown;reportDate?:unknown;url?:unknown};
-  if(p.passageId!==passageId||p.ticker!==ticker||!str(p.text)||!str(d.documentId)||!str(d.form)||!str(d.docType)||!str(d.filedAt)||!str(d.reportDate)||!str(d.url))return null;
-  return {passageId,ticker,document:{documentId:d.documentId,form:d.form,docType:d.docType,filedAt:d.filedAt,reportDate:d.reportDate,url:d.url},
-   path:strings(p.path),text:p.text,table:p.table==null?null:readTable(p.table),before:neighbours(p.before),after:neighbours(p.after)};
  }catch{return null;}
 }
 
@@ -487,7 +444,7 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/artifacts\/dossier\/[a-z0-9][a-z0-9-]{0,79}|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/artifacts\/dossier\/[a-z0-9][a-z0-9-]{0,79}|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
@@ -538,7 +495,6 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
-   if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
    if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");

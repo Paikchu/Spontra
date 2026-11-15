@@ -1,11 +1,12 @@
 import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { listFilingMaterials, prepareFilingMaterial } from "./index.ts";
+import { MATERIAL_PREPARATION_VERSION } from "./store.ts";
 
 export const MATERIAL_TASKS = {
   "filing-material": {
-    version: "filing-material.v1",
+    version: MATERIAL_PREPARATION_VERSION,
     async run(env, ticker, { causeId }): Promise<TaskOutcome> {
-      const states = (await listFilingMaterials(env, ticker)).filter(state => state.status !== "ready");
+      const states = (await listFilingMaterials(env, ticker)).filter(state => state.status !== "ready" || state.preparationVersion !== MATERIAL_PREPARATION_VERSION);
       if (!states.length) return { status: "done", detail: { waiting: 0 } };
       const first = states.find(state => state.status === "preparing") ?? states.at(-1)!;
       const result = await prepareFilingMaterial(env, first.filing, { causeId });

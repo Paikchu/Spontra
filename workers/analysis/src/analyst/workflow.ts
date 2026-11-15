@@ -10,8 +10,8 @@ import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { sha256 } from "../sha256.ts";
 import { assertFeatureTicker, requireDb } from "../core.ts";
-import { readLinks } from "../filing-library/links.ts";
-import { libraryToc } from "../filing-library/tool.ts";
+import { readLinks } from "../business-classification/index.ts";
+import { listFilingMaterials } from "../filing-material/index.ts";
 import { findingsInput } from "../findings/workflow.ts";
 import { readStoredFindings } from "../findings/read.ts";
 import { seriesCatalogue } from "../findings/catalogue.ts";
@@ -54,7 +54,7 @@ async function approvedRunBudget(env: AnalysisEnv, ticker: string, runId?: strin
 export type AnalystTrace = { version: string; generatedAt: string; findings: AnalystOutcome[] };
 
 type Prepared = NonNullable<Awaited<ReturnType<typeof findingsInput>>>;
-type Input = { findings: FindingsPublication; data: Prepared["data"]; ledger: Prepared["ledger"]; context: string | null; documents: Awaited<ReturnType<typeof libraryToc>>; fingerprint: string } | null;
+type Input = { findings: FindingsPublication; data: Prepared["data"]; ledger: Prepared["ledger"]; context: string | null; fingerprint: string } | null;
 
 /** What a run would research now: the served findings, the prepared data, and the newest periodic filings in the library. */
 async function readInput(env: AnalysisEnv, ticker: string): Promise<Input> {
@@ -62,9 +62,9 @@ async function readInput(env: AnalysisEnv, ticker: string): Promise<Input> {
   const findings = await readStoredFindings(db, ticker);
   const base = findings?.fingerprint ? await findingsInput(env, ticker) : null;
   if (!findings?.fingerprint || !base) return null;
-  const documents = await libraryToc(db, ticker, { forms: ["10-K", "10-Q", "20-F"], limit: 3 });
-  const fingerprint = await sha256(JSON.stringify({ version: ANALYST_VERSION, ticker, findings: findings.fingerprint, documents: documents.map(d => d.documentId).sort() }));
-  return { findings, data: base.data, ledger: base.ledger, context: base.context, documents, fingerprint };
+  const materials = (await listFilingMaterials(env, ticker)).flatMap(state => state.status === "ready" ? [state.ref] : []);
+  const fingerprint = await sha256(JSON.stringify({ version: ANALYST_VERSION, ticker, findings: findings.fingerprint, materials }));
+  return { findings, data: base.data, ledger: base.ledger, context: base.context, fingerprint };
 }
 
 export async function analystFingerprint(env: AnalysisEnv, ticker: string): Promise<string | null> {

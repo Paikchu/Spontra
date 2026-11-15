@@ -1,5 +1,4 @@
-import type { LibraryTable } from "./filing-library.ts";
-import type { FilingFactRow } from "../analysis-runtime/filing-library/facts.ts";
+import type { FilingTable, FilingFactRow } from "./filing-content.ts";
 
 export const MATERIAL_VERSION = "filing-material.v1";
 export const MATERIAL_ORGANIZER_VERSION = "source-organizer.v2";
@@ -28,7 +27,7 @@ export type MaterialMarkdown = { key: string; bytes: number; chars: number };
 export type MaterialTable = {
   tableId: string; documentId: string; title: string; description: string; filename: string;
   csvKey: string; csv: string; sha256: string; sourceUrl: string; anchor: string;
-  form: string; filedAt: string; reportDate: string; table: LibraryTable;
+  form: string; filedAt: string; reportDate: string; table: FilingTable;
 };
 export type MaterialDocumentCoverage = {
   documentId: string; filename: string; sourceTextChars: number; retainedTextChars: number;

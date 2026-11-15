@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { SidebarInset, SidebarProvider } from "@/packages/web/src/ui/sidebar";
 import { AppSidebar, AdminMobileNavigation } from "./app-sidebar";
 import { BusinessMapCompanies } from "./business-map-companies";
-import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
 import { AiRuns } from "./ai-runs";
 import { AiModels } from "./ai-models";
@@ -101,7 +100,6 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   }
   // The admin site has no sign-in: a 401 means Spontra Analysis refused the binding, which only a banner can report.
   const auth = { onUnauthorized: () => setError("管理接口拒绝访问"), onAuthenticated: () => setError("") };
-  const openSection = (ticker: string, documentId: string, sectionId: string) => navigate("filings", `?${new URLSearchParams({ ticker, document: documentId, section: sectionId })}`);
 
   return <SidebarProvider className="report-admin" mobileBreakpoint={769} persistState={false} keyboardShortcut={null}>
     <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} mapOrigin={mapOrigin} />
@@ -113,8 +111,8 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} />
           : key === "analytics" ? <AnalyticsPanel />
           : key === "financials" ? <FinancialMaintenance {...auth} />
-          : key === "filings" ? <FilingLibrary {...auth} />
-          : key === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
+          : key === "filings" ? null
+          : key === "business" ? <BusinessSegments {...auth} />
           : key === "models" ? <AiModels {...auth} />
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
           : <AiRuns {...auth} kinds={["findings", "analyst", "valuation"]} translations />;

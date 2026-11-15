@@ -19,7 +19,7 @@ Shared UI comes from `packages/web/`; contracts and verification shared with the
 ## Data
 
 - Reads go to Spontra Analysis over the `SPONTRA_ANALYSIS` Service Binding to its `MapReads` named entrypoint. A named entrypoint is unreachable from the public internet, so the binding is the credential and the site keeps no key. Without the binding the data routes answer 503 and the shell still serves.
-- Routes: `/api/business/v1/home`, `/findings`, `/tickers/:ticker`, `/telemetry`, and `/api/business/v1/companies/:ticker` with `/opening`, `/revision`, `/capital`, `/findings`, `/fundamentals`, `/events`, `/insiders`, `/filings`, `/filings/:accession`, `/items/:accession`, `/passages/:id` and `/valuation` (with versions and evidence) under it.
+- Routes: `/api/business/v1/home`, `/findings`, `/tickers/:ticker`, `/telemetry`, and `/api/business/v1/companies/:ticker` with `/opening`, `/revision`, `/capital`, `/findings`, `/fundamentals`, `/events`, `/insiders`, `/filings`, `/filings/:accession`, `/items/:accession` and `/valuation` (with versions and evidence) under it.
 - The page re-validates every response against the shared contracts and withholds what does not verify (findings, highlights, lens documents, quotes).
 - `/agents/*` reaches the stage over the second binding `SPONTRA_STAGE` (`StageGateway` entrypoint), same-origin only and limited per address (`AGENT_LIMIT`).
 - Public reads are limited per IP (`PUBLIC_READ_LIMIT`, 300/min) and cached at the edge. `global_fetch_strictly_public` keeps any stray global fetch on public routing.

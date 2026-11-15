@@ -1,35 +1,11 @@
-import type { FindingPassage, FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
+import type { FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
 import { findingLeadsOf, readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import { citedPeers, peersFor } from "../../../../shared/analysis-runtime/peers.ts";
-import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import { publishedDossiers } from "../artifact/store.ts";
-import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-
-/**
- * The passages a publication quotes or reads cells from, as the library holds them now. A passage that no longer exists
- * (the parser re-split the document) is simply absent, and the page withdraws what rested on it.
- */
-export async function findingPassages(db: D1Database, ticker: string, publication: FindingsPublication | null): Promise<FindingPassage[]> {
-  const materials = publication?.materials ?? [];
-  const web = await webPassages(db, ticker, materials.flatMap(m => m.kind === "web" && m.passageId ? [m.passageId] : []));
-  const ids = [...new Set(materials.flatMap(m => m.kind === "sec" && m.passageId ? [m.passageId] : []))];
-  if (!ids.length) return web;
-  const passages = await libraryPassages(db, ids.slice(0, 60));
-  const documents = new Map(await Promise.all([...new Set(passages.map(p => p.documentId))].map(async id => [id, await readLibraryDocument(db, id)] as const)));
-  const out: FindingPassage[] = [...web];
-  for (const p of passages) {
-    const d = documents.get(p.documentId);
-    if (!d || d.ticker !== ticker || d.status !== "ready") continue;
-    const material = publication?.materials?.find(m => m.passageId === p.passageId);
-    out.push({ passageId: p.passageId, documentId: p.documentId, title: material?.title ?? `${ticker} ${d.form} ${d.reportDate}`, form: d.form, filedAt: d.filedAt, url: d.documentUrl, path: material?.path ?? [],
-      text: p.text, table: p.table ? { unit: p.table.unit, columns: p.table.columns, rows: p.table.rows.map(r => ({ label: r.label, cells: r.cells.map(c => ({ text: c.text, value: c.value })) })) } : null });
-  }
-  return out;
-}
 
 /** v2: English findings. Sets stored under v1 are Chinese and are no longer served; each ticker rewrites under v2. */
 export const findingsCacheKey = (ticker: string) => `findings:v2:${ticker}`;
@@ -65,9 +41,9 @@ export async function readFindingsResponse(db: D1Database, rawTicker: string, op
   // Quoted passages and the peers the publication cites ride with it; neither is required for it to serve. Only the cited
   // peers, so another company's new quarter leaves this answer, and this company's revision, as they were.
   // The findings whose dossier the analyst published as an artifact for this very publication.
-  const [passages, peers, published] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null),
+  const [peers, published] = await Promise.all([readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null),
     findings.fingerprint ? publishedDossiers(db, ticker, findings.fingerprint) : Promise.resolve<Record<string, string>>({})]);
   const ids = new Set(findingLeadsOf(findings).map(lead => lead.id));
   const dossiers = Object.fromEntries(Object.entries(published).filter(([id]) => ids.has(id)));
-  return { schemaVersion: "findings-response.v1", status: Object.keys(dossiers).length ? "ready" : "preparing", findings, passages, peers, dossiers };
+  return { schemaVersion: "findings-response.v1", status: Object.keys(dossiers).length ? "ready" : "preparing", findings, passages: [], peers, dossiers };
 }

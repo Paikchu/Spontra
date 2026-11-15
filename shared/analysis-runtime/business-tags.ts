@@ -1,16 +1,17 @@
 import type { BusinessUnit, FacetMatch, FacetValue, PeerBasis, PeerTier, TagFacet } from "../analysis-contract/business-tags.ts";
 import { TAG_FACETS } from "../analysis-contract/business-tags.ts";
-import { INDUSTRY_CATEGORIES, type IndustryCategory, type LibraryBusinessLink } from "../analysis-contract/filing-library.ts";
-import { libraryHash } from "./filing-library/parse.ts";
+import { INDUSTRY_CATEGORIES, type IndustryCategory, type BusinessLink, type BusinessSource } from "../analysis-contract/business-classification.ts";
+import { contentHash } from "./content-hash.ts";
+import { businessSourceKey } from "./business-classification.ts";
 
 /**
  * Two-level business tags and the peers they lead to. Pure: Spontra Analysis reads the
- * links, flow nodes and passages, calls the model and the vector index, and hands the results to these checks.
+ * links, flow nodes and Markdown sources, calls the model and the vector index, and hands the results to these checks.
  */
 
 /** Bumping this writes every company's business tags again. */
-export const BUSINESS_TAGS_VERSION = "business-tags.v1";
-export const TAG_LIMITS = { perSector: 10, units: 16, sectionsPerUnit: 8, labelWords: [2, 6], labelChars: 60, labelZhChars: 24, definitionChars: 240 } as const;
+export const BUSINESS_TAGS_VERSION = "business-tags.v2-markdown";
+export const TAG_LIMITS = { perSector: 10, units: 16, sourcesPerUnit: 8, labelWords: [2, 6], labelChars: 60, labelZhChars: 24, definitionChars: 240 } as const;
 /**
  * Changing how tags are compared re-matches every company from its stored tags; no model runs. v2: a facet's score is
  * how much of each side's tags the other covers, not its single best tag pair.
@@ -29,14 +30,14 @@ export const COMPANY_TOTAL = "reported-company-total";
 
 export const unitKeyOf = (ticker: string, flowNodeId: string) => `${ticker}|${flowNodeId}`;
 export const pairKeyOf = (a: string, b: string) => a < b ? `${a}~${b}` : `${b}~${a}`;
-const tagIdOf = (unitKey: string, sector: string, facet: string, label: string) => `t${libraryHash(`${unitKey}|${sector}|${facet}|${label.toLowerCase()}`).slice(0, 24)}`;
+const tagIdOf = (unitKey: string, sector: string, facet: string, label: string) => `t${contentHash(`${unitKey}|${sector}|${facet}|${label.toLowerCase()}`).slice(0, 24)}`;
 /** One vector namespace per sector and facet, so a query only meets tags it may be compared with. */
 export const tagNamespace = (sector: string, facet: string) => `${sector}.${facet}`;
 const isCategory = (value: unknown): value is IndustryCategory => typeof value === "string" && Object.hasOwn(INDUSTRY_CATEGORIES, value);
 const isFacet = (value: unknown): value is TagFacet => typeof value === "string" && (TAG_FACETS as readonly string[]).includes(value);
 
 export type UnitFlowNode = { flowNodeId: string; name: string };
-export type UnitLink = Pick<LibraryBusinessLink, "businessKey" | "name" | "flowNodeId" | "sectionIds" | "industryCategory" | "status">;
+export type UnitLink = Pick<BusinessLink, "businessKey" | "name" | "flowNodeId" | "sources" | "industryCategory" | "status">;
 
 /**
  * Groups a company's business links into comparable units, one per revenue node. A link keeps its own map node; a
@@ -53,10 +54,10 @@ export function buildUnits(ticker: string, links: UnitLink[], nodes: UnitFlowNod
       : !nodes.length ? COMPANY_TOTAL : null;
     if (!nodeId) { unplaced.push({ businessKey: link.businessKey, name: link.name }); continue; }
     const key = unitKeyOf(ticker, nodeId);
-    const unit = units.get(key) ?? { ticker, unitKey: key, flowNodeId: nodeId, name: byId.get(nodeId)?.name ?? "Total company", linkKeys: [], sectors: [], sectionIds: [] };
+    const unit = units.get(key) ?? { ticker, unitKey: key, flowNodeId: nodeId, name: byId.get(nodeId)?.name ?? "Total company", linkKeys: [], sectors: [], sources: [] };
     unit.linkKeys.push(link.businessKey);
     if (link.industryCategory && (link.status === "verified" || link.status === "confirmed") && !unit.sectors.includes(link.industryCategory)) unit.sectors.push(link.industryCategory);
-    for (const id of link.sectionIds) if (!unit.sectionIds.includes(id)) unit.sectionIds.push(id);
+    for (const source of link.sources) if (!unit.sources.some(item => businessSourceKey(item) === businessSourceKey(source))) unit.sources.push(source);
     units.set(key, unit);
   }
   return { units: [...units.values()].map(u => ({ ...u, sectors: [...u.sectors].sort() })), unplaced };
@@ -73,9 +74,9 @@ export function readAssignments(raw: unknown, unplaced: string[], nodes: UnitFlo
   return out;
 }
 
-export type TagDraft = { tagId: string; unitKey: string; sector: IndustryCategory; facet: TagFacet; label: string; labelZh: string; definition: string; passageIds: string[] };
-/** What one unit may be tagged with: its sectors and the passages it was shown. */
-export type TagScope = { sectors: IndustryCategory[]; passageIds: Set<string> };
+export type TagDraft = { tagId: string; unitKey: string; sector: IndustryCategory; facet: TagFacet; label: string; labelZh: string; definition: string; sources: BusinessSource[] };
+/** What one unit may be tagged with: its sectors and the Markdown sources it was shown. */
+export type TagScope = { sectors: IndustryCategory[]; sources: Map<string, BusinessSource> };
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
@@ -118,14 +119,14 @@ export function checkTags(raw: unknown, scopes: Map<string, TagScope>, named: (t
       if (/\d/.test(`${label}${labelZh}${definition}`)) { notes.push(`digits:${at}`); continue; }
       const name = named(label) ?? named(labelZh) ?? named(definition);
       if (name) { notes.push(`names_company:${at}:${name}`); continue; }
-      const passageIds = [...new Set(Array.isArray(v?.passageIds) ? v.passageIds.filter((id): id is string => typeof id === "string") : [])];
-      if (!passageIds.length || passageIds.some(id => !scope.passageIds.has(id))) { notes.push(`passages:${at}`); continue; }
+      const sourceIds = [...new Set(Array.isArray(v?.sourceIds) ? v.sourceIds.filter((id): id is string => typeof id === "string") : [])];
+      if (!sourceIds.length || sourceIds.some(id => !scope.sources.has(id))) { notes.push(`sources:${at}`); continue; }
       const tagId = tagIdOf(unitKey, v.sector, v.facet, label);
       if (seen.has(tagId)) continue;
       const bucket = `${unitKey}|${v.sector}`;
       if ((counts.get(bucket) ?? 0) >= TAG_LIMITS.perSector) { notes.push(`too_many:${bucket}`); continue; }
       seen.add(tagId); counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
-      tags.push({ tagId, unitKey, sector: v.sector, facet: v.facet, label, labelZh, definition, passageIds: passageIds.slice(0, 4) });
+      tags.push({ tagId, unitKey, sector: v.sector, facet: v.facet, label, labelZh, definition, sources: sourceIds.slice(0, 4).map(id => scope.sources.get(id)!) });
     }
   }
   return { tags, notes };

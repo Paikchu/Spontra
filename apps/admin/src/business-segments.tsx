@@ -1,41 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { AiCompanies } from '@/shared/analysis-contract/ai-runs-admin';
-import type { LibraryOverview } from '@/shared/analysis-contract/filing-library';
-import type { BusinessTagCompanies } from '@/shared/analysis-contract/business-tags';
 import { adminApi, AdminApiError } from './admin-api';
 import { AiKindPanel } from './ai-runs';
 import { usePageActive } from './admin-page';
 import { BusinessCharts } from './business-charts';
 import './business-charts.css';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
-import { LinksPanel, WikiPanel } from './filing-library-cross';
-import { BusinessTagsPanel } from './business-tags';
-import './filing-library.css';
+import './business-segments.css';
 
-type View = 'wiki' | 'charts' | 'tree' | 'explainer' | 'links' | 'tags';
-const views: Array<[View, string]> = [['wiki', '板块数据'], ['charts', '图表数据'], ['tree', '业务脑图'], ['explainer', '业务解读'], ['links', '业务主线'], ['tags', '业务标签']];
-type Company = { ticker: string; documents: number };
+type View = 'charts' | 'tree' | 'explainer';
+const views: Array<[View, string]> = [['charts', '图表数据'], ['tree', '业务脑图'], ['explainer', '业务解读']];
+type Company = { ticker: string };
 function initial(name: 'ticker' | 'view') { try { return new URLSearchParams(window.location.search).get(name) ?? ''; } catch { return ''; } }
 
-/**
- * A company's business segments in one place: the segment numbers and passages the library assembles, the model's
- * breakdown and explanation of each segment, and the links that tie a segment to its sections.
- */
-export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSection }: { onAuthenticated: () => void; onUnauthorized: () => void; onOpenSection: (ticker: string, documentId: string, sectionId: string) => void }) {
-  const [tagged, setTagged] = useState<Set<string> | null>(null);
+export function BusinessSegments({ onAuthenticated, onUnauthorized }: { onAuthenticated: () => void; onUnauthorized: () => void }) {
   const [companies, setCompanies] = useState<Company[] | null>(null), [error, setError] = useState(''), [refresh, setRefresh] = useState(0), [search, setSearch] = useState('');
-  const [ticker, setTicker] = useState(() => initial('ticker')), [view, setView] = useState<View>(() => views.find(([v]) => v === initial('view'))?.[0] ?? 'wiki');
+  const [ticker, setTicker] = useState(() => initial('ticker')), [view, setView] = useState<View>(() => views.find(([v]) => v === initial('view'))?.[0] ?? 'charts');
   const callbacks = useRef({ onAuthenticated, onUnauthorized });
   useEffect(() => { callbacks.current = { onAuthenticated, onUnauthorized }; }, [onAuthenticated, onUnauthorized]);
   const fail = (e: unknown) => { if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setError(e instanceof Error ? e.message : String(e)); };
 
   useEffect(() => {
     const c = new AbortController();
-    void adminApi<BusinessTagCompanies>('library/tags', { signal: c.signal }).then(r => setTagged(new Set(r.companies.filter(x => x.units > 0).map(x => x.ticker)))).catch(() => { if (!c.signal.aborted) setTagged(new Set()); });
-    void Promise.all([adminApi<LibraryOverview>('library', { signal: c.signal }), adminApi<AiCompanies>('ai/companies', { signal: c.signal })]).then(([library, ai]) => {
-      const tickers = [...new Set([...library.companies.map(x => x.ticker), ...ai.companies.map(x => x.ticker)])].sort();
-      setCompanies(tickers.map(t => ({ ticker: t, documents: library.companies.find(x => x.ticker === t)?.documents ?? 0 })));
+    void adminApi<AiCompanies>('ai/companies', { signal: c.signal }).then(ai => {
+      const tickers = ai.companies.map(company => company.ticker).sort();
+      setCompanies(tickers.map(ticker => ({ ticker })));
       setError(''); callbacks.current.onAuthenticated();
       setTicker(t => tickers.includes(t) ? t : tickers[0] ?? '');
     }).catch(e => { if (!c.signal.aborted) fail(e); });
@@ -47,26 +37,20 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSectio
     try { window.history.replaceState(null, '', `${window.location.pathname}?${new URLSearchParams({ ticker, view })}`); } catch { /* Sandboxed preview. */ }
   }, [ticker, view, visible]);
 
-  // The tags view lists only companies whose business units exist.
-  const listed = view === 'tags' ? companies && tagged ? companies.filter(c => tagged.has(c.ticker)) : null : companies;
-  const shown = listed?.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase())) ?? [];
-  const current = view === 'tags' && listed && !listed.some(c => c.ticker === ticker) ? listed[0]?.ticker ?? '' : ticker;
-  return <div className="ra-workspace fl-workspace">
+  const shown = companies?.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase())) ?? [];
+  return <div className="ra-workspace bs-workspace">
     <section className="ra-list" aria-label="公司">
-      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label><button className="fl-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={17} /></button></div>
-      <div className="ra-list-caption">{listed ? `${listed.length} 家公司` : '加载中'}</div>
+      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label><button className="bs-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={17} /></button></div>
+      <div className="ra-list-caption">{companies ? `${companies.length} 家公司` : '加载中'}</div>
       {error && <p className="ra-error" role="alert">{error}</p>}
-      <div className="ra-list-scroll">{shown.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={current === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong><small>{c.documents} 份</small></span></button>)}</div>
+      <div className="ra-list-scroll">{shown.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong></span></button>)}</div>
     </section>
-    <section className="ra-detail fl-detail" aria-label="业务板块">
-      <nav className="fl-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}</nav>
-      {!current ? <p className="fl-empty">{view === 'tags' && listed ? '无业务单元' : '未选择公司'}</p>
-        : view === 'wiki' ? <WikiPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
-        : view === 'charts' ? <div className="fl-panel"><BusinessCharts key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} /></div>
-        : view === 'links' ? <LinksPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
-        : view === 'tags' ? <BusinessTagsPanel key={current} ticker={current} onOpen={onOpenSection} fail={fail} />
-        : <div className="fl-panel"><AiKindPanel key={`${ticker}:${view}`} ticker={ticker} kind={view} onUnauthorized={onUnauthorized} /></div>}
+    <section className="ra-detail bs-detail" aria-label="业务板块">
+      <nav className="bs-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}</nav>
+      {!ticker ? <p className="bs-empty">未选择公司</p>
+        : view === 'charts' ? <div className="bs-panel"><BusinessCharts key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} /></div>
+        : <div className="bs-panel"><AiKindPanel key={`${ticker}:${view}`} ticker={ticker} kind={view} onUnauthorized={onUnauthorized} /></div>}
     </section>
   </div>;
 }

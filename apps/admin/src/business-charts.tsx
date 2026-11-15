@@ -97,7 +97,7 @@ export function BusinessCharts({ ticker, onUnauthorized }: { ticker: string; onU
     return () => c.abort();
   }, [ticker]);
   if (error) return <p className="ra-error">{error}</p>;
-  if (!data || data.ticker !== ticker) return <p className="fl-empty">加载中</p>;
+  if (!data || data.ticker !== ticker) return <p className="bs-empty">加载中</p>;
   const profit = data.profit?.quarters ?? [], capital = [...data.capital?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
   const capitalCurrency = capital.find(q => q.balanceSheet)?.balanceSheet?.currency ?? capital.find(q => q.cashFlow)?.cashFlow?.currency ?? 'USD';
   const cash = capital.filter(q => q.cashFlow), balance = capital.filter(q => q.balanceSheet);
@@ -105,8 +105,8 @@ export function BusinessCharts({ ticker, onUnauthorized }: { ticker: string; onU
   return <div className="bc">
     <div className="bc-bar"><nav className="ra-segmented" aria-label="图表">{CHARTS.map(([k, label]) => <button key={k} aria-pressed={chart === k} onClick={() => setChart(k)}>{label}<small>{available[k]}</small></button>)}</nav>
       <span className="ra-badge" data-status={data.status === 'ready' ? 'reviewed' : 'idle'}>{data.status === 'ready' ? '地图已发布' : data.status === 'preparing' ? '准备中' : '未发布'}</span></div>
-    {chart === 'profit' ? profit.length ? <Statement periods={profit.map(q => q.periodEnd)} rows={profitRows(profit)} currency={profit[0]!.currency} /> : <p className="fl-empty">无利润数据</p>
-      : chart === 'cash' ? cash.length ? <Statement periods={cash.map(q => q.periodEnd)} rows={cashRows(cash)} currency={capitalCurrency} /> : <p className="fl-empty">无现金流数据</p>
-      : balance.length ? <Statement periods={balance.map(q => q.periodEnd)} rows={balanceRows(balance)} currency={capitalCurrency} /> : <p className="fl-empty">无资产负债数据</p>}
+    {chart === 'profit' ? profit.length ? <Statement periods={profit.map(q => q.periodEnd)} rows={profitRows(profit)} currency={profit[0]!.currency} /> : <p className="bs-empty">无利润数据</p>
+      : chart === 'cash' ? cash.length ? <Statement periods={cash.map(q => q.periodEnd)} rows={cashRows(cash)} currency={capitalCurrency} /> : <p className="bs-empty">无现金流数据</p>
+      : balance.length ? <Statement periods={balance.map(q => q.periodEnd)} rows={balanceRows(balance)} currency={capitalCurrency} /> : <p className="bs-empty">无资产负债数据</p>}
   </div>;
 }

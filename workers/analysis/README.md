@@ -20,10 +20,10 @@ A named entrypoint is unreachable from the public internet, so the binding is th
 | Path | Role |
 | --- | --- |
 | `src/sec-archive/` | The only EDGAR reader ([docs/sec-archive.md](../../docs/sec-archive.md)); everything else reads archived filings from D1 + R2 |
-| `src/sec/`, `src/financial-data/`, `src/filing-library/` | Filing parsing, deterministic statements ([financial-data.md](financial-data.md)), the parsed filing library |
+| `src/sec/`, `src/financial-data/`, `src/filing-material/` | Filing analysis, deterministic statements ([financial-data.md](financial-data.md)), immutable Markdown and CSV materials |
 | `src/pipeline/`, `src/events/` | Event routing and task registry; SEC events (8-K, Form 4) |
 | `src/findings/`, `lens/`, `analyst/`, `items/` | Findings, their lens documents, analyst dossiers, per-filing analysis |
-| `src/business-explainer/`, `business-tree/`, `business-tags/`, `peers/` | Business dossiers, the mind map, two-level tags and peers |
+| `src/business-explainer/`, `business-tree/`, `business-classification/`, `business-tags/`, `peers/` | Business dossiers, the mind map, two-level tags and peers |
 | `transcripts/`, `valuation/`, `fundamentals/`, `translation/` | The transcript library, valuation, fundamentals, Chinese translations |
 | `src/stage/` | The stage agent and reader reports |
 | `src/web-search/` | Cached web search and page reads ([docs/web-search.md](../../docs/web-search.md)) |

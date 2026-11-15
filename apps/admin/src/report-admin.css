@@ -20,7 +20,7 @@ html body:has(.report-admin) { padding: 0; }
 .ra-mobile-navigation { display: none; }
 /* Keep window scrolling for page restoration; full-height panels fit below the shell header. */
 .report-admin { --page-height: 100svh; }
-.report-admin :is(.ra-list-scroll, .ra-detail, .fl-col-scroll, .fl-scroll, .fl-outline, .fl-reader, .fl-panel, .fm-company-scroll, .fs-table-scroll, .fqs-table-scroll) { scrollbar-gutter: stable; }
+.report-admin :is(.ra-list-scroll, .ra-detail, .bs-panel, .fm-company-scroll, .fs-table-scroll, .fqs-table-scroll) { scrollbar-gutter: stable; }
 
 /* Flat workspaces share the canvas; dividers separate the company list and content. */
 .ra-panel, .ra-workspace { border-radius: 0; background: transparent; box-shadow: none; }

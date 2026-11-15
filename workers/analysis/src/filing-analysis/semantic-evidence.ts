@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { MaterialIndexedBlock, MaterialRef, MaterialSnapshot, MaterialSource } from "../../../../shared/analysis-contract/filing-material.ts";
-import type { LibraryTable } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { FilingTable } from "../../../../shared/analysis-contract/filing-content.ts";
 import { decodeEntities, descendants, nodeText, parseMarkup, type Element } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import { parseMaterialHtml } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -14,7 +14,7 @@ type Inventory = z.infer<typeof inventorySchema>;
 type Binding = { entry: string; documentId: string; title: string; path: string[] };
 type CorpusEntry =
   | { id: string; kind: "paragraph" | "image"; text: string }
-  | { id: string; kind: "table"; title: string; table: LibraryTable }
+  | { id: string; kind: "table"; title: string; table: FilingTable }
   | { id: string; kind: "inline-xbrl"; data: Json }
   | { id: string; kind: "residual"; text: string | Json };
 export type SemanticCorpus = {

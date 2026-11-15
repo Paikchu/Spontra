@@ -4,7 +4,7 @@ import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-
 import type { ValueUnit } from "../../../../shared/analysis-runtime/findings.ts";
 import { chartHeight, compilePoints, type PointSeries } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
-import { factText, periodText } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
+import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
 import { readMaterialSnapshot, getFilingMaterial, listFilingMaterials, requestFilingMaterial } from "../filing-material/index.ts";
 import { readFilingMarkdown, findFilingTables, readFilingTable, searchFilingMarkdown, sourceText, filingMaterialMeta } from "../filing-material/read.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
@@ -59,13 +59,11 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     for (const ref of p(state).materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
   };
   const allFacts = () => [...indexedFacts.values()];
-  const factsById = async (_db: D1Database, ids: string[]) => ids.flatMap(id => { const fact = indexedFacts.get(id); return fact ? [fact] : []; });
   const remember = (state: S) => { p(state).materials = [...new Map([...p(state).materials, ...[...snapshots.values()].map(material => material.ref)].map(ref => [`${ref.accession}:${ref.version}`, ref])).values()]; };
-  const documents = async () => snapshot.documents.map(d => d.id);
-  const queryFacts = async (_db: D1Database, q: FactQuery) => snapshot.facts.filter(f =>
+  const queryFacts = (q: FactQuery) => snapshot.facts.filter(f =>
     (!q.label || q.label.toLowerCase().split(/\s+/).every(w => `${f.label} ${f.concept ?? ""}`.toLowerCase().includes(w))) &&
     (!q.periodEnd || f.periodEnd === q.periodEnd) && (q.months === undefined || f.periodMonths === q.months) &&
-    (!q.section || f.sectionId === q.section || f.passageId === q.section))
+    (!q.anchor || f.passageId === q.anchor))
     .map(f => indexedFacts.get(f.factId)!);
   const history = async (state: S) => {
     await restore(state);
@@ -74,7 +72,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     }
     remember(state);
   };
-  const factHistory = async (_db: D1Database, _ticker: string, fact: StoredFact, periods: number, state: S) => {
+  const factHistory = async (fact: StoredFact, periods: number, state: S) => {
     await history(state);
     const seen = new Set<string>();
     return allFacts().filter(f => f.concept === fact.concept && f.dimensions === fact.dimensions && f.periodMonths === fact.periodMonths && f.periodEnd && f.periodEnd <= (fact.periodEnd ?? "9999"))
@@ -182,22 +180,22 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       }),
     handTool<S>({ name: "filing_history", description: "List prepared earlier filing materials and their immutable versions for comparisons. Read one with read_filing_markdown and its accession.", input_schema: object({}) },
       async (_args, state) => { await history(state); return ok(JSON.stringify([...snapshots.values()].filter(m => m.ref.accession !== accession).map(m => ({ material: m.ref, form: m.filing.form, filedAt: m.filing.filedAt, reportDate: m.filing.reportDate, toc: m.toc })))); }),
-    handTool<S>({ name: "query_facts", description: "Find figures of this filing by what they are: words of the row label or XBRL concept, a period end (YYYY-MM-DD), the months a flow covers (3, 9, 12; 0 for a balance), or a section. Each line gives the fact id, label, value, period and how the filing prints it.",
-      input_schema: object({ label: { type: "string" }, periodEnd: { type: "string" }, months: { type: "number" }, sectionId: { type: "string" }, cursor: { type: "string" } }) },
+    handTool<S>({ name: "query_facts", description: "Find figures of this filing by what they are: words of the row label or XBRL concept, a period end (YYYY-MM-DD), the months a flow covers (3, 9, 12; 0 for a balance), or a Markdown block anchor. Each line gives the fact id, label, value, period and how the filing prints it.",
+      input_schema: object({ label: { type: "string" }, periodEnd: { type: "string" }, months: { type: "number" }, anchor: { type: "string" }, cursor: { type: "string" } }) },
       async (args) => {
         const months = args.months === undefined || args.months === null || args.months === "" ? undefined : Number(args.months);
-        const found = await queryFacts(db, { documents: await documents(), ...(str(args.label) ? { label: str(args.label) } : {}), ...(str(args.periodEnd) ? { periodEnd: str(args.periodEnd) } : {}),
-          ...(months !== undefined && Number.isFinite(months) ? { months } : {}), ...(str(args.sectionId) ? { section: str(args.sectionId) } : {}) });
+        const found = queryFacts({ ...(str(args.label) ? { label: str(args.label) } : {}), ...(str(args.periodEnd) ? { periodEnd: str(args.periodEnd) } : {}),
+          ...(months !== undefined && Number.isFinite(months) ? { months } : {}), ...(str(args.anchor) ? { anchor: str(args.anchor) } : {}) });
         const start = Number(str(args.cursor) || 0), end = start + 60;
         return ok(found.length ? `${found.slice(start, end).map(factLine).join("\n")}\nnextCursor: ${end < found.length ? String(end) : "none"}` : "No fact matches; try fewer words, or read the CSV with read_filing_table.");
       }),
     handTool<S>({ name: "fact_history", description: "The same figure in earlier periods, from the company's earlier filings: same line, same breakdown, same period length, newest first. For a quarter's flow this gives the earlier quarters the company reported as quarters; a fourth quarter is usually reported only inside the year.",
       input_schema: object({ factId: { type: "string" }, periods: { type: "number" } }, ["factId"]) },
       async (args, state) => {
-        const [fact] = await factsById(db, [str(args.factId)]);
+        const fact = indexedFacts.get(str(args.factId));
         if (!fact) return fail("No such fact; ids come from read_filing_markdown and query_facts.");
         if (!fact.tagged) return ok(`${factLine(fact)}\nThis figure is not tagged, so it cannot be followed by code; use filing_history on its section, or grep its label in earlier filings.`);
-        const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(args.periods) || 9)), state);
+        const history = await factHistory(fact, Math.min(16, Math.max(2, Number(args.periods) || 9)), state);
         remember(state);
         for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
         return ok(history.length ? history.map(h => `${h.factId} | ${factText(h)} | ${periodText(h)} | ${h.form} filed ${h.filedAt}`).join("\n") : "No earlier filing reports this line.");
@@ -234,13 +232,13 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
           const points: PointSeries["points"] = [];
           let unit: ValueUnit | null = null;
           if (str(raw?.factId)) {
-            const [fact] = await factsById(db, [str(raw.factId)]);
+            const fact = indexedFacts.get(str(raw.factId));
             if (!fact) return fail(`${label}: no such fact; ids come from read_filing_markdown and query_facts.`);
             if (!fact.tagged || !fact.periodEnd) return fail(`${label}: ${fact.factId} is not tagged, so it cannot be followed through earlier filings; give points instead.`);
             unit = fact.unit === "percent" || fact.unit === "ratio" ? null : unitOf(fact.unit);
             if (!unit) return fail(`${label}: a ${fact.unit} fact cannot be charted from its history; compute the rate per period and give points.`);
             months ??= fact.periodMonths;
-            const history = await factHistory(db, ticker, fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)), state);
+            const history = await factHistory(fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)), state);
             remember(state);
             for (const h of history) {
               s.facts[h.factId] = { text: factSourceText(h), value: h.value };
@@ -255,7 +253,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
               const value = await valueOf(ref, state);
               if (value === undefined) return fail(`${label}: "${ref}" is not a fact or a result of this session.`);
               const computed = s.computed[ref];
-              const fact = computed ? null : (await factsById(db, [ref]))[0] ?? null;
+              const fact = computed ? null : indexedFacts.get(ref) ?? null;
               const end = /^\d{4}-\d{2}-\d{2}$/.test(str(point?.period)) ? str(point.period) : fact?.periodEnd ?? "";
               if (!end) return fail(`${label}: the point ${ref} needs its period, as YYYY-MM-DD.`);
               const pointUnit = unitOf(computed ? computed.unit : fact?.unit ?? "");

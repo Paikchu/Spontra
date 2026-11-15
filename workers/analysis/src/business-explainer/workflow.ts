@@ -1,5 +1,5 @@
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { treeLibrary } from "../filing-library/tree-source.ts";
+import { treeLibrary } from "../filing-material/tree-source.ts";
 import type { BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";

@@ -1,5 +1,5 @@
 import type { MaterialFiling, MaterialIndexedBlock, MaterialPage, MaterialSnapshot, MaterialTable } from "../../../../shared/analysis-contract/filing-material.ts";
-import { factText, periodText } from "../../../../shared/analysis-runtime/filing-library/facts.ts";
+import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
 import { csvFromTable } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { SecFiling } from "../sec/sec.ts";

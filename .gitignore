@@ -21,7 +21,7 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 /dist/
-/.wrangler/
+**/.wrangler/
 /.next/
 
 !workers/analysis/.dev.vars.example

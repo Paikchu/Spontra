@@ -6,8 +6,7 @@ import { TASKS, type TaskName } from '../pipeline/registry.ts';
 const USAGE_TASK: Record<string, TaskName> = {
   'read-note': 'collect', presentation: 'presentation', translate: 'translate',
   'sec-analysis': 'filing-analysis', 'sec-report': 'filing-analysis', guidance: 'filing-analysis', memory: 'memory', items: 'filing-analysis', filing: 'filing-analysis',
-  library: 'library', 'library-cards': 'library-cards', 'library-links': 'library-links',
-  'library-links-review': 'library-links', 'business-tags': 'business-tags',
+  'business-classification': 'business-classification', 'business-classification-review': 'business-classification', 'business-tags': 'business-tags',
   business: 'company-analysis', 'company-analysis': 'company-analysis',
   findings: 'findings', lens: 'findings', analyst: 'analyst', checkup: 'findings',
   tree: 'tree', explainer: 'explainer', valuation: 'valuation', 'valuation-research': 'valuation',

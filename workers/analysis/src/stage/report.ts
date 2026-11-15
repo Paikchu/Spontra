@@ -7,8 +7,8 @@ import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } fr
 import { openComposer, registerSource, type ComposerState } from "../artifact/document.ts";
 import { renderTable } from "../analyst/agent.ts";
 import type { AnyTool } from "../tools/registry.ts";
-import { libraryToc, type TocDocument } from "../filing-library/tool.ts";
-import { readLibraryDocument } from "../filing-library/store.ts";
+import { listFilingMaterials, readMaterialSnapshot } from "../filing-material/index.ts";
+import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { StageData } from "./data.ts";
 
@@ -19,7 +19,8 @@ import type { StageData } from "./data.ts";
  */
 export const REPORT_BUDGET = { turns: 28, wallMs: 30 * 60_000, finds: 6, reads: 8, searches: 3, webReads: 3 } as const;
 
-export type ReportInput = { env: AnalysisEnv; data: StageData; question: string; locale: Locale; documents: TocDocument[]; now: string; earlierAvailable: boolean; runId: string };
+type ReportMaterial = { ref: MaterialRef; form: string; filedAt: string; reportDate: string; toc: MaterialSnapshot["toc"] };
+export type ReportInput = { env: AnalysisEnv; data: StageData; question: string; locale: Locale; documents: ReportMaterial[]; now: string; earlierAvailable: boolean; runId: string };
 /** The research tools' state, with the document being composed and the text of every figure read, by source id. */
 export type ReportState = ComposeState & { composer: ComposerState; figures: Record<string, string> };
 
@@ -105,14 +106,17 @@ export function reportRecipe(input: ReportInput): Recipe<ReportInput, boolean, R
 /** The opening: the question and what the library holds for the company. */
 export const reportOpening = (input: ReportInput) => JSON.stringify({
   question: input.question, ticker: input.data.ticker, periodEnd: input.data.periodEnd,
-  documents: input.documents.map(d => ({ documentId: d.documentId, form: d.form, filedAt: d.filedAt, reportDate: d.reportDate, sections: d.sections.slice(0, 40).map(s => ({ sectionId: s.sectionId, path: s.path.join(" › "), gist: s.gist })) })),
+  documents: input.documents,
   budget: REPORT_BUDGET,
 });
 
-export async function reportDocuments(env: AnalysisEnv, ticker: string, periodEnd: string): Promise<{ documents: TocDocument[]; earlierAvailable: boolean }> {
-  const documents = await libraryToc(env.DB!, ticker, { forms: ["10-K", "10-Q", "20-F"], limit: 3 }).catch(() => []);
-  const newest = documents[0];
-  const earlierAvailable = documents.some(d => Date.parse(periodEnd) - Date.parse(d.reportDate) > 45 * 86_400_000)
-    || !!(newest && (await readLibraryDocument(env.DB!, newest.documentId).catch(() => null))?.previousDocumentId);
+export async function reportDocuments(env: AnalysisEnv, ticker: string, periodEnd: string): Promise<{ documents: ReportMaterial[]; earlierAvailable: boolean }> {
+  const states = (await listFilingMaterials(env, ticker)).flatMap(state => state.status === "ready" && /^(?:10-[KQ]|20-F)(?:\/A)?$/.test(state.filing.form) ? [state] : [])
+    .sort((a, b) => b.filing.filedAt.localeCompare(a.filing.filedAt)).slice(0, 3);
+  const documents = await Promise.all(states.map(async state => {
+    const snapshot = await readMaterialSnapshot(env, state.ref);
+    return { ref: snapshot.ref, form: snapshot.filing.form, filedAt: snapshot.filing.filedAt, reportDate: snapshot.filing.reportDate, toc: snapshot.toc };
+  }));
+  const earlierAvailable = documents.some(d => Date.parse(periodEnd) - Date.parse(d.reportDate) > 45 * 86_400_000);
   return { documents, earlierAvailable };
 }

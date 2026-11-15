@@ -1,21 +1,21 @@
 import type { BusinessUnit } from "../../../../shared/analysis-contract/business-tags.ts";
 import { BUSINESS_TAGS_VERSION, buildUnits, COMPANY_TOTAL, type UnitFlowNode, type UnitLink } from "../../../../shared/analysis-runtime/business-tags.ts";
-import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
+import { contentHash } from "../../../../shared/analysis-runtime/content-hash.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { flowNodes, readLinks } from "../filing-library/links.ts";
+import { flowNodes, readLinks } from "../business-classification/index.ts";
 
-export const tagsCacheKey = (ticker: string) => `business-tags:v1:${ticker}`;
+export const tagsCacheKey = (ticker: string) => `business-tags:v2:${ticker}`;
 
 /** What one company's tags are written from: its links, its map's businesses and the units they make before any placement. */
 export type TagsPlan = { ticker: string; links: UnitLink[]; nodes: UnitFlowNode[]; units: BusinessUnit[]; unplaced: Array<{ businessKey: string; name: string }>; fingerprint: string };
 
 export async function tagsPlan(db: D1Database, ticker: string): Promise<TagsPlan | null> {
-  const links = (await readLinks(db, { ticker })).map(l => ({ businessKey: l.businessKey, name: l.name, flowNodeId: l.flowNodeId, sectionIds: l.sectionIds, industryCategory: l.industryCategory, status: l.status }));
+  const links = (await readLinks(db, { ticker })).map(l => ({ businessKey: l.businessKey, name: l.name, flowNodeId: l.flowNodeId, sources: l.sources, industryCategory: l.industryCategory, status: l.status }));
   if (!links.length) return null;
   const nodes = await flowNodes(db, ticker);
   const { units, unplaced } = buildUnits(ticker, links, nodes);
   if (!units.some(u => u.sectors.length) && !unplaced.length) return null;
-  const fingerprint = libraryHash(`${BUSINESS_TAGS_VERSION}|${links.map(l => `${l.businessKey}:${l.flowNodeId ?? ""}:${l.status}:${l.industryCategory ?? ""}:${l.sectionIds.join(",")}`).join(";")}|${nodes.map(n => `${n.flowNodeId}=${n.name}`).join(",")}`);
+  const fingerprint = contentHash(`${BUSINESS_TAGS_VERSION}|${links.map(l => `${l.businessKey}:${l.flowNodeId ?? ""}:${l.status}:${l.industryCategory ?? ""}:${JSON.stringify(l.sources)}`).join(";")}|${nodes.map(n => `${n.flowNodeId}=${n.name}`).join(",")}`);
   return { ticker, links, nodes, units, unplaced, fingerprint };
 }
 
@@ -28,18 +28,6 @@ export async function tagsSkipReason(db: D1Database, ticker: string): Promise<st
   if (!links.length) return "no business links";
   const disputed = links.filter(l => l.status === "disputed").length;
   return disputed ? `no verified business link (${disputed} of ${links.length} disputed)` : "no business link with a sector";
-}
-
-export type PassageRow = { passage_id: string; document_id: string; section_id: string; text: string };
-/** Each section's passages in order, at most `perSection` of them, for the sections asked; nothing parsed, a D1 read. */
-export async function sectionPassages(db: D1Database, sectionIds: string[], perSection = 12): Promise<Map<string, PassageRow[]>> {
-  const out = new Map<string, PassageRow[]>();
-  for (let i = 0; i < sectionIds.length; i += 90) {
-    const rows = (await db.prepare(`SELECT passage_id, document_id, section_id, text FROM sec_passages WHERE section_id IN (SELECT value FROM json_each(?)) AND kind != 'table' ORDER BY section_id, ordinal`)
-      .bind(JSON.stringify(sectionIds.slice(i, i + 90))).all<PassageRow>()).results;
-    for (const r of rows) { const list = out.get(r.section_id) ?? []; if (list.length < perSection) list.push(r); out.set(r.section_id, list); }
-  }
-  return out;
 }
 
 /** A company's revenue and each map node's at its newest quarter; a single-segment company's total is its own node. */

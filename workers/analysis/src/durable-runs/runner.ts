@@ -147,8 +147,8 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   async terminate(): Promise<void> {
     const row = this.row();
-    if (!row || (FINAL.has(row.status) && row.status !== "terminated")) return;
-    this.setStatus("terminated", { error: JSON.stringify({ name: "Terminated", message: "terminated" }) });
+    if (row && FINAL.has(row.status) && row.status !== "terminated") return;
+    if (row) this.setStatus("terminated", { error: JSON.stringify({ name: "Terminated", message: "terminated" }) });
     try { await this.pi.abortActive(); }
     finally {
       for (const schedule of this.getSchedules()) await this.cancelSchedule(schedule.id);

@@ -4,7 +4,7 @@ import { exposureOf, unitRevenues } from "../business-tags/input.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
 import { requireDb } from "../core.ts";
-import { readLinks } from "../filing-library/links.ts";
+import { readLinks } from "../business-classification/index.ts";
 import { readServedFindings } from "../findings/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -16,7 +16,7 @@ import { scopeTickers } from "../pipeline/router.ts";
 import { PEERS_CACHE_KEY, readPeersResponse } from "./read.ts";
 
 /** Changing what the projection reads or how a figure is computed republishes it once (`task.version_changed`). */
-export const PEERS_VERSION = "peers.v4";
+export const PEERS_VERSION = "peers.v5-markdown";
 
 /**
  * The same stored projections the findings writer reads (`readInput` in findings/workflow.ts), without the ledger:

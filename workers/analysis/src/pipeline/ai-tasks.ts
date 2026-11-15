@@ -52,7 +52,7 @@ const storedFingerprint = (env: AnalysisEnv, key: string) => async () =>
  */
 const LAYER_TASKS = {
   map: ["collect", "archive", "history", "map-derive", "fundamentals", "events", "presentation"],
-  filings: ["library", "library-cards", "library-links", "business-tags", "filing-analysis", "memory", "extract"],
+  filings: ["business-classification", "business-tags", "filing-analysis", "memory", "extract"],
   findings: ["company-analysis", "findings", "analyst"],
 } as const;
 /** A run waiting in a lower layer longer than this is stuck, not settling, and no longer holds the layers above. */

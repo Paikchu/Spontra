@@ -26,7 +26,7 @@ import { knownCik } from "../pipeline/identity.ts";
 import type { HistoricalObservation, SecHistorySnapshot } from "../sec/analysis.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { readyTranscripts } from "../transcripts/library.ts";
-import type { LibraryDocumentSummary } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { MaterialFiling } from "../../../../shared/analysis-contract/filing-material.ts";
 
 /**
  * The material pack a valuation run starts from: typed facts resolved from the same stored projections the findings verify against, the company's own history
@@ -254,11 +254,11 @@ export function buildDiagnostics(facts: ValuationFact[], snapshot: SecHistorySna
 
 const DOCUMENT_FORMS = ["10-K", "10-Q", "20-F", "40-F", "8-K", "6-K", "10-K/A", "10-Q/A"];
 /** The filings a run may read: the newest two annual reports, the newest four quarterlies and the newest six current reports, all filed by the research date. */
-export function selectDocuments(documents: Pick<LibraryDocumentSummary, "status" | "filedAt" | "form" | "documentId" | "accessionNumber" | "docType" | "reportDate" | "documentUrl">[], researchAsOf: string): ValuationDocument[] {
-  const ready = documents.filter(d => d.status === "ready" && d.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).sort((a, b) => b.filedAt.localeCompare(a.filedAt));
+export function selectDocuments(documents: MaterialFiling[], researchAsOf: string): ValuationDocument[] {
+  const ready = documents.filter(d => d.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).sort((a, b) => b.filedAt.localeCompare(a.filedAt));
   const take = (test: (form: string) => boolean, n: number) => ready.filter(d => test(d.form)).slice(0, n);
   const chosen = [...take(f => /^(10-K|20-F|40-F)/.test(f), 2), ...take(f => /^10-Q/.test(f), 4), ...take(f => /^(8-K|6-K)/.test(f), 6)];
-  return [...new Map(chosen.map(d => [d.documentId, d])).values()].map(d => ({ documentId: d.documentId, accession: d.accessionNumber, form: d.form, docType: d.docType, filedAt: d.filedAt, reportDate: d.reportDate, url: d.documentUrl }));
+  return [...new Map(chosen.map(d => [d.accession, d])).values()].map(d => ({ documentId: d.accession, accession: d.accession, form: d.form, docType: "primary", filedAt: d.filedAt, reportDate: d.reportDate, url: d.documentUrl }));
 }
 
 const ttmOf = (company: PeerCompany, figure: keyof PeerCompany["quarters"][number]["figures"]): number | null => {
@@ -351,10 +351,8 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   missing.push(...leases.unresolved);
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
-  const [library, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
-    listFilingMaterials(env, ticker).then(states => states.filter(state => state.status === "ready" && DOCUMENT_FORMS.includes(state.filing.form)).map((state): Parameters<typeof selectDocuments>[0][number] => ({ status: "ready",
-      filedAt: state.filing.filedAt, form: state.filing.form, documentId: state.filing.accession, accessionNumber: state.filing.accession,
-      docType: "primary", reportDate: state.filing.reportDate, documentUrl: state.filing.documentUrl }))),
+  const [materials, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
+    listFilingMaterials(env, ticker).then(states => states.filter(state => state.status === "ready" && DOCUMENT_FORMS.includes(state.filing.form)).map(state => state.filing)),
     readyTranscripts(db, ticker, new Date(Date.parse(newest.periodEnd) - 400 * DAY).toISOString().slice(0, 10)).catch(() => []),
     knownCik(db, ticker).catch(() => null),
     readPeersResponse(db).then(r => r.peers).catch(() => null),
@@ -364,7 +362,7 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const peers = await buildPeerFundamentals(db, ticker, peerPublication, inputs?.peers ?? null, undefined, undefined, async (peer, periodEnd, sheet) => (await readFilingLeaseFacts({ DB: db, SEC_FILINGS: env.SEC_FILINGS }, { ticker: peer, periodEnd, currency, researchAsOf, preferredAccession: sheet?.source.accession })).facts).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
   const { set: management, notes: managementNotes } = managementTargetSet(ticker, inputs?.targets ?? null, calendar, researchAsOf);
   const rpo = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(newest.periodEnd)) <= 20 * DAY)?.rpo ?? null;
-  const documents = selectDocuments(library, researchAsOf);
+  const documents = selectDocuments(materials, researchAsOf);
   const transcripts: ValuationTranscript[] = calls.filter(c => c.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).slice(0, 4)
     .map(c => ({ id: c.id, periodEnd: c.periodEnd, title: c.title, filedAt: c.filedAt, sourceUrl: c.sourceUrl, characters: c.content.length, fiscalYear: c.fiscalYear, fiscalQuarter: c.fiscalQuarter }));
   const fingerprint = await sha256(JSON.stringify({

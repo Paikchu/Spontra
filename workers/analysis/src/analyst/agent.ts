@@ -1,6 +1,6 @@
 import { datedHits } from "../web-search/native.ts";
 import type { FindingMaterial, FindingPassage, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
-import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
 import { resolveRef, type FindingData, type VerifiedFindingLead } from "../../../../shared/analysis-runtime/findings.ts";
 import { NET_DEBT_FORMULA } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
 import { formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
@@ -8,7 +8,7 @@ import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
 import { checkBlock } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { SECTOR_LABELS, TAG_FACETS, type TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
-import { INDUSTRY_CATEGORIES } from "../../../../shared/analysis-contract/filing-library.ts";
+import { INDUSTRY_CATEGORIES } from "../../../../shared/analysis-contract/business-classification.ts";
 import { similarBusinesses } from "../business-tags/match.ts";
 import { listFilingAnalyses, readFilingAnalysis, type FilingAnalysisEntry } from "../items/library.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, readWebPage } from "./web.ts";
@@ -300,7 +300,7 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
       const facet = TAG_FACETS.find(f => f === args.facet) as TagFacet | undefined;
       const sector = Object.hasOwn(INDUSTRY_CATEGORIES, String(args.sector)) ? args.sector as keyof typeof INDUSTRY_CATEGORIES : undefined;
       const found = await similarBusinesses(env, { query, facet, sector, exclude: ticker }).catch(() => []);
-      return { observation: found.length ? found.map(b => `${b.ticker} · ${b.unit} · ${b.sector}/${b.facet} · "${b.label}" (${b.definition}) · score ${b.score}${b.documentId ? ` · documentId ${b.documentId} · sectionId ${b.sectionId}` : ""}`).join("\n") : "No similar businesses found (or the tag index is not configured)." };
+      return { observation: found.length ? found.map(b => `${b.ticker} · ${b.unit} · ${b.sector}/${b.facet} · "${b.label}" (${b.definition}) · score ${b.score} · sources ${JSON.stringify(b.sources)}`).join("\n") : "No similar businesses found (or the tag index is not configured)." };
     }),
     // A search's hits within the year before the period are listed for read_web.
     handSearch<AnalystState>("search_web", searchesLeft, (batch, s) => {

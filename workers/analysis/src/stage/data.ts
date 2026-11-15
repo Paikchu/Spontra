@@ -2,7 +2,7 @@ import type { FindingsPublication } from "../../../../shared/analysis-contract/f
 import type { MapRevisions } from "../../../../shared/analysis-contract/revisions.ts";
 import { verifyFindingLeads, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
 import { requireDb } from "../core.ts";
-import { findingPassages, readServedFindings } from "../findings/read.ts";
+import { readServedFindings } from "../findings/read.ts";
 import { readPeriodExtract } from "../extract/period-extract.ts";
 import type { Ledger } from "../findings/ledger.ts";
 import { seriesCatalogue, type CatalogueRow } from "../findings/catalogue.ts";
@@ -36,8 +36,7 @@ export async function loadStageData(env: AnalysisEnv, ticker: string, options: {
     readRevisions(db, ticker).catch(() => ({})),
   ]);
   if (!input) return null;
-  const passages = publication ? await findingPassages(db, ticker, publication).catch(() => []) : [];
-  const data: FindingData = { ...input.data, passages };
+  const data: FindingData = { ...input.data, passages: [] };
   const periodEnd = input.ledger.periodEnd;
   const findings = publication ? verifyFindingLeads(publication, data).verified.map<VerifiedFinding>(lead => ({ ...lead,
     judgment: { text: "", sourceIds: [] }, lens: { type: "document", document: { rows: [] } }, watchOutcome: null,

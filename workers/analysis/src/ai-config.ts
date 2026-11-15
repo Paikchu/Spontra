@@ -10,12 +10,10 @@ export type ReasoningEffort = AiEffort;
  * is not an AI tool.
  */
 export const AI_TOOLS = {
-  /** Index cards: a gist, verbatim entities and a topic per filing section. */
-  "library-cards": { label: "索引卡片", reasoning: "low", model: "analysis" },
   /** Business-map proposals for the cross-company category of each disclosed business. */
-  "library-links": { label: "业务归类", reasoning: "high", model: "reasoning" },
+  "business-classification": { label: "业务归类", reasoning: "high", model: "reasoning" },
   /** The independent second judgment that settles a proposal's category and sections instead of a person. */
-  "library-links-review": { label: "业务归类复核", reasoning: "high", model: "reasoning" },
+  "business-classification-review": { label: "业务归类复核", reasoning: "high", model: "reasoning" },
   /** Level-two business tags for each comparable unit, each citing the passages that support it. */
   "business-tags": { label: "业务标签", reasoning: "high", model: "reasoning" },
   /** The independent check that each business tag is supported by the passages it cites. */
@@ -77,7 +75,7 @@ export function modelFor(env: ModelEnv & SettingsEnv, tool: AiTool): string {
   return aiToolSetting(env, tool).model ?? defaultModelFor(env, tool);
 }
 
-/** The deployment's effort for a tool: `AI_REASONING` (JSON such as {"library-cards":"high"}) over the built-in level. */
+/** The deployment's effort for a tool: `AI_REASONING` (JSON such as {"business-classification":"high"}) over the built-in level. */
 export function defaultReasoningFor(env: SettingsEnv, tool: AiTool): ReasoningEffort {
   if (env.AI_REASONING) {
     try {

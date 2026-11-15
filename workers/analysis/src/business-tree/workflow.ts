@@ -17,7 +17,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, treeRecipe, type BranchStatic, type TreeBusiness, type TreeSpec, type TreeState } from "./agent.ts";
-import { treeLibrary } from "../filing-library/tree-source.ts";
+import { treeLibrary } from "../filing-material/tree-source.ts";
 import { publicationOutboxStatements } from "../publication/publish.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 

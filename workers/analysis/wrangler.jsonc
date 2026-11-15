@@ -33,9 +33,6 @@
       "bucket_name": "earning-report-analysis-sec-filings"
     }
   ],
-  "ai_search_namespaces": [
-    { "binding": "AI_SEARCH", "namespace": "default" }
-  ],
   // Business tags: Workers AI embeds each tag with @cf/baai/bge-m3, and the Vectorize
   // index holds the vectors, one namespace per sector and facet. The index was created once by hand (1024 dimensions,
   // cosine); D1 stays the source of every tag and pair.

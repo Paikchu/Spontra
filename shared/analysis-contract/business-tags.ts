@@ -1,4 +1,4 @@
-import type { IndustryCategory } from "./filing-library.ts";
+import type { BusinessEvidence, BusinessSource, IndustryCategory } from "./business-classification.ts";
 
 /**
  * Two-level business tags. A comparable unit is one disclosed revenue node of a
@@ -32,8 +32,8 @@ export type BusinessUnit = {
   linkKeys: string[];
   /** Level one: categories of the unit's verified or confirmed links, sorted. */
   sectors: IndustryCategory[];
-  /** Filing sections of the unit's links, in link order. */
-  sectionIds: string[];
+  /** Fixed material sources of the unit's links, in link order. */
+  sources: BusinessSource[];
 };
 
 export type TagStatus = "verified" | "rejected";
@@ -49,7 +49,7 @@ export type BusinessTag = {
   /** A short Chinese name for the admin; never matched. */
   labelZh: string;
   definition: string;
-  passageIds: string[];
+  sources: BusinessSource[];
   status: TagStatus;
 };
 
@@ -85,8 +85,8 @@ export type BusinessTagsView = {
   /** Links no unit holds: no map node of their own and none chosen for them. */
   unplaced: Array<{ businessKey: string; name: string }>;
   pairs: Array<PeerPairRecord & { peer: { ticker: string; unitKey: string; name: string; exposure: number | null }; own: { unitKey: string; name: string }; basis: PeerBasis }>;
-  tags: Record<string, Pick<BusinessTag, "tagId" | "label" | "labelZh" | "facet" | "passageIds">>;
-  passages: Record<string, { passageId: string; documentId: string; sectionId: string; path: string; text: string }>;
+  tags: Record<string, Pick<BusinessTag, "tagId" | "label" | "labelZh" | "facet" | "sources">>;
+  evidence: Record<string, BusinessEvidence>;
   thresholds: { same: number; near: number };
   matching: boolean;
 };

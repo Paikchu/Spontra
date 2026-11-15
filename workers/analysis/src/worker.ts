@@ -6,6 +6,8 @@ import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
 import {handleLibraryAdminRequest} from './admin/library.ts';
+import { authenticateAdmin } from "./admin/auth.ts";
+import { handleMaterialAcceptance } from "./admin/material-acceptance.ts";
 import {handlePipelineAdminRequest} from './admin/pipeline.ts';
 import {flushOutbox} from './pipeline/outbox.ts';
 import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
@@ -53,6 +55,12 @@ const worker = {
     if (path === "/ready") return readyResponse(env);
     // The admin's whitelist and AI switch override the deployment's company lists for everything below.
     env = await companyPolicyEnvironment(env);
+    if (path.startsWith("/admin/material-acceptance/")) {
+      if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+      const url = new URL(request.url);
+      url.pathname = path.replace("/admin/material-acceptance/", "/acceptance/");
+      return handleMaterialAcceptance(new Request(url, request), env);
+    }
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path === "/admin/ai/models" || path.startsWith("/admin/ai/models/") || path === "/admin/ai/endpoints" || path.startsWith("/admin/ai/endpoints/")) return handleAiModelsAdminRequest(request, env);
     if (path === "/admin/ai/stage" || path.startsWith("/admin/ai/stage/")) return handleStageAdminRequest(request, env);

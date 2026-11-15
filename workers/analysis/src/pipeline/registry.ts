@@ -14,7 +14,7 @@ export const EVENT_TYPES = [
   "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "items.published",
-  "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
+  "business.classification.requested", "business.classification.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "content.published", "translations.published",
   "valuation.published",
@@ -28,7 +28,7 @@ export const TASK_NAMES = [
   "map-derive", "archive-prune", "archive-prune-scan",
   "fundamentals", "events", "extract",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "filing-analysis",
-  "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
+  "business-classification", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
@@ -100,16 +100,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
   // Every filing's one path (docs/filing-analysis-design.md); the sessions it starts publish on their own.
   "filing-analysis": { emits: ["filings.indexed", "report.published", "fundamentals.updated", "content.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
-  // Splits the company's archived documents into the filing library's sections and passages; no model.
-  "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "filings" },
-  // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
-  "library-cards": { emits: ["library.cards.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "filings" },
-  // Proposes each business's map node, filing sections and cross-company category (Workflow; model at high reasoning).
-  "library-links": { emits: ["library.links.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "filings" },
+  "business-classification": { emits: ["business.classification.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Comparable units and their two levels of business tags, embedded and matched against other companies' (Workflow; model at high reasoning).
   "business-tags": { emits: ["business.tags.published"], debounceMs: 5 * MINUTE, maxWaitMs: HOUR, scope: "filings" },
-  // Uploads carded sections to the AI Search recall layer and removes the ones that left it; no model.
-  "library-search": { emits: [], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "filings" },
   // Deletes stored data no code reads any more, at most once a day; no model.
   "storage-sweep": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
   // One global projection of every data company's comparable figures, for peers tables resolved at read time; no model.
@@ -141,19 +134,15 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.requested": [{ task: "archive" }],
   "filing.material.requested": [{ task: "filing-material" }],
   "filing.material.ready": [{ task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "collect", when: e => PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e)) },
-    { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "valuation" }],
+    { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "valuation" }, { task: "business-classification", when: e => PERIODIC.test(form(e)) }],
   // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
+  "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "business-classification" }, { task: "valuation" }],
   "filing.archived": [{ task: "map-derive" },
-    { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
-  "library.requested": [{ task: "library" }],
-  "library.prepared": [{ task: "library-cards" }],
-  "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
-  "library.links.requested": [{ task: "library-links" }],
-  // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
-  "library.links.published": [{ task: "business-tags" }],
+    { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "storage-sweep" }],
+  "business.classification.requested": [{ task: "business-classification" }],
+  "business.classification.published": [{ task: "business-tags" }],
   "business.tags.requested": [{ task: "business-tags" }],
   "business.tags.published": [{ task: "peers" }],
   "archive.superseded": [{ task: "archive-prune" }],
@@ -175,8 +164,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the findings chain starts from the company analysis already published); the map's
   // revisions move so shown or hidden content reaches readers at once.
   "feature.settings": [
-    // Layer 2: the archived filings are split into the library, the summaries written, each filing analysed.
-    { task: "library", when: e => e.detail?.feature === "filings" },
+    // Layer 2 reads the prepared Markdown materials.
+    { task: "business-classification", when: e => e.detail?.feature === "filings" },
     { task: "extract", when: e => e.detail?.feature === "filings" },
     { task: "filing-analysis", when: e => e.detail?.feature === "filings" },
     { task: "memory", when: e => e.detail?.feature === "filings" },
@@ -192,7 +181,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing. Automatic generation and translation follow scheduled analysis.
   "sec-discovery": ["company.added", "filing.discovered", "collection.requested", "archive.requested"],
-  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
+  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "business.classification.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
   "publication-store": ["content.published"],
   "filing-material-store": ["filing.material.requested"],

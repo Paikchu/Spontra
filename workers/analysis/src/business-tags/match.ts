@@ -1,5 +1,5 @@
 import type { BusinessUnit, PeerTier, TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
-import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { BusinessSource, IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
 import { PEER_MATCH_VERSION, pairsFromHits, readThresholds, tagEmbeddingText, tagNamespace, type MatchTag, type TagHit } from "../../../../shared/analysis-runtime/business-tags.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -12,8 +12,8 @@ const EMBED_BATCH = 50, TOP_K = 100;
 export const matchingEnabled = (env: AnalysisEnv) => !!env.AI && !!env.TAGS_INDEX;
 
 type TagRow = { tag_id: string; ticker: string; unit_key: string; sector: string; facet: string; label: string; definition: string };
-type UnitRow = { unit_key: string; ticker: string; flow_node_id: string; name: string; link_keys: string; sectors: string; section_ids: string };
-export const unitOf = (r: UnitRow): BusinessUnit => ({ ticker: r.ticker, unitKey: r.unit_key, flowNodeId: r.flow_node_id, name: r.name, linkKeys: JSON.parse(r.link_keys), sectors: JSON.parse(r.sectors), sectionIds: JSON.parse(r.section_ids) });
+type UnitRow = { unit_key: string; ticker: string; flow_node_id: string; name: string; link_keys: string; sectors: string; sources: string };
+export const unitOf = (r: UnitRow): BusinessUnit => ({ ticker: r.ticker, unitKey: r.unit_key, flowNodeId: r.flow_node_id, name: r.name, linkKeys: JSON.parse(r.link_keys), sectors: JSON.parse(r.sectors), sources: JSON.parse(r.sources) });
 const matchTag = (r: TagRow): MatchTag => ({ tagId: r.tag_id, unitKey: r.unit_key, sector: r.sector as IndustryCategory, facet: r.facet as TagFacet });
 
 /** Embeds texts with Workers AI, in batches; every text gets one vector or the call fails. */
@@ -86,7 +86,7 @@ export async function matchCompany(env: AnalysisEnv, ticker: string, now = new D
   return { pairs: pairs.length, hits: hits.length, tiers };
 }
 
-export type SimilarBusiness = { ticker: string; unitKey: string; unit: string; sector: string; facet: string; label: string; definition: string; score: number; documentId: string | null; sectionId: string | null };
+export type SimilarBusiness = { ticker: string; unitKey: string; unit: string; sector: string; facet: string; label: string; definition: string; score: number; sources: BusinessSource[] };
 
 /**
  * Businesses of tracked companies whose tags are nearest a description, for the analyst's own questions beyond the
@@ -99,17 +99,17 @@ export async function similarBusinesses(env: AnalysisEnv, request: { query: stri
   const found = await env.TAGS_INDEX!.query(vector!, { topK: TOP_K, ...(request.sector && request.facet ? { namespace: tagNamespace(request.sector, request.facet) } : {}), returnMetadata: "none" });
   const ids = (found.matches ?? []).map(m => m.id);
   if (!ids.length) return [];
-  const rows = (await env.DB!.prepare(`SELECT t.tag_id, t.ticker, t.unit_key, t.sector, t.facet, t.label, t.definition, u.name unit, p.document_id, p.section_id FROM sec_business_tags t
-    JOIN sec_business_units u ON u.unit_key = t.unit_key LEFT JOIN sec_passages p ON p.passage_id = json_extract(t.passage_ids, '$[0]')
+  const rows = (await env.DB!.prepare(`SELECT t.tag_id, t.ticker, t.unit_key, t.sector, t.facet, t.label, t.definition, u.name unit, t.sources FROM sec_business_tags t
+    JOIN sec_business_units u ON u.unit_key = t.unit_key
     WHERE t.tag_id IN (SELECT value FROM json_each(?)) AND t.status = 'verified'`).bind(JSON.stringify(ids))
-    .all<{ tag_id: string; ticker: string; unit_key: string; sector: string; facet: string; label: string; definition: string; unit: string; document_id: string | null; section_id: string | null }>()).results;
+    .all<{ tag_id: string; ticker: string; unit_key: string; sector: string; facet: string; label: string; definition: string; unit: string; sources: string }>()).results;
   const byId = new Map(rows.map(r => [r.tag_id, r]));
   const out: SimilarBusiness[] = [], seen = new Set<string>();
   for (const m of found.matches ?? []) {
     const r = byId.get(m.id);
     if (!r || r.ticker === request.exclude || seen.has(r.unit_key) || (request.facet && r.facet !== request.facet) || (request.sector && r.sector !== request.sector)) continue;
     seen.add(r.unit_key);
-    out.push({ ticker: r.ticker, unitKey: r.unit_key, unit: r.unit, sector: r.sector, facet: r.facet, label: r.label, definition: r.definition, score: Math.round(m.score * 1000) / 1000, documentId: r.document_id, sectionId: r.section_id });
+    out.push({ ticker: r.ticker, unitKey: r.unit_key, unit: r.unit, sector: r.sector, facet: r.facet, label: r.label, definition: r.definition, score: Math.round(m.score * 1000) / 1000, sources: JSON.parse(r.sources) });
     if (out.length >= (request.limit ?? 8)) break;
   }
   return out;

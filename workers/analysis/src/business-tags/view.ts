@@ -1,14 +1,14 @@
 import type { BusinessTag, BusinessTagCompanies, BusinessTagsView, PeerPairRecord, PeerTier, SectorTagView, TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
-import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
 import { basisOf, BUSINESS_TAGS_VERSION, readThresholds, TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts";
-import { readLinks } from "../filing-library/links.ts";
+import { readLinks, readBusinessSources } from "../business-classification/index.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { emit } from "../pipeline/outbox.ts";
 import { exposureOf, tagsCacheKey, unitRevenues } from "./input.ts";
 import { matchCompany, matchingEnabled, syncVectors, unitOf } from "./match.ts";
 
-type TagRow = { tag_id: string; ticker: string; unit_key: string; sector: string; facet: string; label: string; label_zh: string; definition: string; passage_ids: string; status: string };
-const tagOf = (r: TagRow): BusinessTag => ({ tagId: r.tag_id, ticker: r.ticker, unitKey: r.unit_key, sector: r.sector as IndustryCategory, facet: r.facet as TagFacet, label: r.label, labelZh: r.label_zh, definition: r.definition, passageIds: JSON.parse(r.passage_ids), status: r.status as BusinessTag["status"] });
+type TagRow = { tag_id: string; ticker: string; unit_key: string; sector: string; facet: string; label: string; label_zh: string; definition: string; sources: string; status: string };
+const tagOf = (r: TagRow): BusinessTag => ({ tagId: r.tag_id, ticker: r.ticker, unitKey: r.unit_key, sector: r.sector as IndustryCategory, facet: r.facet as TagFacet, label: r.label, labelZh: r.label_zh, definition: r.definition, sources: JSON.parse(r.sources), status: r.status as BusinessTag["status"] });
 type PairRow = { pair_key: string; left_unit: string; right_unit: string; left_ticker: string; right_ticker: string; sectors: string; tier: PeerTier; tier_sector: string; matched_tier: PeerTier; status: PeerPairRecord["status"]; updated_at: string };
 const pairOf = (r: PairRow): PeerPairRecord => ({ pairKey: r.pair_key, left: r.left_unit, right: r.right_unit, leftTicker: r.left_ticker, rightTicker: r.right_ticker, sectors: JSON.parse(r.sectors), tier: r.tier, tierSector: r.tier_sector as IndustryCategory, matchedTier: r.matched_tier, status: r.status, updatedAt: r.updated_at });
 
@@ -43,19 +43,13 @@ export async function readTagsView(env: AnalysisEnv, ticker: string): Promise<Bu
   const matched = [...new Set(pairs.flatMap(p => Object.values(p.sectors).flatMap(f => Object.values(f!).flatMap(m => [m.leftTag, m.rightTag]))).filter((id): id is string => !!id))];
   const others = matched.length ? (await db.prepare("SELECT * FROM sec_business_tags WHERE tag_id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(matched)).all<TagRow>()).results.map(tagOf) : [];
   const shownTags = [...tags, ...others.filter(t => t.ticker !== ticker)];
-  const passageIds = [...new Set(shownTags.flatMap(t => t.passageIds))];
-  const passages: BusinessTagsView["passages"] = {};
-  for (let i = 0; i < passageIds.length; i += 90) {
-    const rows = (await db.prepare("SELECT p.passage_id, p.document_id, p.section_id, p.text, s.path FROM sec_passages p JOIN sec_sections s ON s.section_id = p.section_id WHERE p.passage_id IN (SELECT value FROM json_each(?))")
-      .bind(JSON.stringify(passageIds.slice(i, i + 90))).all<{ passage_id: string; document_id: string; section_id: string; text: string; path: string }>()).results;
-    for (const r of rows) passages[r.passage_id] = { passageId: r.passage_id, documentId: r.document_id, sectionId: r.section_id, path: (JSON.parse(r.path) as string[]).join(" › "), text: r.text.slice(0, 1200) };
-  }
+  const evidence = Object.fromEntries((await readBusinessSources(env, shownTags.flatMap(tag => tag.sources))).map(item => [item.id, item]));
   const unitViews = [];
   for (const u of units) { const r = own.nodes.get(u.flowNodeId) ?? null; unitViews.push({ ...u, revenue: r, exposure: exposureOf(r, own.company), periodEnd: own.periodEnd, tags: tags.filter(t => t.unitKey === u.unitKey) }); }
   return {
     ticker, version: BUSINESS_TAGS_VERSION, units: unitViews, unplaced, pairs,
-    tags: Object.fromEntries(shownTags.map(t => [t.tagId, { tagId: t.tagId, label: t.label, labelZh: t.labelZh, facet: t.facet, passageIds: t.passageIds }])),
-    passages, thresholds: readThresholds(env.PEER_TAG_THRESHOLDS), matching: matchingEnabled(env),
+    tags: Object.fromEntries(shownTags.map(t => [t.tagId, { tagId: t.tagId, label: t.label, labelZh: t.labelZh, facet: t.facet, sources: t.sources }])),
+    evidence, thresholds: readThresholds(env.PEER_TAG_THRESHOLDS), matching: matchingEnabled(env),
   };
 }
 

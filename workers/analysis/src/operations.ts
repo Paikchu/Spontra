@@ -67,23 +67,14 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
-  LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  BUSINESS_CLASSIFICATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses translating publications into Chinese; unset or anything else runs it. */
   TRANSLATION_ENABLED?: string;
   /** Browser Rendering: draws the lens agent's html pictures so the agent reads what a reader would see (`browser`). */
   BROWSER?: import("@cloudflare/puppeteer").BrowserWorker;
-  /** The AI Search namespace the filing library's recall layer lives in (`ai_search_namespaces`). */
-  AI_SEARCH?: AiSearchNamespace;
-  /** "false" pauses uploading library sections to AI Search; unset or anything else runs it. */
-  LIBRARY_SEARCH_ENABLED?: string;
   /** "false" pauses the daily storage sweep; unset or anything else runs it. */
   STORAGE_SWEEP_ENABLED?: string;
-  /** "false" pauses splitting archived filings into the library; unset or anything else runs it. */
-  FILING_LIBRARY_ENABLED?: string;
-  /** "false" pauses writing index cards for library sections; unset or anything else runs it. */
-  LIBRARY_CARDS_ENABLED?: string;
   BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses writing business tags; unset or anything else runs it. */
   BUSINESS_TAGS_ENABLED?: string;
@@ -93,7 +84,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   TAGS_INDEX?: TagIndex;
   /** JSON such as {"same":0.8,"near":0.68}: the cosine scores at which two tags count as the same or a near business. */
   PEER_TAG_THRESHOLDS?: string;
-  /** JSON overriding an AI tool's reasoning level, e.g. {"library-cards":"high"}; see `ai-config.ts`. */
+  /** JSON overriding an AI tool's reasoning level, e.g. {"business-classification":"high"}; see `ai-config.ts`. */
   AI_REASONING?: string;
   /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
   AI_TOOL_SETTINGS?: string;

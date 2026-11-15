@@ -10,8 +10,8 @@
   "vars": {
     "SEC_USER_AGENT": "Spontra SEC acceptance max.zhangyuchen@gmail.com",
     "SEC_AI_ENABLED": "true",
-    "SEC_AI_TICKERS": "AMZN",
-    "SEC_DATA_TICKERS": "AMZN",
+    "SEC_AI_TICKERS": "CRWV,ORCL",
+    "SEC_DATA_TICKERS": "CRWV,ORCL",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
     "SEC_REASONING_MODEL": "deepseek-flash",
     "BUSINESS_SITE_ORIGIN": "http://127.0.0.1:8799"

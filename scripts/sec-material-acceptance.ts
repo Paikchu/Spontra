@@ -8,7 +8,9 @@ import { filingReportSemantics } from "../workers/analysis/src/filing-analysis/s
 const args = process.argv.slice(2);
 const option = (name: string) => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
 const base = (option("--base-url") ?? "http://127.0.0.1:8799").replace(/\/$/, "");
-const output = resolve(option("--output") ?? ".audit/amzn-sec-material-acceptance");
+const tickers = (option("--tickers") ?? "CRWV,ORCL").split(",").map(value => value.trim().toUpperCase());
+const forms = (option("--forms") ?? "10-Q").split(",").map(value => value.trim().toUpperCase());
+const output = resolve(option("--output") ?? ".audit/sec-material-acceptance");
 const key = process.env[option("--key-env") ?? "SEC_ACCEPTANCE_KEY"];
 const maxMinutes = Number(option("--timeout-minutes") ?? "240");
 const deadline = Date.now() + maxMinutes * 60_000;
@@ -26,7 +28,7 @@ const semanticReceiptSchema = z.object({ digest: z.string(), model: z.string().n
   input: z.object({ materials: z.array(materialRefSchema), report: semanticReportSchema, computations: z.array(z.object({ id: z.string() }).passthrough()), evidence: z.unknown(), aliases: z.record(z.string(), z.string()) }).passthrough(),
   answer: z.object({ verdict: z.literal("pass"), complete: z.literal(true), summary: z.string(), issues: z.array(z.unknown()).length(0),
     computations: z.array(z.object({ id: z.string(), status: z.literal("holds"), problem: z.string().min(1), sources: z.array(z.string()).min(1) }).passthrough()) }).passthrough() }).passthrough();
-const entrySchema = z.object({ filing: z.object({ ticker: z.string(), form: z.string(), filingDate: z.string(), accessionNumber: z.string() }).passthrough(), sessionId: z.string(), material: z.unknown() }).passthrough();
+const entrySchema = z.object({ role: z.enum(["subject", "comparison"]), filing: z.object({ ticker: z.string(), form: z.string(), filingDate: z.string(), accessionNumber: z.string() }).passthrough(), sessionId: z.string(), material: z.unknown() }).passthrough();
 const runSchema = z.object({ id: z.string(), discoveredAt: z.string(), entries: z.array(entrySchema) }).passthrough();
 const statusSchema = z.array(z.object({ filing: z.object({ accessionNumber: z.string(), form: z.string() }).passthrough(), sessionId: z.string(),
   material: z.object({ status: z.string() }).passthrough().nullable(), analysis: z.object({ status: z.string(), reason: z.string().nullable(), run_id: z.string().nullable() }).passthrough().nullable(),
@@ -103,6 +105,52 @@ async function downloadMarkdown(runId: string, accession: string, snapshot: z.in
   await saveJson(join(directory, "markdown-check.json"), { bytes: bytes.byteLength, chars: text.length, checkedRanges, sha256: createHash("sha256").update(bytes).digest("hex") });
 }
 
+const entryDirectory = (entry: z.infer<typeof entrySchema>) => join(output, `${entry.filing.ticker}_${entry.filing.filingDate}_${entry.filing.form}_${entry.filing.accessionNumber}`);
+const materialPackageSchema = exportSchema.pick({ snapshot: true, csvFiles: true, tableCatalog: true }).extend({ originals: z.array(z.unknown()) });
+const markdownPageSchema = z.object({ ref: materialRefSchema, text: z.string(), blockIds: z.array(z.string()), nextCursor: z.string().nullable() });
+
+async function verifyContinuousMarkdown(runId: string, accession: string, snapshot: z.infer<typeof exportSchema>["snapshot"], directory: string): Promise<void> {
+  const hash = createHash("sha256"), pages = [];
+  let cursor: string | null = null, bytes = 0, chars = 0;
+  do {
+    assertTime();
+    const path = `/acceptance/read-markdown?runId=${encodeURIComponent(runId)}&accession=${encodeURIComponent(accession)}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
+    const page = markdownPageSchema.parse(await request(path));
+    if (stable(page.ref) !== stable(snapshot.ref)) throw new Error(`Markdown read changed the pinned version: ${accession}`);
+    const body = new TextEncoder().encode(page.text);
+    hash.update(body); bytes += body.byteLength; chars += page.text.length;
+    pages.push({ cursor, nextCursor: page.nextCursor, bytes: body.byteLength, blockIds: page.blockIds });
+    if (page.nextCursor !== null && Number(page.nextCursor) !== bytes) throw new Error(`Markdown read skipped or repeated bytes: ${accession}`);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  const sha256 = hash.digest("hex"), storedHash = digest(await readFile(join(directory, "filing.md")));
+  if (bytes !== snapshot.markdown.bytes || chars !== snapshot.markdown.chars || sha256 !== storedHash) throw new Error(`Continuous Markdown read differs from the complete archived file: ${accession}`);
+  await saveJson(join(directory, "markdown-read.json"), { passed: true, ref: snapshot.ref, bytes, chars, sha256, pages });
+}
+
+async function saveMaterialPackage(runId: string, entry: z.infer<typeof entrySchema>): Promise<void> {
+  const payload = materialPackageSchema.parse(await request(`/acceptance/material?runId=${encodeURIComponent(runId)}&accession=${encodeURIComponent(entry.filing.accessionNumber)}`));
+  const directory = entryDirectory(entry);
+  await mkdir(directory, { recursive: true });
+  await downloadMarkdown(runId, entry.filing.accessionNumber, payload.snapshot, directory);
+  await verifyContinuousMarkdown(runId, entry.filing.accessionNumber, payload.snapshot, directory);
+  await saveJson(join(directory, "snapshot.json"), payload.snapshot);
+  await saveJson(join(directory, "manifest.json"), payload.snapshot.documents);
+  await saveJson(join(directory, "coverage.json"), payload.snapshot.coverage);
+  await saveJson(join(directory, "tables.json"), payload.tableCatalog);
+  await saveJson(join(directory, "originals-check.json"), payload.originals);
+  for (const table of payload.csvFiles) {
+    if (digest(table.csv) !== table.sha256) throw new Error(`Downloaded CSV hash differs from the source table: ${table.tableId}`);
+    const folder = join(directory, "tables", table.tableId);
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, table.filename.replace(/[\\/]/g, "_")), table.csv);
+  }
+  await saveJson(join(directory, "material-verdict.json"), { passed: true, role: entry.role, ref: payload.snapshot.ref, tables: payload.csvFiles.length,
+    checks: ["original-source-hashes", "coverage", "table-catalog", "csv-cell-equality", "csv-hashes", "complete-markdown-file", "continuous-markdown-cursors"] });
+  console.log(JSON.stringify({ event: "material-verified", ticker: entry.filing.ticker, accession: entry.filing.accessionNumber, role: entry.role,
+    bytes: payload.snapshot.markdown.bytes, tables: payload.csvFiles.length, directory }));
+}
+
 const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const stable = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => item && typeof item === "object" && !Array.isArray(item)
   ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
@@ -147,7 +195,7 @@ await saveJson(join(output, "health.json"), health);
 if (!health.modelConfigured || !health.judgeConfigured || !health.browserConfigured || !health.aiConfigured) throw new Error("Real model, judge, Browser Rendering and Workers AI bindings are required");
 
 const resumed = option("--run-id");
-const run = resumed ? runSchema.parse(JSON.parse(await readFile(join(output, "run.json"), "utf8"))) : runSchema.parse(await request("/acceptance/discover", {}));
+const run = resumed ? runSchema.parse(JSON.parse(await readFile(join(output, "run.json"), "utf8"))) : runSchema.parse(await request("/acceptance/discover", { tickers, forms }));
 if (resumed && run.id !== resumed) throw new Error("--run-id does not match output/run.json");
 await saveJson(join(output, "run.json"), run);
 console.log(JSON.stringify({ event: "acceptance-start", runId: run.id, filings: run.entries.map(entry => entry.filing), output }));
@@ -160,7 +208,7 @@ for (const entry of run.entries) {
     const state = result.find(item => item.accession === entry.filing.accessionNumber)!.state;
     console.log(JSON.stringify({ event: "material-progress", accession: entry.filing.accessionNumber, status: state.status, progress: state.progress, material: state.ref }));
     await appendFile(join(output, "material-progress.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), runId: run.id, accession: entry.filing.accessionNumber, ...state })}\n`);
-    await saveJson(join(output, `${entry.filing.form}-material-status.json`), state);
+    await saveJson(join(output, `${entry.filing.ticker}-${entry.filing.form}-${entry.filing.accessionNumber}-material-status.json`), state);
     if (state.status === "blocked") throw new Error(`Material blocked for ${entry.filing.accessionNumber}: ${JSON.stringify(state)}`);
     ready = state.status === "ready";
     if (ready) { entry.material = state.ref; await saveJson(join(output, "run.json"), run); }
@@ -168,8 +216,10 @@ for (const entry of run.entries) {
   }
 }
 
+for (const entry of run.entries) await saveMaterialPackage(run.id, entry);
+
 const before = statusSchema.parse(await request(`/acceptance/status?runId=${encodeURIComponent(run.id)}`));
-for (const entry of run.entries) {
+for (const entry of run.entries.filter(entry => entry.role === "subject")) {
   const status = before.find(item => item.sessionId === entry.sessionId);
   if (status?.analysis?.run_id === entry.sessionId) continue;
   await request("/acceptance/start", { runId: run.id, accession: entry.filing.accessionNumber });
@@ -192,10 +242,10 @@ while (true) {
   await new Promise(resolve => setTimeout(resolve, 5000));
 }
 
-const verdicts: Array<{ form: string; accession: string; passed: boolean; issues: string[]; directory: string }> = [];
-for (const entry of run.entries) {
+const verdicts: Array<{ ticker: string; form: string; accession: string; passed: boolean; issues: string[]; directory: string }> = [];
+for (const entry of run.entries.filter(entry => entry.role === "subject")) {
   const payload = exportSchema.parse(await request(`/acceptance/export?runId=${encodeURIComponent(run.id)}&accession=${encodeURIComponent(entry.filing.accessionNumber)}`));
-  const directory = join(output, `${entry.filing.filingDate}_${entry.filing.form}_${entry.filing.accessionNumber}`);
+  const directory = entryDirectory(entry);
   await mkdir(directory, { recursive: true });
   await downloadMarkdown(run.id, entry.filing.accessionNumber, payload.snapshot, directory);
   await downloadSemanticAudit(run.id, payload, directory);
@@ -221,7 +271,7 @@ for (const entry of run.entries) {
   await saveJson(join(directory, "source-check.json"), payload.sourceCheck);
   await saveJson(join(directory, "preprocessing.json"), payload.preprocessing);
   await saveJson(join(directory, "verdict.json"), payload.status);
-  verdicts.push({ form: entry.filing.form, accession: entry.filing.accessionNumber, passed: payload.status.passed, issues: payload.status.issues, directory });
+  verdicts.push({ ticker: entry.filing.ticker, form: entry.filing.form, accession: entry.filing.accessionNumber, passed: payload.status.passed, issues: payload.status.issues, directory });
 }
 await saveJson(join(output, "verdict.json"), { runId: run.id, finishedAt: new Date().toISOString(), passed: verdicts.every(item => item.passed), entries: verdicts });
 console.log(JSON.stringify({ event: "acceptance-finished", runId: run.id, entries: verdicts }));

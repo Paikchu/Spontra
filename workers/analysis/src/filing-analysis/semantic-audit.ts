@@ -118,7 +118,7 @@ export function filingSemanticRequest(input: Awaited<ReturnType<typeof filingSem
     held.entries.add(entry);
     contexts.set(key, held);
   }
-  const refs = new Set([...input.sources.map(source => source.id), ...input.facts.flatMap(fact => [fact.passageId, fact.sectionId])]);
+  const refs = new Set([...input.sources.map(source => source.id), ...input.facts.map(fact => fact.passageId)]);
   const aliases = Object.fromEntries([...refs].flatMap(id => {
     const canonical = input.aliases[materialBlockId(id)];
     return canonical ? [[id, canonical]] : [];

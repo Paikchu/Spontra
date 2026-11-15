@@ -8,7 +8,6 @@ import { readFindingsResponse, readStoredFindings } from "../findings/read.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
-import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
@@ -65,7 +64,6 @@ type RouteMatch =
   | { kind: "insiders"; ticker: string }
   | { kind: "insider-transactions"; ticker: string; personKey: string }
   | { kind: "item"; ticker: string; id: string }
-  | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
   | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
@@ -299,11 +297,6 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
-    case "passage": {
-      if (await hidden("filings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-      const payload = await readPublicPassage(database, route.ticker, route.passageId);
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
     case "fundamentals": {
       const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
       const payload = await getSecFundamentals(database, query);
@@ -341,7 +334,7 @@ function matchRoute(pathname: string): RouteMatch | null {
     if (ticker === null || personKey === null) return null;
     return personKey === undefined ? { kind: "insiders", ticker } : { kind: "insider-transactions", ticker, personKey };
   }
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|findings|events|items|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -355,11 +348,6 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "items") {
     const id = tail === undefined ? null : safeDecode(tail);
     return id === null ? null : { kind: "item", ticker, id };
-  }
-  if (resource === "passages") {
-    if (tail === undefined) return null;
-    const passageId = safeDecode(tail);
-    return passageId === null ? null : { kind: "passage", ticker, passageId };
   }
   if (tail !== undefined) return null;
   if(resource === "business-flow") return {kind:"business-flow",ticker};

@@ -37,7 +37,7 @@ export type FindingBaseRef =
   | { rpoBucket: number }
   /** The same figure at a tracked peer, from the peers projection, aligned to the period asked for. */
   | { peer: { ticker: string; ref: PeerBaseRef } }
-  /** A cell of a filing-library table, by passage and position; resolvable only when the table's unit parses to a scale. */
+  /** A cell of a filing material table, by passage and position; resolvable only when the table's unit parses to a scale. */
   | { passageCell: { passageId: string; row: number; col: number } }
   /** A figure of one filed event (a Form 4's shares sold, proceeds, holdings after), read from the events publication by accession. */
   | { event: { id: string; field: EventField } }

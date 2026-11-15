@@ -8,7 +8,7 @@ import { AiRunStore } from '../ai-runs/store.ts';
  * indexing, tags, peers, translation and storage housekeeping run beside them and are left out; an edge needs both ends drawn.
  */
 export const FLOW_TASKS = [
-  'maintenance', 'collect', 'history', 'map-derive', 'library', 'events', 'filing-analysis', 'company-analysis',
+  'maintenance', 'collect', 'history', 'map-derive', 'filing-material', 'business-classification', 'events', 'filing-analysis', 'company-analysis',
   'findings', 'analyst', 'explainer', 'tree', 'valuation',
 ] as const satisfies readonly TaskName[];
 const FLOW_SOURCES = ['sec-discovery', 'admin'] as const;

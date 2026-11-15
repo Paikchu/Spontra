@@ -1,12 +1,12 @@
-import type { LibraryTable } from "../analysis-contract/filing-library.ts";
+import type { FilingTable, FilingFactRow } from "../analysis-contract/filing-content.ts";
 import type { MaterialBlock, MaterialDocumentCoverage, MaterialFiling, MaterialIndexedBlock, MaterialSource, MaterialTable, ParsedMaterialDocument } from "../analysis-contract/filing-material.ts";
 import { decodeEntities, descendants, extractFilingDisclosures, nodeText, parseMarkup, type Element } from "./financial-data/disclosure-extraction.ts";
 import { tableGrid, type TableGrid } from "./financial-data/table-grid.ts";
-import { headingPeriod, type FilingFactRow } from "./filing-library/facts.ts";
-import { libraryHash } from "./filing-library/parse.ts";
+import { headingPeriod } from "./filing-facts.ts";
+import { contentHash } from "./content-hash.ts";
 import { omit } from "./omit.ts";
 
-export const MATERIAL_PARSER_VERSION = "material-parser.v6";
+export const MATERIAL_PARSER_VERSION = "material-parser.v7";
 const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
 const numeric = (text: string): number | null => {
   const raw = text.replace(/[$€£¥,%\s]/g, "");
@@ -17,11 +17,11 @@ const hidden = (node: Element) => /^(?:script|style|head|noscript)$/.test(node.l
   || /^ix:/i.test(node.name) && /^(?:header|hidden)$/.test(node.local)
   || /(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(node.attributes.style ?? "")
   || Object.hasOwn(node.attributes, "hidden");
-const blockId = (source: MaterialSource, kind: string, start: number) => `b${libraryHash(`${source.id}|${kind}|${start}`)}`;
+const blockId = (source: MaterialSource, kind: string, start: number) => `b${contentHash(`${source.id}|${kind}|${start}`)}`;
 const filenamePart = (value: string) => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/\s+/g, "_").replace(/^\.+|\.+$/g, "");
 const csvCell = (value: string) => /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 
-export function csvFromTable(table: LibraryTable): string {
+export function csvFromTable(table: FilingTable): string {
   const rows = [[table.rowHeader ?? "Item", ...table.columns], ...table.rows.map(row => [[...row.path, row.label].filter(Boolean).join(" > "), ...row.cells.map(cell => cell.text)])];
   return rows.map(row => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
@@ -55,7 +55,7 @@ export function parseCsv(csv: string): string[][] {
   return rows;
 }
 
-export function verifyTableCsv(table: LibraryTable, csv: string): { checkedCells: number; issues: string[] } {
+export function verifyTableCsv(table: FilingTable, csv: string): { checkedCells: number; issues: string[] } {
   const expected = [[table.rowHeader ?? "Item", ...table.columns], ...table.rows.map(row => [[...row.path, row.label].filter(Boolean).join(" > "), ...row.cells.map(cell => cell.text)])];
   const actual = parseCsv(csv), issues: string[] = [];
   let checkedCells = 0;
@@ -135,7 +135,7 @@ const indent = (node: Element) => {
   return out;
 };
 
-function tableFromGrid(grid: TableGrid, context: string): { table: LibraryTable; headers: number; columnMap: Map<number, number>; issues: string[] } {
+function tableFromGrid(grid: TableGrid, context: string): { table: FilingTable; headers: number; columnMap: Map<number, number>; issues: string[] } {
   const expanded = grid.rows.map(() => Array.from({ length: grid.columns }, () => ""));
   const owners = grid.rows.map(() => Array.from<number | null>({ length: grid.columns }).fill(null));
   grid.rows.forEach((row, r) => row.cells.forEach(cell => {
@@ -215,7 +215,7 @@ function tableFromGrid(grid: TableGrid, context: string): { table: LibraryTable;
   const rowHeader = headerFor(0) || "Item";
   const columns = visible.slice(1).map((_column, c) => headerFor(c + 1) || `Column ${c + 2}`);
   const stack: Array<{ indent: number; label: string }> = [];
-  const rows: LibraryTable["rows"] = values.slice(headers).map((cells, offset) => {
+  const rows: FilingTable["rows"] = values.slice(headers).map((cells, offset) => {
     const r = offset + headers, label = cells[0] ?? "";
     const labelNode = grid.rows[r]!.cells.find(cell => cell.column === 0)?.node;
     const space = labelNode ? indent(labelNode) : 0;
@@ -238,7 +238,7 @@ function tableFromGrid(grid: TableGrid, context: string): { table: LibraryTable;
   return { table: { unit, rowHeader, columns, rows, notes: [], xbrlBlock: null }, headers, columnMap, issues };
 }
 
-export function tableMarkdown(table: LibraryTable): string {
+export function tableMarkdown(table: FilingTable): string {
   const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
   return [...table.unit ? [`Unit: ${table.unit}`, ""] : [],
     `| ${[table.rowHeader ?? "Item", ...table.columns].map(cell).join(" | ")} |`,
@@ -247,7 +247,7 @@ export function tableMarkdown(table: LibraryTable): string {
     ...table.notes.map(note => `\n${note}`)].join("\n");
 }
 
-export function createMaterialTable(filing: MaterialFiling, source: MaterialSource, title: string, table: LibraryTable, start: number): MaterialTable {
+export function createMaterialTable(filing: MaterialFiling, source: MaterialSource, title: string, table: FilingTable, start: number): MaterialTable {
   const tableId = blockId(source, "table", start);
   const csv = csvFromTable(table);
   return { tableId, documentId: source.id, title, description: `${title}. ${table.rows.length} disclosed rows and ${table.columns.length + 1} columns.${table.unit ? ` Unit: ${table.unit}.` : ""}`,
@@ -344,7 +344,7 @@ export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource
     const unitSide = (values: Array<{ name: string }>) => values.map(v => v.name.split(":").at(-1) ?? v.name).join("*");
     const numerator = fact.unit ? unitSide(fact.unit.numerator) : "", denominator = fact.unit ? unitSide(fact.unit.denominator) : "";
     const tableRow = row === null ? null : asset?.table.rows[row];
-    facts.push({ factId: `f${libraryHash(`${source.id}|${at}`).slice(0, 14)}`, passageId: block.id, sectionId: block.id, ordinal: blocks.indexOf(block), row, col,
+    facts.push({ factId: `f${contentHash(`${source.id}|${at}`).slice(0, 14)}`, passageId: block.id, ordinal: blocks.indexOf(block), row, col,
       label: tableRow ? [...tableRow.path, tableRow.label].filter(Boolean).join(" > ") : fact.concept.name.split(":").at(-1)!.replace(/([a-z])([A-Z])/g, "$1 $2"),
       concept: fact.concept.name, dimensions: (fact.context?.dimensions ?? []).map(d => `${d.axis.name}=${d.member?.name ?? d.value}`).join(";"),
       periodStart, periodEnd, periodMonths: p?.kind === "instant" ? 0 : periodStart && periodEnd ? Math.max(1, Math.round((Date.parse(periodEnd) - Date.parse(periodStart)) / (30.4375 * 86400000))) : null,
@@ -383,7 +383,7 @@ export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource
       const outstanding = shares && /\boutstanding\b/i.test(label) && !/\b(?:weighted|average)\b/i.test(label);
       const periodMonths = /\bTTM\b|trailing twelve months/i.test(label) ? 12 : count || outstanding || /end of (?:the )?period/i.test(label) || /balance sheets?/i.test(asset.title) ? 0 : tagged?.periodMonths ?? named.months ?? (/\bQ[1-4]\s+(?:19|20)\d{2}\b/.test(column) ? 3 : null);
       const beginning = /beginning of (?:the )?period/i.test(label);
-      facts.push({ factId: `f${libraryHash(`${asset.tableId}|${r}|${c}`).slice(0, 14)}`, passageId: asset.tableId, sectionId: asset.tableId, ordinal: blocks.findIndex(b => b.id === asset.tableId), row: r, col: c,
+      facts.push({ factId: `f${contentHash(`${asset.tableId}|${r}|${c}`).slice(0, 14)}`, passageId: asset.tableId, ordinal: blocks.findIndex(b => b.id === asset.tableId), row: r, col: c,
         label: end && !beginning ? label : `${label} [${column}]`, concept: null, dimensions: "", periodStart: beginning ? null : tagged?.periodStart ?? null, periodEnd: beginning ? null : end,
         periodMonths: beginning ? null : periodMonths,
         value: cell.value * multiplier, shown: cell.text, unit, tagged: false });

@@ -13,8 +13,7 @@ import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valua
 import { executeValuationEvaluation, type ValuationEvaluationParams } from "../valuation/evaluation.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
-import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "../filing-library/cards.ts";
-import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "../filing-library/links.ts";
+import { executeBusinessClassificationWorkflow, type BusinessClassificationParams } from "../business-classification/index.ts";
 import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "../business-tags/workflow.ts";
 import { executeTranslateWorkflow, type TranslateParams } from "../translation/translate.ts";
 import { trackRun, trackSleep, trackSteps } from "../ai-runs/tracking.ts";
@@ -84,13 +83,9 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     const env = await companyPolicyEnvironment(raw);
     return executeTranslateWorkflow(params, durableSteps(step, env, id), env, id);
   },
-  async LIBRARY_CARDS_WORKFLOW(params: LibraryCardsParams, { env: raw, step, id }) {
+  async BUSINESS_CLASSIFICATION_WORKFLOW(params: BusinessClassificationParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
-    return executeLibraryCardsWorkflow(params, durableSteps(step, env, id), env);
-  },
-  async LIBRARY_LINKS_WORKFLOW(params: LibraryLinksParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    return executeLibraryLinksWorkflow(params, durableSteps(step, env, id), env);
+    return executeBusinessClassificationWorkflow(params, durableSteps(step, env, id), env);
   },
   async BUSINESS_TAGS_WORKFLOW(params: BusinessTagsParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
