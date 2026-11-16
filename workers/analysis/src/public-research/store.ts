@@ -1,6 +1,6 @@
 import type { PublicResearchDraft, PublicReportVersion, PublicReportSummary, PublicResearchList, PublicResearchRead, ResearchReview, ResearchFreshness } from "../../../../shared/analysis-contract/public-research.ts";
 import { publicResearchDraftSchema } from "../../../../shared/analysis-runtime/public-research-schema.ts";
-import { validatePublicResearch, publicReportSummary, researchFreshness, publicClaimUsable } from "../../../../shared/analysis-runtime/public-research.ts";
+import { validatePublicResearch, validatePublicResearchDraft, publicReportSummary, researchFreshness, publicClaimUsable } from "../../../../shared/analysis-runtime/public-research.ts";
 import { sha256 } from "../sha256.ts";
 
 export type PublicResearchEnv = { DB?: D1Database; SEC_FILINGS: { get(key: string): Promise<{ text(): Promise<string> } | null>; put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> } };
@@ -32,6 +32,9 @@ export function renderPublicResearch(report: PublicResearchDraft): string {
 }
 
 export async function savePublicResearchDraft(env: PublicResearchEnv, input: PublicResearchDraft): Promise<{ version: string }> {
+  return saveDraftWithAudit(env,input,[]);
+}
+async function saveDraftWithAudit(env:PublicResearchEnv,input:PublicResearchDraft,audit:D1PreparedStatement[]):Promise<{version:string}>{
   const draft = publicResearchDraftSchema.parse(input);
   const db = database(env), version = await sha256(stable(draft));
   const identity=await db.prepare("SELECT report_type,industry_id FROM public_research_reports WHERE report_id=?").bind(draft.reportId).first<{report_type:string;industry_id:string|null}>();
@@ -42,12 +45,35 @@ export async function savePublicResearchDraft(env: PublicResearchEnv, input: Pub
   await env.SEC_FILINGS.put(key, JSON.stringify(draft), { httpMetadata: { contentType: "application/json" } });
   const summary = { reportId: draft.reportId, version, type: draft.type, title: draft.title, language: draft.language, scope: draft.scope, asOf: draft.asOf, publishedAt: "", freshnessStatus: "unavailable", coverage: draft.coverage, summary: draft.summary, changes: draft.changes };
   await db.batch([
+    ...audit,
     db.prepare("INSERT INTO public_research_reports(report_id,report_type,industry_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(report_id) DO NOTHING").bind(draft.reportId,draft.type,draft.scope.industryId,draft.generatedAt),
     db.prepare("INSERT INTO public_research_versions(report_id,version,input_fingerprint,r2_key,state,as_of,generated_at,valid_until,summary_json) VALUES(?,?,?,?,'draft',?,?,?,?) ON CONFLICT(report_id,version) DO NOTHING").bind(draft.reportId,version,draft.inputFingerprint,key,draft.asOf,draft.generatedAt,draft.validUntil,JSON.stringify(summary)),
     ...draft.claims.map(claim=>db.prepare("INSERT OR IGNORE INTO public_research_claims(report_id,version,claim_id) VALUES(?,?,?)").bind(draft.reportId,version,claim.id)),
   ]);
   return { version };
 }
+/** Explicit operator correction creates a new unreviewed immutable draft, never a publication. */
+export async function revisePublicResearchDraft(env:PublicResearchEnv,reportId:string,input:{baseVersion:string;draft:PublicResearchDraft;reason:string;operator:string;sourceChecks:Array<{sourceId:string;notes:string}>}){
+  const db=database(env),draft=validatePublicResearchDraft(input.draft,new Date().toISOString());
+  const base=await readPublicResearchDraft(env,reportId,input.baseVersion);
+  if(!base)throw new Error("Revision base draft not found");
+  for(const key of ["reportId","type","scope","asOf","language","authorRunId","inputFingerprint","modelVersion","promptVersion","toolVersion","generatedAt","validUntil","dependencies"] as const){
+    if(stable(draft[key])!==stable(base[key]))throw new Error(`Revision cannot change provenance field: ${key}`);
+  }
+  if(draft.reportId!==reportId)throw new Error("Revision report identity mismatch");
+  if(!input.operator.trim()||!input.reason.trim())throw new Error("Operator identity and correction reason required");
+  if(input.sourceChecks.length!==draft.sources.length||draft.sources.some(source=>input.sourceChecks.filter(check=>check.sourceId===source.id&&check.notes.trim()).length!==1))throw new Error("Operator source audit must cover every corrected draft source exactly once");
+  const version=await sha256(stable(draft)),requestHash=await sha256(stable({...input,draft:version,sourceChecks:[...input.sourceChecks].sort((a,b)=>a.sourceId.localeCompare(b.sourceId))}));
+  if(version===input.baseVersion)throw new Error("Revision must change the draft content");
+  const prior=await db.prepare("SELECT request_hash,receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.baseVersion).first<{request_hash:string;receipt_json:string}>();
+  if(prior){if(prior.request_hash!==requestHash)throw new Error("Base version already revised; use the exact returned revision as the next base");return JSON.parse(prior.receipt_json);}
+  if(await db.prepare("SELECT version FROM public_research_versions WHERE report_id=? AND version=?").bind(reportId,version).first())throw new Error("Revision content already exists; its review state cannot be reused by this correction");
+  const receipt={reportId,baseVersion:input.baseVersion,version,operator:input.operator,reason:input.reason,sourceChecks:input.sourceChecks,revisedAt:new Date().toISOString(),state:"draft",humanReviewRequired:true};
+  await saveDraftWithAudit(env,draft,[db.prepare("INSERT INTO public_research_revisions(report_id,base_version,version,request_hash,receipt_json) VALUES(?,?,?,?,?) ON CONFLICT(report_id,base_version) DO UPDATE SET request_hash=CASE WHEN request_hash=excluded.request_hash THEN request_hash ELSE NULL END").bind(reportId,input.baseVersion,version,requestHash,JSON.stringify(receipt))]);
+  const saved=await db.prepare("SELECT receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.baseVersion).first<{receipt_json:string}>();
+  return JSON.parse(saved!.receipt_json);
+}
+
 export async function readPublicResearchDraft(env: PublicResearchEnv, reportId: string, version: string): Promise<PublicResearchDraft | null> {
   const row = await database(env).prepare("SELECT r2_key FROM public_research_versions WHERE report_id=? AND version=?").bind(reportId,version).first<{r2_key:string}>();
   const body = row ? await env.SEC_FILINGS.get(row.r2_key) : null;

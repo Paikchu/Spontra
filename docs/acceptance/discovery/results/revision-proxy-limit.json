@@ -1,0 +1,11 @@
+{
+  "actualBytes": 69586,
+  "actualStatus": 200,
+  "above128KB": 413,
+  "otherAbove64KB": 413,
+  "forwarded": 1,
+  "sizes": [
+    69586
+  ],
+  "scope": "Actual proxy with binding spy; no external calls or production writes"
+}

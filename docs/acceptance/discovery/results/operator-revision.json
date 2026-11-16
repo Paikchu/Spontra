@@ -1,0 +1,102 @@
+{
+  "revisionAudit": [
+    {
+      "name": "reject absent base",
+      "status": 400,
+      "receipt": {
+        "error": "Revision base draft not found"
+      }
+    },
+    {
+      "name": "reject changed scope",
+      "status": 400,
+      "receipt": {
+        "error": "Revision cannot change provenance field: scope"
+      }
+    },
+    {
+      "name": "reject changed asOf",
+      "status": 400,
+      "receipt": {
+        "error": "Revision cannot change provenance field: asOf"
+      }
+    },
+    {
+      "name": "reject changed author provenance",
+      "status": 400,
+      "receipt": {
+        "error": "Revision cannot change provenance field: authorRunId"
+      }
+    },
+    {
+      "name": "reject missing source audit",
+      "status": 400,
+      "receipt": {
+        "error": "Operator source audit must cover every corrected draft source exactly once"
+      }
+    },
+    {
+      "name": "atomic audit failure preserves old state",
+      "status": 400,
+      "receipt": {
+        "error": "injected index failure"
+      }
+    },
+    {
+      "name": "operator corrected immutable draft accepted",
+      "status": 200,
+      "receipt": {
+        "reportId": "operator-event-fixture",
+        "baseVersion": "eca794d18f4595ce82d7c6923bf5ca27b6e6c5c2a1a07848604f16028781a0dd",
+        "version": "01a52eaf5176f30d64a852aa648fbb4f3fe253e0038d3bbf7dc100bf0c5c4772",
+        "operator": "synthetic-operator",
+        "reason": "Correct the unsupported interpretation using original source",
+        "sourceChecks": [
+          {
+            "sourceId": "source-1",
+            "notes": "Exact synthetic original inspected; fixture only"
+          }
+        ],
+        "revisedAt": "2026-11-16T16:05:59.020Z",
+        "state": "draft",
+        "humanReviewRequired": true
+      }
+    },
+    {
+      "name": "exact revision replay",
+      "status": 200,
+      "receipt": {
+        "reportId": "operator-event-fixture",
+        "baseVersion": "eca794d18f4595ce82d7c6923bf5ca27b6e6c5c2a1a07848604f16028781a0dd",
+        "version": "01a52eaf5176f30d64a852aa648fbb4f3fe253e0038d3bbf7dc100bf0c5c4772",
+        "operator": "synthetic-operator",
+        "reason": "Correct the unsupported interpretation using original source",
+        "sourceChecks": [
+          {
+            "sourceId": "source-1",
+            "notes": "Exact synthetic original inspected; fixture only"
+          }
+        ],
+        "revisedAt": "2026-11-16T16:05:59.020Z",
+        "state": "draft",
+        "humanReviewRequired": true
+      }
+    },
+    {
+      "name": "divergent correction same base rejected",
+      "status": 400,
+      "receipt": {
+        "error": "Base version already revised; use the exact returned revision as the next base"
+      }
+    }
+  ],
+  "originalPreserved": true,
+  "publicPointerUnchanged": true,
+  "newReviewRequired": true,
+  "unreviewedPublishStatus": 400,
+  "paidFetches": 0,
+  "concurrentRevisionStatuses": [
+    200,
+    400
+  ]
+}

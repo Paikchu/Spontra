@@ -1,0 +1,202 @@
+{
+  "run_id": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0",
+  "report_id": "macro-us-usd",
+  "state": "review_failed",
+  "result_version": "5889d6251f0ebfb409bb7112190d03be7ee39ceaf919caf7bf9b79bfc13e5caa",
+  "calls_reserved": 42,
+  "max_calls": 96,
+  "max_tokens": 2000000,
+  "created_at": "2026-11-16T14:59:00.520Z",
+  "updated_at": "2026-11-16T16:00:38.067Z",
+  "error": "信用条件为任务必覆盖项(需求/通胀/政策利率/就业/信用条件),且不在允许列缺口的四类(收益率曲线/汇率/能源/政策)之内:种子源h5(October 2026 SLOOS)从未被读取或注册(read_evidence返回Unknown source)。报告虽诚实列于missingInputs并标limited,但不满足任务要求。修复:补读h5并注册净收紧百分比等定量,新增credit claims后再批准。; inf:us-inflation-composition:语句'整体+0.4%与核心+0.3%之差仅0.1pp(食品与能源合计贡献)'系方法学错误——headline与核心的环比差不等于食品能源贡献;按核心权重约80%计,核心贡献≈0.24pp、食品能源合计贡献≈0.16pp(隐含食品能源环比≈+0.8%)。'10月增量主体是核心'的方向性结论仍成立,需将该括注修复(改为正确分解或删除定量表述)。; fact:us-gasoline-shock(及obs:us:cpi:gas:yy:2026-10):汽油末列37.4与脚注'Oct 2025 data values are not available due to the 2025 lapse in appropriations'存在张力——若2025年10月基数整体缺失,'止2026年10月'的12个月同比本应不可计算(All items行末列即'-');需对照BLS原表表头核实末列参考期为2026年9月或10月。高位同比与环比放缓的定性判断不受影响,但下游引用37.4%时不得标注未核实的参考期。; fact:us-pce-price-deceleration:'Q2能源驱动的5.0%'归因在注册BEA摘录中无依据(原文仅'compared with an increase of 5.0 percent');若保留,应引用已注册的WTI(4-5月100-102美元)与CPI汽油(Q2 +5.4%/+7.0%)观察值,或删去'能源驱动'。inf:us-pce-cpi-reconcile中'能源主导的headline波动'同理。; fact:us-treasury-method:标题'覆盖13个期限'与其所引摘录不符——摘录列6个月期(1/1.5/2/3/4/6)加8个年期(1/2/3/5/7/10/20/30)=14个期限;需更正为14或核对摘录抄写(疑似'1, 1.5'为转录引入)。; BEA摘录中'increased 2.1 percent...'与'increased 2.5 percent...'两行无主语,PCE价格指数/核心PCE的归属仅依赖locator标注;建议在fact:us-pce-price-deceleration补注册完整句子或注明该依赖,避免下游误引。; fact:us-cpi-yy-unavailable的verification中'2025年11月基数恢复后整体同比重新可得'是未证实的假设(2025年拨款中断时长未知,注册脚注仅述Oct 2025缺失);宜改为'2025年11月基数如可得'或核实2025年11月CPI发布情况后再作陈述。",
+  "usage": [
+    {
+      "model": "deepseek-v4-pro",
+      "calls": 41,
+      "input_tokens": 1622783,
+      "cached_tokens": 1087744,
+      "output_tokens": 258160,
+      "duration_ms": 3167264
+    },
+    {
+      "model": "search-fetch-api",
+      "calls": 14,
+      "input_tokens": 0,
+      "cached_tokens": 0,
+      "output_tokens": 0,
+      "duration_ms": 14826
+    }
+  ],
+  "sdkUsage": {
+    "source": "pi.usage",
+    "includesCompaction": true,
+    "status": "available",
+    "tokens": {
+      "input": 587521,
+      "output": 285503,
+      "cacheRead": 1087872,
+      "cacheWrite": 0,
+      "totalTokens": 1960896
+    },
+    "sessions": [
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:research-demand",
+        "session": "7",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 132993,
+              "output": 47016,
+              "cacheRead": 413056,
+              "cacheWrite": 0,
+              "reasoning": 39353,
+              "totalTokens": 593065,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      },
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:research-financing",
+        "session": "13",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 315940,
+              "output": 95394,
+              "cacheRead": 401152,
+              "cacheWrite": 0,
+              "reasoning": 78767,
+              "totalTokens": 812486,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      },
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:synthesis",
+        "session": "280",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 48973,
+              "output": 67915,
+              "cacheRead": 124160,
+              "cacheWrite": 0,
+              "reasoning": 51245,
+              "totalTokens": 241048,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      },
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:review",
+        "session": "340",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 34343,
+              "output": 19455,
+              "cacheRead": 64640,
+              "cacheWrite": 0,
+              "reasoning": 16101,
+              "totalTokens": 118438,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      },
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:repair",
+        "session": "377",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 29777,
+              "output": 29112,
+              "cacheRead": 384,
+              "cacheWrite": 0,
+              "reasoning": 12294,
+              "totalTokens": 59273,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      },
+      {
+        "operationId": "public-1fdd7193aee2739cc34f1b0be46c24b7c953ccd0:review-repair",
+        "session": "390",
+        "status": "available",
+        "usage": {
+          "models": {
+            "spontra/deepseek-v4-pro": {
+              "input": 25495,
+              "output": 26611,
+              "cacheRead": 84480,
+              "cacheWrite": 0,
+              "reasoning": 22642,
+              "totalTokens": 136586,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+                "totalFromProvider": false
+              }
+            }
+          },
+          "tools": {}
+        }
+      }
+    ],
+    "scope": "SDK-reported committed model responses including compaction; in-flight or unreported provider charges excluded. Not a provider monetary invoice. D1 ai_usage remains the separate ordinary-turn ledger."
+  },
+  "published": false
+}

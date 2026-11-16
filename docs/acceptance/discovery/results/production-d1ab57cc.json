@@ -1,0 +1,66 @@
+[
+  {
+    "id": "cash-funding-gap",
+    "direct": "cash-funding-gap",
+    "reload": "cash-funding-gap",
+    "title": "Research incomplete",
+    "scroller": {
+      "class": "lens-doc",
+      "max": 548,
+      "railTop": 12
+    },
+    "bottom": {
+      "top": 548,
+      "max": 548,
+      "railTop": 12
+    },
+    "returned": 0,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "id": "rpo-conversion-timing",
+    "direct": "rpo-conversion-timing",
+    "reload": "rpo-conversion-timing",
+    "title": "Research incomplete",
+    "scroller": {
+      "class": "report-document",
+      "max": 2191,
+      "railTop": 12
+    },
+    "bottom": {
+      "top": 2191,
+      "max": 2191,
+      "railTop": 12
+    },
+    "returned": 0,
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "path": "/?lang=en",
+    "text": "Macro research\n\nNo published research is available yet\n\nBrowse reports\n→\nIndustry research\n\nNo published research is available yet\n\nBrowse reports\n→",
+    "errors": []
+  },
+  {
+    "path": "/research?type=macro&lang=en",
+    "text": "Macro research\n\nNo published research is available yet",
+    "errors": []
+  },
+  {
+    "path": "/research?type=industry&lang=en",
+    "text": "Industry research\nFind an industry\n\nNo published research is available yet",
+    "errors": []
+  },
+  {
+    "path": "https://spontra-business-map.max-zhangyuchen.workers.dev/companies/CRWV?report=0001769628-26-000465&lang=zh-CN",
+    "chinese": "Q3 营收\n36.6亿美元\n+168.2% y/y\n营业利润\n2.07亿美元\n占营收 5.7%\nRPO\n1323亿美元\n36% 在 24 个月内\n净亏损\n7.09亿美元\n扣除 8.46亿美元 净利息后\n债务总额，扣除未摊销折价及发行成本\n469亿美元\n106亿美元 流动部分\n前9个月 资本开支\n236亿美元\n4.2x 经营现金流\n\n截至 2026-09-30 的季度营收为 36.6亿美元，同比上升 168.2%，较 6 月季度上升 42.2%，营业利润升至 2.07亿美元（占营收 5.7%）。净亏损仍从去年同期的 1.10亿美元 扩大至 7.09亿美元，净利息费用达到 8.46亿美元。\n\n持有人应读两遍的披露在合同余额附注中：期初递延收入余额中的 19.0亿美元 被重分类至其他流动负债中的客户负债\n\n因合同在本季度变为可取消\n。被重分类的余额与变为可取消的合同相关；该申报文件未指明具体合同或客户，也未说明退款条款。\n\n剩余履约义务（RPO）升至 1323亿美元，较 6 月增长 27.6%，但预计仅有 36% 会在截至 2028 年 9 月 30 日的最初 24 个月内确认（来源 Remaining Performance Obligations (\"RPO\")）。这一增长伴随着客户预付款和未偿债务：前9个月购置物业及设备的现金支出为 236亿美元，而经营现金流为 56.4亿美元，其中包含 34.9亿美元 的递延收入调节调整。\n\n增长和合同覆盖是表现良好的部分\n营收正在加速，且主要来自已在使用平台的客户。 营收 36.6亿美元，同比增长 168.2%，环比增长 42.2%，而 6 月季度为 25.8亿美元。文件将三个月增量的约 90% 归因于现有客户群内部的扩张（来源 Revenue），并且 98% 的营收来自已承诺合同。增长并非依赖单一新客户。\n已签约收入仍覆盖当前销售数年。 预计在 24 个月内实现的 476亿美元 RPO 相当于九个月营收 83.1亿美元 的 5.7x。\n运营成本增速低于营收，营业利润率扩大。 营业利润从去年同期的 5200万美元（占营收 3.8%）升至 2.07亿美元（占营收 5.7%）——两个口径均为正，增长 298.1%——原因是营业费用总额增速低于营收。营收减去报告中的营业成本项目后的金额从 9.96亿美元 升至 24.8亿美元，增加 148.8%；该部分指标不包括技术和基础设施费用，服务器与网络折旧计入该费用，因此它并非毛利。\n流动性随建设同步重建。 现金 41.2亿美元、有价证券 6200万美元 以及循环信贷和延迟提款额度下 56.5亿美元 的可用额度，合计带来 98.4亿美元 的总流动性，而 2025-12-31 时为 68.6亿美元。\n营业利润率接近零，而订单储备仍在数年后\n\n九个月的净利息费用 20.2亿美元 占营收 2",
+    "errors": []
+  },
+  {
+    "path": "https://spontra-business-map.max-zhangyuchen.workers.dev/companies/NBIS?view=company&lang=en",
+    "view": "company",
+    "text": "Valuation\nProfit\nCash flow\nBalance sheet\n\nCompany report has not been generated yet",
+    "errors": []
+  }
+]

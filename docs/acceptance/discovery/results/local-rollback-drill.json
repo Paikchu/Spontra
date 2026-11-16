@@ -1,0 +1,3068 @@
+{
+  "scope": "LOCAL SYNTHETIC TEST ONLY: in-memory SQLite/R2; real admin proxy, handlers, stores and site BFF; NOT production rollback",
+  "startedAt": "2026-11-16T16:07:59.074Z",
+  "completedAt": "2026-11-16T16:07:59.106Z",
+  "elapsedMs": 15.39056800000003,
+  "thresholdMs": 300000,
+  "passed": true,
+  "versions": {
+    "valid": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+    "withdrawn": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+    "readBack": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+    "secondRead": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+    "unrelated": "e809793cf0d6c6d7aa9eab621ca76cd3103c890288f9e2da3df056402c12f76b"
+  },
+  "before": {
+    "direct": {
+      "status": "valid",
+      "dependencies": [
+        {
+          "reportId": "synthetic-macro",
+          "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+          "claimId": "claim-0",
+          "status": "valid"
+        }
+      ]
+    },
+    "indirect": {
+      "status": "valid",
+      "dependencies": [
+        {
+          "reportId": "rollback-industry",
+          "version": "b1360c1c28b03534b7cb83f382ed7cdc1bbd35bc262859db09f3715917f10f8b",
+          "claimId": "claim-0",
+          "status": "valid"
+        }
+      ]
+    },
+    "unrelated": {
+      "status": "valid",
+      "dependencies": [
+        {
+          "reportId": "unrelated-synthetic-report",
+          "version": "e809793cf0d6c6d7aa9eab621ca76cd3103c890288f9e2da3df056402c12f76b",
+          "claimId": "claim-0",
+          "status": "valid"
+        }
+      ]
+    }
+  },
+  "after": {
+    "direct": {
+      "status": "review_required",
+      "dependencies": [
+        {
+          "reportId": "synthetic-macro",
+          "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+          "claimId": "claim-0",
+          "status": "review_required"
+        }
+      ]
+    },
+    "indirect": {
+      "status": "review_required",
+      "dependencies": [
+        {
+          "reportId": "rollback-industry",
+          "version": "b1360c1c28b03534b7cb83f382ed7cdc1bbd35bc262859db09f3715917f10f8b",
+          "claimId": "claim-0",
+          "status": "review_required"
+        }
+      ]
+    },
+    "unrelated": {
+      "status": "valid",
+      "dependencies": [
+        {
+          "reportId": "unrelated-synthetic-report",
+          "version": "e809793cf0d6c6d7aa9eab621ca76cd3103c890288f9e2da3df056402c12f76b",
+          "claimId": "claim-0",
+          "status": "valid"
+        }
+      ]
+    }
+  },
+  "history": [
+    {
+      "version": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+      "state": "published",
+      "r2_key": "public-research/synthetic-macro/7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7.json"
+    },
+    {
+      "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+      "state": "withdrawn",
+      "r2_key": "public-research/synthetic-macro/fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a.json"
+    }
+  ],
+  "audit": [
+    {
+      "action": "review",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "reviewed": true,
+        "reportId": "synthetic-macro",
+        "version": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7"
+      }
+    },
+    {
+      "action": "publish",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "schemaVersion": "public-research.v1",
+        "reportId": "synthetic-macro",
+        "type": "macro",
+        "title": "Synthetic funding baseline",
+        "language": "en",
+        "scope": {
+          "regions": [
+            "US"
+          ],
+          "currency": "USD",
+          "industryId": null,
+          "description": "Synthetic test scope"
+        },
+        "asOf": "2026-01-02T00:00:00.000Z",
+        "generatedAt": "2026-01-02T00:00:00.000Z",
+        "validUntil": "2099-01-01T00:00:00.000Z",
+        "inputFingerprint": "17f8454cc502920ef29db9ccf086eb7df8706daaa0f49a43917e038657cce0fb",
+        "modelVersion": "no-model-called",
+        "promptVersion": "fixture-v1",
+        "toolVersion": "fixture-v1",
+        "coverage": "limited",
+        "missingInputs": [
+          "Synthetic data is not approved for production"
+        ],
+        "changes": [
+          "Initial synthetic baseline"
+        ],
+        "summary": "Synthetic evidence tests storage and publication only.",
+        "sources": [
+          {
+            "id": "source-1",
+            "canonicalId": "synthetic-original",
+            "uri": "https://example.com/synthetic",
+            "title": "Synthetic fixture (not market evidence)",
+            "locator": "paragraph 1",
+            "excerpt": "SYNTHETIC ACCEPTANCE SOURCE: financing rate 5 percent; not actual market data.",
+            "contentHash": "09efebe2f05914d0bc3a16c0c39a1347b13ec5ee2e92562e6159e13585ff05d5",
+            "revision": "1",
+            "publishedAt": "2026-01-01T00:00:00.000Z",
+            "availableAt": "2026-01-01T00:00:00.000Z",
+            "collectedAt": "2026-01-02T00:00:00.000Z",
+            "observationPeriod": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "usage": "public",
+            "authorization": "Synthetic acceptance material only"
+          }
+        ],
+        "observations": [
+          {
+            "id": "rate",
+            "sourceId": "source-1",
+            "label": "Synthetic rate",
+            "status": "observed",
+            "value": 5,
+            "unit": "percent",
+            "currency": null,
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "definition": "Synthetic contract rate, not market yield",
+            "basis": "actual",
+            "missingReason": null
+          }
+        ],
+        "claims": [
+          {
+            "id": "claim-0",
+            "kind": "fact",
+            "title": "Synthetic claim 0",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-0",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-1",
+            "kind": "fact",
+            "title": "Synthetic claim 1",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-1",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-2",
+            "kind": "fact",
+            "title": "Synthetic claim 2",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-2",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-3",
+            "kind": "fact",
+            "title": "Synthetic claim 3",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-3",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-4",
+            "kind": "fact",
+            "title": "Synthetic claim 4",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-4",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-5",
+            "kind": "fact",
+            "title": "Synthetic claim 5",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-5",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-6",
+            "kind": "fact",
+            "title": "Synthetic claim 6",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-6",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-7",
+            "kind": "fact",
+            "title": "Synthetic claim 7",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-7",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-8",
+            "kind": "fact",
+            "title": "Synthetic claim 8",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-8",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-9",
+            "kind": "fact",
+            "title": "Synthetic claim 9",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-9",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-10",
+            "kind": "fact",
+            "title": "Synthetic claim 10",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-10",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-11",
+            "kind": "fact",
+            "title": "Synthetic claim 11",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-11",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-12",
+            "kind": "fact",
+            "title": "Synthetic claim 12",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-12",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-13",
+            "kind": "fact",
+            "title": "Synthetic claim 13",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-13",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-14",
+            "kind": "fact",
+            "title": "Synthetic claim 14",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-14",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-15",
+            "kind": "fact",
+            "title": "Synthetic claim 15",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-15",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-16",
+            "kind": "fact",
+            "title": "Synthetic claim 16",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-16",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-17",
+            "kind": "fact",
+            "title": "Synthetic claim 17",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-17",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-18",
+            "kind": "fact",
+            "title": "Synthetic claim 18",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-18",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-19",
+            "kind": "fact",
+            "title": "Synthetic claim 19",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-19",
+            "financialVariable": "interest"
+          }
+        ],
+        "dependencies": [],
+        "scenarios": [
+          {
+            "name": "base",
+            "assumptions": [
+              "Synthetic contract persists"
+            ],
+            "claimIds": [
+              "claim-0"
+            ]
+          }
+        ],
+        "authorRunId": "synthetic-author",
+        "sections": [
+          {
+            "id": "funding",
+            "title": "Funding",
+            "claimIds": [
+              "claim-0",
+              "claim-1",
+              "claim-2",
+              "claim-3",
+              "claim-4",
+              "claim-5",
+              "claim-6",
+              "claim-7",
+              "claim-8",
+              "claim-9",
+              "claim-10",
+              "claim-11",
+              "claim-12",
+              "claim-13",
+              "claim-14",
+              "claim-15",
+              "claim-16",
+              "claim-17",
+              "claim-18",
+              "claim-19"
+            ]
+          }
+        ],
+        "version": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+        "publishedAt": "2026-11-16T16:07:58.983Z",
+        "supersedes": null,
+        "freshnessStatus": "valid",
+        "review": {
+          "reviewer": "synthetic-independent-reviewer",
+          "reviewedAt": "2026-11-16T16:07:58.940Z",
+          "authorRunId": "synthetic-author",
+          "claimChecks": [
+            {
+              "claimId": "claim-0",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-1",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-2",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-3",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-4",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-5",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-6",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-7",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-8",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-9",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-10",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-11",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-12",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-13",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-14",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-15",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-16",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-17",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-18",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-19",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            }
+          ],
+          "conclusion": "approved",
+          "notes": "Fixture schema review only"
+        },
+        "claimStates": {
+          "claim-0": "valid",
+          "claim-1": "valid",
+          "claim-2": "valid",
+          "claim-3": "valid",
+          "claim-4": "valid",
+          "claim-5": "valid",
+          "claim-6": "valid",
+          "claim-7": "valid",
+          "claim-8": "valid",
+          "claim-9": "valid",
+          "claim-10": "valid",
+          "claim-11": "valid",
+          "claim-12": "valid",
+          "claim-13": "valid",
+          "claim-14": "valid",
+          "claim-15": "valid",
+          "claim-16": "valid",
+          "claim-17": "valid",
+          "claim-18": "valid",
+          "claim-19": "valid"
+        },
+        "bodyMarkdown": "\n## Funding\n\n### Synthetic claim 0\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 1\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 2\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 3\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 4\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 5\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 6\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 7\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 8\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 9\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 10\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 11\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 12\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 13\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 14\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 15\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 16\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 17\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 18\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 19\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n## Scenario conditions\n\n### base\n- Synthetic contract persists"
+      }
+    },
+    {
+      "action": "review",
+      "reportId": "unrelated-synthetic-report",
+      "status": 200,
+      "result": {
+        "reviewed": true,
+        "reportId": "unrelated-synthetic-report",
+        "version": "e809793cf0d6c6d7aa9eab621ca76cd3103c890288f9e2da3df056402c12f76b"
+      }
+    },
+    {
+      "action": "publish",
+      "reportId": "unrelated-synthetic-report",
+      "status": 200,
+      "result": {
+        "schemaVersion": "public-research.v1",
+        "reportId": "unrelated-synthetic-report",
+        "type": "macro",
+        "title": "Unaffected valid fixture",
+        "language": "en",
+        "scope": {
+          "regions": [
+            "US"
+          ],
+          "currency": "USD",
+          "industryId": null,
+          "description": "Synthetic test scope"
+        },
+        "asOf": "2026-01-02T00:00:00.000Z",
+        "generatedAt": "2026-01-02T00:00:00.000Z",
+        "validUntil": "2099-01-01T00:00:00.000Z",
+        "inputFingerprint": "17f8454cc502920ef29db9ccf086eb7df8706daaa0f49a43917e038657cce0fb",
+        "modelVersion": "no-model-called",
+        "promptVersion": "fixture-v1",
+        "toolVersion": "fixture-v1",
+        "coverage": "limited",
+        "missingInputs": [
+          "Synthetic data is not approved for production"
+        ],
+        "changes": [
+          "Initial synthetic baseline"
+        ],
+        "summary": "Synthetic evidence tests storage and publication only.",
+        "sources": [
+          {
+            "id": "source-1",
+            "canonicalId": "synthetic-original",
+            "uri": "https://example.com/synthetic",
+            "title": "Synthetic fixture (not market evidence)",
+            "locator": "paragraph 1",
+            "excerpt": "SYNTHETIC ACCEPTANCE SOURCE: financing rate 5 percent; not actual market data.",
+            "contentHash": "09efebe2f05914d0bc3a16c0c39a1347b13ec5ee2e92562e6159e13585ff05d5",
+            "revision": "1",
+            "publishedAt": "2026-01-01T00:00:00.000Z",
+            "availableAt": "2026-01-01T00:00:00.000Z",
+            "collectedAt": "2026-01-02T00:00:00.000Z",
+            "observationPeriod": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "usage": "public",
+            "authorization": "Synthetic acceptance material only"
+          }
+        ],
+        "observations": [
+          {
+            "id": "rate",
+            "sourceId": "source-1",
+            "label": "Synthetic rate",
+            "status": "observed",
+            "value": 5,
+            "unit": "percent",
+            "currency": null,
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "definition": "Synthetic contract rate, not market yield",
+            "basis": "actual",
+            "missingReason": null
+          }
+        ],
+        "claims": [
+          {
+            "id": "claim-0",
+            "kind": "fact",
+            "title": "Synthetic claim 0",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-0",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-1",
+            "kind": "fact",
+            "title": "Synthetic claim 1",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-1",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-2",
+            "kind": "fact",
+            "title": "Synthetic claim 2",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-2",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-3",
+            "kind": "fact",
+            "title": "Synthetic claim 3",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-3",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-4",
+            "kind": "fact",
+            "title": "Synthetic claim 4",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-4",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-5",
+            "kind": "fact",
+            "title": "Synthetic claim 5",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-5",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-6",
+            "kind": "fact",
+            "title": "Synthetic claim 6",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-6",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-7",
+            "kind": "fact",
+            "title": "Synthetic claim 7",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-7",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-8",
+            "kind": "fact",
+            "title": "Synthetic claim 8",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-8",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-9",
+            "kind": "fact",
+            "title": "Synthetic claim 9",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-9",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-10",
+            "kind": "fact",
+            "title": "Synthetic claim 10",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-10",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-11",
+            "kind": "fact",
+            "title": "Synthetic claim 11",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-11",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-12",
+            "kind": "fact",
+            "title": "Synthetic claim 12",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-12",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-13",
+            "kind": "fact",
+            "title": "Synthetic claim 13",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-13",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-14",
+            "kind": "fact",
+            "title": "Synthetic claim 14",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-14",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-15",
+            "kind": "fact",
+            "title": "Synthetic claim 15",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-15",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-16",
+            "kind": "fact",
+            "title": "Synthetic claim 16",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-16",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-17",
+            "kind": "fact",
+            "title": "Synthetic claim 17",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-17",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-18",
+            "kind": "fact",
+            "title": "Synthetic claim 18",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-18",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-19",
+            "kind": "fact",
+            "title": "Synthetic claim 19",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-19",
+            "financialVariable": "interest"
+          }
+        ],
+        "dependencies": [],
+        "scenarios": [
+          {
+            "name": "base",
+            "assumptions": [
+              "Synthetic contract persists"
+            ],
+            "claimIds": [
+              "claim-0"
+            ]
+          }
+        ],
+        "authorRunId": "unrelated-fixture-author",
+        "sections": [
+          {
+            "id": "funding",
+            "title": "Funding",
+            "claimIds": [
+              "claim-0",
+              "claim-1",
+              "claim-2",
+              "claim-3",
+              "claim-4",
+              "claim-5",
+              "claim-6",
+              "claim-7",
+              "claim-8",
+              "claim-9",
+              "claim-10",
+              "claim-11",
+              "claim-12",
+              "claim-13",
+              "claim-14",
+              "claim-15",
+              "claim-16",
+              "claim-17",
+              "claim-18",
+              "claim-19"
+            ]
+          }
+        ],
+        "version": "e809793cf0d6c6d7aa9eab621ca76cd3103c890288f9e2da3df056402c12f76b",
+        "publishedAt": "2026-11-16T16:07:59.019Z",
+        "supersedes": null,
+        "freshnessStatus": "valid",
+        "review": {
+          "reviewer": "synthetic-independent-reviewer",
+          "reviewedAt": "2026-11-16T16:07:59.005Z",
+          "authorRunId": "unrelated-fixture-author",
+          "claimChecks": [
+            {
+              "claimId": "claim-0",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-1",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-2",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-3",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-4",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-5",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-6",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-7",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-8",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-9",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-10",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-11",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-12",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-13",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-14",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-15",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-16",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-17",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-18",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-19",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            }
+          ],
+          "conclusion": "approved",
+          "notes": "Fixture schema review only"
+        },
+        "claimStates": {
+          "claim-0": "valid",
+          "claim-1": "valid",
+          "claim-2": "valid",
+          "claim-3": "valid",
+          "claim-4": "valid",
+          "claim-5": "valid",
+          "claim-6": "valid",
+          "claim-7": "valid",
+          "claim-8": "valid",
+          "claim-9": "valid",
+          "claim-10": "valid",
+          "claim-11": "valid",
+          "claim-12": "valid",
+          "claim-13": "valid",
+          "claim-14": "valid",
+          "claim-15": "valid",
+          "claim-16": "valid",
+          "claim-17": "valid",
+          "claim-18": "valid",
+          "claim-19": "valid"
+        },
+        "bodyMarkdown": "\n## Funding\n\n### Synthetic claim 0\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 1\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 2\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 3\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 4\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 5\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 6\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 7\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 8\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 9\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 10\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 11\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 12\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 13\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 14\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 15\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 16\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 17\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 18\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 19\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n## Scenario conditions\n\n### base\n- Synthetic contract persists"
+      }
+    },
+    {
+      "action": "review",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "reviewed": true,
+        "reportId": "synthetic-macro",
+        "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a"
+      }
+    },
+    {
+      "action": "publish",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "schemaVersion": "public-research.v1",
+        "reportId": "synthetic-macro",
+        "type": "macro",
+        "title": "DELIBERATELY ERRONEOUS TEST VERSION",
+        "language": "en",
+        "scope": {
+          "regions": [
+            "US"
+          ],
+          "currency": "USD",
+          "industryId": null,
+          "description": "Synthetic test scope"
+        },
+        "asOf": "2026-01-02T00:00:00.000Z",
+        "generatedAt": "2026-11-16T16:07:59.030Z",
+        "validUntil": "2099-01-01T00:00:00.000Z",
+        "inputFingerprint": "942ad974f3670e27747f1f6f3e60df455247d68dcdd1110a5ccc0d2e669cb18c",
+        "modelVersion": "no-model-called",
+        "promptVersion": "fixture-v1",
+        "toolVersion": "fixture-v1",
+        "coverage": "limited",
+        "missingInputs": [
+          "Synthetic data is not approved for production"
+        ],
+        "changes": [
+          "Initial synthetic baseline"
+        ],
+        "summary": "Synthetic evidence tests storage and publication only.",
+        "sources": [
+          {
+            "id": "source-1",
+            "canonicalId": "synthetic-original",
+            "uri": "https://example.com/synthetic",
+            "title": "Synthetic fixture (not market evidence)",
+            "locator": "paragraph 1",
+            "excerpt": "SYNTHETIC ACCEPTANCE SOURCE: financing rate 5 percent; not actual market data.",
+            "contentHash": "09efebe2f05914d0bc3a16c0c39a1347b13ec5ee2e92562e6159e13585ff05d5",
+            "revision": "1",
+            "publishedAt": "2026-01-01T00:00:00.000Z",
+            "availableAt": "2026-01-01T00:00:00.000Z",
+            "collectedAt": "2026-01-02T00:00:00.000Z",
+            "observationPeriod": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "usage": "public",
+            "authorization": "Synthetic acceptance material only"
+          }
+        ],
+        "observations": [
+          {
+            "id": "rate",
+            "sourceId": "source-1",
+            "label": "Synthetic rate",
+            "status": "observed",
+            "value": 5,
+            "unit": "percent",
+            "currency": null,
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "definition": "Synthetic contract rate, not market yield",
+            "basis": "actual",
+            "missingReason": null
+          }
+        ],
+        "claims": [
+          {
+            "id": "claim-0",
+            "kind": "fact",
+            "title": "Synthetic claim 0",
+            "statement": "DELIBERATE TEST ERROR: contractual financing rate is 50 percent instead of source 5 percent.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-0",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-1",
+            "kind": "fact",
+            "title": "Synthetic claim 1",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-1",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-2",
+            "kind": "fact",
+            "title": "Synthetic claim 2",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-2",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-3",
+            "kind": "fact",
+            "title": "Synthetic claim 3",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-3",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-4",
+            "kind": "fact",
+            "title": "Synthetic claim 4",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-4",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-5",
+            "kind": "fact",
+            "title": "Synthetic claim 5",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-5",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-6",
+            "kind": "fact",
+            "title": "Synthetic claim 6",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-6",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-7",
+            "kind": "fact",
+            "title": "Synthetic claim 7",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-7",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-8",
+            "kind": "fact",
+            "title": "Synthetic claim 8",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-8",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-9",
+            "kind": "fact",
+            "title": "Synthetic claim 9",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-9",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-10",
+            "kind": "fact",
+            "title": "Synthetic claim 10",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-10",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-11",
+            "kind": "fact",
+            "title": "Synthetic claim 11",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-11",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-12",
+            "kind": "fact",
+            "title": "Synthetic claim 12",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-12",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-13",
+            "kind": "fact",
+            "title": "Synthetic claim 13",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-13",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-14",
+            "kind": "fact",
+            "title": "Synthetic claim 14",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-14",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-15",
+            "kind": "fact",
+            "title": "Synthetic claim 15",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-15",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-16",
+            "kind": "fact",
+            "title": "Synthetic claim 16",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-16",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-17",
+            "kind": "fact",
+            "title": "Synthetic claim 17",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-17",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-18",
+            "kind": "fact",
+            "title": "Synthetic claim 18",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-18",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-19",
+            "kind": "fact",
+            "title": "Synthetic claim 19",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-19",
+            "financialVariable": "interest"
+          }
+        ],
+        "dependencies": [],
+        "scenarios": [
+          {
+            "name": "base",
+            "assumptions": [
+              "Synthetic contract persists"
+            ],
+            "claimIds": [
+              "claim-0"
+            ]
+          }
+        ],
+        "authorRunId": "synthetic-error-author",
+        "sections": [
+          {
+            "id": "funding",
+            "title": "Funding",
+            "claimIds": [
+              "claim-0",
+              "claim-1",
+              "claim-2",
+              "claim-3",
+              "claim-4",
+              "claim-5",
+              "claim-6",
+              "claim-7",
+              "claim-8",
+              "claim-9",
+              "claim-10",
+              "claim-11",
+              "claim-12",
+              "claim-13",
+              "claim-14",
+              "claim-15",
+              "claim-16",
+              "claim-17",
+              "claim-18",
+              "claim-19"
+            ]
+          }
+        ],
+        "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+        "publishedAt": "2026-11-16T16:07:59.038Z",
+        "supersedes": "7d613425752f0296cae6a1d2042008100cde2f1c0c13f4ed52b346398f6530b7",
+        "freshnessStatus": "valid",
+        "review": {
+          "reviewer": "synthetic-independent-reviewer",
+          "reviewedAt": "2026-11-16T16:07:59.032Z",
+          "authorRunId": "synthetic-error-author",
+          "claimChecks": [
+            {
+              "claimId": "claim-0",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-1",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-2",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-3",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-4",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-5",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-6",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-7",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-8",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-9",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-10",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-11",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-12",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-13",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-14",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-15",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-16",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-17",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-18",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-19",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            }
+          ],
+          "conclusion": "approved",
+          "notes": "Fixture schema review only"
+        },
+        "claimStates": {
+          "claim-0": "valid",
+          "claim-1": "valid",
+          "claim-2": "valid",
+          "claim-3": "valid",
+          "claim-4": "valid",
+          "claim-5": "valid",
+          "claim-6": "valid",
+          "claim-7": "valid",
+          "claim-8": "valid",
+          "claim-9": "valid",
+          "claim-10": "valid",
+          "claim-11": "valid",
+          "claim-12": "valid",
+          "claim-13": "valid",
+          "claim-14": "valid",
+          "claim-15": "valid",
+          "claim-16": "valid",
+          "claim-17": "valid",
+          "claim-18": "valid",
+          "claim-19": "valid"
+        },
+        "bodyMarkdown": "\n## Funding\n\n### Synthetic claim 0\n\nfact: DELIBERATE TEST ERROR: contractual financing rate is 50 percent instead of source 5 percent.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 1\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 2\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 3\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 4\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 5\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 6\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 7\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 8\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 9\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 10\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 11\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 12\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 13\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 14\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 15\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 16\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 17\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 18\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 19\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n## Scenario conditions\n\n### base\n- Synthetic contract persists"
+      }
+    },
+    {
+      "action": "review",
+      "reportId": "rollback-industry",
+      "status": 200,
+      "result": {
+        "reviewed": true,
+        "reportId": "rollback-industry",
+        "version": "b1360c1c28b03534b7cb83f382ed7cdc1bbd35bc262859db09f3715917f10f8b"
+      }
+    },
+    {
+      "action": "publish",
+      "reportId": "rollback-industry",
+      "status": 200,
+      "result": {
+        "schemaVersion": "public-research.v1",
+        "reportId": "rollback-industry",
+        "type": "industry",
+        "title": "Synthetic dependent industry",
+        "language": "en",
+        "scope": {
+          "regions": [
+            "US"
+          ],
+          "currency": "USD",
+          "industryId": "synthetic-cloud",
+          "description": "Synthetic test scope"
+        },
+        "asOf": "2026-11-16T16:07:59.051Z",
+        "generatedAt": "2026-11-16T16:07:59.051Z",
+        "validUntil": "2099-01-01T00:00:00.000Z",
+        "inputFingerprint": "17f8454cc502920ef29db9ccf086eb7df8706daaa0f49a43917e038657cce0fb",
+        "modelVersion": "no-model-called",
+        "promptVersion": "fixture-v1",
+        "toolVersion": "fixture-v1",
+        "coverage": "limited",
+        "missingInputs": [
+          "Synthetic data is not approved for production"
+        ],
+        "changes": [
+          "Initial synthetic baseline"
+        ],
+        "summary": "Synthetic evidence tests storage and publication only.",
+        "sources": [
+          {
+            "id": "source-1",
+            "canonicalId": "synthetic-original",
+            "uri": "https://example.com/synthetic",
+            "title": "Synthetic fixture (not market evidence)",
+            "locator": "paragraph 1",
+            "excerpt": "SYNTHETIC ACCEPTANCE SOURCE: financing rate 5 percent; not actual market data.",
+            "contentHash": "09efebe2f05914d0bc3a16c0c39a1347b13ec5ee2e92562e6159e13585ff05d5",
+            "revision": "1",
+            "publishedAt": "2026-01-01T00:00:00.000Z",
+            "availableAt": "2026-01-01T00:00:00.000Z",
+            "collectedAt": "2026-01-02T00:00:00.000Z",
+            "observationPeriod": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "usage": "public",
+            "authorization": "Synthetic acceptance material only"
+          }
+        ],
+        "observations": [
+          {
+            "id": "rate",
+            "sourceId": "source-1",
+            "label": "Synthetic rate",
+            "status": "observed",
+            "value": 5,
+            "unit": "percent",
+            "currency": null,
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-01"
+            },
+            "definition": "Synthetic contract rate, not market yield",
+            "basis": "actual",
+            "missingReason": null
+          }
+        ],
+        "claims": [
+          {
+            "id": "claim-0",
+            "kind": "fact",
+            "title": "Synthetic claim 0",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-0",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-1",
+            "kind": "fact",
+            "title": "Synthetic claim 1",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-1",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-2",
+            "kind": "fact",
+            "title": "Synthetic claim 2",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-2",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-3",
+            "kind": "fact",
+            "title": "Synthetic claim 3",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-3",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-4",
+            "kind": "fact",
+            "title": "Synthetic claim 4",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-4",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-5",
+            "kind": "fact",
+            "title": "Synthetic claim 5",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-5",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-6",
+            "kind": "fact",
+            "title": "Synthetic claim 6",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-6",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-7",
+            "kind": "fact",
+            "title": "Synthetic claim 7",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-7",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-8",
+            "kind": "fact",
+            "title": "Synthetic claim 8",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-8",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-9",
+            "kind": "fact",
+            "title": "Synthetic claim 9",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-9",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-10",
+            "kind": "fact",
+            "title": "Synthetic claim 10",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-10",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-11",
+            "kind": "fact",
+            "title": "Synthetic claim 11",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-11",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-12",
+            "kind": "fact",
+            "title": "Synthetic claim 12",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-12",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-13",
+            "kind": "fact",
+            "title": "Synthetic claim 13",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-13",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-14",
+            "kind": "fact",
+            "title": "Synthetic claim 14",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-14",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-15",
+            "kind": "fact",
+            "title": "Synthetic claim 15",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-15",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-16",
+            "kind": "fact",
+            "title": "Synthetic claim 16",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-16",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-17",
+            "kind": "fact",
+            "title": "Synthetic claim 17",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-17",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-18",
+            "kind": "fact",
+            "title": "Synthetic claim 18",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-18",
+            "financialVariable": "interest"
+          },
+          {
+            "id": "claim-19",
+            "kind": "fact",
+            "title": "Synthetic claim 19",
+            "statement": "The synthetic source states the contractual rate.",
+            "sourceIds": [
+              "source-1"
+            ],
+            "observationIds": [
+              "rate"
+            ],
+            "premiseClaimIds": [],
+            "assumptions": [],
+            "impactChannels": [
+              "Financing → contract reset → interest"
+            ],
+            "counterEvidence": [
+              "No actual issuer evidence in this fixture"
+            ],
+            "verification": "Read the synthetic source only",
+            "shockId": "shock-19",
+            "financialVariable": "interest"
+          }
+        ],
+        "dependencies": [
+          {
+            "reportId": "synthetic-macro",
+            "version": "fd57673e299e4d9239ee2c7e632014743995ffcfb942d15c3f5cec4f89cc213a",
+            "claimId": "claim-0",
+            "ownerClaimIds": [
+              "claim-0"
+            ]
+          }
+        ],
+        "scenarios": [
+          {
+            "name": "base",
+            "assumptions": [
+              "Synthetic contract persists"
+            ],
+            "claimIds": [
+              "claim-0"
+            ]
+          }
+        ],
+        "authorRunId": "synthetic-industry-author",
+        "sections": [
+          {
+            "id": "funding",
+            "title": "Funding",
+            "claimIds": [
+              "claim-0",
+              "claim-1",
+              "claim-2",
+              "claim-3",
+              "claim-4",
+              "claim-5",
+              "claim-6",
+              "claim-7",
+              "claim-8",
+              "claim-9",
+              "claim-10",
+              "claim-11",
+              "claim-12",
+              "claim-13",
+              "claim-14",
+              "claim-15",
+              "claim-16",
+              "claim-17",
+              "claim-18",
+              "claim-19"
+            ]
+          }
+        ],
+        "version": "b1360c1c28b03534b7cb83f382ed7cdc1bbd35bc262859db09f3715917f10f8b",
+        "publishedAt": "2026-11-16T16:07:59.059Z",
+        "supersedes": null,
+        "freshnessStatus": "valid",
+        "review": {
+          "reviewer": "synthetic-independent-reviewer",
+          "reviewedAt": "2026-11-16T16:07:59.054Z",
+          "authorRunId": "synthetic-industry-author",
+          "claimChecks": [
+            {
+              "claimId": "claim-0",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-1",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-2",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-3",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-4",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-5",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-6",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-7",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-8",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-9",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-10",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-11",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-12",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-13",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-14",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-15",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-16",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-17",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-18",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            },
+            {
+              "claimId": "claim-19",
+              "supported": true,
+              "notes": "Synthetic original excerpt inspected; not a real financial review"
+            }
+          ],
+          "conclusion": "approved",
+          "notes": "Fixture schema review only"
+        },
+        "claimStates": {
+          "claim-0": "valid",
+          "claim-1": "valid",
+          "claim-2": "valid",
+          "claim-3": "valid",
+          "claim-4": "valid",
+          "claim-5": "valid",
+          "claim-6": "valid",
+          "claim-7": "valid",
+          "claim-8": "valid",
+          "claim-9": "valid",
+          "claim-10": "valid",
+          "claim-11": "valid",
+          "claim-12": "valid",
+          "claim-13": "valid",
+          "claim-14": "valid",
+          "claim-15": "valid",
+          "claim-16": "valid",
+          "claim-17": "valid",
+          "claim-18": "valid",
+          "claim-19": "valid"
+        },
+        "bodyMarkdown": "\n## Funding\n\n### Synthetic claim 0\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 1\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 2\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 3\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 4\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 5\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 6\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 7\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 8\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 9\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 10\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 11\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 12\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 13\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 14\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 15\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 16\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 17\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 18\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n### Synthetic claim 19\n\nfact: The synthetic source states the contractual rate.\n\n- Synthetic rate: 5 percent (2026-01-01–2026-01-01; Synthetic contract rate, not market yield)\n\n**Transmission**\n- Financing → contract reset → interest\n\n**Counter-evidence and uncertainty**\n- No actual issuer evidence in this fixture\n\n**Verification**: Read the synthetic source only\n\n[Synthetic fixture (not market evidence) · paragraph 1](https://example.com/synthetic)\n\n## Scenario conditions\n\n### base\n- Synthetic contract persists"
+      }
+    },
+    {
+      "action": "withdraw",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "withdrawn": true
+      }
+    },
+    {
+      "action": "restore",
+      "reportId": "synthetic-macro",
+      "status": 200,
+      "result": {
+        "restored": true
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "valid v1 published through API and read through site BFF",
+      "status": "passed"
+    },
+    {
+      "name": "injected erroneous v2 was actually public in local BFF",
+      "status": "passed"
+    },
+    {
+      "name": "both direct and indirect company dependencies initially valid",
+      "status": "passed"
+    },
+    {
+      "name": "withdrawal is visible before rollback",
+      "status": "passed"
+    },
+    {
+      "name": "old published pointer recovered within five minutes",
+      "status": "passed"
+    },
+    {
+      "name": "repeated site reads return identical recovered version",
+      "status": "passed"
+    },
+    {
+      "name": "all identified dependent companies require review",
+      "status": "passed"
+    },
+    {
+      "name": "dependent industry requires review",
+      "status": "passed"
+    },
+    {
+      "name": "unrelated valid publication and company untouched",
+      "status": "passed"
+    },
+    {
+      "name": "both historical bodies retained including withdrawn faulty version",
+      "status": "passed"
+    },
+    {
+      "name": "no external network/model calls",
+      "status": "passed"
+    }
+  ],
+  "externalCalls": 0,
+  "limitations": [
+    "Injected review is deliberately synthetic, not genuine human evidence approval",
+    "No deployed cache/CDN/network timing, production rollback or browser screenshot measured",
+    "Stop-research and legacy UI-entry switching are not exercised in this focused pointer/dependency drill"
+  ]
+}
