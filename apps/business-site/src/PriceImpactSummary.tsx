@@ -28,6 +28,8 @@ export function PriceImpactSummary({ valuation, compact = false, reportGenerated
 }) {
   const locale = useLocale();
   const report = valuation.report;
+  const adjustment = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("valuationAdjustment");
+  const adjustmentQuery = adjustment && /^[0-9a-f]{32}$/.test(adjustment) ? `&valuationAdjustment=${encodeURIComponent(adjustment)}` : "";
   const impact = report ? priceImpactOf(report, { latestQuote: valuation.priceGuide?.quote, outdated: valuation.outdated, dependencyStatus: valuation.researchStatus }) : null;
   const base = impact?.scenarios.find(s => s.key === "base");
   const earlier = !!impact && (!!financialPeriodEnd && financialPeriodEnd !== impact.financialPeriodEnd || !!reportGeneratedAt && impact.generatedAt < reportGeneratedAt);
@@ -51,6 +53,6 @@ export function PriceImpactSummary({ valuation, compact = false, reportGenerated
       <div className="price-impact-table"><table><thead><tr><th>{m.scenario}</th><th>{m.value}</th><th>{m.gap}</th></tr></thead><tbody>{impact.scenarios.map(s => <tr key={s.key}><th>{m[s.key]}</th><td>{perShare(s.perShare, impact.currency, locale)}</td><td>{s.gapToReference == null ? "—" : pct(s.gapToReference)}</td></tr>)}</tbody></table></div>
       <p className="price-impact-note">{m.noProbability}</p>
     </>}
-    {compact && <a href={`/companies/${encodeURIComponent(valuation.ticker)}?view=valuation${impact ? `&valuationVersion=${encodeURIComponent(impact.reportVersionId)}` : ""}`}>{m.details}</a>}
+    {compact && <a href={`/companies/${encodeURIComponent(valuation.ticker)}?view=valuation${impact ? `&valuationVersion=${encodeURIComponent(impact.reportVersionId)}` : ""}${adjustmentQuery}`}>{m.details}</a>}
   </section></>;
 }

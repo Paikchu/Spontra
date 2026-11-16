@@ -1,0 +1,203 @@
+[
+  {
+    "width": 390,
+    "order": [
+      {
+        "tag": "A",
+        "text": "Home",
+        "class": "",
+        "href": "/",
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "",
+        "class": "icon-button",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "中",
+        "class": "icon-button lang-toggle",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "All research",
+        "class": "",
+        "href": "/research",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Macro research",
+        "class": "",
+        "href": "/research?type=macro",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Industry research",
+        "class": "",
+        "href": "/research?type=industry",
+        "outline": "solid"
+      },
+      {
+        "tag": "DIV",
+        "text": "Macro researchUnited States · USDStaleLong research title: T",
+        "class": "public-research-stage",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "United States · USDStaleLong research title: Transmission of",
+        "class": "",
+        "href": "/research/us-macro?version=fixture-v2",
+        "outline": "solid"
+      }
+    ],
+    "focusAfter": "MAIN",
+    "nextFocus": {
+      "tag": "A",
+      "class": "",
+      "href": "/"
+    }
+  },
+  {
+    "width": 768,
+    "order": [
+      {
+        "tag": "A",
+        "text": "Home",
+        "class": "",
+        "href": "/",
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "",
+        "class": "icon-button",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "中",
+        "class": "icon-button lang-toggle",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "All research",
+        "class": "",
+        "href": "/research",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Macro research",
+        "class": "",
+        "href": "/research?type=macro",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Industry research",
+        "class": "",
+        "href": "/research?type=industry",
+        "outline": "solid"
+      },
+      {
+        "tag": "DIV",
+        "text": "Macro researchUnited States · USDStaleLong research title: T",
+        "class": "public-research-stage",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "United States · USDStaleLong research title: Transmission of",
+        "class": "",
+        "href": "/research/us-macro?version=fixture-v2",
+        "outline": "solid"
+      }
+    ],
+    "focusAfter": "MAIN",
+    "nextFocus": {
+      "tag": "A",
+      "class": "",
+      "href": "/"
+    }
+  },
+  {
+    "width": 1440,
+    "order": [
+      {
+        "tag": "A",
+        "text": "Home",
+        "class": "",
+        "href": "/",
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "",
+        "class": "icon-button",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "BUTTON",
+        "text": "中",
+        "class": "icon-button lang-toggle",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "All research",
+        "class": "",
+        "href": "/research",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Macro research",
+        "class": "",
+        "href": "/research?type=macro",
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "Industry research",
+        "class": "",
+        "href": "/research?type=industry",
+        "outline": "solid"
+      },
+      {
+        "tag": "DIV",
+        "text": "Macro researchUnited States · USDStaleLong research title: T",
+        "class": "public-research-stage",
+        "href": null,
+        "outline": "solid"
+      },
+      {
+        "tag": "A",
+        "text": "United States · USDStaleLong research title: Transmission of",
+        "class": "",
+        "href": "/research/us-macro?version=fixture-v2",
+        "outline": "solid"
+      }
+    ],
+    "focusAfter": "MAIN",
+    "nextFocus": {
+      "tag": "A",
+      "class": "",
+      "href": "/"
+    }
+  }
+]

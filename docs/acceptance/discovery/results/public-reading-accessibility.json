@@ -1,0 +1,83 @@
+[
+  {
+    "width": 390,
+    "longTitle": {
+      "scroll": 350,
+      "client": 350
+    },
+    "stale": 1,
+    "keyboardScroll": 630,
+    "sourceOpened": true,
+    "backForward": true,
+    "sharedVersion": "fixture-v1",
+    "states": [
+      {
+        "state": "withdrawn",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      },
+      {
+        "state": "unavailable",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      }
+    ],
+    "errors": []
+  },
+  {
+    "width": 768,
+    "longTitle": {
+      "scroll": 480,
+      "client": 480
+    },
+    "stale": 1,
+    "keyboardScroll": 875,
+    "sourceOpened": true,
+    "backForward": true,
+    "sharedVersion": "fixture-v1",
+    "states": [
+      {
+        "state": "withdrawn",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      },
+      {
+        "state": "unavailable",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      }
+    ],
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "longTitle": {
+      "scroll": 760,
+      "client": 760
+    },
+    "stale": 1,
+    "keyboardScroll": 766,
+    "sourceOpened": true,
+    "backForward": true,
+    "sharedVersion": "fixture-v1",
+    "states": [
+      {
+        "state": "withdrawn",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      },
+      {
+        "state": "unavailable",
+        "bodyCount": 0,
+        "history": 1,
+        "overflow": false
+      }
+    ],
+    "errors": []
+  }
+]

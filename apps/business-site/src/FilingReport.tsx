@@ -21,9 +21,11 @@ import "@/packages/web/src/report/figures/figures.css";
 const m = messages({
   report: (title: string) => `Report: ${title}`, filed: (form: string, date: string) => `${form} · Filed ${date}`,
   close: "Close report", loadFailed: "Load failed", loading: "Loading", conclusions: "Research conclusions",
+  citing: "Research citing this filing", researchPeriod: (date: string) => `Research period ended ${date}`,
 }, {
   report: (title: string) => `财报：${title}`, filed: (form: string, date: string) => `${form} · 提交于 ${date}`,
   close: "关闭财报", loadFailed: "加载失败", loading: "加载中", conclusions: "研究结论",
+  citing: "引用此文件的研究", researchPeriod: (date: string) => `研究期间截至 ${date}`,
 });
 
 /** What a filing's row already knows, for the head of its report. */
@@ -34,9 +36,10 @@ export type FilingReportHead = { kind: string; title: string; titleLang?: string
  * the row keeps when the filing turns out to have no report. Loaded on demand so the map's bundle does not carry the
  * report's styles and renderer until one is opened.
  */
-export default function FilingReport({ accession, snapshot, revision, head, ticker, onClose, fallback, relatedFindings = [], onFinding, valuation }: {
+export default function FilingReport({ accession, snapshot, revision, head, ticker, onClose, fallback, relatedFindings = [], sourceRelated = false, onFinding, valuation }: {
   accession: string;
   relatedFindings?: VerifiedFinding[];
+  sourceRelated?: boolean;
   valuation?: ValuationResponse | null;
   onFinding?: (id: string) => void;
   /** Changes when the report is published again, so an open report is read again. */
@@ -65,6 +68,8 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
   }, [ticker, accession, reportDate, reportVersion, revision, locale]);
   const artifact = preview ?? detail?.artifact ?? null;
   const title = artifact?.title ?? head.title;
+  const historical = !!reportVersion || new URLSearchParams(location.search).has("reportVersion");
+  const financialPeriodEnd = detail?.filing.fiscalPeriod?.periodEnd ?? (detail && /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(detail.filing.form) ? detail.filing.reportDate : undefined);
   if (fallback && !artifact && (failed || detail && !detail.filing.summary?.report)) return <>{fallback}</>;
   return <section className="lens report-lens" aria-label={m.report(title)}>
     <header className="lens-head">
@@ -76,11 +81,11 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="report-document earning-report">
-      {!new URLSearchParams(location.search).has("reportVersion") && relatedFindings.length > 0 && <section className="filing-conclusions" aria-label={m.conclusions}>
-        <h3>{m.conclusions}</h3>
-        <ul>{relatedFindings.map(f => <li key={f.id}><Button variant="unstyled" type="button" onClick={() => onFinding?.(f.id)}>{f.title}</Button></li>)}</ul>
+      {!historical && relatedFindings.length > 0 && <section className="filing-conclusions" aria-label={sourceRelated ? m.citing : m.conclusions}>
+        <h3>{sourceRelated ? m.citing : m.conclusions}</h3>
+        <ul>{relatedFindings.map(f => <li key={f.id}><Button variant="unstyled" type="button" onClick={() => onFinding?.(f.id)}>{f.title}</Button>{sourceRelated && <> · <small>{m.researchPeriod(f.periodEnd)}</small></>}</li>)}</ul>
       </section>}
-      {valuation && <PriceImpactSummary valuation={valuation} compact reportGeneratedAt={artifact?.publishedAt} financialPeriodEnd={detail?.filing.reportDate} />}
+      {valuation && <PriceImpactSummary valuation={valuation} compact reportGeneratedAt={artifact?.publishedAt} financialPeriodEnd={financialPeriodEnd} />}
       {artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} hostTitle={title} />
         : detail ? <SecReportDocument {...filingPresentation(detail, ticker)} embedded />
         : failed ? <p className="lens-empty">{m.loadFailed}</p>

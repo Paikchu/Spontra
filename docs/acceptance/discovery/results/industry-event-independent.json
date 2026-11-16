@@ -1,0 +1,129 @@
+{
+  "checks": [
+    {
+      "name": "actual admin context two companies share exact industry",
+      "status": "passed"
+    },
+    {
+      "name": "actual context multiindustry and explicit uncovered",
+      "status": "passed"
+    },
+    {
+      "name": "actual context no invented weights",
+      "status": "passed"
+    },
+    {
+      "name": "actual tools preserve different company applicability",
+      "status": "passed"
+    },
+    {
+      "name": "actual company tool rejects macro industry duplicate shock",
+      "status": "passed"
+    },
+    {
+      "name": "actual company tool rejects evidence-free adoption",
+      "status": "passed"
+    },
+    {
+      "name": "event receipt lists direct and transitive companies only",
+      "status": "passed"
+    },
+    {
+      "name": "actual operator event precise transitive invalidation",
+      "status": "passed"
+    },
+    {
+      "name": "100 real handler replays one event receipt",
+      "status": "passed"
+    },
+    {
+      "name": "frozen tool context unchanged by later event",
+      "status": "passed"
+    },
+    {
+      "name": "public claim deep link exact pinned version",
+      "status": "passed"
+    },
+    {
+      "name": "future business reorganization cannot rewrite old mapping",
+      "status": "passed"
+    },
+    {
+      "name": "effective reorganization replaces mapping rather than inventing history",
+      "status": "passed"
+    },
+    {
+      "name": "concurrent event collision admits exactly one payload",
+      "status": "passed"
+    },
+    {
+      "name": "concurrent conflicting event rollback leaves loser claim valid",
+      "status": "passed"
+    }
+  ],
+  "coreChecks": 37,
+  "networkCalls": 0,
+  "companyA": [
+    {
+      "reportId": "journey-cloud",
+      "version": "56b237e867fccedd8193451e25f8abb27cb7bd74dca32435fbe744f30283a756",
+      "claimId": "claim-0",
+      "decision": "not_applicable",
+      "reason": "Synthetic fixed contract does not reset, so no current cash interest repricing.",
+      "companySources": [
+        "company-contract"
+      ],
+      "financialVariable": "interest"
+    }
+  ],
+  "companyB": [
+    {
+      "reportId": "journey-cloud",
+      "version": "56b237e867fccedd8193451e25f8abb27cb7bd74dca32435fbe744f30283a756",
+      "claimId": "claim-0",
+      "decision": "adopted",
+      "reason": "Synthetic floating debt resets during the relevant period; sensitivity only, amount missing.",
+      "companySources": [
+        "company-contract"
+      ],
+      "financialVariable": "interest"
+    }
+  ],
+  "apiCalls": 116,
+  "macroV": "90237459446b891491a6fbc9d9fab5317cb9696838f698dc8dd21474363b9793",
+  "cloudV": "56b237e867fccedd8193451e25f8abb27cb7bd74dca32435fbe744f30283a756",
+  "energyV": "9267ed2c558b7aa4d2b38b2846ccf8c2c3064ff8e7d2a84bb77f2e88aa6a0faf",
+  "gaps": [
+    {
+      "kind": "industry",
+      "industryId": "journey-uncovered",
+      "reason": "uncovered"
+    },
+    {
+      "kind": "macro",
+      "industryId": null,
+      "reason": "Some public claims require review; only claimStates.valid may be adopted"
+    }
+  ],
+  "datedMappings": {
+    "before": [
+      "SYN-B-journey-cloud:v1"
+    ],
+    "after": [
+      "SYN-B-journey-cloud:v2"
+    ]
+  },
+  "affectedCompanies": [
+    "SYN-B",
+    "SYN-C"
+  ],
+  "conflict": {
+    "statuses": [
+      200,
+      400
+    ],
+    "winner": "claim-2",
+    "loser": "claim-3",
+    "loserInvalidated": false
+  }
+}

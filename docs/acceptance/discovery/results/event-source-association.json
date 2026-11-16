@@ -1,0 +1,23 @@
+[
+  {
+    "eventRows": [
+      "Synthetic shared research · Research period ended 2026-09-30",
+      "Synthetic earlier-quarter research · Research period ended 2026-06-30"
+    ],
+    "findingURL": "http://127.0.0.1:4193/companies/CRWV?lang=en&finding=leverage-interest-cover&view=balance"
+  },
+  {
+    "quarterRows": [
+      "Synthetic shared research"
+    ]
+  },
+  {
+    "historicCount": 0,
+    "reads": [
+      "?schema=artifact-i18n-v2-layers&rev=2026-11-16T15%3A27%3A00.243Z",
+      "?schema=artifact-i18n-v2-layers&rev=2026-11-16T15%3A27%3A00.243Z",
+      "?schema=artifact-i18n-v2-layers&reportDate=2026-09-30&reportVersion=old-snapshot&rev=2026-11-16T15%3A27%3A00.243Z"
+    ],
+    "errors": []
+  }
+]

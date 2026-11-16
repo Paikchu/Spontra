@@ -5,3 +5,8 @@ import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 export function belongsToFiling(article: PublishedFindingArticle, filing: Pick<PublicFilingDigest, "accessionNumber" | "periodEnd">): boolean {
   return article.status !== "incomplete" && article.periodEnd === filing.periodEnd && article.sourceAccessions.includes(filing.accessionNumber);
 }
+
+/** A cited event is a source relation, not evidence that its event date is a fiscal period. */
+export function citesEventSource(article: PublishedFindingArticle, accession: string): boolean {
+  return article.status !== "incomplete" && article.sourceAccessions.includes(accession);
+}

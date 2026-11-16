@@ -1,0 +1,316 @@
+{
+  "commit": "0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b",
+  "baseline": "b1d73fcf",
+  "findings": [
+    {
+      "file": "apps/admin/src/ai-runs.tsx",
+      "line": 91,
+      "column": 5,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "    setTicker(current => listed.some(company => company.ticker === current) ? current : listed[0]?.ticker ?? \"\");",
+      "blameCommit": "2c5d3885c65d756e252e2546788488a08a35b5a3",
+      "blameSummary": "fix(analysis): trigger translation from shared content publication",
+      "baselineMatchingLines": [
+        91
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/admin/src/ai-runs.tsx#L91",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "响应列表变化时同步setTicker校正当前选择；额外渲染，通常同值会跳过，不是已证实无限循环。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "apps/admin/src/translations.tsx",
+      "line": 34,
+      "column": 36,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "  useEffect(() => { if (data?.run) setQueued(false); }, [data?.run]);",
+      "blameCommit": "dff37af023ed4be8888c6bb53d0fad7a52cfb7f3",
+      "blameSummary": "feat(analysis): translate published HTML reports into Chinese",
+      "baselineMatchingLines": [
+        34
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/admin/src/translations.tsx#L34",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "effect清理queued或随ticker清理queued/triggerError；意图合理但多一轮渲染，切公司时瞬态旧状态可见。不是确认的数据损坏。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "apps/admin/src/translations.tsx",
+      "line": 35,
+      "column": 47,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "  useEffect(() => { requestId.current = null; setQueued(false); setTriggerError(\"\"); }, [ticker]);",
+      "blameCommit": "dff37af023ed4be8888c6bb53d0fad7a52cfb7f3",
+      "blameSummary": "feat(analysis): translate published HTML reports into Chinese",
+      "baselineMatchingLines": [
+        35
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/admin/src/translations.tsx#L35",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "effect清理queued或随ticker清理queued/triggerError；意图合理但多一轮渲染，切公司时瞬态旧状态可见。不是确认的数据损坏。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "apps/business-site/src/ArtifactPreviewPage.tsx",
+      "line": 42,
+      "column": 19,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "    if (!token) { setState({ status: \"unavailable\" }); return; }",
+      "blameCommit": "2c5d3885c65d756e252e2546788488a08a35b5a3",
+      "blameSummary": "fix(analysis): trigger translation from shared content publication",
+      "baselineMatchingLines": [
+        42
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/business-site/src/ArtifactPreviewPage.tsx#L42",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "缺token分支effect内同步setState；一次额外渲染，宜从输入派生缺token状态。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "apps/business-site/src/FilingReport.tsx",
+      "line": 57,
+      "column": 5,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "    setFailed(false);",
+      "blameCommit": "dff37af023ed4be8888c6bb53d0fad7a52cfb7f3",
+      "blameSummary": "feat(analysis): translate published HTML reports into Chinese",
+      "baselineMatchingLines": [
+        50
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/business-site/src/FilingReport.tsx#L57",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "请求变化时effect同步清failed；产生额外渲染。该lint不证明旧报告短暂保留问题；请求取消已有AbortController。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "apps/business-site/src/stage/StageHost.tsx",
+      "line": 76,
+      "column": 5,
+      "severity": 2,
+      "rule": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders",
+      "source": "    setOpen(null);",
+      "blameCommit": "0773d42c84afad09dca4882d42233421814bb916",
+      "blameSummary": "fix: align admin controls with current public sections",
+      "baselineMatchingLines": [
+        76
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/apps/business-site/src/stage/StageHost.tsx#L76",
+      "priority": "P2",
+      "classification": "行为/性能约束",
+      "causeAndImpact": "禁用stage时effect同步重置多个state；批处理仍需额外提交，可能短暂保留旧stage视觉。没有循环证据。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/scripts/sec-material-acceptance-proxy.ts",
+      "line": 3,
+      "column": 1,
+      "severity": 1,
+      "rule": "import/no-anonymous-default-export",
+      "message": "Assign object to a variable before exporting as module default",
+      "source": "export default {",
+      "blameCommit": "ec8082143e3fe354d8c00509db0db45ab3ae745b",
+      "blameSummary": "refactor: replace D1 filing sections with Markdown materials",
+      "baselineMatchingLines": [
+        3
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/scripts/sec-material-acceptance-proxy.ts#L3",
+      "priority": "P3",
+      "classification": "规范",
+      "causeAndImpact": "验收Worker匿名默认导出对象；合法模块，无功能故障，命名仅利于调试/风格。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/scripts/sec-material-acceptance-worker.ts",
+      "line": 20,
+      "column": 1,
+      "severity": 1,
+      "rule": "import/no-anonymous-default-export",
+      "message": "Assign object to a variable before exporting as module default",
+      "source": "export default {",
+      "blameCommit": "ec8082143e3fe354d8c00509db0db45ab3ae745b",
+      "blameSummary": "refactor: replace D1 filing sections with Markdown materials",
+      "baselineMatchingLines": [
+        20
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/scripts/sec-material-acceptance-worker.ts#L20",
+      "priority": "P3",
+      "classification": "规范",
+      "causeAndImpact": "验收Worker匿名默认导出对象；合法模块，无功能故障，命名仅利于调试/风格。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/core.ts",
+      "line": 163,
+      "column": 83,
+      "severity": 1,
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'now' is assigned a value but never used.",
+      "source": "export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv, now = Date.now()): Promise<Response> {",
+      "blameCommit": "c7b6180f244369ec6a2ff2ff50710fcda0cc7093",
+      "blameSummary": "Migrate financial analysis pipeline into investment record",
+      "baselineMatchingLines": [
+        163
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/core.ts#L163",
+      "priority": "P3",
+      "classification": "未使用兼容参数",
+      "causeAndImpact": "兼容参数now默认Date.now()但函数不使用；不会驱动业务时钟。移除须先查调用兼容，不能仅为数量删接口。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/operations.ts",
+      "line": 137,
+      "column": 91,
+      "severity": 1,
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'workflowInstanceId' is assigned a value but never used.",
+      "source": "export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch = fetch, workflowInstanceId = \"standalone\"): AnalysisOperations {",
+      "blameCommit": "d7cb1d5297157c92518b3f00607eda810a5d0bb1",
+      "blameSummary": "refactor: the backend is Spontra Analysis, and the frontend is the DeepSeek Harness app",
+      "baselineMatchingLines": [
+        137
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/operations.ts#L137",
+      "priority": "P3",
+      "classification": "未使用兼容参数",
+      "causeAndImpact": "workflowInstanceId参数仍在函数签名但内部不使用；本次修改了该文件其他部分，该行本身旧有。未证明运行时错误。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/pi/host.ts",
+      "line": 31,
+      "column": 26,
+      "severity": 2,
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "source": "export type PiLoaded<S = any> = {",
+      "blameCommit": "de7ba84bbe6412425637c54c5a372ed45a2ceb79",
+      "blameSummary": "feat(analysis): every analysis runs on the Agents SDK with Pi sessions (#194)",
+      "baselineMatchingLines": [
+        29
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/pi/host.ts#L31",
+      "priority": "P2",
+      "classification": "类型安全债务",
+      "causeAndImpact": "异构recipe/state/loader边界显式any绕过类型检查；无直接运行时操作，但降低错误发现能力；长期以泛型或unknown+校验治理。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/pi/host.ts",
+      "line": 32,
+      "column": 18,
+      "severity": 2,
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "source": "  recipe: Recipe<any, any, S>;",
+      "blameCommit": "de7ba84bbe6412425637c54c5a372ed45a2ceb79",
+      "blameSummary": "feat(analysis): every analysis runs on the Agents SDK with Pi sessions (#194)",
+      "baselineMatchingLines": [
+        30
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/pi/host.ts#L32",
+      "priority": "P2",
+      "classification": "类型安全债务",
+      "causeAndImpact": "异构recipe/state/loader边界显式any绕过类型检查；无直接运行时操作，但降低错误发现能力；长期以泛型或unknown+校验治理。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/pi/host.ts",
+      "line": 32,
+      "column": 23,
+      "severity": 2,
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "source": "  recipe: Recipe<any, any, S>;",
+      "blameCommit": "de7ba84bbe6412425637c54c5a372ed45a2ceb79",
+      "blameSummary": "feat(analysis): every analysis runs on the Agents SDK with Pi sessions (#194)",
+      "baselineMatchingLines": [
+        30
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/pi/host.ts#L32",
+      "priority": "P2",
+      "classification": "类型安全债务",
+      "causeAndImpact": "异构recipe/state/loader边界显式any绕过类型检查；无直接运行时操作，但降低错误发现能力；长期以泛型或unknown+校验治理。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/pi/host.ts",
+      "line": 49,
+      "column": 31,
+      "severity": 2,
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "source": "export type PiLoader = (spec: any) => Promise<PiLoaded>;",
+      "blameCommit": "de7ba84bbe6412425637c54c5a372ed45a2ceb79",
+      "blameSummary": "feat(analysis): every analysis runs on the Agents SDK with Pi sessions (#194)",
+      "baselineMatchingLines": [
+        44
+      ],
+      "fileChangedSinceBaseline": true,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/pi/host.ts#L49",
+      "priority": "P2",
+      "classification": "类型安全债务",
+      "causeAndImpact": "异构recipe/state/loader边界显式any绕过类型检查；无直接运行时操作，但降低错误发现能力；长期以泛型或unknown+校验治理。",
+      "baselineConfirmed": true
+    },
+    {
+      "file": "workers/analysis/src/sec/analysis.ts",
+      "line": 10,
+      "column": 7,
+      "severity": 1,
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'SEC_CANONICAL_SERIES_IDS' is assigned a value but only used as a type.",
+      "source": "const SEC_CANONICAL_SERIES_IDS = [",
+      "blameCommit": "1dad48a40813349f932d0afcf38456242b057343",
+      "blameSummary": "feat(analysis): one Pi session reads each filing and publishes its report",
+      "baselineMatchingLines": [
+        10
+      ],
+      "fileChangedSinceBaseline": false,
+      "url": "https://github.com/Paikchu/Spontra/blob/0a45a4238df15f6d6bc9d8c766cd0614a1d10d7b/workers/analysis/src/sec/analysis.ts#L10",
+      "priority": "P3",
+      "classification": "有效类型用途/规范噪声",
+      "causeAndImpact": "常量通过typeof SEC_CANONICAL_SERIES_IDS[number]生成有效类型联合；并非无用定义，属规则对仅类型用途值声明的报告。不得删有效联合。",
+      "baselineConfirmed": true
+    }
+  ],
+  "counts": {
+    "baseline": {
+      "errors": 11,
+      "warnings": 5
+    },
+    "current": {
+      "errors": 10,
+      "warnings": 5
+    }
+  }
+}

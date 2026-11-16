@@ -545,12 +545,12 @@ function ValuationDocument({ ticker, valuation }: { ticker: string; valuation: V
   const locale = useLocale();
   const storedReport = valuation.report;
   const guide: ValuationPriceGuide = valuation.priceGuide && valuation.priceGuide.reportVersionId === storedReport?.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: storedReport?.versionId ?? null, quote: null, reason: storedReport?.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" };
-  const frozenQuote = storedReport?.quote;
-  const price = frozenQuote?.usable && frozenQuote.currency === storedReport?.currency && frozenQuote.price > 0 ? frozenQuote.price : null;
   const impact = storedReport ? priceImpactOf(storedReport, { outdated: valuation.outdated, dependencyStatus: valuation.researchStatus }) : null;
+  const frozenQuote = impact?.referenceQuote ?? null;
+  const price = frozenQuote?.price ?? null;
   const storedModel = impact?.quantificationStatus === "unavailable" ? undefined : storedReport?.model;
-  const model = useMemo(() => storedModel ? modelAtReferencePrice(storedModel, price) : null, [storedModel, price]);
-  const report = storedReport ? { ...storedReport, model } : null;
+  const model = storedModel ? modelAtReferencePrice(storedModel, price) : null;
+  const report = storedReport ? { ...storedReport, quote: frozenQuote, model } : null;
   const range = report?.model?.range;
   const footnotes = useMemo(() => storedReport ? footnotesOf(storedReport) : null, [storedReport]);
   if (!report || !footnotes) {
@@ -619,7 +619,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   if (version && (!/^[0-9a-f]{8,64}$/.test(version) || saved?.key === key && !saved.report)) return <section className="lens val-panel val-panel--empty"><p role="alert">{versionMessages.failed}</p><a href={`/companies/${encodeURIComponent(ticker)}?view=valuation`}>{versionMessages.current}</a></section>;
   if (version && saved?.key !== key) return <section className="lens val-panel val-panel--empty"><p role="status">{versionMessages.loading}</p></section>;
   const historical = version && saved?.report ? saved.report : null;
-  const shown: ValuationResponse = historical ? { ...valuation, report: historical, availability: historical.reportStatus === "ready" ? "ready" : "insufficient", outdated: false, latestAttempt: null, researchStatus: saved?.researchStatus, priceImpact: priceImpactOf(historical, { dependencyStatus: saved?.researchStatus }), priceGuide: priceGuideOf({ report: historical, quote: historical.quote, asOf: historical.generatedAt }) } : valuation;
+  const shown: ValuationResponse = historical ? { ...valuation, report: historical, availability: historical.reportStatus === "ready" ? "ready" : "insufficient", outdated: false, latestAttempt: null, researchStatus: saved?.researchStatus, priceImpact: priceImpactOf(historical, { dependencyStatus: saved?.researchStatus }), priceGuide: priceGuideOf({ report: historical, quote: valuation.priceGuide?.quote ?? null, asOf: new Date().toISOString(), outdated: !!saved?.researchStatus && saved.researchStatus !== "valid" }) } : valuation;
   return <>
     {version && <p className="val-banner">{versionMessages.saved} · {historical?.researchAsOf.slice(0, 10)} · <a href={`/companies/${encodeURIComponent(ticker)}?view=valuation`}>{versionMessages.current}</a></p>}
     <ValuationDocument ticker={ticker} valuation={shown} />

@@ -192,15 +192,19 @@ export function changedPublicClaims(previous:PublicResearchDraft,next:PublicRese
 }
 export async function invalidatePublicClaims(env:PublicResearchEnv,reportId:string,version:string,claimIds:string[]):Promise<{affectedCompanies:string[]}>{
   if(!claimIds.length)return {affectedCompanies:[]};
-  const db=database(env), placeholders=claimIds.map(()=>'?').join(',');
+  const db=database(env),affectedCompanies=await affectedPublicResearchCompanies(db,reportId,version,claimIds);
+  await db.batch(invalidationStatements(db,reportId,version,claimIds));
+  return {affectedCompanies};
+}
+async function affectedPublicResearchCompanies(db:D1Database,reportId:string,version:string,claimIds:string[]):Promise<string[]>{
+  const placeholders=claimIds.map(()=>'?').join(',');
   const cte=`WITH RECURSIVE affected(owner_id,owner_version,owner_claim_id) AS (
     SELECT owner_id,owner_version,owner_claim_id FROM public_research_dependencies WHERE source_report_id=? AND source_version=? AND claim_id IN (${placeholders})
     UNION SELECT d.owner_id,d.owner_version,d.owner_claim_id FROM public_research_dependencies d JOIN affected a ON d.source_report_id=a.owner_id AND d.source_version=a.owner_version AND (a.owner_claim_id='*' OR d.claim_id=a.owner_claim_id)
   )`;
   const values=[reportId,version,...claimIds];
-  const affected=await db.prepare(`${cte} SELECT DISTINCT d.ticker FROM public_research_dependencies d JOIN affected a ON d.owner_id=a.owner_id AND d.owner_version=a.owner_version WHERE d.ticker IS NOT NULL`).bind(...values).all<{ticker:string}>();
-  await db.batch(invalidationStatements(db,reportId,version,claimIds));
-  return {affectedCompanies:affected.results.map(row=>row.ticker)};
+  const affected=await db.prepare(`${cte} SELECT DISTINCT d.ticker FROM public_research_dependencies d JOIN affected a ON d.owner_id=a.owner_id AND d.owner_version=a.owner_version WHERE d.ticker IS NOT NULL ORDER BY d.ticker`).bind(...values).all<{ticker:string}>();
+  return affected.results.map(row=>row.ticker);
 }
 
 /** Manual authenticated operator event; publication and generation are deliberately not triggered. */
@@ -214,7 +218,8 @@ export async function invalidatePublicResearchEvent(env:PublicResearchEnv,report
   const draft=await readPublicResearchDraft(env,reportId,input.version);
   if(!published?.published_at||!draft)throw new Error("Event requires an existing published report version");
   if(normalized.claimIds.some(id=>!draft.claims.some(claim=>claim.id===id)))throw new Error("Unknown event claim");
-  const receipt={...normalized,receivedAt:new Date().toISOString(),mode:"manual_operator",status:"invalidated"};
+  const affectedCompanies=await affectedPublicResearchCompanies(db,reportId,input.version,normalized.claimIds);
+  const receipt={...normalized,affectedCompanies,receivedAt:new Date().toISOString(),mode:"manual_operator",status:"invalidated"};
   // A conflicting concurrent event ID violates NOT NULL and rolls back the entire batch.
   await db.batch([
     db.prepare("INSERT INTO public_research_events(event_id,payload_hash,receipt_json) VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET payload_hash=CASE WHEN payload_hash=excluded.payload_hash THEN payload_hash ELSE NULL END").bind(input.eventId,fingerprint,JSON.stringify(receipt)),
