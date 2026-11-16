@@ -47,22 +47,30 @@
 
 
 /* The agent's scene: a marked mode with the way back to the map, then rows of one or two cells. */
-.scene-stage { display: flex; flex-direction: column; gap: 14px; min-height: 0; grid-row: 1 / -1; overflow-y: auto; padding-bottom: 24px; }
+.scene-stage { container: scene / inline-size; display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; grid-row: 1 / -1; overflow-y: auto; padding-bottom: 24px; }
 .scene-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .scene-mark { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
-.scene-back { height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; }
+.scene-back { min-height: 36px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; line-height: 1.4; transition: background-color .18s var(--ease), border-color .18s var(--ease); }
+.scene-back:hover { background: var(--fill); border-color: var(--faint); }
+.scene-back:focus-visible, .scene-findings button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .scene-grid { display: flex; flex-direction: column; gap: 22px; min-height: 120px; }
 .scene-row { display: grid; gap: 18px 24px; grid-template-columns: minmax(0, 1fr); }
-.scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.scene-row > .lens-row-title { grid-column: 1 / -1; margin: 0; }
+@container scene (min-width: 720px) {
+  .scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.scene-row > .lens-row-title { grid-column: 1 / -1; max-width: 70ch; margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; letter-spacing: 0; text-transform: none; text-wrap: balance; overflow-wrap: anywhere; color: var(--foreground); }
 .scene-cell { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .scene-block { min-width: 0; animation: rise .5s var(--ease) both; }
+.scene-block[data-kind="business-flow"] > .chart-fallback { position: relative; inset: auto; overflow: visible; padding-top: 0; }
 .scene-row:nth-child(2) .scene-block { animation-delay: 60ms; } .scene-row:nth-child(3) .scene-block { animation-delay: 120ms; } .scene-row:nth-child(n+4) .scene-block { animation-delay: 180ms; }
 .scene-cell + .scene-cell .scene-block { animation-delay: 60ms; }
-.scene-prose p { margin: 0 0 8px; font-size: 14px; line-height: 1.7; }
+.scene-prose { max-width: 70ch; overflow-wrap: anywhere; }
+.scene-prose p { margin: 0 0 12px; font-size: .9375rem; line-height: 1.75; text-wrap: pretty; }
+.scene-prose p:last-child { margin-bottom: 0; }
 .scene-lens h2 button { text-align: left; font: inherit; color: inherit; }
 .scene-findings { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.scene-findings button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left; font-size: 14px; line-height: 1.5; }
+.scene-findings button { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px; border-radius: 10px; text-align: left; font-size: .875rem; line-height: 1.5; transition: background-color .18s var(--ease); }
+.scene-findings button span { min-width: 0; overflow-wrap: anywhere; }
 .scene-findings button:hover { background: var(--fill); }
 .scene-notice { margin: 0; font-size: 13px; color: var(--muted-foreground); }
 .scene-progress { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 14px; border: 1px solid var(--hairline); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--muted-foreground); overflow: hidden; }
@@ -99,8 +107,10 @@ h2.board-question { font-size: 22px; font-weight: 700; line-height: 1.35; color:
   .ask-veil { position: fixed; }
   .ask { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); }
   .ask-entry { margin: 12px 0 0; padding: 0 16px; }
-  .scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .scene-back, .scene-findings button { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ask, .ask-veil, .scene-block, .board, .board-skeleton span, .board-phase i, .ask-back { animation: none !important; transition: none !important; }
+  .ask, .ask-veil, .scene-block, .board, .board-skeleton span, .board-phase i, .ask-back, .scene-back, .scene-findings button { animation: none !important; transition: none !important; }
 }

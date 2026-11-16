@@ -48,9 +48,9 @@ export type Tip = { title: string; color: string; rows: Array<[string, string]> 
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 17 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
-/** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
-const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
+const typeFor = (k: number) => ({ name: 15 * k, value: 22 * k, net: 26 * k, change: 12.5 * k, gap: 7 * k, offset: 10 * k, pill: 14 * k });
+/** Names sit above figures, keeping long statement labels from widening every column. */
+const geometryFor = (k: number) => ({ labelHeight: 62 * k, sideLabelHeight: 56 * k, gap: 16, lift: 46, drop: 40, labelGap: 20 * k, labelOffset: 14 * k, margin: 28 * k });
 const SCREEN_VALUE_PX = 17;
 const valueSize = (n: PlacedNode, k: number) => n.name === "net" ? typeFor(k).net : typeFor(k).value;
 const EMPTY: InfographicLayout = { width: 1, height: 1, nodeWidth: 22, nodes: [], links: [] };
@@ -69,8 +69,8 @@ function linePath(x0: number, sy: number, x1: number, ty: number) {
 
 function labelWidth(n: PlacedNode, text: NodeCopy, k: number) {
   const type = typeFor(k);
-  return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k
-    + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
+  return Math.max(estimateTextWidth(text.name, type.name), estimateTextWidth(text.value, valueSize(n, k), true)
+    + (text.change ? type.gap + estimateTextWidth(text.change.label, type.change, true) : 0)) + 4 * k;
 }
 
 export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1, geometry: Partial<InfographicGeometry> = {}): InfographicLayout | null {
@@ -79,12 +79,13 @@ export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCo
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 function nodeLabel(n: PlacedNode, text: NodeCopy, k: number, w: number) {
-  const type = typeFor(k), vs = valueSize(n, k), gap = geometryFor(k).labelOffset;
-  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
-    : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
-    : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + Math.max(n.h, geometryFor(k).sideLabelHeight) / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
+  const type = typeFor(k), vs = valueSize(n, k), gap = geometryFor(k).labelOffset, line = vs + 5 * k;
+  const height = type.name + line + vs * .25;
+  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - line, "middle"]
+    : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + type.name, "middle"]
+    : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + Math.max(n.h, geometryFor(k).sideLabelHeight) / 2 - height / 2 + type.name, n.side === "left" ? "end" : "start"];
   const width = labelWidth(n, text, k), left = x - (anchor === "middle" ? width / 2 : anchor === "end" ? width : 0);
-  return { x, y, anchor, box: { x0: left, x1: left + width, y0: y - vs, y1: y + vs * 0.3 } };
+  return { x, y, valueY: y + line, anchor, box: { x0: left, x1: left + width, y0: y - type.name, y1: y + line + vs * .25 } };
 }
 
 type Camera = { x: number; y: number; zoom: number };
@@ -110,19 +111,14 @@ function focusBounds(layout: InfographicLayout, name: string, copy: (n: PlacedNo
     next = layout.links.find(l => l.source === next)?.target;
     if (next) names.add(next);
   }
-  const type = typeFor(k), { labelOffset, sideLabelHeight } = geometryFor(k), w = layout.nodeWidth;
+  const w = layout.nodeWidth;
   const box: Box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   const add = (x0: number, y0: number, x1: number, y1: number) => { box.x0 = Math.min(box.x0, x0); box.y0 = Math.min(box.y0, y0); box.x1 = Math.max(box.x1, x1); box.y1 = Math.max(box.y1, y1); };
   for (const key of names) {
-    const n = byName.get(key)!, text = copy(n), lw = labelWidth(n, text, k), vs = valueSize(n, k);
+    const n = byName.get(key)!, text = copy(n);
     add(n.x, n.y, n.x + w, n.y + n.h);
-    if (n.side === "top") add(n.x + w / 2 - lw / 2, n.y - type.offset - vs * 1.2, n.x + w / 2 + lw / 2, n.y);
-    else if (n.side === "bottom") add(n.x + w / 2 - lw / 2, n.y + n.h, n.x + w / 2 + lw / 2, n.y + n.h + type.offset + vs * 1.2);
-    else {
-      const mid = n.y + Math.max(n.h, sideLabelHeight) / 2;
-      if (n.side === "left") add(n.x - labelOffset - lw, mid - vs, n.x, mid + vs);
-      else add(n.x + w, mid - vs, n.x + w + labelOffset + lw, mid + vs);
-    }
+    const { box } = nodeLabel(n, text, k, w);
+    add(box.x0, box.y0, box.x1, box.y1);
     if (key === "revenue" || key === "segment-total") add(n.x, n.y, n.x + w + 150 * k, n.y + n.h);
   }
   const pad = 28 * k;
@@ -178,7 +174,7 @@ function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, siz
   if (!layout || !size) return layout && { layout, k };
   for (let i = 0; i < 5; i++) {
     const scale = Math.min(size.w / layout.width, size.h / layout.height);
-    const next = Math.max(0.9, Math.min(1.3, SCREEN_VALUE_PX / (21 * scale)));
+    const next = Math.max(0.9, Math.min(1.3, SCREEN_VALUE_PX / (22 * scale)));
     if (Math.abs(next - k) < 0.02) break;
     k = next;
     layout = layoutFor(graph, copy, k, geometry)!;
@@ -435,7 +431,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const fittedNamePx = size ? type.name * Math.min(size.w / worldW, size.h / worldH) : Infinity;
   const compact = narrowPane || (!expanded && fittedNamePx < 9);
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
-  return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+  return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (22 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-compact" role="group" aria-label={label}>
       {primaryNodes.flatMap(name => { const node = byName.get(name); return node ? [compactNode(node)] : []; })}
       <details className="fc-compact-details" open><summary>{m.components}</summary>
@@ -525,18 +521,18 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       </g>
       <g className="fc-nodes">
         {layout.nodes.map(n => {
-          const text = copy(n), vs = valueSize(n, k), side = Math.max(n.h, geometryFor(k).sideLabelHeight), gap = geometryFor(k).labelOffset;
+          const text = copy(n), vs = valueSize(n, k), gap = geometryFor(k).labelOffset;
           const mark = markOf.get(n.name);
-          const { x, y, anchor } = nodeLabel(n, text, k, w);
+          const { x, y, valueY, anchor, box: labelBox } = nodeLabel(n, text, k, w);
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
           // The node in focus names its comparison amount beside the tick, where its own label does not sit.
           const prior = mark && n.name === active ? priorOf?.(n) ?? null : null;
-          const priorText = prior != null && (n.side === "top" || n.side === "bottom" || Math.abs(mark!.tick - (n.y + side / 2)) > vs) ? `${basis.prior} ${money(prior)}` : null;
+          const priorText = prior != null && (n.side === "top" || n.side === "bottom" || mark!.tick < labelBox.y0 - type.change || mark!.tick > labelBox.y1 + type.change) ? `${basis.prior} ${money(prior)}` : null;
           const interactive = Boolean(n.segmentId) || n.name === "revenue";
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
-            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
+            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: (e: React.FocusEvent<SVGGElement>) => { onHover(n.name); const rect = e.currentTarget.getBoundingClientRect(); point({ clientX: rect.x + rect.width / 2, clientY: rect.y }, tipFor(n)); }, onBlur: () => { onHover(null); setTip(null); } } : {})}>
             <title>{n.label}: {text.value}</title>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
@@ -547,8 +543,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <path className="fc-prior-tick" d={`M${r(n.x - 5 * k)},${r(mark.tick)}H${r(n.x + w + 5 * k)}`} />
               {priorText && <text className="fc-prior-label" x={r(n.side === "left" ? n.x - gap : n.x + w + gap)} y={r(mark.tick + type.change * 0.36)} textAnchor={n.side === "left" ? "end" : "start"} style={{ fontSize: type.change }}>{priorText}</text>}
             </g>}
-            <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
-              <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
+            <text className="fc-label" textAnchor={anchor}>
+              <tspan className="fc-name" x={r(x)} y={r(y)} style={{ fontSize: type.name }}>{text.name}</tspan>
+              <tspan className="fc-value" x={r(x)} y={r(valueY)} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
             </text>
           </g>;
         })}
@@ -565,7 +562,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         </g>}
       </g>}
     </svg>}
-    {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width}>
+    {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width} height={size?.h ?? 0}>
       <div className="fc-tip-title"><i style={{ background: tip.tip.color }} />{tip.tip.title}</div>
       {tip.tip.rows.map(([k, v]) => <div className="fc-tip-row" key={k}><span>{k}</span><b>{v}</b></div>)}
     </Tooltip>}
@@ -573,7 +570,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   </div>;
 }
 
-function Tooltip({ x, y, width, children }: { x: number; y: number; width: number; children: ReactNode }) {
+function Tooltip({ x, y, width, height, children }: { x: number; y: number; width: number; height: number; children: ReactNode }) {
   const flip = x > width - 240;
-  return <div className="fc-tip" role="presentation" style={{ transform: `translate(${flip ? x - 16 : x + 16}px, ${y + 16}px) translateX(${flip ? "-100%" : "0"})` }}>{children}</div>;
+  const above = y > height - 180;
+  return <div className="fc-tip" role="tooltip" style={{ transform: `translate(${flip ? x - 16 : x + 16}px, ${above ? y - 16 : y + 16}px) translate(${flip ? "-100%" : "0"}, ${above ? "-100%" : "0"})` }}>{children}</div>;
 }
