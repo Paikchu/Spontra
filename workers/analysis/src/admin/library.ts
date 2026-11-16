@@ -9,6 +9,7 @@ import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialS
 import { findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
+import { materialRecoveryKey } from "../filing-material/store.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { json } from "./http.ts";
 
@@ -36,6 +37,31 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     const state = await getFilingMaterial(env, ticker, accession);
     if (!state) return json({ error: "未找到该申报材料。" }, 404);
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare") {
+      const body = await request.text();
+      let options: { retryFailedSources?: boolean; requestId?: string };
+      try {
+        options = body ? JSON.parse(body) : {};
+        if (!options || typeof options !== "object" || Array.isArray(options) || (options.retryFailedSources !== undefined && typeof options.retryFailedSources !== "boolean")) throw new Error("invalid options");
+      } catch { return json({ error: "Invalid material preparation options" }, 400); }
+      if (options.retryFailedSources === true) {
+        if (typeof options.requestId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(options.requestId)) return json({error:"Failed-source retry requires a UUID requestId"},400);
+        const receiptKey = `${materialRecoveryKey(ticker, accession)}:${options.requestId}`;
+        const receipt = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(receiptKey).first();
+        if (receipt) return json({ ...state, recoveryRequestId: options.requestId, reused: true }, 200);
+        if (state.status !== "blocked") return json({error:"Explicit failed-source recovery requires a blocked material"},409);
+        const pending: MaterialState = { status: "preparing", filing: state.filing, progress: "one explicit retry of failed sources; successful receipts retained" };
+        const at = new Date().toISOString(), payload = JSON.stringify({ requestId: options.requestId, requestedAt: at });
+        const first = "EXISTS (SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload,'$.pending')=1)";
+        await env.DB.batch([
+          env.DB.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO NOTHING").bind(receiptKey,JSON.stringify({...JSON.parse(payload),pending:true}),at),
+          env.DB.prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE ${first} ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at`).bind(materialRecoveryKey(ticker,accession),payload,at,receiptKey),
+          env.DB.prepare(`UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=? AND ${first}`).bind(JSON.stringify(pending),at,materialStateKey(ticker,accession),receiptKey),
+          outboxStatement(env.DB,{type:"filing.material.requested",ticker,cik:state.filing.cik,detail:{accession,form:state.filing.form}},at,{sql:first,binds:[receiptKey]}),
+          env.DB.prepare(`UPDATE sec_cache SET payload=json_remove(payload,'$.pending') WHERE cache_key=? AND ${first}`).bind(receiptKey,receiptKey),
+        ]);
+        await flushOutbox(env);
+        return json({...pending,recoveryRequestId:options.requestId,reused:false},202);
+      }
       const pending: MaterialState = { status: "preparing", filing: state.filing, progress: "awaiting accession archive" };
       await env.DB.batch([
         env.DB.prepare("UPDATE sec_cache SET payload = ?, fetched_at = ? WHERE cache_key = ?")

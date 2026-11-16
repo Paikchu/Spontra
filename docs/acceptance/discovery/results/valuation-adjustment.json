@@ -1,0 +1,22 @@
+{
+  "fixtureKind": "synthetic",
+  "modelCalls": 0,
+  "productionWrites": 0,
+  "checks": [
+    "Reader saves reproducible controlled FCFF sensitivity",
+    "Reopened saved result is immutable and same ID",
+    "Duplicate identical request reuses exact stored result",
+    "Another reader cannot read private sensitivity",
+    "revenueGrowth changes controlled path without mutating report",
+    "operatingMargin changes controlled path without mutating report",
+    "Invalid delta 0 rejected",
+    "Invalid delta 0.11 rejected",
+    "Invalid delta NaN rejected",
+    "Unreproducible published baseline rejected",
+    "Invalidated research suspends projection",
+    "Original published report remains unchanged",
+    "Invalidated dependency suspends saved sensitivity on read",
+    "Invalidated dependency blocks new sensitivity",
+    "Hidden company blocks saved sensitivity"
+  ]
+}

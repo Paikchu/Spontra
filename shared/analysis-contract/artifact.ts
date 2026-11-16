@@ -138,7 +138,15 @@ export type ArtifactChart = {
   compiled?: CompiledChart;
 };
 
+export type ArtifactResearchContext = {
+  asOf: string; mappingVersions: string[];
+  reports: Array<{ reportId: string; version: string; title: string; asOf: string; type: "macro" | "industry"; scope: string }>;
+  uses: Array<{ reportId: string; version: string; claimId: string; decision: "adopted" | "rejected" | "not_applicable"; reason: string; companySources: string[]; financialVariable: string }>;
+  gaps: Array<{ kind: "macro" | "industry"; industryId: string | null; reason: string }>;
+};
+
 export type ArtifactDocument = {
+  researchContext?: ArtifactResearchContext;
   schema: typeof ARTIFACT_SCHEMA;
   kind: ArtifactKind;
   ticker: string;
@@ -158,6 +166,8 @@ export type ArtifactTranslation =
 
 /** A published artifact as the map reads it: the HTML the frame renders, the CSS compiled for its classes, and what it is. */
 export type PublishedArtifact = {
+  researchContext?: ArtifactResearchContext;
+  researchFreshness?: "valid" | "review_required" | "unavailable";
   id: string;
   kind: ArtifactKind;
   ticker: string;

@@ -24,6 +24,7 @@ const m = messages({
 
 const loadCompanyPage = () => import("./CompanyPage");
 const Company = lazy(loadCompanyPage);
+const PublicResearch = lazy(() => import("./PublicResearchPage"));
 const ArticlePreview = lazy(() => import("./ArtifactPreviewPage"));
 // Speculative loading must not surface an error before the reader opens the route.
 const preloadCompanyPage = () => { void loadCompanyPage().catch(() => {}); };
@@ -90,6 +91,7 @@ function App() {
       return initialTicker;
     }),
     [path, setPath] = useState(() => location.pathname),
+    [routeHref, setRouteHref] = useState(() => location.pathname + location.search + location.hash),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
     [collapsed, setCollapsed] = useState(() => {
@@ -160,7 +162,7 @@ function App() {
     const changed = (e: PopStateEvent) => {
       focusRoute.current = true;
       setSearching(false);
-      const update = (next: string | null) => { setPath(location.pathname); setTicker(next); };
+      const update = (next: string | null) => { setPath(location.pathname); setRouteHref(location.pathname + location.search + location.hash); setTicker(next); };
       if ((e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition) update(tickerFromUrl());
       else showTicker(tickerFromUrl(), update);
     };
@@ -217,7 +219,7 @@ function App() {
     if (href !== location.pathname + location.search) history.pushState(null, "", href);
     focusRoute.current = true;
     setSearching(false);
-    showTicker(tickerFromUrl(), next => { setPath(location.pathname); setTicker(next); });
+    showTicker(tickerFromUrl(), next => { setPath(location.pathname); setRouteHref(location.pathname + location.search + location.hash); setTicker(next); });
   }, []);
   const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   const goHome = useCallback(() => navigate("/"), [navigate]);
@@ -264,6 +266,8 @@ function App() {
   const catalogStatus = home.status === "ready" ? "ready" as const : home.status === "error" ? "error" as const : "loading" as const;
   const picks = featuredCompanies(home.digest?.companies ?? [], home.digest?.popular ?? [], locale);
   // Home remounts so its memos pick up the new locale. The company page stays mounted and refetches in place.
+  if (!ticker && /^\/research(?:\/[^/]+)?\/?$/.test(path))
+    return <Suspense fallback={<main className="home"><p role="status">{m.title}</p></main>}><PublicResearch href={routeHref} light={light} onToggleTheme={toggleTheme} /></Suspense>;
   if (!ticker && !isHomePath(path))
     return <main tabIndex={-1}><ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} /></main>;
   if (!ticker)

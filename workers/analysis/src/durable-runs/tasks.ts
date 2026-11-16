@@ -1,3 +1,4 @@
+import { executePublicResearchRun, type PublicResearchRunSpec } from "../public-research/generation.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { assertFeatureTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams } from "../core.ts";
 import { SecModelHttpError, type AnalysisEnv } from "../operations.ts";
@@ -63,6 +64,14 @@ const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name
 
 /** What each run kind executes; the bodies the Workflow classes had. */
 export const RUN_TASKS: Record<RunKind, Task> = {
+  async PUBLIC_RESEARCH_WORKFLOW(params: PublicResearchRunSpec, { env, step, id }) {
+    try { return await executePublicResearchRun(params, durableSteps(step, env, id), env); }
+    catch (error) {
+      await env.DB?.prepare("UPDATE public_research_runs SET state='failed',error=?,updated_at=? WHERE run_id=? AND state IN ('running','queued')")
+        .bind(error instanceof Error ? error.message.slice(0,1000) : String(error), new Date().toISOString(), params.runId).run();
+      throw error;
+    }
+  },
   async BUSINESS_EXPLAINER_WORKFLOW(params: BusinessExplainerParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
     const run = { env, kind: "explainer" as const, ticker: params.ticker, runId: id };

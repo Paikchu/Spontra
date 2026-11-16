@@ -44,6 +44,8 @@ export function checkArtifactTranslation(source: string, target: string): string
   const errors: string[] = [];
   if (tokenSet(source) !== tokenSet(target)) errors.push("artifact placeholders changed; copy every {oN}, {cN} and {xN} exactly once");
   if (inlineStructure(source) !== inlineStructure(target) || inlineStructure(target) === null) errors.push("artifact inline structure changed; keep each placeholder in its original parent element");
+  if (!/\d/.test(prose(source)) && /\d/.test(prose(target))) errors.push("artifact numbers must remain protected placeholders; do not add numeric literals");
+  if (/\{x\d+\}\s*(?:万亿|亿|万)/.test(target) && !/\{x\d+\}\s*(?:万亿|亿|万)/.test(source)) errors.push("artifact amounts are formatted by the renderer; do not append another scale to a protected value");
   if (/<\/?[A-Za-z][^>]*>/.test(target)) errors.push("HTML is not a translation; return text with the original placeholders only");
   return errors;
 }
@@ -76,11 +78,22 @@ type ElementNode = Extract<HtmlNode, { type: "element" }>;
 type Literal = { type: "text"; value: string; formatted: string | null } | { type: "node"; value: HtmlNode };
 type RichText = { text: string; elements: Map<number, ElementNode>; literals: Map<number, Literal> };
 
-function encodeRich(nodes: HtmlNode[]): RichText {
+function encodeRich(nodes: HtmlNode[], sourceIds: readonly string[]): RichText {
+  // Match identities and periods before numbers: fragments of a hash are never amounts.
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const identities = sourceIds.filter(Boolean).sort((a, b) => b.length - a.length).map(escape);
+  const immutable = new RegExp([...(identities.length ? identities : []), String.raw`https?:\/\/[^\s<>]+`, String.raw`\b[0-9a-f]{16,}\b`, String.raw`\b\d{10}-\d{2}-\d{6}\b`, String.raw`\b\d{4}-\d{2}-\d{2}\b`, String.raw`(?<![$€£¥\w])(?:3|6|9|12)M(?:\s+20\d{2}\b|(?=\s+(?:capex|revenue|income|cash|earnings|EBITDA|FCF)\b))`].join("|"), "g");
+  const protectedOrNumber = new RegExp(`(?:${immutable.source})|(?:${NUMBER.source})`, "g");
   const elements = new Map<number, ElementNode>(), literals = new Map<number, Literal>();
   const literal = (value: Literal) => { const id = literals.size; literals.set(id, value); return `{x${id}}`; };
   const encode = (children: HtmlNode[]): string => children.map(node => {
-    if (node.type === "text") return node.text.replace(/\s+/g, " ").replace(NUMBER, (value: string, offset: number, text: string) => {
+    if (node.type === "text") return node.text.replace(/\s+/g, " ").replace(protectedOrNumber, (value: string, offset: number, text: string) => {
+      immutable.lastIndex = offset;
+      const identity = immutable.exec(text);
+      if (identity?.index === offset && identity[0] === value) {
+        const period = /^(3|6|9|12)M(?:\s+(20\d{2}))?$/.exec(value);
+        return literal({ type: "text", value, formatted: period ? `${period[2] ? `${period[2]}年` : ""}前${period[1]}个月` : null });
+      }
       const scaled = /(?:trillion|billion|million|thousand|bn|mn|[BMK])$/i.test(value);
       // A prose "to $980m" is not a range. Only preserve a shared scale
       // when a second numeric endpoint is actually present.
@@ -158,12 +171,20 @@ function build(sourceDoc: ArtifactDocument, translations?: ReadonlyMap<string, s
     }).join("");
     return decodeRich(rich, output, !!translations);
   };
-  const plain = (id: string, text: string, context: string) => phrase(id, encodeRich([{ type: "text", text }]), context)
+  const plain = (id: string, text: string, context: string) => phrase(id, encodeRich([{ type: "text", text }], sourceDoc.sources.map(s => s.id)), context)
     .map(node => node.type === "text" ? node.text : "").join("");
   const prepareNodes = (nodes: HtmlNode[], id: string, context: string): HtmlNode[] =>
     nodes.map((node, index): HtmlNode => {
       if (node.type === "text") return { ...node };
       const path = `${id}.${index}`;
+      if (node.tag === "a") {
+        const ref = node.attrs.find(([key]) => key === "data-source")?.[1];
+        const source = sourceDoc.sources.find(source => source.id === ref);
+        const label = nodeText(node.children).trim();
+        if (source && (label === source.id || label.toLowerCase() === `source ${source.id}`.toLowerCase() || (source.id.length >= 8 && label.includes(source.id)))) {
+          node = { ...node, children: [{ type: "text", text: source.title }] };
+        }
+      }
       const attrs: Array<[string, string]> = node.attrs.map(([key, value]) => [key,
         TEXT_ATTRIBUTES.has(key) ? plain(`${path}@${key}`, value, context) : key === "lang" && value === "en" ? "zh-CN" : value]);
       return { ...node, attrs, children: prepareNodes(node.children, path, context) };
@@ -173,7 +194,7 @@ function build(sourceDoc: ArtifactDocument, translations?: ReadonlyMap<string, s
     let run: HtmlNode[] = [], runIndex = 0;
     const flush = () => {
       if (!run.length) return;
-      out.push(...phrase(`${id}.text${runIndex++}`, encodeRich(run), context));
+      out.push(...phrase(`${id}.text${runIndex++}`, encodeRich(run, sourceDoc.sources.map(s => s.id)), context));
       run = [];
     };
     nodes.forEach((node, index) => {

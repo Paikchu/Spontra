@@ -1,3 +1,4 @@
+import { handlePublicResearchAdminRequest } from "./public-research/admin.ts";
 import { refreshValuationQuotes } from "./valuation/quotes.ts";
 import { handleStageAdminRequest } from "./admin/stage.ts";
 import { handleAiModelsAdminRequest } from "./admin/ai-models.ts";
@@ -61,6 +62,7 @@ const worker = {
       url.pathname = path.replace("/admin/material-acceptance/", "/acceptance/");
       return handleMaterialAcceptance(new Request(url, request), env);
     }
+    if (path === "/admin/public-research" || path.startsWith("/admin/public-research/")) return handlePublicResearchAdminRequest(request, env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path === "/admin/ai/models" || path.startsWith("/admin/ai/models/") || path === "/admin/ai/endpoints" || path.startsWith("/admin/ai/endpoints/")) return handleAiModelsAdminRequest(request, env);
     if (path === "/admin/ai/stage" || path.startsWith("/admin/ai/stage/")) return handleStageAdminRequest(request, env);

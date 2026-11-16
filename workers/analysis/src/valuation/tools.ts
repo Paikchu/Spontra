@@ -1,3 +1,6 @@
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import type { ResearchContextState } from "../company-research/context-tools.ts";
+import type { ValuationPublicEvidence } from "./public-research.ts";
 import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
@@ -43,6 +46,9 @@ type GoingConcernAssessment = z.infer<typeof goingConcernSchema>;
 export type FrozenResearchSource = { sourceId: string; title: string; text: string; url: string; publishedAt: string; form: string; kind: "sec" | "web" };
 
 export type ValuationState = {
+  publicResearch?: FrozenCompanyResearch;
+  publicContextState?: ResearchContextState;
+  publicEvidence?: ValuationPublicEvidence;
   materialRefs?: Record<string, MaterialRef>;
   frozenSources?: FrozenResearchSource[];
   nearTermForecast?: { status: "unavailable"; reason: string } | { status: "available"; forecasts: Array<{ metric: string; periodStart: string; periodEnd: string; value: number; unit: string; basis: string; rationale: string; evidenceIds: string[] }> };

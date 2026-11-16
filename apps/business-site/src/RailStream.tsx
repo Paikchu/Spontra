@@ -1,3 +1,5 @@
+import type { PublishedFindingArticle } from "@/shared/analysis-contract/findings";
+import { belongsToFiling } from "./finding-association";
 import { Check } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
@@ -29,9 +31,9 @@ const m = messages({
   watchOutcome: "Watch outcome",
   tabs: "Show in the list",
   tabReports: "Reports", tabManagement: "Management",
-  findings: "Key information",
+  findings: "Company research",
   moreFindings: (n: number) => `${n} more`,
-  fewerFindings: "Show fewer",
+  fewerFindings: "Show fewer", updatingResearch: (period: string) => `New research for ${period} is pending. Showing the previous published conclusions.`,
 }, {
   title: "要点、财报与事件",
   report: "财报",
@@ -43,9 +45,9 @@ const m = messages({
   watchOutcome: "跟踪结果",
   tabs: "列表显示内容",
   tabReports: "财报", tabManagement: "管理层动态",
-  findings: "重点信息",
+  findings: "公司专题",
   moreFindings: (n: number) => `另外 ${n} 条`,
-  fewerFindings: "收起",
+  fewerFindings: "收起", updatingResearch: (period: string) => `${period} 的新研究尚未完成，当前显示此前已发布的结论。`,
 });
 
 /** Older rows join this many at a time. */
@@ -67,10 +69,12 @@ export type QuarterSource = Parameters<typeof quarterHeading>[1];
  * management or both, and the filings about one fiscal quarter are framed together.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
-export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
+export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, pendingResearch, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
+  articles?: Record<string, PublishedFindingArticle>;
+  pendingResearch?: { periodEnd: string; generatedAt: string };
   /** The period the findings were written about. */
   findingsPeriodEnd: string | null;
   /** Pass or fail of each finding's scored watch, by finding id, once its period reported. */
@@ -100,8 +104,10 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   const blocks = streamBlocks(rows, tabs, all, findingsPeriodEnd ?? quarters[0]?.periodEnd ?? null);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const [allFindings, setAllFindings] = useState(false);
-  const focusAt = findings.findIndex(f => f.id === focus);
-  const findingsShown = allFindings || focusAt >= FEW ? findings : findings.slice(0, FEW);
+  // Only remove a topic from the company list when a readable filing actually owns its conclusion.
+  const unmatched = findings.filter(f => !articles[f.id] || !all.some(item => item.kind === "report" && item.report.hasReport && belongsToFiling(articles[f.id]!, item.report)));
+  const focusAt = unmatched.findIndex(f => f.id === focus);
+  const findingsShown = allFindings || focusAt >= FEW ? unmatched : unmatched.slice(0, FEW);
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || rowLeaves(r).some(item => item.id === id)) ?? null : null;
   const focusedRow = hosts(focus);
   const focusedBlock = focusedRow ? blocks.find(b => rowsOf(b).includes(focusedRow)) ?? null : null;
@@ -138,10 +144,11 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const renderRow = (r: NoiseRow) => <NoiseBlock key={r.id} row={r} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
-    {findings.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
+    {pendingResearch && <p className="event-empty" role="status">{m.updatingResearch(pendingResearch.periodEnd)}</p>}
+    {unmatched.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
       <div className="guidance-head">
         <h3>{m.findings}</h3>
-        {findings.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="icon-button guidance-more" aria-expanded={allFindings} aria-label={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} title={allFindings ? m.fewerFindings : m.moreFindings(findings.length - FEW)} onClick={() => setAllFindings(v => !v)}>
+        {unmatched.length > FEW && focusAt < FEW && <Button variant="unstyled" type="button" className="icon-button guidance-more" aria-expanded={allFindings} aria-label={allFindings ? m.fewerFindings : m.moreFindings(unmatched.length - FEW)} title={allFindings ? m.fewerFindings : m.moreFindings(unmatched.length - FEW)} onClick={() => setAllFindings(v => !v)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
         </Button>}
       </div>

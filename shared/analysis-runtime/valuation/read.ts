@@ -96,6 +96,8 @@ const publication = z.object({
   model: model.nullable(), facts: z.array(fact),
   diagnostics: z.array(z.object({ key: z.string(), label: z.string(), value: nullableFinite, unit: z.enum(DIAGNOSTIC_UNITS), periodEnd: z.string().nullable(), note: z.string().nullable() })),
   distributions: z.array(z.object({ factor: z.string(), periods: z.array(z.object({ periodEnd: z.string(), value: finite })), min: finite, p25: finite, median: finite, p75: finite, max: finite })),
+  researchContext: z.object({asOf:z.string(),mappingVersions:strings,reports:z.array(z.object({reportId:z.string(),version:z.string(),title:z.string(),asOf:z.string(),type:z.enum(["macro","industry"]),scope:z.string()})),uses:z.array(z.object({reportId:z.string(),version:z.string(),claimId:z.string(),decision:z.enum(["adopted","rejected","not_applicable"]),reason:z.string(),companySources:strings,financialVariable:z.string()})),gaps:z.array(z.object({kind:z.enum(["macro","industry"]),industryId:z.string().nullable(),reason:z.string()}))}).optional(),
+  researchDependencies: z.array(z.object({ reportId: z.string(), version: z.string(), claimId: z.string(), shockId: z.string().min(1), financialVariable: z.string().min(1), companyEvidenceIds: z.array(z.string()).min(1), reason: z.string().min(1) })).optional(),
   sections, evidence: z.array(evidence), gaps: z.array(gap), versionId: z.string(),
 }) satisfies z.ZodType<ValuationPublication>;
 

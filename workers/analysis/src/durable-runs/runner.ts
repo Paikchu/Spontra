@@ -1,3 +1,4 @@
+import { publicResearchLoader } from "../public-research/generation.ts";
 import { Agent } from "agents";
 import type { AnalysisEnv } from "../operations.ts";
 import { withRuns, type RunKind } from "./binding.ts";
@@ -49,6 +50,7 @@ export class TaskRunner extends Agent<Env, RunView> {
   private loaders(): Record<string, PiLoader> {
     const env = () => companyPolicyEnvironment(this.taskEnv());
     return {
+      "public-research": async spec => publicResearchLoader(spec, this.taskEnv()),
       filing: async spec => filingLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
       analyst: async spec => analystLoader(spec, await env()),

@@ -1,4 +1,6 @@
+import type { ArtifactResearchContext } from "./artifact.ts";
 import type { ValuationPriceGuide } from "./price-guide.ts";
+import type { PriceImpact } from "./price-impact.ts";
 
 /**
  * The valuation assessment: five researched dimensions, one calculated model over three scenarios
@@ -439,6 +441,9 @@ export type ValuationPublication = {
   sections: ValuationSections;
   evidence: ValuationEvidence[];
   gaps: ValuationGap[];
+  /** Only adopted public claims. Empty/absent means no public claim was adopted, not verified global coverage. */
+  researchContext?: ArtifactResearchContext;
+  researchDependencies?: Array<{ reportId: string; version: string; claimId: string; shockId: string; financialVariable: string; companyEvidenceIds: string[]; reason: string }>;
   /** Content hash of the publication without generatedAt; the version id. */
   versionId: string;
 };
@@ -459,6 +464,9 @@ export type ValuationResponse = {
   availability: ValuationAvailability;
   report: ValuationPublication | null;
   priceGuide?: ValuationPriceGuide;
+  /** Frozen research projection shared by filing summaries and the valuation page. */
+  priceImpact?: PriceImpact;
+  researchStatus?: "valid" | "review_required" | "unavailable";
   latestAttempt: ValuationAttempt | null;
   outdated: boolean;
   versions: Array<{ versionId: string; generatedAt: string; researchAsOf: string; reportStatus: ReportStatus; weightedScore: number | null; verdict: ValuationVerdict }>;

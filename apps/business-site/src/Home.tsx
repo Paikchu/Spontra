@@ -14,6 +14,7 @@ import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { worthWatching, type SignalTab, type WorthWatchingCard } from "./worth-watching";
 import { FRESH_DAYS, freshResults, type FreshResult } from "./fresh-results";
+import { HomeResearch } from "./PublicResearch";
 
 const m = messages({
   brand: "Business View",
@@ -276,6 +277,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
         <span>{chips[0].popular ? m.popular : m.recent}</span>
         {chips.map(chip => <a key={chip.ticker} href={`/companies/${chip.ticker}`} data-nav><CompanyLogo ticker={chip.ticker} small /><span lang="en">{chip.ticker}</span></a>)}
       </nav>}
+      <HomeResearch />
       {fresh.length > 0 && <section className="home-fresh" aria-labelledby="home-fresh-title">
         <div className="home-section-head">
           <h2 id="home-fresh-title">{m.freshTitle}</h2>

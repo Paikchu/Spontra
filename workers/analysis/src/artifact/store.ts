@@ -1,3 +1,4 @@
+import { companyResearchDependencyStatus } from "../public-research/context.ts";
 import type { ArtifactDocument, ArtifactKind, PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
 import { sha256 } from "../sha256.ts";
 import { documentHtml } from "./document.ts";
@@ -31,7 +32,7 @@ export async function publishedDossiers(db: D1Database, ticker: string, findings
     .bind(ticker, prefix.length, prefix).all<{ subject: string; published_at: string }>().catch(() => ({ results: [] as Array<{ subject: string; published_at: string }> }));
   return Object.fromEntries(rows.results.map(r => [r.subject.slice(prefix.length), r.published_at]));
 }
-const objectKey = (id: string, version: number) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/v${version}.json`;
+const objectKey = (id: string, version: number, hash: string) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/v${version}-${hash}.json`;
 
 /** Saves a version and returns its number and hash; the same HTML and CSS saved again is the same version. */
 export async function saveVersion(env: ArtifactStoreEnv, document: Omit<ArtifactDocument, "version">, css: string, status: "draft" | "published", runId: string | null): Promise<{ version: number; hash: string; html: string }> {
@@ -42,10 +43,15 @@ export async function saveVersion(env: ArtifactStoreEnv, document: Omit<Artifact
   const html = documentHtml(full);
   const hash = await sha256(`${html}\n${css}`);
   const same = await db.prepare("SELECT version FROM analysis_artifact_versions WHERE artifact_id = ? AND hash = ? ORDER BY version DESC LIMIT 1").bind(id, hash).first<{ version: number }>();
-  if (same && status === "draft") return { version: same.version, hash, html };
+  if (same && status === "draft") {
+    const stored = await readArtifactVersion(env, id, same.version);
+    if (stored && stored.css === css && JSON.stringify(stored.document) === JSON.stringify(full)) return { version: same.version, hash, html };
+  }
   const degraded = full.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id);
-  const key = objectKey(id, next);
-  await env.SEC_FILINGS.put(key, JSON.stringify({ document: full, html, css, hash, degraded } satisfies Stored), { httpMetadata: { contentType: "application/json" } });
+  // Concurrent candidates can choose the same next version. Their bytes must never overwrite each other.
+  const bytes = JSON.stringify({ document: full, html, css, hash, degraded } satisfies Stored);
+  const key = objectKey(id, next, await sha256(bytes));
+  await env.SEC_FILINGS.put(key, bytes, { httpMetadata: { contentType: "application/json" } });
   const at = new Date().toISOString();
   await db.batch([
     db.prepare(`INSERT INTO analysis_artifacts (artifact_id, kind, ticker, subject, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)
@@ -94,15 +100,31 @@ export async function readArtifactEdition(env: ArtifactStoreEnv, id: string, ver
   return stored ? localizedEdition(env, id, stored, row.published_at, locale) : null;
 }
 
-async function localizedEdition(env: ArtifactStoreEnv, id: string, stored: StoredArtifact, at: string, locale?: Locale | null): Promise<PublishedArtifact> {
+export async function localizedEdition(env: ArtifactStoreEnv, id: string, stored: StoredArtifact, at: string, locale?: Locale | null): Promise<PublishedArtifact> {
   const original = toPublished(id, stored, at);
+  if (original.researchContext) {
+    const freshness = await companyResearchDependencyStatus(env, `${id}:v${stored.document.version}`).catch(() => ({ status: "unavailable" as const }));
+    original.researchFreshness = freshness.status;
+  }
   if (locale !== "zh-CN" || original.lang === "zh-CN") return original;
   const translated = await readArtifactTranslation(env, id, stored.document.version, stored.hash);
   const publishedKey = translated?.published_r2_key ?? (translated?.status === "ready" ? translated.r2_key : null);
   const publishedAt = translated?.published_at ?? (translated?.status === "ready" ? translated.updated_at : null);
   if (publishedKey && publishedAt) {
     const object = await env.SEC_FILINGS.get(publishedKey);
-    if (object) return { ...toPublished(id, JSON.parse(await object.text()) as Stored, publishedAt), translation: { locale: "zh-CN", status: "ready" } };
+    if (object) {
+      const edition = JSON.parse(await object.text()) as Stored;
+      const expectedHash = translated?.published_hash ?? translated?.hash;
+      const doc = edition.document;
+      if (doc?.ticker === stored.document.ticker && doc.kind === stored.document.kind && doc.subject === stored.document.subject
+        && doc.version === stored.document.version && doc.lang === "zh-CN" && edition.hash === expectedHash
+        && await sha256(`${edition.html}\n${edition.css}`) === expectedHash) {
+        const translation: NonNullable<PublishedArtifact["translation"]> = translated?.status === "ready"
+          ? { locale: "zh-CN", status: "ready" }
+          : { locale: "zh-CN", status: translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 };
+        return { ...toPublished(id, edition, publishedAt), researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
+      }
+    }
   }
   return { ...original, translation: { locale: "zh-CN", status: translated?.status === "ready" ? "pending" : translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 } };
 }
@@ -134,6 +156,7 @@ export async function readWorkState<T>(env: ArtifactStoreEnv, kind: ArtifactKind
 }
 
 const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
+  ...(s.document.researchContext ? { researchContext: s.document.researchContext } : {}),
   id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version,
   title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title
     : s.document.kind === "dossier" ? s.document.blocks.find(b => b.id === "thesis")?.title ?? s.document.title : s.document.title,

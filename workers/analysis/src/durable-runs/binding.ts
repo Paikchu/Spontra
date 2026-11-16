@@ -4,7 +4,7 @@ import type { RunState } from "./engine.ts";
 export const RUN_BINDINGS = [
   "BUSINESS_EXPLAINER_WORKFLOW", "BUSINESS_TREE_WORKFLOW", "VALUATION_WORKFLOW",
   "BUSINESS_CLASSIFICATION_WORKFLOW", "BUSINESS_TAGS_WORKFLOW", "TRANSLATE_WORKFLOW", "ANALYST_WORKFLOW", "FINDINGS_WORKFLOW",
-  "SEC_MEMORY_WORKFLOW", "COMPANY_ANALYSIS_WORKFLOW", "REPORT_WORKFLOW",
+  "SEC_MEMORY_WORKFLOW", "COMPANY_ANALYSIS_WORKFLOW", "REPORT_WORKFLOW", "PUBLIC_RESEARCH_WORKFLOW",
 ] as const;
 export type RunKind = typeof RUN_BINDINGS[number];
 
@@ -53,6 +53,7 @@ export function filingSessions(env: object) {
   return {
     start: async (id: string, kind: string, spec: unknown, opening: string, operationId: string) => (await stub(id)).startSession(kind, spec, opening, operationId),
     report: async (id: string) => (await stub(id)).report(),
+    stop: async (id: string) => (await stub(id)).terminate(),
   };
 }
 

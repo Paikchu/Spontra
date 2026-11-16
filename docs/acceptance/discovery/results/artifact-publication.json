@@ -1,0 +1,14 @@
+{
+  "environment": "local Miniflare only",
+  "modelCalls": 0,
+  "evidence": [
+    {
+      "check": "object-written/index-failed",
+      "result": "old complete version remains readable"
+    },
+    {
+      "check": "concurrent-version-allocation",
+      "result": "one indexed winner, exact matching bytes, old version unchanged"
+    }
+  ]
+}

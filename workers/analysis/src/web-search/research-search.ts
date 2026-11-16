@@ -11,12 +11,12 @@ export function researchSearchConfigured(env: Pick<AnalysisEnv, "DB" | "DEEPSEEK
 }
 
 /** Cached web search for the explainer, tree, analyst and company-analysis agents; results persist in D1 and R2. */
-export function researchSearch(env: AnalysisEnv) {
+export function researchSearch(env: AnalysisEnv, ledger?: { runId: string; kind?: string }) {
   if (!env.DB || !env.DEEPSEEK_API_KEY) throw new Error("research_search_not_configured");
   const api = new DeepSeekWebProvider({
     apiKey: env.DEEPSEEK_API_KEY,
     record: call => recordAiUsage(env, aiUsageFromMetrics({ stage: call.stage, model: "search-fetch-api", ...(call.error ? { error: call.error } : {}) },
-      { at: new Date(Date.now() - call.durationMs).toISOString(), durationMs: call.durationMs, provider: "deepseek", kind: "web", searchCalls: call.searchCalls })),
+      { at: new Date(Date.now() - call.durationMs).toISOString(), durationMs: call.durationMs, provider: "deepseek", kind: ledger?.kind ?? "web", ...(ledger ? { runId: ledger.runId } : {}), searchCalls: call.searchCalls })),
   });
   // Direct reads first; the raw Fetch API handles pages the Worker cannot read. Neither path calls a model.
   const markdown = typeof env.AI?.toMarkdown === "function" ? env.AI as MarkdownConverter : undefined;

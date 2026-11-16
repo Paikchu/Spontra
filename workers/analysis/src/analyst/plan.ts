@@ -19,6 +19,7 @@ const MAX_LINES = 5;
 const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
   capital_intensity: { key: "capital_intensity", questions: [
     "What is the capital buying: property and equipment by class, leased against owned, and how much is committed but not yet paid or on the balance sheet?",
+    "For disclosed capacity businesses, can period-average active capacity, delivered equipment, realized revenue and contract pricing support unit economics? Missing GPU mix, utilization or comparable MW definitions must remain explicit gaps.",
     "Is the asset base growing faster than the revenue it is meant to produce (property and equipment, lease assets, against the anchored revenue)?",
     "How is the gap funded this period against last: operating cash, debt, leases, equity; what does that do to leverage and cash interest?",
     "Did management guide the figure, and did the actual land above or below it?",
@@ -32,7 +33,8 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
     "What was raised, in what instrument, and when does it come due?",
     "What sits on the balance sheet (debt, lease liabilities, customer advances, payables) and what sits off it (purchase obligations, leases not yet commenced, guarantees)?",
     "Who owns the assets being built: owned, leased, financed by vendors or customers?",
-    "What is the cash interest burden against operating cash?",
+    "What is the cash interest burden against operating cash? Which debt is fixed, floating or actually due for refinancing, and when does its cash rate reset?",
+    "How much funding is still needed after unrestricted cash, committed financing and customer receipts, and what would debt versus equity financing change in cash and diluted shares?",
   ], evidence: "debt, leases, customerAdvances, payables, deferredTax, interestPaid, leasePrincipal; the debt, leases and commitments notes, including the current and the previous filing's wording" },
   demand_conversion: { key: "demand_conversion", questions: [
     "Is growth converting from backlog at the pace management describes, and is the share due within twelve months rising or falling?",

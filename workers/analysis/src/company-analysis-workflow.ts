@@ -1,3 +1,4 @@
+import { freezeCompanyResearch } from "./public-research/context.ts";
 import type { RunStep, StepConfig as WorkflowStepConfig } from "./durable-runs/engine.ts";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
@@ -87,6 +88,7 @@ export async function executeCompanyAnalysisWorkflow(
     await step.do("fundamentals-refresh", () => refreshFundamentalsIfStale(env, params.ticker));
     const packet = await step.do("business-packet", () => readPacket(env, params, "cross_period"));
     const generatedAt = await step.do("company-generation-time", async () => new Date().toISOString());
+    const publicResearch = await step.do("company-public-context", () => freezeCompanyResearch(env,params.ticker,generatedAt));
     const tools = createBusinessResearchTools({
       database: requireDb(env), search: researchSearch(env), ticker: params.ticker,
       reportDate: packet.reportDate, now: generatedAt,
@@ -100,6 +102,7 @@ export async function executeCompanyAnalysisWorkflow(
       memoryVersion: params.memoryVersion,
       fundamentalsDataVersion,
       secReportVersions: availableSecReports,
+      publicResearch: {reports:publicResearch.reports.map(({report})=>({reportId:report.reportId,version:report.version})),mappingVersions:publicResearch.mappingVersions,gaps:publicResearch.gaps},
       skillVersion: COMPANY_ANALYSIS_PROMPT_VERSION,
       modelVersion,
       schemaVersion: COMPANY_ANALYSIS_SCHEMA_VERSION,
@@ -113,7 +116,7 @@ export async function executeCompanyAnalysisWorkflow(
     }));
     const output = await runBusinessModelAgent({
       ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
-      reportDate: packet.reportDate, now: generatedAt, tools,
+      reportDate: packet.reportDate, now: generatedAt, tools, publicResearch, siteOrigin:env.BUSINESS_SITE_ORIGIN,
       model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis"), ticker: params.ticker, runId: workflowInstanceId, kind: "company-analysis" }),
       run: sessionRunner(env, { do: (name, callback) => step.do(name, COMPANY_AGENT_MODEL_STEP_CONFIG, callback), ...(step.waitFor ? { waitFor: step.waitFor.bind(step) } : {}) }),
       operationId: `${workflowInstanceId}:business`, runId: workflowInstanceId,
@@ -132,6 +135,7 @@ export async function executeCompanyAnalysisWorkflow(
       params,
       inputHash,
       packet,
+      publicResearch,
       sources: output.overview.deepDive?.sources,
       observations: output.observations,
       overview: output.overview,

@@ -3,6 +3,7 @@
  * hashed address, and global caps in `feature_budget`. A unit is one model call, one conversation, one identity.
  */
 export const STAGE_LIMITS = {
+  "valuation-adjustments": { reader: 60, address: 200, global: 2000 },
   "stage-identities": { reader: null, address: 10, global: null },
   "stage-conversations": { reader: 5, address: 20, global: 200 },
   "stage-says": { reader: 20, address: 60, global: null },

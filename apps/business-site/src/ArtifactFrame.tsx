@@ -1,3 +1,4 @@
+import { ArtifactResearchContext } from "./ArtifactResearchContext";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactFrameMessage, PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { ArtifactLanguage } from "./ArtifactLanguage";
@@ -10,8 +11,9 @@ const isDark = () => !document.documentElement.classList.contains("light");
  * frame to the height it reports, and opens the links it forwards. `data-rendered` tells the visual review the report
  * has drawn.
  */
-export function ArtifactFrame({ artifact, showLanguage = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css">; showLanguage?: boolean; hostTitle?: string }) {
+export function ArtifactFrame({ artifact, showLanguage = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css" | "researchContext" | "researchFreshness">; showLanguage?: boolean; hostTitle?: string }) {
   return <>
+    <ArtifactResearchContext artifact={artifact} />
     {showLanguage && <div className="artifact-language-row"><ArtifactLanguage artifact={artifact} /></div>}
     <Frame key={`${artifact.id}:${artifact.lang}:${artifact.hash}:${hostTitle ?? ""}`} artifact={artifact} hostTitle={hostTitle} />
   </>;

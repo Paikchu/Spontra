@@ -17,9 +17,9 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { sha256 } from "../sha256.ts";
-import { checkArtifactTranslation } from "../../../../shared/analysis-runtime/artifact/localization.ts";
+import { checkArtifactTranslation, extractArtifactTranslation } from "../../../../shared/analysis-runtime/artifact/localization.ts";
 import { ArtifactTranslationDeferred, artifactSourceSettled, artifactTranslationProgress, publishArtifactTranslation, readArtifactSources, type ArtifactSource, type TranslationReview } from "./artifacts.ts";
-import type { ArtifactStoreEnv } from "../artifact/store.ts";
+import { readArtifactVersion, type ArtifactStoreEnv } from "../artifact/store.ts";
 import { z } from "zod";
 import { requireTranslationScheduled, TranslationPaused } from "./scheduling.ts";
 
@@ -144,6 +144,7 @@ const SYSTEM = `你把美股财报分析网站上的英文文字翻译成简体�
 - 原文只写 from…to…而没有升降词时，译文保持“从…到…”的中性表达，不补充上升、下降等判断；four-quarter 表示连续四个季度，第四季度仅指 Q4。
 - 公司名、产品名、业务分部名、人名、表单名（10-K、10-Q、8-K、Form 4）、Item 编号、股票代码保留英文原文。
 - 数字的数值必须与原文一致，金额改用中文单位：$28.5 billion → 285亿美元，$350 million → 3.5亿美元，$12 million → 1200万美元，$1.2 trillion → 1.2万亿美元，$1.24 per share → 每股 1.24美元；百分比照写（235.2%）；percentage points / pp → 个百分点；倍数 2.6x → 2.6倍。年份、季度、日期照原样（Q1 FY2027 → 2027 财年第一季度，2026-08-31 不变）。
+- 来源 ID、hash、URL、accession 必须逐字保留，不能当成数字或金额转换；9M capex 中的 9M 表示前9个月，不是900万。只有语义明确的金额才转换单位。
 - 预测年份序号和显式月份长度保留阿拉伯数字，例如 year-3 → 第3年、24 months → 24个月，不要只转写成中文数词。
 - {value}、{change}、{label}、{period} 这类占位符原样保留，位置可按中文语序调整。
 - HTML 报告中的 {o0}、{c0} 是内联标签开合，{x0} 是受保护的数字或原文；所有这种带编号占位符必须逐个原样保留，保持正确嵌套，可以调整整体位置；不输出 HTML 标签。
@@ -237,10 +238,9 @@ async function translateBatch(env: AnalysisEnv, ticker: string, runId: string, b
  * Writes one table per resource from the remembered translations of the strings it carries now, and announces the
  * run, in one batch. Read fresh, so a publication that changed while the run translated gets what is known for it.
  */
-async function publishTables(env: AnalysisEnv, ticker: string, runId: string, review: TranslationReview, locale: Locale = LOCALE, artifactsOnly = false): Promise<{ tables: number; translated: number; total: number }> {
+async function publishTables(env: AnalysisEnv, ticker: string, runId: string, review: TranslationReview, locale: Locale = LOCALE, artifactsOnly = false, read = () => readSources(env.DB!, ticker, env)): Promise<{ tables: number; translated: number; total: number }> {
   await requireTranslationScheduled(env, ticker);
   const db = env.DB!;
-  const read = () => readSources(db, ticker, env);
   const sources = (await read()).filter(source => !artifactsOnly || source.resource === "artifact");
   const unique = [...new Set(sources.flatMap(s => s.strings))];
   const hashes = await Promise.all(unique.map(sha256));
@@ -293,7 +293,7 @@ export async function readTranslationTable(db: D1Database, locale: Locale, resou
   return stored?.strings && Object.keys(stored.strings).length ? stored.strings : null;
 }
 
-export type TranslateParams = { ticker: string; fingerprint: string };
+export type TranslateParams = { ticker: string; fingerprint: string; artifact?: { artifactId: string; sourceVersion: number; sourceHash: string } };
 type Step = { do<T>(name: string, callback: () => Promise<T>): Promise<T> };
 const PARALLEL = 3;
 type ScheduledStepResult<T> = { status: "done"; value: T } | { status: "paused" };
@@ -312,7 +312,15 @@ async function scheduledStep<T>(step: Step, name: string, env: AnalysisEnv, tick
 
 /** One company's run: plan, translate the batches a few at a time as durable steps, then publish every table. */
 export async function executeTranslateWorkflow(params: TranslateParams, step: Step, env: AnalysisEnv, runId: string, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
-  const planned = await scheduledStep(step, "translate-plan", env, params.ticker, () => translationPlan(env.DB!, params.ticker, LOCALE, () => readSources(env.DB!, params.ticker, env)));
+  const read = async (): Promise<TranslationSource[]> => {
+    if (!params.artifact) return readSources(env.DB!, params.ticker, env);
+    const { artifactId, sourceVersion, sourceHash } = params.artifact;
+    const stored = await readArtifactVersion(env, artifactId, sourceVersion);
+    if (!stored || stored.hash !== sourceHash || stored.document.ticker !== params.ticker || stored.document.lang !== "en") throw new Error("Pinned translation source is unavailable or changed");
+    const plan = extractArtifactTranslation(stored.document);
+    return [{ resource: "artifact", scope: `${artifactId}@${sourceVersion}`, strings: plan.units.map(unit => unit.text), artifact: { id: artifactId, stored, plan } }];
+  };
+  const planned = await scheduledStep(step, "translate-plan", env, params.ticker, () => translationPlan(env.DB!, params.ticker, LOCALE, read));
   if (planned.status === "paused") return { status: "paused", batches: 0, ready: 0, rejected: 0 };
   const plan = planned.value;
   let ready = 0, rejected = 0, unavailable = false;
@@ -366,7 +374,7 @@ export async function executeTranslateWorkflow(params: TranslateParams, step: St
     return { problems: [], translations };
   };
   // A complete report is published independently of unrelated historical JSON strings.
-  const known = await scheduledStep(step, "translate-known-artifacts", env, params.ticker, () => publishTables(env, params.ticker, runId, review, LOCALE, true));
+  const known = await scheduledStep(step, "translate-known-artifacts", env, params.ticker, () => publishTables(env, params.ticker, runId, review, LOCALE, true, read));
   if (known.status === "paused") return { status: "paused", batches: batches.length, ready, rejected };
   const lastArtifactBatch = batches.findLastIndex(batch => batch.some(item => item.artifact)) + 1;
   for (let i = 0; i < batches.length && !unavailable; i += PARALLEL) {
@@ -381,11 +389,11 @@ export async function executeTranslateWorkflow(params: TranslateParams, step: St
     }
     if (paused) return { status: "paused", batches: batches.length, ready, rejected };
     if (i < lastArtifactBatch && i + PARALLEL >= lastArtifactBatch) {
-      const artifacts = await scheduledStep(step, "translate-artifacts-publish", env, params.ticker, () => publishTables(env, params.ticker, runId, review, LOCALE, true));
+      const artifacts = await scheduledStep(step, "translate-artifacts-publish", env, params.ticker, () => publishTables(env, params.ticker, runId, review, LOCALE, true, read));
       if (artifacts.status === "paused") return { status: "paused", batches: batches.length, ready, rejected };
     }
   }
-  const published = await scheduledStep(step, "translate-publish", env, params.ticker, () => publishTables(env, params.ticker, runId, review));
+  const published = await scheduledStep(step, "translate-publish", env, params.ticker, () => publishTables(env, params.ticker, runId, review, LOCALE, false, read));
   if (published.status === "paused") return { status: "paused", batches: batches.length, ready, rejected };
   return { status: unavailable ? "model-unavailable" : "ready", batches: batches.length, ready, rejected, ...published.value };
 }

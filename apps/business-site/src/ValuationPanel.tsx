@@ -1,3 +1,8 @@
+import { priceImpactOf } from "@/shared/analysis-runtime/price-impact";
+import { priceGuideOf } from "@/shared/analysis-runtime/valuation/price-guide";
+import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
+import { companyRequest } from "./company-request";
+import { PriceImpactSummary } from "./PriceImpactSummary";
 import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { markContent } from "./vitals";
 import { Button } from "@/packages/web/src/ui/button";
@@ -64,7 +69,7 @@ const m = messages({
   priceConclusion: (position: string) => `The current price is ${position.toLowerCase()}.`,
   normalRangeNote: "This range covers normal operating assumptions. The bear and bull scenarios below test more adverse or favourable outcomes and can fall outside it; the base value is shared.",
   baseComposition: "Base value by method", compositionEquals: "=", compositionPlus: "+",
-  reportSnapshot: (date: string) => `Research written on ${date}. Its commentary records the conditions at that time; the reference close and price comparisons above are updated separately.`,
+  reportSnapshot: (date: string) => `Research written on ${date}. Scenario comparisons retain its original reference price; the normal-range market comparison uses a separately dated quote.`,
   reportSnapshotPrice: (price: string, date: string) => `Price used in the original commentary: ${price}, close of ${date}.`,
   impliedBasis: "Implied growth uses the cash-flow method alone, at the same valuation horizon.",
   noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
@@ -113,7 +118,7 @@ const m = messages({
   priceConclusion: (position: string) => `当前股价${position}。`,
   normalRangeNote: "此区间对应正常经营假设。下方悲观与乐观情景分别检验更不利和更有利的结果，可以落在该区间之外；两者共用同一基准价值。",
   baseComposition: "基准价值的计算构成", compositionEquals: "=", compositionPlus: "+",
-  reportSnapshot: (date: string) => `研究撰写于 ${date}，正文保留当时的判断；上方参考收盘价及价格比较单独更新。`,
+  reportSnapshot: (date: string) => `研究撰写于 ${date}，情景比较保留当时的基准价；正常经营区间的市场比较使用单独注明日期的行情。`,
   reportSnapshotPrice: (price: string, date: string) => `原文采用的历史价格：${price}（${date} 收盘）。`,
   impliedBasis: "隐含增长仅使用现金流法，与页面采用相同估值期限。",
   noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
@@ -335,7 +340,7 @@ function RangeBar({ report }: { report: ValuationPublication }) {
   }
   return <div className="val-range" role="img" aria-label={[m.range, ...marks.map(([label, v]) => `${label} ${money(v)}`), ...(range.price != null ? [`${m.price} ${money(range.price)}`] : [])].join(" · ")}>
     <div className="val-range-track">
-      <span className="val-range-band" style={{ left: x(range.low), width: `calc(${x(range.high)} - ${x(range.low)})` }} />
+
       {marks.map(([label, v, kind]) => <span key={kind} className="val-range-mark" data-kind={kind} style={{ left: x(v) }}><i /><b>{money(v)}</b><small>{label}</small></span>)}
       {range.price != null && <span className="val-range-mark val-range-price" style={{ left: x(range.price) }}><i /><b>{money(range.price)}</b><small>{m.price}</small></span>}
     </div>
@@ -530,7 +535,7 @@ function footnotesOf(report: ValuationPublication): Footnotes {
   return { order: citationOrder(texts, report.evidence.map(e => e.evidenceId)), names: new Map(report.evidence.map(e => [e.evidenceId, sourceName(e)])) };
 }
 
-export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
+function ValuationDocument({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
   useEffect(() => { markContent("company"); }, []);
   const [open, setOpen] = useState<string | null>(null);
   // Another company starts with no source open.
@@ -540,8 +545,11 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   const locale = useLocale();
   const storedReport = valuation.report;
   const guide: ValuationPriceGuide = valuation.priceGuide && valuation.priceGuide.reportVersionId === storedReport?.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: storedReport?.versionId ?? null, quote: null, reason: storedReport?.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" };
-  const price = guide.status === "available" ? guide.quote.price : null;
-  const model = useMemo(() => storedReport?.model ? modelAtReferencePrice(storedReport.model, price) : null, [storedReport?.model, price]);
+  const frozenQuote = storedReport?.quote;
+  const price = frozenQuote?.usable && frozenQuote.currency === storedReport?.currency && frozenQuote.price > 0 ? frozenQuote.price : null;
+  const impact = storedReport ? priceImpactOf(storedReport, { outdated: valuation.outdated, dependencyStatus: valuation.researchStatus }) : null;
+  const storedModel = impact?.quantificationStatus === "unavailable" ? undefined : storedReport?.model;
+  const model = useMemo(() => storedModel ? modelAtReferencePrice(storedModel, price) : null, [storedModel, price]);
   const report = storedReport ? { ...storedReport, model } : null;
   const range = report?.model?.range;
   const footnotes = useMemo(() => storedReport ? footnotesOf(storedReport) : null, [storedReport]);
@@ -552,9 +560,10 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
     </section>;
   }
   return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
-    <div className="lens-doc val-doc">
+    <div className="lens-doc val-doc" tabIndex={0}>
       <Head report={report} guide={guide} />
       <Status valuation={valuation} />
+      <PriceImpactSummary valuation={valuation} />
       <FairValue report={report} guide={guide} onCite={setOpen} />
       {report.model && <section className="val-block"><details className="val-fold val-stress" open>
         <summary>{m.stressScenarios}</summary>
@@ -563,7 +572,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <RangeBar report={report} />
         {range && range.low < 0 && <p className="val-list-line">{m.equityShortfall}</p>}
         <dl className="val-stats">
-          <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+          <div><dt>{m.price}</dt><dd>{frozenQuote && price != null ? <>{perShare(price, frozenQuote.currency, locale)}<small>{m.priceDate(frozenQuote.priceDate)}</small></> : m.noQuote}</dd></div>
           {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}
           {has(range?.marginOfSafety) && <div><dt>{m.marginOfSafety}</dt><dd data-sign={range!.marginOfSafety! >= 0 ? "up" : "down"}>{pct(range!.marginOfSafety)}</dd></div>}
           {has(range?.baseUpside) && <div><dt>{m.baseUpside}</dt><dd>{signedPct(range!.baseUpside)}</dd></div>}
@@ -577,6 +586,42 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
       <Scores report={report} onCite={setOpen} />
       <Report report={report} onCite={setOpen} />
       <Sources report={report} open={open} onOpen={setOpen} onClose={() => setOpen(null)} />
+      {valuation.versions.length > 0 && <details className="val-fold"><summary>{versionMessages.versions}</summary><nav aria-label={versionMessages.versions}><ul>{valuation.versions.map(v => <li key={v.versionId}><a href={`/companies/${encodeURIComponent(ticker)}?view=valuation&valuationVersion=${encodeURIComponent(v.versionId)}`}>{v.researchAsOf.slice(0, 10)} · {v.generatedAt.slice(0, 16).replace("T", " ")}</a></li>)}</ul></nav></details>}
     </div>
   </section></FootnotesContext.Provider>;
+}
+
+
+const versionMessages = messages({ loading: "Loading the saved valuation…", failed: "This saved valuation could not be loaded.", current: "Current valuation", saved: "Saved valuation", versions: "Research versions" }, { loading: "正在读取历史估值…", failed: "无法读取此历史估值。", current: "当前估值", saved: "历史估值", versions: "研究版本" });
+/** A shared summary link opens the exact immutable research version, with its original quote. */
+export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
+  const locale = useLocale();
+  const [version, setVersion] = useState(() => typeof location === "undefined" ? null : new URLSearchParams(location.search).get("valuationVersion"));
+  const [saved, setSaved] = useState<{ key: string; report: ValuationPublication | null; researchStatus?: ValuationResponse["researchStatus"] } | null>(null);
+  const key = `${ticker}:${version}:${locale}`;
+  useEffect(() => {
+    const changed = () => setVersion(new URLSearchParams(location.search).get("valuationVersion"));
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+  useEffect(() => {
+    if (!version || !/^[0-9a-f]{8,64}$/.test(version)) return;
+    const abort = new AbortController();
+    const url = `/api/business/v1/companies/${encodeURIComponent(ticker)}/valuation/versions/${version}?lang=${encodeURIComponent(locale)}`;
+    companyRequest(url, abort.signal).then(async response => {
+      if (!response.ok) throw new Error("version unavailable");
+      const body = await response.json() as { report?: unknown; researchStatus?: ValuationResponse["researchStatus"] };
+      const report = readValuationPublication(body.report, ticker);
+      if (!abort.signal.aborted) setSaved({ key, report: report?.versionId === version ? report : null, researchStatus: body.researchStatus });
+    }).catch(() => { if (!abort.signal.aborted) setSaved({ key, report: null }); });
+    return () => abort.abort();
+  }, [ticker, version, locale, key]);
+  if (version && (!/^[0-9a-f]{8,64}$/.test(version) || saved?.key === key && !saved.report)) return <section className="lens val-panel val-panel--empty"><p role="alert">{versionMessages.failed}</p><a href={`/companies/${encodeURIComponent(ticker)}?view=valuation`}>{versionMessages.current}</a></section>;
+  if (version && saved?.key !== key) return <section className="lens val-panel val-panel--empty"><p role="status">{versionMessages.loading}</p></section>;
+  const historical = version && saved?.report ? saved.report : null;
+  const shown: ValuationResponse = historical ? { ...valuation, report: historical, availability: historical.reportStatus === "ready" ? "ready" : "insufficient", outdated: false, latestAttempt: null, researchStatus: saved?.researchStatus, priceImpact: priceImpactOf(historical, { dependencyStatus: saved?.researchStatus }), priceGuide: priceGuideOf({ report: historical, quote: historical.quote, asOf: historical.generatedAt }) } : valuation;
+  return <>
+    {version && <p className="val-banner">{versionMessages.saved} · {historical?.researchAsOf.slice(0, 10)} · <a href={`/companies/${encodeURIComponent(ticker)}?view=valuation`}>{versionMessages.current}</a></p>}
+    <ValuationDocument ticker={ticker} valuation={shown} />
+  </>;
 }

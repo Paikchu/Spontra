@@ -1,0 +1,37 @@
+{
+  "fixture": "synthetic; zero network or production writes",
+  "results": [
+    {
+      "name": "unread public context blocks valuation",
+      "pass": true
+    },
+    {
+      "name": "public claim registered under valid valuation citation",
+      "pass": true
+    },
+    {
+      "name": "adoption without company exposure rejected",
+      "pass": true
+    },
+    {
+      "name": "company exposure permits explained adoption",
+      "pass": true
+    },
+    {
+      "name": "public applicability gate passes",
+      "pass": true
+    },
+    {
+      "name": "publication dependency preserves shock/evidence/version",
+      "pass": true
+    },
+    {
+      "name": "new version not silently adopted",
+      "pass": true
+    },
+    {
+      "name": "uncovered research permits company-only evidence after explicit read",
+      "pass": true
+    }
+  ]
+}

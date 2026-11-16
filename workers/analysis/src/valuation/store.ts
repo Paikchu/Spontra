@@ -1,3 +1,6 @@
+import { companyResearchDependencyStatements, companyResearchDependencyStatus } from "../public-research/context.ts";
+import { readPublicResearch, type PublicResearchEnv } from "../public-research/store.ts";
+import { priceImpactOf } from "../../../../shared/analysis-runtime/price-impact.ts";
 import { priceGuideOf } from "../../../../shared/analysis-runtime/valuation/price-guide.ts";
 import { latestValuationQuote } from "./quotes.ts";
 import type { ReportStatus, ValuationAttempt, ValuationEvidence, ValuationPublication, ValuationResponse } from "../../../../shared/analysis-contract/valuation.ts";
@@ -14,7 +17,8 @@ type CurrentRow = { version_id: string | null; latest_attempt_json: string | nul
 
 export class ValuationStore {
   private readonly db: D1Database;
-  constructor(db: D1Database) { this.db = db; }
+  private readonly researchEnv?: PublicResearchEnv;
+  constructor(db: D1Database, researchEnv?: PublicResearchEnv) { this.db = db; this.researchEnv = researchEnv; }
 
   async current(ticker: string): Promise<CurrentRow | null> {
     return this.db.prepare("SELECT version_id, latest_attempt_json, request_generation, last_fingerprint, updated_at FROM valuation_current WHERE ticker = ?").bind(ticker).first<CurrentRow>();
@@ -51,6 +55,21 @@ export class ValuationStore {
     const db = this.db;
     const existing = await db.prepare("SELECT version_id FROM valuation_versions WHERE version_id = ?").bind(publication.versionId).first<{ version_id: string }>();
     const statements: D1PreparedStatement[] = [];
+    if (publication.researchDependencies?.length) {
+      if (!this.researchEnv) throw new Error("Public research validation environment is required for adopted valuation claims");
+      const seen = new Set<string>();
+      const known = new Set([...evidence.map(e => e.evidenceId), ...publication.facts.map(f => f.id)]);
+      for (const dependency of publication.researchDependencies) {
+        const source = await readPublicResearch(this.researchEnv, dependency.reportId, { version: dependency.version });
+        const claim = source.report?.claims.find(c => c.id === dependency.claimId);
+        if (!claim || source.report?.freshnessStatus !== "valid" || claim.shockId !== dependency.shockId || !dependency.reason.trim() || !dependency.companyEvidenceIds.length || dependency.companyEvidenceIds.some(id => !known.has(id))) throw new Error("Valuation public claim lacks valid source or company exposure evidence");
+        const key = JSON.stringify([dependency.shockId, dependency.financialVariable]);
+        if (seen.has(key)) throw new Error("Duplicate public shock applied to the same financial variable; combine overlapping channels first");
+        seen.add(key);
+      }
+      statements.push(...await companyResearchDependencyStatements(this.researchEnv, { ticker, resultId: `valuation:${ticker}:${publication.versionId}`, dependencies: publication.researchDependencies, mappingVersions: publication.researchContext?.mappingVersions ?? [] }));
+    }
+
     if (!existing) {
       statements.push(db.prepare(`INSERT INTO valuation_versions (version_id, ticker, cik, generated_at, research_as_of, report_status, method_version, calculator_version, base_input_fingerprint, evidence_set_hash, payload_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(publication.versionId, ticker, publication.cik, publication.generatedAt, publication.researchAsOf, publication.reportStatus, publication.methodVersion, publication.calculatorVersion, publication.baseInputFingerprint, publication.evidenceSetHash, JSON.stringify(publication)));
@@ -92,7 +111,7 @@ export class ValuationStore {
 }
 
 /** The public read: current report, newest attempt and version list; `hidden` answers without any of them. */
-export async function readValuationResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<ValuationResponse> {
+export async function readValuationResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean; researchEnv?: PublicResearchEnv } = {}): Promise<ValuationResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   const empty: ValuationResponse = { schemaVersion: "valuation-response.v1", ticker, availability: "hidden", report: null, latestAttempt: null, outdated: false, versions: [] };
   if (options.hidden) return empty;
@@ -106,6 +125,7 @@ export async function readValuationResponse(db: D1Database, rawTicker: string, o
   // failed, superseded) leaves the retained report current, and the response names that attempt so the page can say so.
   const outdated = !!report && !!attempt && ["queued", "running", "waiting"].includes(attempt.status) && attempt.updatedAt > report.generatedAt;
   const quote = report ? await latestValuationQuote(db, ticker, report.quote) : null;
-  const priceGuide = priceGuideOf({ report, quote, asOf: new Date().toISOString(), outdated });
-  return { ...empty, availability, report, priceGuide, latestAttempt: attempt, outdated, versions };
+  const researchStatus = report && options.researchEnv ? (await companyResearchDependencyStatus(options.researchEnv, `valuation:${ticker}:${report.versionId}`)).status : report?.researchDependencies?.length ? "unavailable" as const : "valid" as const;
+  const priceGuide = priceGuideOf({ report, quote, asOf: new Date().toISOString(), outdated: outdated || researchStatus !== "valid" });
+  return { ...empty, availability, report, priceGuide, priceImpact: report ? priceImpactOf(report, { latestQuote: quote, outdated, dependencyStatus: researchStatus }) : undefined, researchStatus, latestAttempt: attempt, outdated, versions };
 }

@@ -168,7 +168,17 @@ export type StatementHighlight = {
 /** One report's headline figures per statement view, most notable first. */
 export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
 
+/** Only completed, published analyst articles. Detector questions remain internal research inputs. */
+export type PublishedFindingArticle = {
+  findingId: string; title: string; lang: string; version: number; hash: string; publishedAt: string;
+  periodEnd: string; sourceAccessions: string[]; subject: string;
+};
+
 export type FindingsPublication = {
+  /** Read projection from immutable published artifacts, never draft metadata. */
+  articles?: Record<string, PublishedFindingArticle>;
+  /** New input is still awaiting completed research; the displayed publication remains its original version. */
+  pendingResearch?: { periodEnd: string; generatedAt: string };
   schemaVersion: "findings.v1";
   ticker: string;
   /** The report the findings were written from. */
@@ -195,6 +205,7 @@ export type FindingsPublication = {
 export type FindingPassage = { passageId: string; documentId: string; title: string; form: string; filedAt: string; url: string; path: string[]; text: string; table: { unit: string | null; columns: string[]; rows: Array<{ label: string; cells: Array<{ text: string; value: number | null }> }> } | null };
 
 export type FindingsResponse = {
+  pendingResearch?: { periodEnd: string; generatedAt: string };
   schemaVersion: "findings-response.v1";
   /** `hidden`: the admin switched the company's findings off for readers; what is stored stays. */
   status: "ready" | "preparing" | "hidden";

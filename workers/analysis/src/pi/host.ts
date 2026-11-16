@@ -1,7 +1,8 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
 import { within } from "./within.ts";
-import { CompactionTask, createRegistry, GenerationTask, Harness, hook, type ConversationId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { CompactionTask, createRegistry, GenerationTask, Harness, hook, ProviderDoc, type ConversationId, type HookApi, type ToolRegistration } from "@earendil-works/pi-durable";
+import type { Context } from "@earendil-works/chord";
 import { PiHarness } from "agents/harness/pi";
 import { defaultBudgetLine, fitResult, type Recipe, type TurnRecord } from "../recipe.ts";
 import { CALLS_PER_TURN } from "../tool-loop.ts";
@@ -13,6 +14,7 @@ import { aiUsageFromMetrics, recordAiUsage } from "../ai-runs/usage.ts";
 import { listEndpoints } from "./endpoints.ts";
 import { PI_PROVIDER, installPiModels, piModels, piThinkingLevel } from "./model.ts";
 import { packState, unpackState } from "./state.ts";
+import { installProviderRequestGate } from "./request-budget.ts";
 
 /**
  * The Pi session host: every agent run (a stage turn, an analysis) is a Pi session on `PiHarness` inside the Agent that
@@ -36,6 +38,9 @@ export type PiLoaded<S = any> = {
   ledger: { kind: string; ticker?: string; runId?: string; userHash?: string; conversationId?: string };
   /** Reserves one model call against the allowances; false ends the run after the current round. It may mark the state. */
   reserve?(state: S, now: number): Promise<boolean>;
+  /** Reserve atomically at every provider HTTP send (including retries/compaction), and fail closed on denial.
+   * This hard-bounds calls, not token charges: recipe.tokens remains a reported-usage stop threshold. */
+  strictBudget?: true;
   /** Returns the unused call reserved at this time, including its original budget day. */
   refund?(state: S, reservedAt: number): Promise<void>;
   record?(entry: TurnRecord): void;
@@ -89,6 +94,7 @@ export class PiHost {
   readonly registry = createRegistry();
   readonly harness: PiHarness;
   private readonly bindings = new Map<string, Binding>();
+  private readonly providerSessions = new Map<string, string>();
   private restored = false;
   private tables = false;
   private readonly starting = new Map<string, Promise<void>>();
@@ -161,7 +167,8 @@ export class PiHost {
     // The first call is reserved before the session starts; each later one before the round ahead of it. A refused
     // start never reaches Pi: it is recorded as settled on its budget, so the caller reads an ordinary outcome.
     const reservedAt = Date.now();
-    if (loaded.reserve && !await loaded.reserve(state, reservedAt)) {
+    if (loaded.strictBudget && !loaded.reserve) throw new Error("pi: strict budget requires a reservation gate");
+    if (!loaded.strictBudget && loaded.reserve && !await loaded.reserve(state, reservedAt)) {
       this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, last_round, capped, active) VALUES (?, '', ?, ?, ?, ?, ?, 1, 1, 0)",
         `refused:${options.operationId}`, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now());
       return { operationId: options.operationId, session: "", refused: "capped" };
@@ -176,16 +183,16 @@ export class PiHost {
       const running = this.db().exec<{ operation_id: string }>("SELECT operation_id FROM pi_bindings WHERE conversation = ? AND active = 1", conversation).toArray()[0];
       if (running) throw new Error(`pi: session ${session.id} is still running ${running.operation_id}`);
       this.db().exec("INSERT OR REPLACE INTO pi_bindings (conversation, session, operation_id, kind, spec, state, started_at, startup, reserved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now(), JSON.stringify({ phase: "prepared", opening } satisfies Startup), loaded.reserve ? reservedAt : null);
+        conversation, session.id, options.operationId, kind, JSON.stringify(spec ?? null), packState(state), Date.now(), JSON.stringify({ phase: "prepared", opening } satisfies Startup), loaded.reserve && !loaded.strictBudget ? reservedAt : null);
       this.db().exec("DELETE FROM pi_trail WHERE conversation = ?", conversation);
       this.db().exec("DELETE FROM pi_calls WHERE conversation = ?", conversation);
       this.bind({ conversation, session: session.id, operationId: options.operationId, kind, spec, loaded, state, startedAt: Date.now(),
-        turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0, reservedAt: loaded.reserve ? reservedAt : null });
+        turns: 0, quiet: 0, lastRound: false, capped: false, finished: false, asked: null, round: [], requestAt: 0, spent: 0, reservedAt: loaded.reserve && !loaded.strictBudget ? reservedAt : null });
       bound = true;
       await this.ensureStarted(options.operationId);
       return { operationId: options.operationId, session: session.id };
     } catch (error) {
-      if (!bound) await loaded.refund?.(state, reservedAt);
+      if (!bound && !loaded.strictBudget) await loaded.refund?.(state, reservedAt);
       throw error;
     }
   }
@@ -229,7 +236,37 @@ export class PiHost {
     const endpoints = this.env.DB ? await listEndpoints(this.env.DB) : [];
     const ids = [...this.options.models(), ...endpoints.map((endpoint) => endpoint.name)];
     if (this.piRegistry) installPiModels(this.piRegistry, this.env, ids, endpoints);
-    else this.piRegistry = piModels(this.env, ids, endpoints);
+    else {
+      this.piRegistry = piModels(this.env, ids, endpoints);
+      installProviderRequestGate(this.piRegistry, async providerSession => {
+        const conversation = providerSession ? this.providerSessions.get(providerSession) : undefined;
+        const b = conversation ? await this.bound(conversation) : undefined;
+        if (!b) {
+          // A strict run may not fall through to an unmetered request if restoring the hook's binding failed.
+          if ([...this.bindings.values()].some(binding => binding.loaded.strictBudget)) throw new Error("pi: missing strict request identity");
+          return null;
+        }
+        return b.loaded.strictBudget ? () => this.reserveStrictRequest(b) : null;
+      });
+    }
+  }
+
+  private async rememberProviderSession(api: HookApi, context: Context) {
+    const provider = await api.snapshot(ProviderDoc, api.conversationId, context);
+    if (provider) this.providerSessions.set(provider.sessionId, String(api.conversationId));
+  }
+
+  private async reserveStrictRequest(b: Binding) {
+    const { budget } = b.loaded.recipe;
+    const blocked = this.options.isStopped?.() || b.capped || b.finished || b.turns > budget.turns ||
+      Date.now() - b.startedAt >= budget.wallMs || (budget.tokens !== undefined && b.spent >= budget.tokens);
+    // Reservations are deliberately not refunded after transport starts: a failed response can still be charged.
+    if (blocked || !b.loaded.reserve || !await b.loaded.reserve(b.state, Date.now())) {
+      b.lastRound = true;
+      b.capped = true;
+      this.persist(b);
+      throw new Error("pi: public research allowance exhausted or task stopped");
+    }
   }
 
   private assertRunning() {
@@ -446,7 +483,8 @@ export class PiHost {
       sections: [{ key: "recipe", tag: false, render: async (input: { conversationId: ConversationId }) => (await this.bound(String(input.conversationId)))?.system }],
       tools: [...tools.values()],
       hooks: [hook(GenerationTask, {
-        beforeRequest: async (_request: { messages: readonly unknown[] }, api: { conversationId: ConversationId }) => {
+        beforeRequest: async (_request: { messages: readonly unknown[] }, api: HookApi, context: Context) => {
+          await this.guard(() => this.rememberProviderSession(api, context));
           await this.guard(() => this.beforeRequest(String(api.conversationId)));
         },
         afterResponse: async (message: PiAssistant, api: { conversationId: ConversationId }) => { await this.guard(() => this.afterResponse(String(api.conversationId), message)); },
@@ -466,7 +504,8 @@ export class PiHost {
           return undefined;
         },
       } as never), hook(CompactionTask, {
-        beforeCompact: async (compaction: { reason: string; entries: readonly unknown[] }, api: { conversationId: ConversationId }) => {
+        beforeCompact: async (compaction: { reason: string; entries: readonly unknown[] }, api: HookApi, context: Context) => {
+          await this.guard(() => this.rememberProviderSession(api, context));
           await this.guard(async () => {
             const b = await this.bound(String(api.conversationId));
             if (b) this.trail(b, { turn: b.turns, thought: "", action: "compaction", input: compaction.reason, observation: `${compaction.entries.length} entries summarised.` });
@@ -487,7 +526,7 @@ export class PiHost {
     if (!b) return;
     this.env.PI_ACTIVE_MODEL = b.loaded.model;
     // Provider retries can arrive without a preceding tool round or yield.
-    if (b.reservedAt === null && b.loaded.reserve && !await b.loaded.reserve(b.state, Date.now())) {
+    if (!b.loaded.strictBudget && b.reservedAt === null && b.loaded.reserve && !await b.loaded.reserve(b.state, Date.now())) {
       b.lastRound = true;
       b.capped = true;
     }
@@ -605,7 +644,7 @@ export class PiHost {
 
   /** Reserve only after a round needs another request; a settling round spends no extra allowance. */
   private async reserveNext(b: Binding) {
-    if (b.finished || b.lastRound || b.reservedAt !== null || !b.loaded.reserve) return;
+    if (b.loaded.strictBudget || b.finished || b.lastRound || b.reservedAt !== null || !b.loaded.reserve) return;
     const reservedAt = Date.now();
     if (await b.loaded.reserve(b.state, reservedAt)) b.reservedAt = reservedAt;
     else { b.lastRound = true; b.capped = true; }

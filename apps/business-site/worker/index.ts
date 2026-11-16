@@ -1,3 +1,6 @@
+import { pendingResearchSchema } from "../../../shared/analysis-runtime/findings.ts";
+import { publicResearchListSchema, publicResearchReadSchema } from "@/shared/analysis-runtime/public-research-schema";
+import { priceImpactOf } from "@/shared/analysis-runtime/price-impact";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { readPriceGuide } from "@/shared/analysis-runtime/valuation/price-guide";
 
@@ -125,7 +128,7 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 }
 
 /** The findings with what their lens documents rest on: the quoted passages as the library serves them now, and the peers projection. */
-export type FindingsBundle={status:"ready"|"preparing";findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,string>};
+export type FindingsBundle={pendingResearch?:{periodEnd:string;generatedAt:string};status:"ready"|"preparing";findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null;dossiers:Record<string,string>};
 const asText=(v:unknown)=>typeof v==="string"?v:null;
 /** A served passage, rebuilt field by field; a malformed one is left out, and a malformed table drops the table alone. */
 function readFindingPassage(value:unknown):FindingPassage|null{
@@ -160,14 +163,15 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,loca
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown;dossiers?:unknown};
+  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown;dossiers?:unknown;pendingResearch?:unknown};
   const findings=body.schemaVersion==="findings-response.v1"&&(body.status==="ready"||body.status==="preparing")?readFindingsPublication(body.findings,ticker):null;
   if(!findings)return null;
   const passages=(Array.isArray(body.passages)?body.passages:[]).map(readFindingPassage).filter((p):p is FindingPassage=>p!=null).slice(0,60);
   // The findings whose analysis is a published dossier artifact, by id with when it was published (its read's revision).
   const ids=new Set(findingLeadsOf(findings).map(f=>f.id));
   const dossiers=Object.fromEntries(Object.entries(body.dossiers&&typeof body.dossiers==="object"?body.dossiers as Record<string,unknown>:{}).filter((e):e is [string,string]=>ids.has(e[0])&&typeof e[1]==="string"&&REVISION.test(e[1])));
-  return {status:body.status==="ready"?"ready":"preparing",findings,passages,peers:readPeersPublication(body.peers),dossiers};
+  const pending=pendingResearchSchema.safeParse(body.pendingResearch);
+  return {status:body.status==="ready"?"ready":"preparing",findings:{...findings,...(pending.success?{pendingResearch:pending.data}:{})},passages,peers:readPeersPublication(body.peers),dossiers,...(pending.success?{pendingResearch:pending.data}:{})};
  }catch{return null;}
 }
 
@@ -299,12 +303,12 @@ export async function loadValuation(ticker:string,path:string,params:URLSearchPa
   if(path==="/valuation"){
    if(body.schemaVersion!=="valuation-response.v1"||typeof body.availability!=="string")return null;
    const report=readValuationPublication(body.report,ticker);
-   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
+   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,priceGuide:readPriceGuide(body.priceGuide),priceImpact:report?priceImpactOf(report,{latestQuote:readPriceGuide(body.priceGuide)?.quote,outdated:body.outdated===true,dependencyStatus:body.researchStatus==="valid"?"valid":body.researchStatus==="review_required"?"review_required":"unavailable"}):undefined,researchStatus:body.researchStatus==="valid"?"valid":body.researchStatus==="review_required"?"review_required":"unavailable",latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
   }
   if(path==="/valuation/versions")return body.schemaVersion==="valuation-versions.v1"?{schemaVersion:"valuation-versions.v1",ticker,items:Array.isArray(body.items)?body.items.slice(0,50):[],nextCursor:typeof body.nextCursor==="string"?body.nextCursor:null}:null;
   if(path.includes("/evidence/"))return body.schemaVersion==="valuation-evidence.v1"&&body.evidence&&typeof body.evidence==="object"?{schemaVersion:"valuation-evidence.v1",ticker,evidence:body.evidence}:null;
   const report=readValuationPublication(body.report,ticker);
-  return report?{schemaVersion:"valuation-version.v1",ticker,report}:null;
+  return report?{schemaVersion:"valuation-version.v1",ticker,report,researchStatus:body.researchStatus==="valid"?"valid":body.researchStatus==="review_required"?"review_required":"unavailable"}:null;
  }catch{return null;}
 }
 
@@ -404,6 +408,21 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
     const out=response.ok?json(await response.json()):json({error:"Not found"},404);out.headers.set("cache-control","no-store");return out;}
    catch{return json({error:"Preview unavailable"},503);}
   }
+  // Public research is read-only; requests never enqueue research or refresh source dates.
+  const research=url.pathname.match(/^\/api\/business\/v1\/research(?:\/([^/]+))?\/?$/);
+  if(research){
+   try{if(research[1]){research[1]=decodeURIComponent(research[1]);if(!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(research[1]))return json({error:"Not found"},404);}}catch{return json({error:"Not found"},404);}
+   if(request.method!=="GET")return json({error:"Method not allowed"},405);
+   if(url.href.length>2048||[...url.searchParams.keys()].some(k=>!["type","industryId","version"].includes(k)))return json({error:"Not found"},404);
+   try{
+    if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);
+    const response=await fetcher(ANALYSIS_ORIGIN+"/api/v1/research"+(research[1]?`/${research[1]}`:"")+url.search,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+    const body=await response.json();
+    if(!response.ok){const out=json({error:"Research unavailable"},response.status);out.headers.set("cache-control","private, no-store");return out;}
+    const parsed=(research[1]?publicResearchReadSchema:publicResearchListSchema).safeParse(body);
+    const out=parsed.success?json(parsed.data):json({error:"Research response could not be verified"},503);out.headers.set("cache-control","private, no-store");return out;
+   }catch{return json({error:"Research unavailable"},503);}
+  }
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
   if(url.pathname==="/api/business/v1/home"){
    if(request.method!=="GET")return json({error:"Method not allowed"},405);
@@ -486,7 +505,7 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>,cacheable?:(body:T)=>boolean)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});const canCache=!!body&&(!cacheable||cacheable(body));if(!canCache)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&canCache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{}});if(bundle?.status!=="ready")response.headers.set("cache-control","no-store");if(cache&&bundle?.status==="ready"&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{},...(bundle?.pendingResearch?{pendingResearch:bundle.pendingResearch}:{})});if(bundle?.status!=="ready")response.headers.set("cache-control","no-store");if(cache&&bundle?.status==="ready"&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    // The company analysis and dossiers select a translated artifact for the reader's locale.
    if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);

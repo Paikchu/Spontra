@@ -30,6 +30,9 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   /** The session's turn budget; harness settlement begins with fewer than six turns left. */
   budgetTurns: number;
   settlement?: ComposerSettlement;
+  /** Shadow runs pass every check but save drafts without changing public pointers or downstream jobs. */
+  publicationMode?: "shadow";
+  onShadow?(state: S, result: { version: number; hash: string; text: string; degraded: string[] }): Promise<void>;
   /** The producer's research tools, named in the instruction to find more material. */
   research: string[];
   /** The stage query that opens this artifact (e.g. "report=0001…" for a filing report), joined with the preview token. */
@@ -40,6 +43,8 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   afterPublish?(state: S): Promise<void>;
   /** A rule of the producer's own the document must meet before review (e.g. quoting an earlier report); the reason when it does not. */
   precheck?(state: S): string | null;
+  /** Publication invariants: never skipped for low budgets or harness fallback. */
+  hardPrecheck?(state: S): string | null;
   /** A producer's full-document publication audit, independent of incremental block reviews. */
   audit?(state: S): Promise<TrackedIssue[]>;
   /** Registers a source the document cites but the session has not read by name (a fact, a computed figure); false when there is none. */
@@ -107,7 +112,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const c = state.composer;
     // A source cited by an id the session never read by name (a fact, a computed figure) is looked up before the check.
     if (setup.resolve) for (const m of html.matchAll(/data-(?:ref|source)="([^"]{1,80})"/g)) if (c.sources[m[1]!] === undefined) await setup.resolve(m[1]!, state).catch(() => false);
-    const check = checkBlock(html, { sourceUrl: ref => c.sources[ref] === undefined ? undefined : c.sources[ref]!.url, charts: new Set(Object.keys(c.charts)) });
+    const check = checkBlock(html, { sourceUrl: ref => c.sources[ref] === undefined ? undefined : c.sources[ref]!.url, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) });
     const errors = [...check.errors, ...await unknownClasses(check.classes)];
     for (const claim of check.claims) {
       const source = await setup.read(claim.kind === "figure" ? claim.ref : claim.source, state);
@@ -134,12 +139,14 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   }
 
   async function publish(state: S): Promise<Result> {
+    const invariant = setup.hardPrecheck?.(state);
+    if (invariant) return fail(`Not published: ${invariant}`);
     const c = state.composer;
     if (setup.settlement === "agent") {
       const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout");
       if (degraded.length) return fail(`Rewrite the degraded blocks before publishing: ${degraded.map(b => b.id).join(", ")}.`);
     }
-    const classes = c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes);
+    const classes = c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).classes);
     const css = await compileArtifactCss(classes);
     const doc = toDocument(c, 0);
     // What this version changes against the published one, by block: the note a reader of versions starts from (§4.6).
@@ -147,11 +154,18 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const before = new Map((prior?.blocks ?? []).map(b => [b.id, b.html]));
     c.changes = { from: prior?.version ?? null, added: c.blocks.filter(b => !before.has(b.id)).map(b => b.id), changed: c.blocks.filter(b => before.has(b.id) && before.get(b.id) !== b.html).map(b => b.id),
       removed: [...before.keys()].filter(id => !c.blocks.some(b => b.id === id)), unchanged: c.blocks.filter(b => before.get(b.id) === b.html).map(b => b.id) };
-    const saved = await saveVersion(setup.env, doc, css, "published", setup.ledger.runId ?? null);
+    const saved = await saveVersion(setup.env, doc, css, setup.publicationMode === "shadow" ? "draft" : "published", setup.ledger.runId ?? null);
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, "changes", 0, c.changes);
     const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id);
     const at = new Date().toISOString();
-    const text = c.blocks.map(b => `## ${b.title}\n${blockTextOf(b.html)}`).join("\n\n");
+    const text = c.blocks.map(b => { const body = blockTextOf(b.html).trim(); return `## ${b.title}\n${body.startsWith(b.title) ? body.slice(b.title.length).trim() : body}`; }).join("\n\n");
+    if (setup.publicationMode === "shadow") {
+      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, "shadow-validated", 0, { hash: saved.hash, runId: setup.ledger.runId, checkedAt: at });
+      await setup.onShadow?.(state, { version: saved.version, hash: saved.hash, text, degraded });
+      c.published = { version: saved.version, hash: saved.hash };
+      c.phase = "published";
+      return ok(`Validated shadow version ${saved.version}; public report unchanged.`);
+    }
     const extra = await setup.onPublish(state, { version: saved.version, hash: saved.hash, text, degraded });
     await setup.env.DB!.batch([...publishStatements(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, saved.hash, degraded, at), ...extra]);
     c.published = { version: saved.version, hash: saved.hash };
@@ -175,7 +189,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (const b of drafts) reviews[b.id] = (reviews[b.id] ?? 0) + 1;
     const last = (b: ArtifactBlock) => force || (reviews[b.id] ?? 0) >= CONTENT_ROUNDS || rounds.content >= CONTENT_ROUNDS_ALL;
     // What the other blocks already hold, checked by code at their write: a block that restates it needs no second proof.
-    const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
+    const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
       claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
     const context = (b: ArtifactBlock) => ({
       passed: new Set(passed[b.id] ?? []),
@@ -235,7 +249,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const c = state.composer;
     for (let pass = 0; pass < 3; pass++) {
       (c.rounds ??= { content: 0, render: 0 }).render += 1;
-      const draft = await saveVersion(setup.env, toDocument(c, 0), await compileArtifactCss(c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, charts: new Set(Object.keys(c.charts)) }).classes)), "draft", setup.ledger.runId ?? null);
+      const draft = await saveVersion(setup.env, toDocument(c, 0), await compileArtifactCss(c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).classes)), "draft", setup.ledger.runId ?? null);
       let qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
       // A rendering that could not be looked at is asked for once more before the blocks give up their layout for it.
       if (qa.unavailable) { await new Promise(resolve => setTimeout(resolve, 5000)); qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger); }
@@ -284,6 +298,8 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   async function finish(state: S): Promise<Result> {
     const c = state.composer;
     if (c.phase === "published") return ok("Already published.");
+    const invariant = setup.hardPrecheck?.(state);
+    if (invariant) return fail(`Not published: ${invariant}`);
     c.settledBy ??= "agent";
     const missing = requiredOf(state).filter(id => !block(state, id));
     if (missing.length && !lowBudget(state)) return fail(`Write the required blocks first: ${missing.join(", ")}.`);
@@ -494,7 +510,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
 /** Producers that allow harness settlement can publish when their session ends without finishing. */
 export async function deliverComposer<S extends { composer: ComposerState }>(state: S, setup: ComposerSetup<S>): Promise<boolean> {
   if (state.composer.phase === "published" || !state.composer.blocks.length) return state.composer.phase === "published";
-  if (setup.settlement === "agent") return false;
+  if (setup.settlement === "agent" || setup.hardPrecheck?.(state)) return false;
   state.composer.turns = Number.MAX_SAFE_INTEGER;
   state.composer.settledBy = "harness";
   const finish = composerTools(setup).find(t => t.name === "finish")!;

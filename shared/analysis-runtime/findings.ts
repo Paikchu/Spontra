@@ -83,7 +83,11 @@ const recordEntry = z.object({ findingId: text(80), title: text(80), kind: z.enu
 export const findingsMaterialSchema = z.object({ id: text(40), kind: z.enum(["sec", "transcript", "web"]), title: text(300), url: https, publishedAt: z.string().max(40).nullable(), passageId: z.string().regex(/^[a-z0-9]{8,64}$/).optional(), documentId: z.string().max(80).optional(), form: z.string().max(20).optional(), path: z.array(z.string().max(200)).max(12).optional(), textSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() });
 const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional(), show: z.enum(["value", "change"]).optional() });
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
+export const pendingResearchSchema = z.object({ periodEnd: date, generatedAt: z.string().datetime() });
+const publishedArticleSchema = z.object({ findingId: text(80), title: text(300), lang: z.enum(["en", "zh-CN"]), version: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{64}$/), publishedAt: z.string().datetime(), periodEnd: date, sourceAccessions: z.array(z.string().regex(/^\d{10}-\d{2}-\d{6}$/)).max(100), subject: text(160) });
 export const findingsPublicationSchema = z.object({
+  articles: z.record(z.string(), publishedArticleSchema).optional(),
+  pendingResearch: pendingResearchSchema.optional(),
   schemaVersion: z.literal("findings.v1"),
   ticker: z.string().regex(TICKER_PATTERN),
   periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),

@@ -1,0 +1,170 @@
+{
+  "at": "2026-11-16T14:53:21.002Z",
+  "scope": "local SQLite and in-memory object-store publication journey; synthetic data only; no model/network/production writes",
+  "checks": [
+    {
+      "name": "20 synthetic claims each carry original source and typed unit",
+      "status": "passed"
+    },
+    {
+      "name": "unknown source rejected",
+      "status": "passed",
+      "detail": "Error: Public research rejected: unknown source in claim-0"
+    },
+    {
+      "name": "missing differs from zero",
+      "status": "passed",
+      "detail": "Error: Public research rejected: missing and zero conflated rate"
+    },
+    {
+      "name": "currency and amount unit mismatch rejected",
+      "status": "passed",
+      "detail": "Error: Public research rejected: unit/currency mismatch rate"
+    },
+    {
+      "name": "future evidence rejected",
+      "status": "passed",
+      "detail": "Error: Public research rejected: future source source-1"
+    },
+    {
+      "name": "author cannot self approve",
+      "status": "passed",
+      "detail": "Error: Public research rejected: independent review required"
+    },
+    {
+      "name": "source hash mismatch rejected",
+      "status": "passed",
+      "detail": "Error: Source snapshot hash mismatch: source-1"
+    },
+    {
+      "name": "report identity cannot silently switch industry/type",
+      "status": "passed",
+      "detail": "Error: Report identity cannot switch type or industry; use a new report ID"
+    },
+    {
+      "name": "unreviewed draft cannot publish",
+      "status": "passed",
+      "detail": "Error: Independent review required before publication"
+    },
+    {
+      "name": "same immutable report reads identical",
+      "status": "passed"
+    },
+    {
+      "name": "reader body uses structured claims",
+      "status": "passed"
+    },
+    {
+      "name": "missing published body is explicit unavailable",
+      "status": "passed"
+    },
+    {
+      "name": "100 duplicate inputs produce one immutable version",
+      "status": "passed"
+    },
+    {
+      "name": "body write then index failure isolated",
+      "status": "passed",
+      "detail": "Error: injected index failure"
+    },
+    {
+      "name": "failed save preserves old publication",
+      "status": "passed"
+    },
+    {
+      "name": "missing industry explicit uncovered",
+      "status": "passed"
+    },
+    {
+      "name": "adoption precheck race aborts publication transaction",
+      "status": "passed",
+      "detail": "Error: CHECK constraint failed: valid=1"
+    },
+    {
+      "name": "late adoption cannot reuse invalidated pinned claim",
+      "status": "passed",
+      "detail": "Error: Cannot adopt unavailable public claim"
+    },
+    {
+      "name": "frozen task retains v1 during v2 publication",
+      "status": "passed"
+    },
+    {
+      "name": "adopted changed claim invalidates company result",
+      "status": "passed"
+    },
+    {
+      "name": "source revision change invalidates dependent claims",
+      "status": "passed"
+    },
+    {
+      "name": "presentation-only change does not invalidate claims",
+      "status": "passed"
+    },
+    {
+      "name": "stale pointer cannot overwrite concurrent version",
+      "status": "passed",
+      "detail": "Error: Publication conflict: current version changed; review and retry explicitly"
+    },
+    {
+      "name": "old version remains readable",
+      "status": "passed"
+    },
+    {
+      "name": "offset timestamps cannot reveal future publication",
+      "status": "passed"
+    },
+    {
+      "name": "historical read cannot see future publication",
+      "status": "passed"
+    },
+    {
+      "name": "duplicate impact channels flagged",
+      "status": "passed"
+    },
+    {
+      "name": "two companies reuse identical industry version",
+      "status": "passed"
+    },
+    {
+      "name": "unknown exposure weights remain null",
+      "status": "passed"
+    },
+    {
+      "name": "cross-industry company keeps two distinct evidenced relationships",
+      "status": "passed"
+    },
+    {
+      "name": "upstream expiry marks only affected industry claim",
+      "status": "passed"
+    },
+    {
+      "name": "macro change does not invalidate independent industry claim/company",
+      "status": "passed"
+    },
+    {
+      "name": "unaffected claim remains adoptable in partially invalidated industry report",
+      "status": "passed"
+    },
+    {
+      "name": "withdrawal propagates through industry to company",
+      "status": "passed"
+    },
+    {
+      "name": "withdrawn macro invalidates dependent industry",
+      "status": "passed"
+    },
+    {
+      "name": "withdrawn current is not valid",
+      "status": "passed"
+    },
+    {
+      "name": "restore reads complete previous publication",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "Does not constitute G1/G2 human review of real evidence",
+    "Does not validate Cloudflare distributed storage guarantees or provider budget enforcement"
+  ]
+}

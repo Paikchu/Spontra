@@ -1,3 +1,6 @@
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import { publicResearchTools, PUBLIC_RESEARCH_GUIDE, type ResearchContextState } from "../company-research/context-tools.ts";
+import { openComposer, registerSource } from "../artifact/document.ts";
 import { closedObject, type AgentClientTool } from "../tool-loop.ts";
 import { handPolicy, handSearch, handTool } from "../pi/hand-tools.ts";
 import type { SessionRunner } from "../pi/runs.ts";
@@ -26,20 +29,24 @@ const SCHEMAS: AgentClientTool[] = [
 ];
 
 /** What the research session is rebuilt from, decided when the run started it. */
-export type BusinessSpec = { ticker: string; companyName: string; reportDate: string; now: string; reports: AvailableSecReport[]; runId?: string };
-export type BusinessState = { memory: ResearchMemory; observations: Array<{ action: string; observation: unknown }>; usedSec: boolean; searches: number; done: boolean };
+export type BusinessSpec = { ticker: string; companyName: string; reportDate: string; now: string; reports: AvailableSecReport[]; runId?: string; publicResearch?: FrozenCompanyResearch; siteOrigin?: string };
+export type BusinessState = ResearchContextState & { memory: ResearchMemory; observations: Array<{ action: string; observation: unknown }>; usedSec: boolean; searches: number; done: boolean };
 
 /** The business research as a recipe: the model reads the published SEC reports and searches the web until it finalizes. */
 export function businessRecipe(spec: BusinessSpec, deps: { database: CompanyAnalysisD1Database; search: WebSearchService }): Recipe<BusinessSpec, null, BusinessState> {
+  const background = publicResearchTools<BusinessState>(spec.publicResearch, spec.siteOrigin);
   return {
     id: "business-react",
     budget: { turns: MAX_ROUNDS, wallMs: 45 * 60_000 },
-    system: () => RESEARCH,
-    open: () => ({ memory: researchMemory(spec.reports), observations: [], usedSec: false, searches: 0, done: false }),
+    system: () => `${RESEARCH}\n\n${PUBLIC_RESEARCH_GUIDE}`,
+    open: () => ({ composer: openComposer({kind:"company-analysis",ticker:spec.ticker,subject:spec.ticker,title:`${spec.companyName}: research`,lang:"en"}), memory: researchMemory(spec.reports), observations: [], usedSec: false, searches: 0, done: false }),
     tools: st => {
+      // Older checkpoints predate the shared context state; retain their frozen spec without injecting today's reports.
+      st.composer ??= openComposer({kind:"company-analysis",ticker:spec.ticker,subject:spec.ticker,title:`${spec.companyName}: research`,lang:"en"});
       const research = createBusinessResearchTools({ database: deps.database, search: deps.search, ticker: spec.ticker, reportDate: spec.reportDate, now: spec.now }, st.memory);
-      const answer = (s: BusinessState, action: string, result: BusinessToolResult) => { s.observations.push({ action, observation: result.observation }); return { observation: JSON.stringify(result.observation) }; };
+      const answer = (s: BusinessState, action: string, result: BusinessToolResult) => { for(const source of s.memory.sources.values()) registerSource(s.composer,source.id,{title:source.title,url:source.url,kind:source.kind}); s.observations.push({ action, observation: result.observation }); return { observation: JSON.stringify(result.observation) }; };
       return [
+        ...background.tools,
         handTool<BusinessState>(SCHEMAS[0]!, async (args, s) => {
           const periodId = typeof args.periodId === "string" && spec.reports.some(r => r.periodId === args.periodId) ? args.periodId : null;
           const result = periodId ? await research.readSecReport(periodId) : { sourceId: null, observation: { error: "Use an available report periodId." } };
@@ -51,11 +58,16 @@ export function businessRecipe(spec: BusinessSpec, deps: { database: CompanyAnal
             : { sourceId: null, observation: { error: "Use a URL from this run's search results." } };
           return answer(s, "read_web", result);
         }),
-        handTool<BusinessState>(SCHEMAS[2]!, (_args, s) => { s.done = true; return { observation: "Research finished." }; }),
+        handTool<BusinessState>(SCHEMAS[2]!, (_args, s) => {
+          const issue=background.precheck(s);if(issue)return {observation:issue,error:true};
+          const missing=spec.publicResearch?.reports.find(({report})=>!(s.researchUses??[]).some(use=>use.reportId===report.reportId&&use.version===report.version));
+          if(missing)return {observation:`Record at least one explicit adopted/rejected/not_applicable decision for ${missing.report.reportId}, with a company-specific reason.`,error:true};
+          s.done = true; return { observation: "Research finished." };
+        }),
         handSearch<BusinessState>("search_web", s => SEARCHES - s.searches, (batch, s) => { s.searches++; return answer(s, "web_search", research.registerSearch(batch)); }),
       ];
     },
-    policy: handPolicy([...SCHEMAS, { name: "search_web" }]),
+    policy: handPolicy([...SCHEMAS, { name: "search_web" }, ...background.tools]),
     settled: s => s.done,
     settle: () => null,
     nudge: "Continue research or finalize.",
@@ -74,28 +86,33 @@ export async function runBusinessModelAgent(input: {
   run: SessionRunner;
   operationId: string;
   runId?: string;
+  publicResearch?: FrozenCompanyResearch;
+  siteOrigin?: string;
   runStage?: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
 }): Promise<{ overview: CompanyAnalysisOverview; rounds: number; observations: unknown[] }> {
   const stage = input.runStage ?? (async <T>(_name: string, callback: () => Promise<T>) => callback());
   const reports = await stage("sec-index", () => input.tools.availableReports());
   const limitations: string[] = [];
-  const spec: BusinessSpec = { ticker: input.ticker, companyName: input.companyName, reportDate: input.reportDate, now: input.now, reports, ...(input.runId ? { runId: input.runId } : {}) };
+  const spec: BusinessSpec = { ticker: input.ticker, companyName: input.companyName, reportDate: input.reportDate, now: input.now, reports, publicResearch:input.publicResearch,siteOrigin:input.siteOrigin, ...(input.runId ? { runId: input.runId } : {}) };
   const opening = JSON.stringify({ ticker: input.ticker, companyName: input.companyName, asOf: input.now, reportDate: input.reportDate, availableSecReports: reports });
   const session = await input.run<null, BusinessState>("business", spec, opening, input.operationId);
   if (session.reason === "failed" && session.trail.at(-1)?.action === "invalid") throw new Error("Business research model failed");
   const { observations, usedSec } = session.state;
   const sources = [...session.state.memory.sources.values()];
   const rounds = session.turns;
+  if(input.publicResearch && (!session.state.publicResearchRead || !session.state.done))throw new Error("Company research did not complete frozen public-context applicability checks.");
   if (!usedSec || !sources.length) throw new Error("Business Agent could not collect the required evidence.");
   // The report is composed as an artifact from what the research read (docs/analysis-html-artifact.md, P1): block by
   // block, each checked against its sources, reviewed, rendered and reviewed for design, then published. What the
   // findings read is derived from the published blocks.
   const composeSpec: CompanyComposeSpec = { ticker: input.ticker, companyName: input.companyName, reportDate: input.reportDate, now: input.now,
-    sources, material: researchMaterial(observations, sources), ...(input.runId ? { runId: input.runId } : {}) };
+    sources, material: researchMaterial(observations, sources), publicResearch:input.publicResearch, researchUses:session.state.researchUses, ...(input.runId ? { runId: input.runId } : {}) };
   const composeOpening = JSON.stringify({ ticker: input.ticker, companyName: input.companyName, asOf: input.now, sources: sources.map(s => ({ id: s.id, title: s.title, kind: s.kind })), limitations });
   const composed = await input.run<boolean, { composer: ComposerState }>("company-compose", composeSpec, composeOpening, `${input.operationId}:compose`);
   if (composed.state.composer.phase !== "published") throw new Error("The company analysis could not be composed.");
-  const deepDive = deepDiveFromComposer(composed.state.composer, sources);
+  const publishedSources = [...sources];
+  for(const [id,source] of Object.entries(composed.state.composer.sources))if(id.startsWith("public")&&source.url&&!publishedSources.some(s=>s.id===id))publishedSources.push({id,title:source.title,url:source.url,kind:"web",publishedAt:null,retrievedAt:input.now});
+  const deepDive = deepDiveFromComposer(composed.state.composer, publishedSources);
   return { overview: overviewFor(deepDive), rounds, observations };
 }
 

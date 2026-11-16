@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "units": 6,
+  "checks": [
+    "bare 9M period",
+    "USD scaling",
+    "negative percentage",
+    "source hash",
+    "URL",
+    "accession",
+    "date",
+    "readable citation",
+    "corrupted token rejected",
+    "explicit $9M remains amount"
+  ],
+  "html": "<h2>资本开支</h2><p>前9个月 资本开支为 236亿美元, 变化 −5.2%; 来源 b0bd38b9564a33771c629dd5d802f3. 披露日 2026-11-12, 文件编号 0001769628-26-000465. https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm</p><p><a href=\"https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm\" data-source=\"b0bd38b9564a33771c629dd5d802f3\">10-Q · 附注 6</a></p>"
+}

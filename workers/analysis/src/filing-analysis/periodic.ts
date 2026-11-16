@@ -1,3 +1,5 @@
+import { impactCalculationTool } from "../price-impact/tool.ts";
+import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
 import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
@@ -18,7 +20,10 @@ import { excerpts, transcripts } from "./research.ts";
 export type Evidence = { id: string; section: string; ordinal: number; statement: string; quote: string; facts: string[]; origin: "session" };
 export type Lead = { id: string; source: "session"; priority: "high" | "normal"; question: string; why: string; refs: string[];
   verdict?: "highlight" | "risk" | "nothing unusual" | "open"; finding?: string; evidence?: string[] };
+export type InvestmentChain = { id: string; priorAssumption: string; newEvidence: string; revisedAssumption: string; financialEffect: string; valuationEffect: string; quantificationStatus: "quantifiable" | "sensitivity_only" | "not_quantifiable"; sourceIds: string[]; computationRefs: string[]; missingInputs: string[]; counterEvidence: string; verification: string; window: string };
 export type PeriodicState = {
+  investmentChains?: InvestmentChain[];
+  impactComputations?: Record<string, ImpactCalculation>;
   leads: Lead[]; evidence: Evidence[]; computed: Record<string, Computed>;
   facts: Record<string, { text: string; value: number }>; texts: Record<string, string>;
   materials: MaterialRef[]; markdownRead: boolean; tablesFound: boolean; tablesRead: string[]; charted?: string[];
@@ -125,7 +130,38 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     return null;
   };
   const leadLine = (l: Lead) => `${l.id} [${l.priority}, ${l.source}${l.verdict ? `, ${l.verdict}` : ", not closed"}] ${l.question}${l.finding ? ` → ${l.finding}` : ""}`;
-  const tools: AnyTool<S>[] = [
+  const impact = impactCalculationTool<S>({
+    sourceExists: (state, id) => !!state.composer.sources[id],
+    sourceValues: (state, id) => p(state).facts[id] ? [p(state).facts[id]!.value] : p(state).computed[id] ? [p(state).computed[id]!.value] : p(state).impactComputations?.[id] ? Object.values(p(state).impactComputations![id]!.values) : null,
+    record: (state, result, inputs) => {
+      const results = p(state).impactComputations ??= {};
+      const id = `impact${Object.keys(results).length + 1}`;
+      results[id] = result;
+      p(state).texts[id] = JSON.stringify({ result, inputs });
+      registerSource(state.composer, id, { title: "Investment sensitivity calculation", url: null, kind: "data" });
+      return id;
+    },
+  });
+  const tools: AnyTool<S>[] = [impact,
+    handTool<S>({ name: "record_investment_impact", description: "Record one evidence-to-investment chain before writing. Keep facts, revised assumptions, financial transmission and valuation limits explicit. Quantifiable/sensitivity results reference existing compute results; unavailable valuation names missing inputs. Reuse id to revise a chain, not duplicate it.",
+      input_schema: object({ id: { type: "string" }, priorAssumption: { type: "string" }, newEvidence: { type: "string" }, revisedAssumption: { type: "string" }, financialEffect: { type: "string" }, valuationEffect: { type: "string" }, quantificationStatus: { type: "string", enum: ["quantifiable", "sensitivity_only", "not_quantifiable"] }, sourceIds: strings, computationRefs: strings, missingInputs: strings, counterEvidence: { type: "string" }, verification: { type: "string" }, window: { type: "string" } }, ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "quantificationStatus", "sourceIds", "computationRefs", "missingInputs", "counterEvidence", "verification", "window"]) },
+      async (args, state) => {
+        const textFields = ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "counterEvidence", "verification", "window"] as const;
+        if (textFields.some(key => !str(args[key]))) return fail("Every chain needs the assumption change, financial and valuation implications, counter-evidence, verification and applicable window.");
+        const sourceIds = list(args.sourceIds).map(str).filter(Boolean), computationRefs = list(args.computationRefs).map(str).filter(Boolean), missingInputs = list(args.missingInputs).map(str).filter(Boolean);
+        if (!sourceIds.length) return fail("A chain needs original evidence sources.");
+        for (const id of sourceIds) if (!state.composer.sources[id] && !await resolve(id, state)) return fail(`Unknown evidence source ${id}. Read and register it first.`);
+        const status = str(args.quantificationStatus);
+        if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(status)) return fail("Unknown quantification status.");
+        if (computationRefs.some(id => !p(state).computed[id] && !p(state).impactComputations?.[id])) return fail("Calculations must reference this session's deterministic compute results.");
+        if (status !== "not_quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id] && p(state).impactComputations?.[id]?.status !== "calculated")) return fail("Unavailable calculations cannot support quantified or sensitivity results; name the missing inputs.");
+        if (status === "quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id]?.limitations.some(note => note.startsWith("Sensitivity only:")))) return fail("An assumed calculation is sensitivity only, not a quantified event result.");
+        if (status !== "not_quantifiable" && !computationRefs.length) return fail("A quantitative or sensitivity chain needs computed results.");
+        if (status !== "quantifiable" && !missingInputs.length) return fail("List specific missing inputs that prevent a full valuation result.");
+        const chain: InvestmentChain = { ...Object.fromEntries(textFields.map(key => [key, str(args[key])])) as Pick<InvestmentChain, typeof textFields[number]>, quantificationStatus: status as InvestmentChain["quantificationStatus"], sourceIds, computationRefs, missingInputs };
+        p(state).investmentChains = [...(p(state).investmentChains ?? []).filter(c => c.id !== chain.id), chain];
+        return ok(JSON.stringify(chain));
+      }),
     handTool<S>({ name: "read_filing_markdown", description: "Read the complete preprocessed filing and all its exhibits at the session's fixed material version. Use an anchor or continue with nextCursor. Each returned block is a source id. accession reads a prepared earlier filing; no accession reads this filing.",
       input_schema: object({ accession: { type: "string" }, anchor: { type: "string" }, cursor: { type: "string" }, maxChars: { type: "number" } }) },
       async (args, state) => {
@@ -345,7 +381,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
 
   return {
     tools, resolve,
-    figure: async (id, state) => { const s = p(state); return s.computed[id] ? [s.computed[id]!.value] : s.facts[id] ? [s.facts[id]!.value] : null; },
+    figure: async (id, state) => { const s = p(state); return s.impactComputations?.[id] ? Object.values(s.impactComputations[id]!.values) : s.computed[id] ? [s.computed[id]!.value] : s.facts[id] ? [s.facts[id]!.value] : null; },
     read: (id, state) => {
       const s = p(state);
       if (s.computed[id]) return { title: `Computed: ${s.computed[id]!.label}`, text: computedText(s.computed[id]!) };
@@ -355,6 +391,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     },
     precheck: (state) => {
       const s = p(state);
+      if (!s.investmentChains?.length) return "Record at least one supported assumption-to-financial-impact chain with record_investment_impact. A specific unquantifiable gap is a valid result; do not invent a price.";
       if (!s.markdownRead) return "Read this filing with read_filing_markdown before finishing.";
       if (snapshot.tables.length && !s.tablesFound) return "Use find_filing_tables to confirm the relevant CSV by its table name or description before finishing.";
       if (snapshot.tables.length && !s.tablesRead.length) return "Find and read the relevant archived CSV with find_filing_tables and read_filing_table before finishing.";
@@ -373,7 +410,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       for (const l of s.leads) verdicts[l.verdict ?? "not closed"] = (verdicts[l.verdict ?? "not closed"] ?? 0) + 1;
       const sources: Record<string, number> = {};
       for (const l of s.leads) sources[l.source] = (sources[l.source] ?? 0) + 1;
-      return { material: snapshot.ref, reading: snapshot.coverage, tablesRead: s.tablesRead, leads: { total: s.leads.length, high: s.leads.filter(l => l.priority === "high").length, highOpen: s.leads.filter(l => l.priority === "high" && !l.verdict).length, verdicts, sources },
+      return { investmentChains: s.investmentChains ?? [], material: snapshot.ref, reading: snapshot.coverage, tablesRead: s.tablesRead, leads: { total: s.leads.length, high: s.leads.filter(l => l.priority === "high").length, highOpen: s.leads.filter(l => l.priority === "high" && !l.verdict).length, verdicts, sources },
         notes: { total: s.evidence.length, session: s.evidence.filter(e => e.origin === "session").length }, computed: Object.keys(s.computed).length, factsCited: Object.keys(s.facts).length, charts: s.charted ?? [] };
     },
   };

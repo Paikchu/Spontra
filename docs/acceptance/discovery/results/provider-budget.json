@@ -1,0 +1,41 @@
+{
+  "status": "passed",
+  "results": [
+    {
+      "case": "zero allowance",
+      "actualProviderRequests": 0
+    },
+    {
+      "case": "transport retry after cap",
+      "actualProviderRequests": 1
+    },
+    {
+      "case": "10 concurrent sessions share one atomic reservation",
+      "actualProviderRequests": 1
+    },
+    {
+      "case": "stopped run",
+      "actualProviderRequests": 0
+    },
+    {
+      "case": "new registry preserves persisted allowance",
+      "actualProviderRequests": 1
+    },
+    {
+      "case": "non-opted-in legacy request unchanged",
+      "actualProviderRequests": 1
+    },
+    {
+      "case": "actual Harness swallows advisory errors but transport blocks post-cap request",
+      "actualProviderRequests": 1,
+      "advisoryErrors": 2
+    },
+    {
+      "case": "actual automatic-summary provider path shares same gate",
+      "actualProviderRequests": 1,
+      "compactions": 1
+    }
+  ],
+  "paidCalls": 0,
+  "tokenBudget": "reported-usage soft threshold; not a hard charge cap"
+}

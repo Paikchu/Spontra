@@ -68,7 +68,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
   BUSINESS_CLASSIFICATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; artifact?: { artifactId: string; sourceVersion: number; sourceHash: string } }>;
   /** "false" pauses translating publications into Chinese; unset or anything else runs it. */
   TRANSLATION_ENABLED?: string;
   /** Browser Rendering: draws the lens agent's html pictures so the agent reads what a reader would see (`browser`). */

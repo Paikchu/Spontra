@@ -1,3 +1,6 @@
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import { publicResearchTools, PUBLIC_RESEARCH_GUIDE, type ResearchContextState, type ResearchUse } from "../company-research/context-tools.ts";
+import { companyResearchDependencyStatements } from "../public-research/context.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { handPolicy, handTool } from "../pi/hand-tools.ts";
@@ -18,10 +21,12 @@ import type { BusinessSource } from "./business-tools.ts";
 export type CompanyComposeSpec = {
   ticker: string; companyName: string; reportDate: string; now: string; runId?: string;
   sources: BusinessSource[];
+  publicResearch?: FrozenCompanyResearch;
+  researchUses?: ResearchUse[];
   /** What the research read, by source id: the SEC reports, pages and search snippets. */
   material: Record<string, { title: string; text: string }>;
 };
-type ComposeState = { composer: ComposerState };
+type ComposeState = ResearchContextState;
 
 export const COMPANY_SECTIONS = ["business", "mechanics", "customers", "revenue", "economics", "financials", "industry", "moat", "risks", "investment"] as const;
 const TURNS = 45;
@@ -31,29 +36,31 @@ Explain from first principles what the company sells, how the product works, who
 Write one block per section, using these block ids: business, mechanics, revenue, financials, industry, moat, risks, investment are required; customers and economics are optional. Each block opens with an h2 title. Read the material with read_source; cite it by its source id. State the period, currency and basis of every figure; never subtract figures on different bases. Where the material does not settle a question, say what is not disclosed.`;
 
 function composeRecipe(env: AnalysisEnv, spec: CompanyComposeSpec): Recipe<CompanyComposeSpec, boolean, ComposeState> {
+  const background = publicResearchTools<ComposeState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
   const setup: ComposerSetup<ComposeState> = {
     env, chart: null, ledger: { ticker: spec.ticker, ...(spec.runId ? { runId: spec.runId } : {}) }, budgetTurns: TURNS, research: ["read_source"],
     previewQuery: "view=company",
-    read: async (id) => spec.material[id] ?? null,
-    onPublish: async () => [],
+    read: async (id) => background.read(id) ?? spec.material[id] ?? null,
+    hardPrecheck: state => background.precheck(state),
+    onPublish: async (state,published) => companyResearchDependencyStatements(env,{ticker:spec.ticker,resultId:`company-analysis:${spec.ticker}:${spec.ticker}:v${published.version}`,dependencies:(state.researchUses??[]).filter(use=>use.decision==="adopted"),mappingVersions:spec.publicResearch?.mappingVersions??[]}),
   };
   const own = [
     handTool<ComposeState>({ name: "read_source", description: "Read one source the research gathered, by its id (sec-… or web-…).", input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
       (args) => { const m = spec.material[String(args.id)]; return m ? { observation: `[source ${String(args.id)}] ${m.title}\n${m.text}` } : { observation: `No source "${String(args.id)}". Sources: ${Object.keys(spec.material).join(", ")}`, error: true }; }),
   ];
-  const list = [...own, ...composerTools(setup)];
+  const list = [...background.tools, ...own, ...composerTools(setup)];
   return {
     id: "company-compose.v1",
     budget: { turns: TURNS, wallMs: 60 * 60_000 },
     resultChars: 40_000,
-    system: () => `${SYSTEM(spec)}\n\n${COMPOSER_GUIDE}`,
+    system: () => `${SYSTEM(spec)}\n\n${COMPOSER_GUIDE}\n\n${PUBLIC_RESEARCH_GUIDE}`,
     open: () => {
       const composer = openComposer({ kind: "company-analysis", ticker: spec.ticker, subject: spec.ticker, title: `${spec.companyName}: business breakdown`, lang: "en" });
       for (const s of spec.sources) registerSource(composer, s.id, { title: s.title, url: s.url, kind: s.kind === "sec" ? "sec" : "web" });
-      return { composer };
+      return { composer, researchUses: spec.researchUses ?? [] };
     },
     tools: () => list,
-    policy: { allow: list.map(t => t.name), post: handPolicy(own).post },
+    policy: { allow: list.map(t => t.name), post: handPolicy([...own,...background.tools]).post },
     onTurn: (s, turn) => { s.composer.turns = turn; },
     settled: s => s.composer.phase === "published",
     settle: s => s.composer.phase === "published",

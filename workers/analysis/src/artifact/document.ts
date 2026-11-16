@@ -1,3 +1,4 @@
+import type { ArtifactResearchContext } from "../../../../shared/analysis-contract/artifact.ts";
 import { ARTIFACT_SCHEMA, ARTIFACT_SLOTS, type ArtifactBlock, type ArtifactChart, type ArtifactDocument, type ArtifactIssue, type ArtifactKind } from "../../../../shared/analysis-contract/artifact.ts";
 import { nodeText, parseHtml, serializeHtml, type HtmlNode } from "../../../../shared/analysis-runtime/artifact/html.ts";
 
@@ -9,6 +10,7 @@ export type LadderStep = { level: number; attempts: number; keys: string[] };
 
 /** Everything a composing session builds, stored with the session after every call. */
 export type ComposerState = {
+  researchContext?: ArtifactResearchContext;
   artifact: { kind: ArtifactKind; ticker: string; subject: string; title: string; lang: string };
   blocks: ArtifactBlock[];
   charts: Record<string, ArtifactChart>;
@@ -43,6 +45,7 @@ export const registerSource = (state: ComposerState, id: string, source: Compose
 
 export function toDocument(state: ComposerState, version: number): ArtifactDocument {
   return {
+    ...(state.researchContext ? { researchContext: state.researchContext } : {}),
     schema: ARTIFACT_SCHEMA, kind: state.artifact.kind, ticker: state.artifact.ticker, subject: state.artifact.subject, version,
     lang: state.artifact.lang, title: state.artifact.title, blocks: state.blocks, charts: Object.values(state.charts),
     sources: Object.entries(state.sources).map(([id, s]) => ({ id, ...s })),

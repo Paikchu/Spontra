@@ -1,0 +1,18 @@
+.price-impact { padding: 20px 0; border-block: 1px solid var(--hairline); margin-block: 20px; color: var(--foreground); font-size: 14px; line-height: 1.6; }
+.price-impact header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.price-impact h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.price-impact header > span, .price-impact-meta, .price-impact-note { color: var(--muted-foreground); }
+.price-impact-meta, .price-impact-note { margin: 8px 0; }
+.price-impact dl { display: grid; gap: 12px 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); margin: 16px 0; }
+.price-impact dt { color: var(--muted-foreground); font-size: 12px; }
+.price-impact dd { margin: 0; font-variant-numeric: tabular-nums; }
+.price-impact dd small { display: block; color: var(--muted-foreground); font-size: 12px; }
+.price-impact a { color: var(--brand); text-underline-offset: 3px; }
+.price-impact-table { overflow-x: auto; }
+.price-impact table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.price-impact th, .price-impact td { padding: 8px 12px; border-bottom: 1px solid var(--hairline); text-align: right; white-space: nowrap; }
+.price-impact th:first-child { text-align: left; }
+.valuation-adjustment-control { margin: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+.valuation-adjustment-control form, .valuation-adjustment-control label { display: grid; gap: 8px; }
+.valuation-adjustment-control select, .valuation-adjustment-control input { min-width: 0; width: 100%; box-sizing: border-box; }
+.price-impact-meta { overflow-wrap: anywhere; }

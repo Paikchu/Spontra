@@ -1,0 +1,8 @@
+.artifact-research-context { max-width: var(--report-measure); margin: 0 auto 16px; padding: 12px; font-size: 13px; line-height: 1.6; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }
+.artifact-research-context summary { cursor: pointer; color: var(--muted-foreground); }
+.artifact-research-context summary:focus-visible, .artifact-research-context a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.artifact-research-context p { margin: 8px 0; }
+.artifact-research-context ul { padding-left: 20px; }
+.artifact-research-context li { margin: 8px 0; }
+.artifact-research-context a { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+.artifact-research-context h3 { font-size: 13px; margin: 12px 0 0; }

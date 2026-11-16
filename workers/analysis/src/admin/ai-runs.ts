@@ -149,6 +149,36 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   return json({ runId, reused: false } satisfies AiRunStarted, 202);
 }
 
+/** Repair one frozen edition without regenerating research or translating unrelated reports. */
+async function repairArtifactTranslation(request: Request, env: AnalysisEnv, db: D1Database, ticker: string, now: number): Promise<Response> {
+  const parsed = z.object({ requestId: z.string().regex(UUID), artifactId: z.string().min(1).max(240), sourceVersion: z.number().int().positive(), sourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(await request.json());
+  if (!parsed.success) return json({ error: "操作参数无效。" }, 400);
+  if ((await scheduledAnalysisPauses(db)).at(ticker) !== null) return json({ error: "该公司的定时任务已关闭，翻译已暂停。" }, 409);
+  if (env.TRANSLATION_ENABLED === "false" || !env.DEEPSEEK_API_KEY || !env.TRANSLATE_WORKFLOW) return json({ error: "翻译工作流未启用或未配置。" }, 503);
+  const { artifactId, sourceVersion, sourceHash } = parsed.data;
+  const current = await db.prepare("SELECT artifact_id FROM analysis_artifacts WHERE artifact_id=? AND ticker=? AND published_version=? AND published_hash=?")
+    .bind(artifactId, ticker, sourceVersion, sourceHash).first();
+  if (!current) return json({ error: "报告版本已变化，请重新读取当前版本。" }, 409);
+  // Stable identity across request IDs: concurrent clicks cannot buy duplicate repairs.
+  const fingerprint = await sha256(`protected-literals-v1|${ticker}|${artifactId}|${sourceVersion}|${sourceHash}`);
+  const runId = `translate-repair-${fingerprint.slice(0, 40)}`, key = `translate:repair:${fingerprint}`, at = new Date(now).toISOString();
+  const first = "EXISTS (SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload, '$.resetPending')=1)";
+  await db.batch([
+    db.prepare("INSERT INTO sec_cache (cache_key,payload,fetched_at) VALUES (?,?,?) ON CONFLICT(cache_key) DO NOTHING")
+      .bind(key, JSON.stringify({ ticker, artifactId, sourceVersion, sourceHash, requestId: parsed.data.requestId, runId, resetPending: true }), at),
+    // Keep published_r2_key / published_hash intact until the replacement passes review.
+    db.prepare(`UPDATE analysis_artifact_translations SET status='translating', error=NULL, updated_at=? WHERE artifact_id=? AND source_version=? AND source_hash=? AND locale='zh-CN' AND ${first}`)
+      .bind(at, artifactId, sourceVersion, sourceHash, key),
+    db.prepare(`UPDATE sec_cache SET payload=json_remove(payload,'$.resetPending') WHERE cache_key=? AND ${first}`).bind(key, key),
+  ]);
+  try { await env.TRANSLATE_WORKFLOW.create({ id: runId, params: { ticker, fingerprint, artifact: { artifactId, sourceVersion, sourceHash } } }); }
+  catch (error) {
+    if (/already exists|duplicate/i.test(String(error))) return json({ runId, reused: true, artifactId, sourceVersion }, 202);
+    return json({ error: "翻译启动失败；可使用相同请求重试，旧发布版本保留。", runId }, 503);
+  }
+  return json({ runId, reused: false, artifactId, sourceVersion }, 202);
+}
+
 /** Re-announces existing publications to their shared post-publication processing; no content is generated. */
 async function startTranslation(request: Request, env: AnalysisEnv, db: D1Database, ticker: string, now: number): Promise<Response> {
   const parsed = translationRequest.safeParse(await request.json());
@@ -205,6 +235,8 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       })));
       return json({ companies } satisfies AiCompanies);
     }
+    const artifactTranslation = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations\/artifact$/.exec(path);
+    if (artifactTranslation && request.method === "POST") return repairArtifactTranslation(request, env, db, artifactTranslation[1]!, now);
     // The company's Chinese: coverage per resource and every string with its translation.
     const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations$/.exec(path);
     if (translations && (request.method === "GET" || request.method === "POST")) {

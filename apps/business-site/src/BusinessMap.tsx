@@ -1,3 +1,5 @@
+import { HistoricalDossier } from "./HistoricalDossier";
+import { belongsToFiling } from "./finding-association";
 import { ChartNote } from "./ChartNote";
 import { ModuleFailure } from "./ModuleFailure";
 import type { Layer } from "@/shared/analysis-contract/business-features";
@@ -51,6 +53,7 @@ import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
+import { ValuationAdjustmentControl } from "./ValuationAdjustment";
 import { ValuationPanel } from "./ValuationPanel";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { usePreview, usePublishedArtifact } from "./artifact-reads";
@@ -635,6 +638,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const lensUp = !!stageOverride || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
+      {valuation && <ValuationAdjustmentControl valuation={valuation} />}
       {/* The businesses, open from the start: the company's revenue and change, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
@@ -678,7 +682,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
         focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
-        onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
+        articles={findings?.articles} pendingResearch={findings?.pendingResearch} onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>
         <dl>
@@ -694,7 +698,8 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
           switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
       {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
-      {stageDraft ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={stageDraft} /></div>
+      {focusId && !focused && !stageDraft ? <div className="lens-stage"><HistoricalDossier ticker={ticker} findingId={focusId} onClose={() => focusFinding(null)} /></div>
+      : stageDraft ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={stageDraft} /></div>
       : stageOverride ? stageOverride : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           dossier={{ version: dossiers?.[focused.id] ? revisions.findings ?? dossiers[focused.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${focused.id}` : null }}
@@ -704,7 +709,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
-      : focusedReport && layers?.filings !== false && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} snapshot={focusedReport.snapshot} revision={revisions.filings ?? focusedReport.generatedAt}
+      : focusedReport && layers?.filings !== false && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} valuation={valuation} relatedFindings={verified.filter(f => findings?.articles?.[f.id] && belongsToFiling(findings.articles[f.id]!, focusedReport))} onFinding={focusFinding} snapshot={focusedReport.snapshot} revision={revisions.filings ?? focusedReport.generatedAt}
         head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
       : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens}

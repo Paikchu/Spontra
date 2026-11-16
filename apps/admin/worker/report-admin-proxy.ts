@@ -13,7 +13,13 @@ const json = (body: unknown, status: number) => Response.json(body, { status, he
 
 /** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(financials|business-map|ai|library|reports)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" || path[0] === "reports" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(financials|business-map|ai|library|reports|public-research)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" || path[0] === "reports" ? 6 : path[0] === "business-map" || path[0] === "reports" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  if (path[0] === "public-research") {
+    const route = path.slice(1).join("/");
+    const read = request.method === "GET" && /^(?:runs|reports|runs\/[A-Za-z0-9._:-]{1,128}|reports\/[A-Za-z0-9._:-]{1,128}|companies\/[A-Z][A-Z0-9.-]{0,11}\/context)$/.test(route);
+    const write = request.method === "POST" && /^(?:runs|runs\/[A-Za-z0-9._:-]{1,128}\/stop|exposures|reports\/[A-Za-z0-9._:-]{1,128}\/(?:review|publish|withdraw|restore))$/.test(route);
+    if (!read && !write) return json({ error: "Not found" }, 404);
+  }
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
@@ -22,8 +28,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (route === "models" || route === "stage" || /^stage\/conversations\/[0-9a-f]{32}$/.test(route) || /^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations$/.test(route));
-    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)\/runs$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route) || route === "endpoints");
+    const read = request.method === "GET" && (route === "models" || route === "stage" || /^stage\/conversations\/[0-9a-f]{32}$/.test(route) || /^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route));
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)\/runs$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route) || route === "endpoints");
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "library") {
@@ -34,8 +40,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   }
   if (path[0] === "reports") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (route === "" || /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/runs\/[A-Za-z0-9_-]{1,160}$/.test(route));
-    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck)$/.test(route);
+    const read = request.method === "GET" && (route === "" || /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:runs|shadow)\/[A-Za-z0-9_-]{1,160}$/.test(route));
+    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck|shadow|shadow\/[A-Za-z0-9_-]{1,160}\/(?:promote|stop))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "financials") {
@@ -48,7 +54,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     // Browsers must prove same-origin; no cross-site write proxy.
     if (request.headers.get("origin") !== new URL(request.url).origin) return json({ error: "请求来源无效" }, 403);
   }
-  const maxBody = path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/")) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
+  const maxBody = path[0] === "public-research" || (path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/"))) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > maxBody) return json({ error: "请求过大" }, 413);
   try {
     const binding = asServiceBinding(env.SPONTRA_ANALYSIS);

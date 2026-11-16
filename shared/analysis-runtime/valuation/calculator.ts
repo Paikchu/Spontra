@@ -184,7 +184,7 @@ const shareValue = (equity: number, shares: number) => requireFinite(requireFini
 const terminalShareOf = (pvExplicit: number, pvTerminal: number) => { const total = pvExplicit + pvTerminal; return total > 0 ? pvTerminal / total : null; };
 
 /** One scenario of one model: the equity value and per-share value from its drivers, the shared rate, shares and bridge. */
-function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
+export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
   requireFinite(shares, "shares");
   finiteResult(bridge, "bridge");
   return finiteResult(evaluateScenario(drivers, r, shares, bridge, options), "scenario result");

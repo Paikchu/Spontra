@@ -1,3 +1,4 @@
+import { freezeCompanyResearch } from "../public-research/context.ts";
 import { requireDb } from "../core.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
 import { getFilingMaterial, readMaterialSnapshot, requestFilingMaterial } from "../filing-material/index.ts";
@@ -65,7 +66,8 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
     const jobId = `${ticker}:${row.accession}:${jobVersion}:${sessionId}`;
     const published = request.mode === "revise" && profile.id === "periodic" && !!await db.prepare("SELECT 1 FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(`filing-report:${ticker}:${row.accession}`).first().catch(() => null);
     const mode: FilingMode = request.mode === "resume" ? { mode: "resume", checkpoint: request.checkpoint } : { mode: published ? "revise" : "rewrite" };
-    const spec: FilingSpec = { ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, ...mode };
+    const publicResearch = await freezeCompanyResearch(env, ticker, at);
+    const spec: FilingSpec = { publicResearch, ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, ...mode };
     await updateFiling(db, ticker, row.accession, { status: "running", reason: null, runId }, at);
     await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: request.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
     await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, mode.mode ?? "rewrite"), `${sessionId}:report`);

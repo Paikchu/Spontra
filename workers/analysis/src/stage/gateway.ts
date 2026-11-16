@@ -1,3 +1,5 @@
+import { createValuationAdjustment, readValuationAdjustment, valuationAdjustmentAvailable } from "../price-impact/adjustments.ts";
+import { valuationAdjustmentInput } from "../../../../shared/analysis-runtime/valuation/adjustment.ts";
 import { getAgentByName, routeAgentRequest } from "agents";
 import type { AnalysisEnv } from "../operations.ts";
 import { reserve } from "./budget.ts";
@@ -47,7 +49,28 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     return json({ reader: true, token: issued.token });
   }
 
+  if (url.pathname === "/agents/valuation-adjustments/status" && request.method === "GET") return json({ open: await valuationAdjustmentAvailable(env, url.searchParams.get("ticker") ?? "") });
+
   if (!reader) return json({ error: "no-reader" }, 401);
+
+  if (url.pathname === "/agents/valuation-adjustments" && request.method === "POST") {
+    if (Number(request.headers.get("content-length") ?? 0) > 4096) return json({ error: "bad-request" }, 400);
+    const parsed = valuationAdjustmentInput.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return json({ error: "bad-request", message: "Choose one bounded numerical assumption on a saved valuation." }, 400);
+    if (!await valuationAdjustmentAvailable(env, parsed.data.ticker)) return json({ error: "not-found" }, 404);
+    const spent = await reserve(db, "valuation-adjustments", { reader, address });
+    if (!spent.ok) return json({ error: "quota", which: spent.which }, 429);
+    try { return json(await createValuationAdjustment(env, reader, parsed.data), 200, { "cache-control": "private, no-store" }); }
+    catch (error) { return json({ error: "unavailable", message: error instanceof Error ? error.message : "Sensitivity unavailable" }, 422); }
+  }
+  const adjustment = /^\/agents\/valuation-adjustments\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (adjustment && request.method === "GET") {
+    try {
+      const value = await readValuationAdjustment(env, reader, adjustment[1]!);
+      return json(value, 200, { "cache-control": "private, no-store" });
+    } catch { return json({ error: "not-found" }, 404); }
+  }
+
 
   if (url.pathname === "/agents/conversations" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";

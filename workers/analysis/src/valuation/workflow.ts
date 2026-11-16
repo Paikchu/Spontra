@@ -1,3 +1,7 @@
+import { handPolicy } from "../pi/hand-tools.ts";
+import { freezeCompanyResearch } from "../public-research/context.ts";
+import { PUBLIC_RESEARCH_GUIDE } from "../company-research/context-tools.ts";
+import { valuationPublicResearchTools, valuationPublicResearchGate, valuationPublicDependencies } from "./public-research.ts";
 import { z } from "zod";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { Recipe, TurnRecord } from "../recipe.ts";
@@ -239,11 +243,17 @@ function loopSettled(recipeId: string): (s: ValuationState) => boolean {
 export async function valuationLoader(spec: ValuationSpec, env: AnalysisEnv): Promise<PiLoaded<ValuationState>> {
   const { loop } = spec;
   const start = unpackState<ValuationState>(spec.state);
-  const tools = valuationTools(env);
+  const contextTools = valuationPublicResearchTools(env,start.publicResearch);
+  const tools = [...valuationTools(env).map(tool=>({ ...tool, execute: async (args:unknown,ctx:Parameters<typeof tool.execute>[1])=>{
+    if(["finish_research","finish_assumptions","compose_valuation","finish_valuation"].includes(tool.name)){
+      const issue=valuationPublicResearchGate(ctx.state);if(issue)throw new Error(issue);
+    }
+    return tool.execute(args,ctx);
+  }})),...contextTools];
   const recipe: Recipe<string, ValuationState, ValuationState> = {
-    id: loop.recipeId, budget: loop.budget, resultChars: 64_000, system: () => loop.system, open: () => start, tools: () => tools, policy: { allow: loop.allow }, settled: loopSettled(loop.recipeId), settle: s => s, nudge: NUDGE,
+    id: loop.recipeId, budget: loop.budget, resultChars: 64_000, system: () => `${loop.system}\n\n${PUBLIC_RESEARCH_GUIDE}`, open: () => start, tools: () => tools, policy: { allow: [...loop.allow,...contextTools.map(tool=>tool.name)], post:handPolicy(contextTools).post }, settled: loopSettled(loop.recipeId), settle: s => s, nudge: NUDGE,
   };
-  const store = new ValuationStore(requireDb(env));
+  const store = new ValuationStore(requireDb(env), env);
   return {
     recipe, input: "", model: modelFor(env, loop.tool), effort: reasoningFor(env, loop.tool),
     ledger: { kind: loop.tool, ticker: start.input.ticker, ...(spec.runId ? { runId: spec.runId } : {}) },
@@ -310,6 +320,9 @@ const RED_TEAM_SCHEMA = z.object({
 async function assemblePublication(state: ValuationState, now: string, methodVersion: string): Promise<{ publication: ValuationPublication; evidence: ValuationEvidence[] }> {
   const calc = state.calc?.result ?? null;
   const gaps: ValuationGap[] = [...state.modelGaps];
+  for(const gap of state.publicResearch?.gaps??[])gaps.push({code:"missing_inputs",field:`public_${gap.kind}`,message:`${gap.kind === "macro" ? "Macro" : "Industry"} research coverage: ${gap.reason}`,evidenceIds:[]});
+  const publicIssue=valuationPublicResearchGate(state);
+  if(publicIssue)gaps.push({code:"review_incomplete",message:"The company-specific applicability of public research has not been completed.",evidenceIds:[]});
   if (!state.quote) gaps.push({ code: "missing_quote", message: "No reference close could be read, so no price comparison is made.", evidenceIds: [] });
   else if (!state.quote.usable) gaps.push({ code: "stale_quote", message: state.quote.limitations.join(" "), evidenceIds: [] });
   for (const id of state.input.missing) gaps.push({ code: "missing_inputs", field: id, message: `${id} could not be resolved from the validated statements.`, evidenceIds: [] });
@@ -341,6 +354,8 @@ async function assemblePublication(state: ValuationState, now: string, methodVer
   const fair = calc?.fairValueRange;
   const fairIds = fair ? [...fair.evidenceIds, ...(fair.status === "available" ? [fair.lower, fair.upper].flatMap(c => [...c.evidenceIds, ...Object.values(c.assumptions).flatMap(a => a.evidenceIds)]) : [])] : [];
   const cited = new Set<string>([...dimensions.flatMap(d => [...d.supportingEvidenceIds, ...d.counterEvidenceIds]), ...(calc ? (["bear", "base", "bull"] as const).flatMap(k => calc.scenarios[k].evidenceIds) : []), ...judgementIds, ...fairIds, ...[...`${sections.summary} ${sections.thesis} ${sections.expectationsGap} ${sections.catalysts.join(" ")} ${sections.counterEvidence.join(" ")} ${sections.modelNotes}`.matchAll(CITATION)].map(m => m[0])]);
+  const researchDependencies=valuationPublicDependencies(state);
+  for(const dependency of researchDependencies)for(const id of dependency.companyEvidenceIds)cited.add(id);
   const evidence = [...state.evidence.values()].filter(e => cited.has(e.evidenceId)).sort((a, b) => a.evidenceId.localeCompare(b.evidenceId));
   const evidenceSetHash = await sha256(JSON.stringify(evidence.map(e => [e.evidenceId, e.contentSha256])));
   const body: Omit<ValuationPublication, "versionId" | "generatedAt"> = {
@@ -348,6 +363,7 @@ async function assemblePublication(state: ValuationState, now: string, methodVer
     researchAsOf: state.researchAsOf, financialPeriodEnd: state.input.financialPeriodEnd, methodVersion, calculatorVersion: CALCULATOR_VERSION,
     baseInputFingerprint: state.input.fingerprint, evidenceSetHash, reportStatus, verdict, weightedScore: score, confidence, dimensions, quote: state.quote, model: calc,
     facts: state.input.facts, diagnostics: state.input.diagnostics, distributions: state.input.distributions, sections, evidence, gaps,
+    ...(state.publicResearch ? {researchDependencies,researchContext:state.publicContextState?.composer.researchContext??{asOf:state.publicResearch.asOf,mappingVersions:state.publicResearch.mappingVersions,reports:state.publicResearch.reports.map(({report})=>({reportId:report.reportId,version:report.version,title:report.title,asOf:report.asOf,type:report.type,scope:report.scope.description})),uses:[],gaps:state.publicResearch.gaps}} : {}),
   };
   const versionId = (await sha256(JSON.stringify(body))).slice(0, 32);
   return { publication: { ...body, generatedAt: now, versionId }, evidence };
@@ -359,7 +375,8 @@ export async function researchValuation({ input, market, now, step, env, mode, g
   mode: { kind: "live"; generation: number } | { kind: "snapshot"; sources: FrozenResearchSource[] };
 }) {
   const generation = mode.kind === "live" ? mode.generation : null;
-  const state: ValuationState = { ...(mode.kind === "snapshot" ? { frozenSources: mode.sources } : {}), input, researchAsOf: now, now: generatedAt, quote: market.quote, riskFree: market.riskFree, beta: market.beta, peerMultiples: market.peerMultiples, multipleHistory: market.multipleHistory, evidence: new Map(), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
+  const publicResearch=await step.do("valuation-public-context",()=>freezeCompanyResearch(env,input.ticker,now));
+  const state: ValuationState = { publicResearch, ...(mode.kind === "snapshot" ? { frozenSources: mode.sources } : {}), input, researchAsOf: now, now: generatedAt, quote: market.quote, riskFree: market.riskFree, beta: market.beta, peerMultiples: market.peerMultiples, multipleHistory: market.multipleHistory, evidence: new Map(), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
     dimensions: new Map(), researchDone: false, calc: null, modelGaps: [], insufficient: null, assumptionsDone: false, redTeam: null, composed: null, cancelled: false };
   // Management's cited targets are evidence from the first turn: the research, the scenarios and the report may cite them.
   await registerManagementEvidence(state);
@@ -375,6 +392,7 @@ export async function researchValuation({ input, market, now, step, env, mode, g
     const { publication, evidence } = await assemblePublication(state, generatedAt, VALUATION_VERSION);
     return { phases, researchProgress, assumptionProgress, publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null,
       nearTermForecast: state.nearTermForecast ?? null,
+      publicResearch:state.publicResearch, researchUses:state.publicContextState?.researchUses??[],
       promptSha256: await sha256(JSON.stringify({ method: VALUATION_VERSION, prompts: [RESEARCH_SYSTEM, FINALIZE_RESEARCH_SYSTEM, ASSUME_SYSTEM, COMPOSE_SYSTEM], budget: BUDGET, mode: mode.kind })) };
   };
   let research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
@@ -417,7 +435,7 @@ export async function researchValuation({ input, market, now, step, env, mode, g
 export async function executeValuationWorkflow(params: ValuationWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
   if (!valuationTickersFor(env).includes(params.ticker) || env.VALUATION_ENABLED === "false") return { status: "superseded" as const };
   const db = requireDb(env);
-  const store = new ValuationStore(db);
+  const store = new ValuationStore(db, env);
   const now = await step.do("valuation-time", async () => new Date().toISOString());
   const generation = await step.do("valuation-start", async () => {
     const g = await store.advance(params.ticker, now);

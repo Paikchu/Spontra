@@ -1,0 +1,35 @@
+[
+  {
+    "width": 390,
+    "height": 844,
+    "kind": "synthetic local UI",
+    "frozen": 100,
+    "updated": 90,
+    "historicalQuote": 100,
+    "overflow": false,
+    "bottom": true,
+    "pageErrors": []
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "kind": "synthetic local UI",
+    "frozen": 100,
+    "updated": 90,
+    "historicalQuote": 100,
+    "overflow": false,
+    "bottom": true,
+    "pageErrors": []
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "kind": "synthetic local UI",
+    "frozen": 100,
+    "updated": 90,
+    "historicalQuote": 100,
+    "overflow": false,
+    "bottom": true,
+    "pageErrors": []
+  }
+]

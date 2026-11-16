@@ -1,10 +1,12 @@
+import { companyResearchDependencyStatus } from "../public-research/context.ts";
 import { featureShown, shownLayers, shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { readMapDerived } from '../financial-data/derived.ts';
 import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
-import { readFindingsResponse, readStoredFindings } from "../findings/read.ts";
+import { readFindingsResponse, resolvePublishedDossierSubject } from "../findings/read.ts";
+import { enrichFindings } from "../findings/articles.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
@@ -27,8 +29,9 @@ import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
-import { dossierSubject, readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
 import { stageAvailable } from "../stage/access.ts";
+import { listPublicResearch, readPublicResearch } from "../public-research/store.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -69,7 +72,8 @@ type RouteMatch =
   | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
   | { kind: "findings-index" }
   | { kind: "ticker"; ticker: string }
-  | { kind: "home" };
+  | { kind: "home" }
+  | { kind: "public-research"; reportId?: string };
 
 
 /** A filing as the reports feature's display switch leaves it for readers: the filing itself, none of the model's writing. */
@@ -115,6 +119,24 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   try {
     if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
     if (route.kind === "home") return await home(request, env.DB);
+    if (route.kind === "public-research") {
+      const allowed = new Set(["type", "industryId", "version"]);
+      const type = url.searchParams.get("type");
+      const industryId = url.searchParams.get("industryId");
+      const version = url.searchParams.get("version");
+      if ([...url.searchParams.keys()].some(key => !allowed.has(key)) ||
+        (type !== null && type !== "macro" && type !== "industry") ||
+        [industryId, version].some(value => value !== null && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value)) ||
+        (route.reportId ? type !== null || industryId !== null : version !== null)) {
+        return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      }
+      // No edge cache: a withdrawn claim must stop looking valid immediately, including historical URLs.
+      const researchEnv = env as unknown as Parameters<typeof listPublicResearch>[0];
+      const result = route.reportId
+        ? await readPublicResearch(researchEnv, route.reportId, { version: version ?? undefined })
+        : await listPublicResearch(researchEnv, { type: type as "macro" | "industry" | undefined ?? undefined, industryId: industryId ?? undefined });
+      return dataResponse(request, result, "no-store");
+    }
     if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
     // An artifact draft opened by the visual review through its signed, short-lived link; never cached.
     if (route.kind === "artifact-preview") {
@@ -152,7 +174,7 @@ async function home(request: Request, database: D1Database): Promise<Response> {
   return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" } | { kind: "public-research" }>): Promise<Response> {
   const ticker = normalizeTicker(route.ticker);
   if (!ticker) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const layers = route.kind === "revisions" ? null : await shownLayers(database, ticker);
@@ -212,8 +234,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     case "dossier-artifact": {
       if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       const ticker = route.ticker.trim().toUpperCase();
-      const findings = await readStoredFindings(database, ticker).catch(() => null);
-      const published = findings?.fingerprint ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, dossierSubject(findings.fingerprint, route.findingId), locale) : null;
+      const subject = await resolvePublishedDossierSubject(database, ticker, route.findingId);
+      const published = subject ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, subject, locale) : null;
       return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     }
     case "business-flow": {
@@ -250,7 +272,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     case "findings": {
       const payload = await readFindingsResponse(database, route.ticker, { hidden: await hidden("findings") });
       payload.findings = await translated("findings", payload.findings);
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+      const enriched = await enrichFindings(env as unknown as ArtifactStoreEnv, payload, locale ?? "en");
+      return dataResponse(request, enriched, "no-store");
     }
     case "events": {
       const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("filings") });
@@ -291,9 +314,9 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
           return evidence ? dataResponse(request, { schemaVersion: "valuation-evidence.v1", ticker, evidence }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
         }
         const report = await store.version(ticker, route.versionId!);
-        return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId) }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+        return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId), researchStatus: (await companyResearchDependencyStatus(env as unknown as ArtifactStoreEnv, `valuation:${ticker}:${report.versionId}`)).status }, "no-store") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
       }
-      const payload = await readValuationResponse(database, ticker, { hidden: off });
+      const payload = await readValuationResponse(database, ticker, { hidden: off, researchEnv: env as unknown as ArtifactStoreEnv });
       if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
@@ -313,6 +336,11 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
+  const research = /^\/api\/v1\/research(?:\/([^/]+))?\/?$/.exec(pathname);
+  if (research) {
+    const reportId = research[1] ? safeDecode(research[1]) : undefined;
+    return reportId === null || (reportId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(reportId)) ? null : { kind: "public-research", reportId };
+  }
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
   const preview = /^\/api\/v1\/artifact-preview\/([A-Za-z0-9_.-]{20,1000})\/?$/.exec(pathname);

@@ -1,0 +1,3 @@
+2:31:56 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+2:31:59 PM [vite] (client) [optimizer] bundling dependencies...
+{"fixture":"synthetic never published","lowBudgetFinishRejected":true,"harnessFallbackPublished":false,"databaseWrites":0}

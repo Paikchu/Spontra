@@ -1,3 +1,10 @@
+import type { InvestmentChain } from "../filing-analysis/periodic.ts";
+import { impactCalculationTool } from "../price-impact/tool.ts";
+import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
+import { companyResearchDependencyStatements } from "../public-research/context.ts";
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import { freezeCompanyResearch } from "../public-research/context.ts";
+import { publicResearchTools, PUBLIC_RESEARCH_GUIDE, type ResearchContextState } from "../company-research/context-tools.ts";
 import { datedHits } from "../web-search/native.ts";
 import type { FindingMaterial, FindingPassage, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import type { IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
@@ -56,11 +63,15 @@ Method:
 3. Choose the evidence needed for your answer. The lead's starting figures are a retrieval aid, not a prescribed table. Use read_series for additional figures and periods. Write numbers as <data value data-ref>, citing d1 for starting figures, peers for peer ratios, a read_series source (d2, d3, …) for other figures, or a passage or page (m…, w…) that states them. add_chart draws the published catalogue refs. Explain periods and units clearly.
 4. search_web and read_web are only for information the filing analyses do not carry, such as a subsequent announcement, customer contract or industry context. Most lines need none. Prefer official releases. A page becomes a source only after you read it.
 5. background is context, never a source: the company narrative, earlier research questions and movement in the figures. Do not cite it or copy its numbers. Events have their own filing analyses in filings when flagged.
-6. Use the shared composer to write, check, revise and finish your independent article. It must stand on its own without any detector body, automatic evidence table, watch card or historical-record list.`;
+6. For each material conclusion state the prior assumption or initial baseline, new evidence, revised assumption, transmission into revenue/profit/cash/funding/shares and the valuation implication. Identify the endpoint as quantifiable, sensitivity only or not yet quantifiable with exact missing inputs. Do not infer a target price from a qualitative risk. Contract reclassification is not cancellation or a cash refund. Fixed debt coupons do not reprice with market yields. Equity financing adds cash and shares. Average and period-end capacity, spot and contract pricing, and depreciation versus physical replacement are distinct. Use compute_investment_impact for any financial calculation. Before writing call record_investment_impact to preserve at least one complete chain through compaction. State counter-evidence and the next verification event, with its timing.
+7. Use the shared composer to write, check, revise and finish your independent article. It must stand on its own without any detector body, automatic evidence table, watch card or historical-record list.`;
 
 const STRINGS = { type: "array", items: { type: "string" } };
 /** The research tools; the document is written with the shared composer tools. */
 const ANALYST_TOOLS: AgentClientTool[] = [
+  { name: "record_investment_impact", strict: true, description: "Record the final assumption change, financial transmission, valuation endpoint, counter-evidence and verification event. Quantifiable/sensitivity endpoints use compute_investment_impact source IDs; unavailable endpoints list exact missing inputs.", input_schema: closedObject({
+    id: { type: "string" }, priorAssumption: { type: "string" }, newEvidence: { type: "string" }, revisedAssumption: { type: "string" }, financialEffect: { type: "string" }, valuationEffect: { type: "string" }, quantificationStatus: { type: "string", enum: ["quantifiable", "sensitivity_only", "not_quantifiable"] }, sourceIds: STRINGS, computationRefs: STRINGS, missingInputs: STRINGS, counterEvidence: { type: "string" }, verification: { type: "string" }, window: { type: "string" },
+  }) },
   {
     name: "filings", strict: true,
     description: "The written filing analyses of the company, or of a comparable peer (ticker), newest report first: each with its id (the filing's accession), form, filing date, report period and title.",
@@ -89,7 +100,7 @@ const COMPOSE_TURNS = 20;
 
 type AnalystMaterial = FindingMaterial & { passage: FindingPassage };
 /** Everything one finding's session has learned: the passages read, the figures read, the spend, the hits, and the document. */
-export type AnalystState = {
+export type AnalystState = ResearchContextState & {
   composer: ComposerState;
   list: AnalystMaterial[]; byPassage: Map<string, string>;
   used: { reads: number; finds: number; searches: number; webReads: number };
@@ -97,10 +108,13 @@ export type AnalystState = {
   /** The text of every figure source (d…, peers), so a block citing one can be checked against it. */
   data: Record<string, string>;
   candidates: unknown[];
+  impactComputations?: Record<string, ImpactCalculation>;
+  investmentChains?: InvestmentChain[];
 };
 /** What one finding's session is rebuilt from, decided when the run started it. */
 export type AnalystSpec = {
   ticker: string; finding: VerifiedFindingLead; plan: Plan; data: FindingData; now: string;
+  publicResearch?: FrozenCompanyResearch;
   analyses: FilingAnalysisEntry[]; earlierAvailable: boolean; runId?: string;
   /** The findings publication the dossier is written for; it names the artifact. */
   findingsFingerprint?: string;
@@ -253,6 +267,21 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
     return readable.has(owner) ? owner : { observation: `${owner} is not the company or one of its comparable peers.`, error: true };
   };
   const own = [
+    handTool<AnalystState>(schema("record_investment_impact"), (args, state) => {
+      const fields = ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "counterEvidence", "verification", "window"] as const;
+      const texts = Object.fromEntries(fields.map(key => [key, typeof args[key] === "string" ? (args[key] as string).trim() : ""]));
+      const list = (key: string) => Array.isArray(args[key]) ? (args[key] as unknown[]).filter((v): v is string => typeof v === "string" && !!v.trim()) : [];
+      const sourceIds = list("sourceIds"), computationRefs = list("computationRefs"), missingInputs = list("missingInputs");
+      const status = args.quantificationStatus;
+      if (Object.values(texts).some(value => !value) || !sourceIds.length || sourceIds.some(id => !state.composer.sources[id])) return { observation: "A complete chain and registered evidence sources are required.", error: true };
+      if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(String(status))) return { observation: "Unknown quantification state.", error: true };
+      if (status !== "not_quantifiable" && (!computationRefs.length || computationRefs.some(id => state.impactComputations?.[id]?.status !== "calculated"))) return { observation: "A quantified or sensitivity result needs successful compute_investment_impact results.", error: true };
+      if (status !== "quantifiable" && !missingInputs.length) return { observation: "Name the missing inputs preventing a full valuation result.", error: true };
+      if (status === "quantifiable" && computationRefs.some(id => state.impactComputations?.[id]?.limitations.some(note => note.startsWith("Sensitivity only:")))) return { observation: "Assumed inputs yield sensitivity only, not a quantified event.", error: true };
+      const chain: InvestmentChain = { ...texts as Pick<InvestmentChain, typeof fields[number]>, sourceIds, computationRefs, missingInputs, quantificationStatus: status as InvestmentChain["quantificationStatus"] };
+      state.investmentChains = [...(state.investmentChains ?? []).filter(c => c.id !== chain.id), chain];
+      return { observation: JSON.stringify(chain) };
+    }),
     handTool<AnalystState>(schema("filings"), async (args) => {
       const owner = owned(args);
       if (typeof owner !== "string") return owner;
@@ -321,19 +350,23 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
     },
   }));
   const figures = figuresText(spec);
+  const publicContext = publicResearchTools<AnalystState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
   const setup: ComposerSetup<AnalystState> = {
     env, chart: { data: spec.data, periodEnd: finding.periodEnd }, ledger: { ticker, ...(spec.runId ? { runId: spec.runId } : {}) },
     budgetTurns: plan.budget.turns + COMPOSE_TURNS,
     research: ["filings", "read_filing_analysis", "peers", ...(series.length ? ["read_series"] : []), ...(search ? ["search_web", "read_web"] : [])],
     previewQuery: `finding=${encodeURIComponent(finding.id)}`,
     read: async (id, s) => {
+      const publicSource = publicContext.read(id);
+      if (publicSource) return publicSource;
       if (id === "d1") return { title: s.composer.sources.d1?.title ?? "Reported figures", text: figures };
       if (s.data[id] !== undefined) return { title: s.composer.sources[id]?.title ?? id, text: s.data[id]! };
       const m = s.list.find(x => x.id === id);
       return m ? { title: s.composer.sources[id]?.title ?? m.title, text: passageText(m.passage) } : null;
     },
-    onPublish: async () => [],
+    onPublish: async (state, published) => companyResearchDependencyStatements(env, { ticker, resultId: `dossier:${ticker}:${state.composer.artifact.subject}:v${published.version}`, dependencies: (state.researchUses ?? []).filter(use => use.decision === "adopted"), mappingVersions: spec.publicResearch?.mappingVersions ?? [] }),
     // Every analysis reads the earlier reports (the user's rule): while an earlier report's analysis exists, the document quotes one.
+    hardPrecheck: state => publicContext.precheck(state) ?? (state.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
     precheck: s => {
       if (!spec.earlierAvailable) return null;
       const quoted = s.composer.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: () => null, charts: new Set(Object.keys(s.composer.charts)) }).claims.flatMap(c => c.kind === "quote" ? [c.source] : []));
@@ -341,13 +374,25 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
       return earlier ? null : "the document quotes no earlier report. Read an earlier report's analysis with read_filing_analysis, say what changed since then, and quote one of its passages with <blockquote data-source=\"m…\">.";
     },
   };
-  const tools = [...own, ...series, ...composerTools(setup)];
+  const impact = impactCalculationTool<AnalystState>({
+    sourceExists: (state, id) => !!state.composer.sources[id],
+    sourceValues: (state, id) => id === "d1" ? spec.finding.resolved.flatMap(row => [row.current.value, ...(row.compare ? [row.compare.value] : [])]) : state.impactComputations?.[id] ? Object.values(state.impactComputations[id]!.values) : null,
+    record: (state, result, inputs) => {
+      const results = state.impactComputations ??= {};
+      const id = `impact${Object.keys(results).length + 1}`;
+      results[id] = result;
+      state.data[id] = JSON.stringify({ result, inputs });
+      registerSource(state.composer, id, { title: "Investment sensitivity calculation", url: null, kind: "data" });
+      return id;
+    },
+  });
+  const tools = [impact, ...own, ...series, ...publicContext.tools, ...composerTools(setup)];
   return {
     id: `analyst-${finding.id}`,
     budget: { turns: plan.budget.turns + COMPOSE_TURNS, wallMs: 90 * 60_000 },
     resultChars: 40_000,
     callsPerTurn: Infinity,
-    system: () => `${SYSTEM}\n\n${COMPOSER_GUIDE}`,
+    system: () => `${SYSTEM}\n\n${PUBLIC_RESEARCH_GUIDE}\n\n${COMPOSER_GUIDE}`,
     open: () => ({ composer: openState(spec), list: [], byPassage: new Map(), used: { reads: 0, finds: 0, searches: 0, webReads: 0 }, hits: [], data: {}, candidates: [] }),
     tools: () => tools,
     policy: { allow: tools.map(t => t.name), post: handPolicy(own).post },
@@ -382,7 +427,8 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
     chartGrammar: CHART_GRAMMAR,
     budget: { turns: plan.budget.turns + COMPOSE_TURNS, finds: plan.budget.finds, reads: plan.budget.reads, searches: webOn ? plan.budget.searches : 0, webReads: webOn ? plan.budget.webReads : 0 },
   });
-  const spec: AnalystSpec = { ticker, finding, plan, data: input.data, now: input.now, analyses, earlierAvailable, findingsFingerprint: input.findingsFingerprint, ...(input.runId ? { runId: input.runId } : {}) };
+  const publicResearch = await input.stage(`${finding.id}-public-research`, () => freezeCompanyResearch(env, ticker, input.now));
+  const spec: AnalystSpec = { publicResearch, ticker, finding, plan, data: input.data, now: input.now, analyses, earlierAvailable, findingsFingerprint: input.findingsFingerprint, ...(input.runId ? { runId: input.runId } : {}) };
   const session = await input.run<AnalystResult, AnalystState>("analyst", spec, opening, input.operationId);
   const turns: AnalystTurn[] = [...session.trail];
   if (session.capped) turns.push({ turn: session.turns, thought: "", action: "budget", input: "", observation: "The day's model budget is spent; the harness delivered what was written." });

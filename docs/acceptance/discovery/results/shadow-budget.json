@@ -1,0 +1,7 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "../../scripts/i18n/fixture-api" without a file extension (apps/business-site/vite.config.ts:4:28). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+2:55:17 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+2:55:19 PM [vite] (client) [optimizer] bundling dependencies...
+{"check":"shadow concurrent durable reservations","attempts":9,"admitted":3,"cap":3,"passed":true}
+{"environment":"local real D1; snapshots empty","checks":["evicted snapshot exact original artifact recovered","other ticker/kind/draft/wildcard collision ignored","absent exact identity remains missing","legacy ambiguous link selects latest exact original artifact"],"passed":4}

@@ -1,0 +1,47 @@
+{
+  "baselineCommit": "b1d73fcfbb11eaa829d2d4ea97f449cff98c4cf6",
+  "requirements": [
+    {
+      "name": "Spontra-分阶段构建与可靠性验收.md",
+      "bytes": 30575,
+      "sha256": "4999808af73dae2de5ebb51e96fa76b22c8ff1f700fe570bd882380bbe02645e",
+      "libraryId": "libfile_9da351aec2648191b300e63d6d69aeef",
+      "version": 0
+    },
+    {
+      "name": "CRWV-earnings-feedback.md",
+      "bytes": 58510,
+      "sha256": "4e8fea58569a6336e40c8f3ba7b4b6681a47a065081ed78e92c7e875978d1580",
+      "libraryId": "libfile_275241c0c52c81918d73bd5e2b10bc43",
+      "version": 2
+    }
+  ],
+  "pilot": {
+    "macro": {
+      "region": "United States",
+      "currency": "USD"
+    },
+    "industry": "AI cloud",
+    "companies": [
+      "CRWV",
+      "NBIS"
+    ],
+    "syntheticOnly": [
+      "cross-industry",
+      "uncovered-industry",
+      "fault-injection"
+    ]
+  },
+  "authorization": {
+    "modelTokenCosts": "authorized for this pilot; no monetary ceiling specified",
+    "otherPurchases": false,
+    "productionScope": "pilot only after acceptance gates",
+    "syntheticProductionPublishing": false
+  },
+  "proposedOperationalLimits": {
+    "concurrentResearchRoles": 2,
+    "targetedRepairRounds": 1,
+    "restartWholeResearchByDefault": false,
+    "note": "Per-session token and call limits use configured runner budgets; capture actual use, never silently raise after failure."
+  }
+}

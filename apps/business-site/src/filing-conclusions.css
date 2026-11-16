@@ -1,0 +1,6 @@
+.filing-conclusions { max-width: var(--report-measure); margin: 0 auto 24px; padding: 0 12px 16px; border-bottom: 1px solid var(--hairline); }
+.filing-conclusions h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.filing-conclusions ul { margin: 0; padding-left: 20px; }
+.filing-conclusions li { margin: 8px 0; }
+.filing-conclusions button { color: var(--foreground); text-align: left; line-height: 1.6; text-decoration: underline; text-underline-offset: 3px; }
+.filing-conclusions button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }

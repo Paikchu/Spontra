@@ -1,3 +1,4 @@
+import { handleFilingShadow } from "../filing-analysis/shadow.ts";
 import { recheckFiling } from "../filing-analysis/recheck.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
 import { startFilingRuns } from "../filing-analysis/start.ts";
@@ -141,6 +142,11 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
   if (url.pathname === "/admin/reports" && request.method === "GET") {
     try { return json(await listAdminReports(env, url, now)); }
     catch (error) { return json({ error: String(error).includes("INVALID_QUERY") ? "筛选条件无效。" : "报告列表暂时不可用。" }, String(error).includes("INVALID_QUERY") ? 400 : 503); }
+  }
+  const shadow = /^\/admin\/reports\/([A-Z][A-Z0-9.-]{0,11})\/(\d{10}-\d{2}-\d{6})\/shadow(?:\/([A-Za-z0-9_.-]{1,200}))?(?:\/(promote|stop))?$/.exec(url.pathname);
+  if (shadow) {
+    try { return await handleFilingShadow(request, env as unknown as AnalysisEnv, shadow[1]!, shadow[2]!, shadow[3], shadow[4]); }
+    catch (error) { console.error(JSON.stringify({ event: "filing-shadow", ticker: shadow[1], error: error instanceof Error ? error.message : String(error) })); return json({ error: "Shadow operation failed. Read the run status and public version before retrying; the operation outcome may be uncertain." }, 503); }
   }
   const process = /^\/admin\/reports\/([A-Z][A-Z0-9.-]{0,11})\/(\d{10}-\d{2}-\d{6})\/runs\/([A-Za-z0-9_-]{1,160})$/.exec(url.pathname);
   if (process && request.method === "GET") {

@@ -92,6 +92,8 @@ const attr = (node: Extract<HtmlNode, { type: "element" }>, name: string) => nod
 export type BlockContext = {
   /** A registered source's URL, or null for a source without one; undefined when the id was never registered. */
   sourceUrl(id: string): string | null | undefined;
+  /** Reader-facing name, never an internal source identifier. */
+  sourceLabel?(id: string): string | undefined;
   /** Charts compiled in this run, by id. */
   charts: ReadonlySet<string>;
 };
@@ -206,7 +208,14 @@ export function checkBlock(source: string, ctx: BlockContext): BlockCheck {
           const url = ctx.sourceUrl(ref);
           if (url === undefined) errors.push(`<a data-source="${ref}">: no such source in this run`);
           else if (url === null) errors.push(`<a data-source="${ref}">: this source has no public link; cite it without <a>`);
-          else { node.attrs = node.attrs.filter(([k]) => k !== "href"); node.attrs.unshift(["href", url]); sources.add(ref); }
+          else { node.attrs = node.attrs.filter(([k]) => k !== "href"); node.attrs.unshift(["href", url]); sources.add(ref);
+            const label = nodeText(node.children).trim();
+            if (label === ref || label.toLowerCase() === `source ${ref}`.toLowerCase() || (ref.length >= 8 && label.includes(ref)) || /\b[0-9a-f]{16,}\b/i.test(label)) {
+              const readable = ctx.sourceLabel?.(ref);
+              if (readable) node.children = [{ type: "text", text: readable }];
+              else errors.push(`<a data-source="${ref}">: use a readable filing or section label, not an internal source id`);
+            }
+          }
         }
       }
       for (const key of ["data-source"] as const) {

@@ -1,3 +1,7 @@
+import type { AiModel, AiEffort } from "../../../../shared/analysis-contract/ai-models-admin.ts";
+import { companyResearchDependencyStatements } from "../public-research/context.ts";
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import { publicResearchTools, PUBLIC_RESEARCH_GUIDE, type ResearchContextState } from "../company-research/context-tools.ts";
 import { z } from "zod";
 import { modelFor } from "../ai-config.ts";
 import { webTools, type WebToolState } from "../compose/tools.ts";
@@ -25,10 +29,10 @@ import { filingSemanticAudit } from "./semantic-audit.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string };
-export type FilingSpec = { ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
+export type FilingSpec = { shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
-type FilingState = WebToolState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
+type FilingState = WebToolState & ResearchContextState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
 
 export async function readFilingCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string, material: MaterialRef): Promise<FilingState> {
   const object = await env.SEC_FILINGS.get(key);
@@ -79,6 +83,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     }
     return [...matches.values()];
   };
+  const publicContext = publicResearchTools<FilingState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
   const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, runId: spec.sessionId });
   const summarise = (state: FilingState, status: "published" | "failed") => recordRunSummary(db, {
     runId: spec.sessionId, ticker, accession, profile: profile.id, status, settledBy: state.composer.settledBy ?? null,
@@ -92,13 +97,20 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       (args, state) => { state.category = CATEGORIES.includes(args.category as never) ? String(args.category) : "other"; return ok(`Category: ${state.category}.`); })] : []),
   ];
   const setup: ComposerSetup<FilingState> = {
+    publicationMode: spec.shadow ? "shadow" : undefined,
+    onShadow: async (state, published) => {
+      await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/validated.json`, JSON.stringify({ spec, ...published, validatedAt: new Date().toISOString(), researchUses: state.researchUses ?? [], work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } }));
+    },
     env, chart: null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns, settlement: "agent",
     research: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript"],
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
     resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS } : {}), precheck: periodic.precheck,
+    hardPrecheck: state => publicContext.precheck(state) ?? (state.periodic?.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
     audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"] }, state),
     read: async (id, state) => {
+      const publicSource = publicContext.read(id);
+      if (publicSource) return publicSource;
       // A fact or paragraph named by a report opened for revision is read again the first time it is needed.
       const held = periodic?.read(id, state) ?? (periodic && await periodic.resolve(id, state).catch(() => false) ? periodic.read(id, state) : null);
       if (held) return held;
@@ -111,7 +123,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       const summary = filingSummary(filing, { headline, text: published.text, ...(state.category ? { category: state.category } : {}) }, now);
       // A periodic report is also the company memory's source: the memory job is published with the report.
       const memory = profile.id === "periodic" ? await filingMemoryStatements(env, { filing, summary, sessionId: spec.sessionId, readSectionIds: state.read ?? [], material: snapshot }) : [];
-      return repository.summaryStatements({ ticker, accessionNumber: accession, form: filing.form }, summary, memory) as unknown as D1PreparedStatement[];
+      const dependencies = await companyResearchDependencyStatements(env, { ticker, resultId: `filing-report:${ticker}:${accession}:v${published.version}`, dependencies: (state.researchUses ?? []).filter(use => use.decision === "adopted"), mappingVersions: spec.publicResearch?.mappingVersions ?? [] });
+      return [...repository.summaryStatements({ ticker, accessionNumber: accession, form: filing.form }, summary, memory) as unknown as D1PreparedStatement[], ...dependencies];
     },
     afterPublish: async (state) => {
       const now = new Date().toISOString();
@@ -124,14 +137,14 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     },
   };
   const compose = composerTools(setup);
-  const list = [...periodic.tools, ...own, ...web, ...compose];
+  const list = [...periodic.tools, ...publicContext.tools, ...own, ...web, ...compose];
   return {
     id: `filing.${spec.profile}.material.v1`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: 90_000,
     callsPerTurn: Infinity,
     concurrent: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript", "read_evidence", "list_leads", "read_block", "outline", "view_issue"],
-    system: () => profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}`,
+    system: () => profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}`,
     open: () => {
       if (resumed) return resumed;
       const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, web: {} };
@@ -154,6 +167,10 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     nudge: periodic ? "Continue: work the leads, record what you confirm, write the blocks, then call finish." : "Continue reading and writing blocks, then call finish.",
     budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && s.composer.turns >= 45 ? " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && s.composer.turns >= 70 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
     afterRun: async (s) => {
+      if (spec.shadow) {
+        if (s.composer.phase !== "published") await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/failed.json`, JSON.stringify({ status: "failed", reason: "Session ended without a validated shadow", at: new Date().toISOString() }));
+        return;
+      }
       if (s.composer.phase === "published") { await summarise(s, "published"); return; }
       const now = new Date().toISOString();
       await updateFiling(db, ticker, accession, { status: "failed", reason: "the session ended without a report" }, now);
@@ -173,7 +190,13 @@ export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<
   const work = document ? await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) : null;
   const base = document && work?.material?.version === spec.material.version ? { document, work } : null;
   return {
-    recipe: filingRecipe(env, spec, profile, snapshot, base, resumed), input: spec, effort: profile.reasoning, model: modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    recipe: filingRecipe(env, spec, profile, snapshot, base, resumed), input: spec, effort: spec.shadow ? spec.shadowEffort ?? profile.reasoning : profile.reasoning, model: spec.shadow ? spec.shadowModel ?? modelFor(env, "filing") : modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    ...(spec.shadow ? { strictBudget: true as const, reserve: async () => {
+      const reserved = await env.DB!.prepare(`UPDATE sec_cache SET payload=json_set(payload,'$.callsReserved',COALESCE(json_extract(payload,'$.callsReserved'),0)+1)
+        WHERE cache_key=? AND COALESCE(json_extract(payload,'$.callsReserved'),0)<COALESCE(json_extract(payload,'$.maxCalls'),140)
+        RETURNING cache_key`).bind(`research-shadow:${spec.sessionId}`).first();
+      return !!reserved;
+    } } : {}),
     hydrate: (state: FilingState) => { state.composer ??= openState(spec); state.web ??= {}; },
     record: entry => { void recordRunTurn(env.DB!, spec.sessionId, entry); },
   };

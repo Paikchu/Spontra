@@ -9,6 +9,7 @@ export const MATERIAL_PREFIX = "sec-materials/v1/";
 export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_ORGANIZER_VERSION}:${MATERIAL_ARCHIVE_INVENTORY_VERSION}`;
 export const materialStatePrefix = (ticker: string) => `filing-material:state:v1:${ticker}:`;
 export const materialStateKey = (ticker: string, accession: string) => `${materialStatePrefix(ticker)}${accession}`;
+export const materialRecoveryKey = (ticker: string, accession: string) => `filing-material:recovery:v1:${ticker}:${accession}`;
 export const materialBase = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/${ref.version}`;
 export const materialSnapshotKey = (ref: MaterialRef) => `${materialBase(ref)}/index.json`;
 const leaseKey = (filing: MaterialFiling) => `filing-material:lease:v1:${filing.ticker}:${filing.accession}`;
