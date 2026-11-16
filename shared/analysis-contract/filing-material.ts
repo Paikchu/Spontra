@@ -33,6 +33,7 @@ export type MaterialDocumentCoverage = {
   documentId: string; filename: string; sourceTextChars: number; retainedTextChars: number;
   sourceTables: number; retainedTables: number; sourceImages: number; retainedImages: number;
   pages: number; retainedPages: number; issues: string[];
+  reconciliation?: { method: "human-source-reconciliation.v1"; receiptKey: string; sourceSha256: string; candidateSha256: string; reviewer: string; reviewedAt: string; failedExtractionKey: string; originalIssues: string[] };
   htmlBaseline?: {
     method: "independent-raw-token-inventory.v1";
     textLeaves: number; mappedLeaves: number; textChars: number; mappedTextChars: number;

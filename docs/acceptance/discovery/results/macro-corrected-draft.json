@@ -1,0 +1,71 @@
+{
+  "receipt": {
+    "reportId": "macro-us-usd",
+    "baseVersion": "5889d6251f0ebfb409bb7112190d03be7ee39ceaf919caf7bf9b79bfc13e5caa",
+    "version": "041e89a7eeae3b2c756033890594890e134d7ec28d3933c47bf295fb142beca6",
+    "operator": "assistant-source-audit-not-human-approval",
+    "reason": "拒绝版本的原文证据补全与SPR/时点/表头/贡献口径纠正；仍待独立复审及用户签核",
+    "sourceChecks": [
+      {
+        "sourceId": "audit-bea",
+        "notes": "独立直接GET HTTP200；原始HTML SHA256=e0914c6cde962c660792136bf6a89a5256b747d0491cbb1b15aaec32914d1ec9；excerpt为去标签文本的连续原文；登记发布日期精确至日，00:00不代表已验证发布时刻。"
+      },
+      {
+        "sourceId": "audit-sloos-table1",
+        "notes": "独立直接GET HTTP200；原始HTML SHA256=38ced03d2e89ab958b55a2613d96ba8614a467a5606c651313f889045210846a；excerpt为去标签文本的连续原文；登记发布日期精确至日，00:00不代表已验证发布时刻。"
+      },
+      {
+        "sourceId": "audit-sloos",
+        "notes": "独立直接GET HTTP200；原始HTML SHA256=59037e2109219c65e1138b6794e510960efa7ac809288f89b1cd3d773c099cc1；excerpt为去标签文本的连续原文；登记发布日期精确至日，00:00不代表已验证发布时刻。"
+      },
+      {
+        "sourceId": "sb6ea764ffd0a69b6e634cf75",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "s76a4249d7b198d23f34921c7",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "s2c018fec6afd3b3a7540b04c",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "s35c1da4c98228e2b4ddf4578",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "sb8285e9fd68532ac56458145",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "s480bad48dc4f55719b37887f",
+        "notes": "保留原登记快照与hash；已对照官方原页面关键数值/期间，具体限制见23项审阅包；此备注不是用户签核。"
+      },
+      {
+        "sourceId": "audit-cpi",
+        "notes": "直接GET原始HTML200，保留原始hash；TableA表头明确Oct2026，Table7列为standard error，删去错误月率结论。非用户人工签核。"
+      },
+      {
+        "sourceId": "audit-jobs-a1",
+        "notes": "官方原表直接GET200；完整表头与家庭调查总体行定位、基准说明区分CES/CPS；非人工批准。"
+      },
+      {
+        "sourceId": "audit-jobs-b9",
+        "notes": "直接GET官方全页，原始HTML保存；TableB-9表头月份/群体/2002基期与脚注已核对，不是全体员工。非人工批准。"
+      },
+      {
+        "sourceId": "audit-jobs-summary-b",
+        "notes": "完整表头年份与ALL EMPLOYEES群体已复核；165与137按186/60/165计算一致，非原数据矛盾；HTML已留存。非人工批准。"
+      }
+    ],
+    "revisedAt": "2026-11-16T16:18:12.393Z",
+    "state": "draft",
+    "humanReviewRequired": true
+  },
+  "published": false,
+  "humanApproval": false,
+  "claimCount": 23,
+  "sourceCount": 13,
+  "libraryReviewFile": "libfile_0ad45508ebc481919f2216bf0dfc6017"
+}

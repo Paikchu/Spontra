@@ -1,3 +1,4 @@
+import { reconcileImageSource, sourceReconciliationSchema } from "../filing-material/source-reconciliation.ts";
 import { preparePilotMaterial } from "./material-pilot.ts";
 import { INDUSTRY_CATEGORIES, type IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
 import type { MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
@@ -35,6 +36,11 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
   }
   if (parts[0] === "materials" && TICKER_PATTERN.test(parts[1] ?? "") && ACCESSION.test(parts[2] ?? "")) {
     const ticker = parts[1]!, accession = parts[2]!;
+    if (request.method === "POST" && parts.length === 4 && parts[3] === "reconcile-source") {
+      const body=await request.text();if(new TextEncoder().encode(body).length>131072)return json({error:"Reconciliation body too large"},413);
+      try { return json(await reconcileImageSource(env,ticker,accession,sourceReconciliationSchema.parse(JSON.parse(body)))); }
+      catch(error){return json({error:error instanceof Error?error.message:String(error)},409);}
+    }
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare-pilot") return preparePilotMaterial(request, env, ticker, accession);
     const state = await getFilingMaterial(env, ticker, accession);
     if (!state) return json({ error: "未找到该申报材料。" }, 404);

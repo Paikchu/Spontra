@@ -1,0 +1,66 @@
+{
+  "version": "041e89a7eeae3b2c756033890594890e134d7ec28d3933c47bf295fb142beca6",
+  "schema": "pass",
+  "contentDifferences": [],
+  "hashOnlyChanges": [],
+  "sourceHashes": [
+    {
+      "id": "sb6ea764ffd0a69b6e634cf75",
+      "valid": true
+    },
+    {
+      "id": "s76a4249d7b198d23f34921c7",
+      "valid": true
+    },
+    {
+      "id": "s2c018fec6afd3b3a7540b04c",
+      "valid": true
+    },
+    {
+      "id": "s35c1da4c98228e2b4ddf4578",
+      "valid": true
+    },
+    {
+      "id": "sb8285e9fd68532ac56458145",
+      "valid": true
+    },
+    {
+      "id": "s480bad48dc4f55719b37887f",
+      "valid": true
+    },
+    {
+      "id": "audit-bea",
+      "valid": true
+    },
+    {
+      "id": "audit-sloos-table1",
+      "valid": true
+    },
+    {
+      "id": "audit-sloos",
+      "valid": true
+    },
+    {
+      "id": "audit-cpi",
+      "valid": true
+    },
+    {
+      "id": "audit-jobs-a1",
+      "valid": true
+    },
+    {
+      "id": "audit-jobs-b9",
+      "valid": true
+    },
+    {
+      "id": "audit-jobs-summary-b",
+      "valid": true
+    }
+  ],
+  "published": {
+    "status": "unavailable",
+    "report": null,
+    "history": [],
+    "reason": "not_published"
+  }
+}

@@ -35,7 +35,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "library") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && /^(?:|companies\/[A-Z][A-Z0-9.-]{0,11}|materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}(?:\/(?:index|markdown|tables(?:\/[^/]+)?))?|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?)$/.test(route);
-    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:prepare|prepare-pilot)|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
+    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:prepare|prepare-pilot|reconcile-source)|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "reports") {
@@ -55,7 +55,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     if (request.headers.get("origin") !== new URL(request.url).origin) return json({ error: "请求来源无效" }, 403);
   }
   const revision = path[0] === "public-research" && /^reports\/[A-Za-z0-9._:-]{1,128}\/revise$/.test(path.slice(1).join("/"));
-  const maxBody = revision ? 131072 : path[0] === "public-research" || (path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/"))) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
+  const reconciliation=path[0] === "library" && /^materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/reconcile-source$/.test(path.slice(1).join("/"));
+  const maxBody = revision || reconciliation ? 131072 : path[0] === "public-research" || (path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/"))) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > maxBody) return json({ error: "请求过大" }, 413);
   try {
     const binding = asServiceBinding(env.SPONTRA_ANALYSIS);

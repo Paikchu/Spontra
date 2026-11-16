@@ -1,0 +1,101 @@
+{
+  "scope": "LOCAL ONLY real admin proxy/handler/store/prepare pathway, actual image/candidate/source bytes, synthetic reviewer and already-successful companion source/organizer receipts; NO HUMAN APPROVAL",
+  "checks": [
+    {
+      "name": "actual admin proxy/handler admitted only local fixture review",
+      "passed": true
+    },
+    {
+      "name": "no task or event started by approval",
+      "passed": true
+    },
+    {
+      "name": "source image and failed model records unchanged",
+      "passed": true
+    },
+    {
+      "name": "explicit human audit in coverage and source blocks",
+      "passed": true
+    },
+    {
+      "name": "original model review remains false",
+      "passed": true
+    },
+    {
+      "name": "exact repeat idempotent",
+      "passed": true
+    },
+    {
+      "name": "incomplete organizer batch stays preparing without calls",
+      "passed": true
+    },
+    {
+      "name": "real prepare adopts approved cached source without OCR",
+      "passed": true
+    },
+    {
+      "name": "only pilot-ready event with zero ordinary subscriptions",
+      "passed": true
+    },
+    {
+      "name": "pilot isolation marker retained",
+      "passed": true
+    },
+    {
+      "name": "wrong source SHA rejected",
+      "passed": true
+    },
+    {
+      "name": "wrong failed attempt rejected",
+      "passed": true
+    },
+    {
+      "name": "wrong failed receipt hash rejected",
+      "passed": true
+    },
+    {
+      "name": "wrong candidate hash rejected",
+      "passed": true
+    },
+    {
+      "name": "unsigned category rejected",
+      "passed": true
+    },
+    {
+      "name": "missing approval rejected",
+      "passed": true
+    },
+    {
+      "name": "missing financial source text rejected",
+      "passed": true
+    },
+    {
+      "name": "invented numeric fact rejected",
+      "passed": true
+    },
+    {
+      "name": "wrong grid rejected",
+      "passed": true
+    },
+    {
+      "name": "invented legend inequality rejected",
+      "passed": true
+    },
+    {
+      "name": "CAS change cannot install source override",
+      "passed": true
+    },
+    {
+      "name": "zero network/model calls",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "sourceSha": "e82a1b0b401eeaadb269d53565c9e9a0d7c84d2d3c911e1d9ba1f54d98e3d649",
+  "candidateSha": "774505a1eaf7100ef2340917e884bd0b3953fee42b40f458e56b5bbe675a8a67",
+  "failedExtractionSha": "8bf05cc1a5b43f24db26afec80ac1bb3589a792c2640804f692eb69abe997bd3",
+  "materialVersion": "59ab8beaac6b9f72388b0c6d76e12c0f1f43a6b9661c7e422422b1d1e14a3058",
+  "baselineVersion": "9f146da20b76c03ecdfe7d208894dfd45de78af42e5a73462d3aa8c84463bddf",
+  "modelCalls": 0,
+  "productionWrites": 0
+}

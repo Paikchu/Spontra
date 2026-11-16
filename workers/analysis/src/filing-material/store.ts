@@ -13,6 +13,7 @@ export const materialPilotKey = (ticker: string, accession: string) => `filing-m
 export async function isPilotMaterial(env: Pick<AnalysisEnv, "DB">, ticker: string, accession: string): Promise<boolean> {
   return !!await env.DB!.prepare("SELECT 1 FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker, accession)).first();
 }
+export const materialReconciliationKey = (ticker: string, accession: string, sourceId: string, sourceHash: string) => `filing-material:reconciliation:v1:${ticker}:${accession}:${sourceId}:${sourceHash}`;
 export const materialRecoveryKey = (ticker: string, accession: string) => `filing-material:recovery:v1:${ticker}:${accession}`;
 export const materialBase = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/${ref.version}`;
 export const materialSnapshotKey = (ref: MaterialRef) => `${materialBase(ref)}/index.json`;

@@ -1,0 +1,37 @@
+{
+  "source": "NBIS/0001104659-26-126008/tm2629571d1_ex99-2img002.jpg",
+  "scope": "Only targeted blank-row-header recovery attempt; excludes prior materials calls",
+  "calls": [
+    {
+      "stage": "transcribe",
+      "responseId": "ced19a8e99104a41aad8ce0cf4cb4deb",
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "usage": {
+        "prompt_tokens": 576,
+        "completion_tokens": 8286,
+        "total_tokens": 8862,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 231.21817016601562
+      }
+    },
+    {
+      "stage": "review",
+      "responseId": "71d130c56f2e4eb0bda75fe8cab79229",
+      "model": "@cf/google/gemma-4-26b-a4b-it-external",
+      "usage": {
+        "prompt_tokens": 1539,
+        "completion_tokens": 4104,
+        "total_tokens": 5643,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 125.91818237304688
+      }
+    }
+  ],
+  "totalTokens": 14505,
+  "result": "blocked; no automatic retry",
+  "costAmount": null
+}

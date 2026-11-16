@@ -1,0 +1,17 @@
+# 独立助手金融审查
+
+结论：**assistant-audit PASS**，不是人工签核、不是发布批准。
+
+已审候选 SHA256：`44f15b6376a13fecb86ba0128f31eb5bde8382f765041ada1bac74e89c509e9f`。
+
+范围：23 claims、所有 observations、summary、changes、missingInputs、sections、scenarios；与登记来源摘录及本地官方全文核对。未调用模型、未修改生产。
+
+确认修正：SPR不直接改变GDP总额；私人国内最终销售4.9/4.6；headline/core不作差值贡献；政策决策与会后发布信息分离；Treasury14期限；CPI标准误错列撤回；B9生产非管理人员与全体员工分离；非农完整表头确认165千人与三个月均值137千人；未验证WTI数值及残留删除；情景沿用能源冲击谱系且为替代情景；SLOOS人数净占比复算正确。
+
+未发现剩余阻断性数值或传导错误。两处非阻断旧元数据已反馈作者清理：B9假设仍说无月份标签；非农financialVariable仍带unverified。它们不影响数值，但应与已登记完整表头保持一致。
+
+保留边界：limited覆盖；缺收益率曲线、汇率、公司融资暴露等，不保证量化目标价；无未经校准概率。该助手审查不替代用户要求的人工逐条审批。
+
+## 精确生产草稿读回核验
+
+已保存版本：041e89a7eeae3b2c756033890594890e134d7ec28d3933c47bf295fb142beca6。前序候选7357f1f3269c1f335322866353b59717ad2478382ee2fd59b0d9aee1c33bbb66仅清理两处旧元数据；本次实际比较的是已规范化本地候选，文件SHA256为45257cf23e92bb1b7004bdeb47871dc67042c9fcc498d2959a6bac82557934df。运行实际validatePublicResearchDraft通过；规范化后与读回无正文差异，source contentHash亦一致（本地候选已包含schema trim规范化）。全部13个摘录SHA256与登记hash一致。published状态not_published，未发布。助手审查通过保持有效；不是人工签核。详细证据readback-integrity.json。

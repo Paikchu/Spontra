@@ -5,7 +5,7 @@ import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { archiveMaterialEntry, archiveZipEntries, loadMaterialManifest, readSourceBytes, referencedMaterialEntries, saveMaterialManifest } from "./archive.ts";
 import { extractMaterialDocument } from "./formats.ts";
-import { MATERIAL_PREFIX, MATERIAL_PREPARATION_VERSION, materialRecoveryKey, claimMaterialLease, getFilingMaterial, materialBase, materialDigest, materialSnapshotKey, ownsMaterialLease, publishMaterialState, releaseMaterialLease, requestFilingMaterial, writeMaterialState } from "./store.ts";
+import { MATERIAL_PREFIX, MATERIAL_PREPARATION_VERSION, materialRecoveryKey, materialReconciliationKey, claimMaterialLease, getFilingMaterial, materialBase, materialDigest, materialSnapshotKey, ownsMaterialLease, publishMaterialState, releaseMaterialLease, requestFilingMaterial, writeMaterialState } from "./store.ts";
 import { writeMaterialMarkdown } from "./markdown.ts";
 
 const ORGANIZER_VERSION = MATERIAL_ORGANIZER_VERSION;
@@ -30,7 +30,7 @@ function submissionHeader(source: MaterialSource, bytes: Uint8Array, end: number
   };
 }
 
-const parsedKey = (filing: MaterialFiling, source: MaterialSource) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/extracted/${EXTRACTOR_VERSION}/${source.id}/${source.sha256}.json`;
+export const parsedKey = (filing: MaterialFiling, source: MaterialSource) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/extracted/${EXTRACTOR_VERSION}/${source.id}/${source.sha256}.json`;
 
 const completeExtraction = (document: ParsedMaterialDocument) => {
   const c = document.coverage;
@@ -40,6 +40,14 @@ const completeExtraction = (document: ParsedMaterialDocument) => {
 /** Reuse successful receipts; an explicit recovery gets one immutable attempt per failed source. */
 async function extractionReceipt(env: AnalysisEnv, filing: MaterialFiling, source: MaterialSource, recoveryRequestId?: string): Promise<{ key: string; document: ParsedMaterialDocument | null; successPointer: string }> {
   const originalKey = parsedKey(filing, source), successPointer = `${originalKey}.recovered`;
+  const approved = await env.DB!.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialReconciliationKey(filing.ticker,filing.accession,source.id,source.sha256)).first<{payload:string}>();
+  if (approved) {
+    const pointer = JSON.parse(approved.payload), object = await env.SEC_FILINGS.get(pointer.parsedKey);
+    if (!object) throw new Error("Reconciled source receipt missing");
+    const text = await object.text(), document: ParsedMaterialDocument = JSON.parse(text);
+    if (await materialDigest(text) !== pointer.parsedHash || document.coverage.documentId !== source.id || document.coverage.filename !== source.filename || document.coverage.reconciliation?.method !== "human-source-reconciliation.v1" || document.coverage.reconciliation?.sourceSha256 !== source.sha256 || document.coverage.reconciliation?.receiptKey !== pointer.receiptKey || !completeExtraction(document)) throw new Error("Reconciled source identity or coverage mismatch");
+    return {key:pointer.parsedKey,document,successPointer};
+  }
   const pointer = await env.SEC_FILINGS.get(successPointer);
   if (pointer) {
     const recoveredKey = await pointer.text();
@@ -220,7 +228,8 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       return out;
     });
     if (issues.length) { const state: MaterialState = { status: "blocked", filing, issues }; await writeMaterialState(env, state); return state; }
-    const version = await materialDigest(JSON.stringify({ version: MATERIAL_VERSION, extractor: EXTRACTOR_VERSION, organizer: ORGANIZER_VERSION,
+    const reconciliations = parsed.flatMap(document => document.coverage.reconciliation ? [document.coverage.reconciliation] : []);
+    const version = await materialDigest(JSON.stringify({ ...(reconciliations.length ? {reconciliations} : {}), version: MATERIAL_VERSION, extractor: EXTRACTOR_VERSION, organizer: ORGANIZER_VERSION,
       inventory: { version: manifest.inventory.inventoryVersion, sha256: manifest.inventory.directory.sha256 }, sources: sources.map(source => [source.id, source.sha256]) }));
     const ref = { ticker: filing.ticker, accession: filing.accession, version }, base = materialBase(ref);
     const batches = organizationBatches(blocks, tables), decisions: MaterialDecision[] = [], descriptions = new Map<string, string>();
@@ -231,12 +240,13 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       if (cached) answers.push(parseOrganizationReceipt(JSON.parse(await cached.text()), batch));
       else pending.push(index);
     }
-    const completed = await Promise.allSettled(pending.slice(0, options.maxOrganizationBatches ?? PER_RUN_BATCHES).map(index => organizeBatch(env, filing, version, batches[index]!)));
+    const organizationBudget = options.maxOrganizationBatches ?? PER_RUN_BATCHES;
+    const completed = await Promise.allSettled(pending.slice(0, organizationBudget).map(index => organizeBatch(env, filing, version, batches[index]!)));
     for (const result of completed) {
       if (result.status === "rejected") throw result.reason;
       answers.push(result.value);
     }
-    if (pending.length > PER_RUN_BATCHES) return progress(`organizing disclosure blocks; ${pending.length - PER_RUN_BATCHES} batches remain`);
+    if (pending.length > organizationBudget) return progress(`organizing disclosure blocks; ${pending.length - organizationBudget} batches remain`);
     for (const answer of answers) {
       decisions.push(...answer.decisions);
       for (const table of answer.tables) if (table.description.trim()) descriptions.set(table.tableId, table.description.trim());
