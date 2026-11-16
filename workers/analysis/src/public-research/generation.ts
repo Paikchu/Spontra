@@ -86,7 +86,35 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
   }}).filter(tool => tool.name === "search") : [];
   const tools = [
     ...web,
-    tool({name:"read_evidence",description:"Read a previously fetched raw source or registered exact excerpt, with pagination; never a model summary.",parameters:z.object({id:z.string(),offset:z.number().int().min(0).default(0)}),execute:async({id,offset},{state})=>{const raw=state.raw[id], source=state.sources.find(s=>s.id===id); const text=raw?.rawKey?await (await env.SEC_FILINGS.get(raw.rawKey))?.text():raw?.text??source?.excerpt; if(!text)throw new Error("Unknown source"); return {source:raw?{...raw,text:undefined}:source,text:text.slice(offset,offset+24000),nextOffset:offset+24000<text.length?offset+24000:null};},observe:(_a,v)=>JSON.stringify(v)}),
+    tool({name:"read_evidence",description:"Read frozen original evidence with pagination. Registered excerpts remain attached separately; original text can include counter-evidence outside that excerpt.",parameters:z.object({id:z.string(),offset:z.number().int().min(0).default(0)}),execute:async({id,offset},{state})=>{
+      const raw=state.raw[id],source=state.sources.find(s=>s.id===id);
+      if(!raw&&!source)throw new Error(`Unknown evidence ID ${id}. Valid registered evidence: ${state.sources.map(s=>`${s.id}: ${s.title}`).join("; ")||"none"}. Raw evidence IDs: ${Object.keys(state.raw).join(", ")||"none"}.${research?" Search hit IDs require read_web first.":" Use registered evidence IDs, not search hit IDs."}`);
+      let text=raw?.rawKey?await (await env.SEC_FILINGS.get(raw.rawKey))?.text():raw?.text;
+      if(!text&&source){
+        text=await (await env.SEC_FILINGS.get(`public-research/evidence/${source.revision}.txt`))?.text();
+        if(!text){
+          const originals=new Map<string,string>();
+          for(const role of ["research-demand","research-financing"]){
+            const prefix=`public-research/runs/${run.runId}/evidence/${role}/${source.id}/`;
+            let cursor:string|undefined;
+            do{
+              const page=await env.SEC_FILINGS.list({prefix,...(cursor?{cursor}:{})});
+              for(const object of page.objects){
+                const reference=await env.SEC_FILINGS.get(object.key);if(!reference)continue;
+                const ref=JSON.parse(await reference.text()) as {key:string;locator:string};
+                if(originals.has(ref.key))continue;
+                const body=await env.SEC_FILINGS.get(ref.key);if(body)originals.set(ref.key,`Original locator: ${ref.locator}\n${await body.text()}`);
+              }
+              cursor=page.truncated?page.cursor:undefined;
+            }while(cursor);
+          }
+          if(originals.size)text=[...originals.values()].join("\n\n");
+        }
+      }
+      const originalAvailable=!!text;text??=source?.excerpt;
+      if(!text)throw new Error("Frozen evidence body unavailable");
+      return {source:raw?{...raw,text:undefined}:source,registeredExcerpt:source?.excerpt,originalAvailable,text:text.slice(offset,offset+24000),nextOffset:offset+24000<text.length?offset+24000:null};
+    },observe:(_a,v)=>JSON.stringify(v)}),
     ...(research ? [
       tool({name:"read_web",description:"Fetch a primary source by search hit ID (h1 etc). Freeze full source content once; read_evidence paginates it. Focus does not alter source revision.",parameters:z.object({hit:z.string().regex(/^h\d+$/)}),execute:async({hit},{state})=>{
         if(state.used.webReads>=10)throw new Error("Web read allowance exhausted");
@@ -95,9 +123,12 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         const cached=Object.values(state.raw).find(e=>e.uri===target.url&&e.rawKey);if(cached)return {id:cached.id,title:cached.title,reused:true,next:"read_evidence"};
         state.used.webReads++;
         const fetched=await researchSearch(env,{runId:run.runId,kind:"public-research-source"}).fetchContent({url:target.url,depth:"advanced"},{scope:`public-research:${run.runId}`,maxAgeMs:24*60*60_000});
-        const text=fetched.data.text;if(!text?.trim())throw new Error("Source returned no readable content");
+        let text=fetched.data.text;if(!text?.trim())throw new Error("Source returned no readable content");
         const revision=await publicSourceRevision(text),id=`w${(await sha256(`${target.url}:${revision}`)).slice(0,24)}`,rawKey=`public-research/evidence/${revision}.txt`;
-        await env.SEC_FILINGS.put(rawKey,text,{httpMetadata:{contentType:"text/plain; charset=utf-8"}});
+        await env.SEC_FILINGS.put(rawKey,text,{httpMetadata:{contentType:"text/plain; charset=utf-8"},onlyIf:{etagDoesNotMatch:"*"}});
+        const frozen=await env.SEC_FILINGS.get(rawKey);
+        if(!frozen)throw new Error("Frozen original evidence unavailable after conditional write");
+        text=await frozen.text();
         state.raw[id]={id,uri:target.url,title:target.title,text:"",rawKey,publishedAt:target.publishedAt?dayStamp(target.publishedAt):null,revision,locator:"original document"};
         return {id,title:target.title,url:target.url,revision,publicationDate:target.publishedAt,text:text.slice(0,24000),nextOffset:text.length>24000?24000:null,totalCharacters:text.length};
       },observe:(_a,v)=>JSON.stringify(v)}),
@@ -127,9 +158,15 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         if(raw.revision==="content-pending")raw.revision=await publicSourceRevision(raw.text);
         const hash=await sha256(a.excerpt),id=`s${(await sha256(`${raw.uri}:${raw.revision}`)).slice(0,24)}`;
         const source:SourceSnapshot={id,canonicalId:raw.uri,uri:raw.uri,title:raw.title,locator:a.locator,excerpt:a.excerpt,contentHash:hash,revision:raw.revision,publishedAt:a.publishedAt,availableAt:a.publishedAt,collectedAt:now(),observationPeriod:{start:a.periodStart,end:a.periodEnd},usage:"public",authorization:"Public primary disclosure; quoted for attributed research. No redistribution of licensed datasets."};
+        // One immutable reference per original: parallel tool calls never replace a shared manifest.
+        const originalHash=await sha256(original);
+        const originalKey=raw.rawKey??`public-research/evidence/${originalHash}.txt`;
+        if(!raw.rawKey)await env.SEC_FILINGS.put(originalKey,original,{httpMetadata:{contentType:"text/plain; charset=utf-8"},onlyIf:{etagDoesNotMatch:"*"}});
+        const referenceKey=`public-research/runs/${run.runId}/evidence/${spec.stage}/${id}/${originalHash}.json`;
+        await env.SEC_FILINGS.put(referenceKey,JSON.stringify({key:originalKey,locator:raw.locator}),{httpMetadata:{contentType:"application/json"},onlyIf:{etagDoesNotMatch:"*"}});
         const held=state.sources.find(s=>s.id===id);
         if(!held)state.sources.push(source);
-        else if(!held.excerpt.includes(source.excerpt)){held.excerpt+=`\n\n${source.excerpt}`;held.locator+=`; ${source.locator}`;held.contentHash=await sha256(held.excerpt);held.observationPeriod.start=[held.observationPeriod.start,source.observationPeriod.start].sort()[0]!;held.observationPeriod.end=[held.observationPeriod.end,source.observationPeriod.end].sort().at(-1)!;}
+        else if(!held.excerpt.includes(source.excerpt)){held.excerpt+=`\n\n${source.excerpt}`;held.locator+=`; ${source.locator}`;const mergedExcerpt=held.excerpt,mergedHash=await sha256(mergedExcerpt);if(held.excerpt===mergedExcerpt)held.contentHash=mergedHash;held.observationPeriod.start=[held.observationPeriod.start,source.observationPeriod.start].sort()[0]!;held.observationPeriod.end=[held.observationPeriod.end,source.observationPeriod.end].sort().at(-1)!;}
         return held??source;
       },observe:(_a,v)=>JSON.stringify(v)}),
       tool({name:"finish_research",description:"Save the evidence-backed specialist conclusions and concrete gaps. Do not create a reader-facing report here.",parameters:z.object({conclusions:z.array(z.string()).min(1),gaps:z.array(z.string())}),execute:(a,{state})=>{if(!state.sources.length)throw new Error("No registered source evidence");state.notes={...a,sources:state.sources};state.submitted=true;return state.notes;},observe:(_a,v)=>JSON.stringify(v)}),
@@ -162,7 +199,7 @@ export async function executePublicResearchRun(spec:PublicResearchRunSpec,step:W
   await step.do("mark-running",()=>db.prepare("UPDATE public_research_runs SET state='running',updated_at=? WHERE run_id=? AND state='queued'").bind(now(),run.runId).run());
   const session=async(stage:Stage,extra:Partial<SessionSpec>={})=>{
     const input:SessionSpec={run,stage,...extra};
-    const opening=JSON.stringify({question:run.question,scope:run.scope,asOf:run.asOf,frozenFilings:run.frozenFilings,seedSources:run.sourceUrls.map((source,index)=>({id:`h${index+1}`,...source})),publicContext:run.frozenContext,...extra});
+    const opening=JSON.stringify({question:run.question,scope:run.scope,asOf:run.asOf,...(stage.startsWith("research-")?{frozenFilings:run.frozenFilings,seedSources:run.sourceUrls.map((source,index)=>({id:`h${index+1}`,...source}))}:{}),publicContext:run.frozenContext,...extra});
     const result=await runRecipeSession<State,State>(env,step,"public-research",input,opening,`${run.runId}:${stage}`);
     return result.output;
   };

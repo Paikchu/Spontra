@@ -1,0 +1,86 @@
+{
+  "url": "https://businessview.info/companies/CRWV?report=0001769628-26-000465&lang=zh-CN",
+  "version": 6,
+  "hash": "785dfec1881e0ef1cc3437698d531c8cc4973fc2528eb5f4f3b5b949261263fa",
+  "translation": {
+    "locale": "zh-CN",
+    "status": "ready"
+  },
+  "compared": {
+    "protectedDataElements": 173,
+    "sourceLinks": 17,
+    "sourceRefs": 173,
+    "htmlIds": 0,
+    "allEqual": true
+  },
+  "golden": {
+    "period": "前9个月",
+    "reclassification": "19.0亿美元",
+    "rpo": "1323亿美元",
+    "nearTermShare": "36%"
+  },
+  "sourceLabels": [
+    {
+      "text": "Remaining Performance Obligations (\"RPO\")",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "Revenue",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/0001769628-26-000465-xbrl.zip#zip/crwv-20260930.htm"
+    },
+    {
+      "text": "目录 - 表格 38",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/0001769628-26-000465-xbrl.zip#zip/crwv-20260930.htm"
+    },
+    {
+      "text": "Remaining Performance Obligations (\"RPO\")",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "Previously Reported Material Weaknesses in Internal Control Over Financial Reporting",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "尚未开始的租赁",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "尚未开始的租赁",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "尚未开始的租赁",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "合同义务",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "与未合并可变利益实体的租赁",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+    },
+    {
+      "text": "12. 所得税",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/0001769628-26-000465-xbrl.zip#zip/crwv-20260930.htm"
+    },
+    {
+      "text": "12. 所得税",
+      "href": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/0001769628-26-000465-xbrl.zip#zip/crwv-20260930.htm"
+    }
+  ],
+  "incomplete": [
+    {
+      "findingId": "cash-funding-gap",
+      "title": "研究尚未完成",
+      "status": "incomplete"
+    },
+    {
+      "findingId": "rpo-conversion-timing",
+      "title": "研究尚未完成",
+      "status": "incomplete"
+    }
+  ],
+  "pageErrors": [],
+  "screenshot": "/tmp/crwv-live-translation-verified.png"
+}

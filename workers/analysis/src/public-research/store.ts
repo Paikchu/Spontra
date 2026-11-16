@@ -177,6 +177,27 @@ export async function invalidatePublicClaims(env:PublicResearchEnv,reportId:stri
   return {affectedCompanies:affected.results.map(row=>row.ticker)};
 }
 
+/** Manual authenticated operator event; publication and generation are deliberately not triggered. */
+export async function invalidatePublicResearchEvent(env:PublicResearchEnv,reportId:string,input:{version:string;claimIds:string[];eventId:string;reason:string;sourceUrl:string;occurredAt:string}){
+  const db=database(env), normalized={...input,claimIds:[...new Set(input.claimIds)].sort(),occurredAt:new Date(input.occurredAt).toISOString(),reportId};
+  if(!normalized.claimIds.length||Date.parse(normalized.occurredAt)>Date.now())throw new Error("Invalid event claims or future occurredAt");
+  const fingerprint=await sha256(stable(normalized));
+  const prior=await db.prepare("SELECT payload_hash,receipt_json FROM public_research_events WHERE event_id=?").bind(input.eventId).first<{payload_hash:string;receipt_json:string}>();
+  if(prior){if(prior.payload_hash!==fingerprint)throw new Error("Event ID already belongs to a different payload");return JSON.parse(prior.receipt_json);}
+  const published=await db.prepare("SELECT published_at FROM public_research_versions WHERE report_id=? AND version=?").bind(reportId,input.version).first<{published_at:string|null}>();
+  const draft=await readPublicResearchDraft(env,reportId,input.version);
+  if(!published?.published_at||!draft)throw new Error("Event requires an existing published report version");
+  if(normalized.claimIds.some(id=>!draft.claims.some(claim=>claim.id===id)))throw new Error("Unknown event claim");
+  const receipt={...normalized,receivedAt:new Date().toISOString(),mode:"manual_operator",status:"invalidated"};
+  // A conflicting concurrent event ID violates NOT NULL and rolls back the entire batch.
+  await db.batch([
+    db.prepare("INSERT INTO public_research_events(event_id,payload_hash,receipt_json) VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET payload_hash=CASE WHEN payload_hash=excluded.payload_hash THEN payload_hash ELSE NULL END").bind(input.eventId,fingerprint,JSON.stringify(receipt)),
+    ...invalidationStatements(db,reportId,input.version,normalized.claimIds),
+  ]);
+  const saved=await db.prepare("SELECT receipt_json FROM public_research_events WHERE event_id=?").bind(input.eventId).first<{receipt_json:string}>();
+  return JSON.parse(saved!.receipt_json);
+}
+
 function invalidationStatements(db:D1Database,reportId:string,version:string,claimIds:string[],onlyIfCurrent?:string):D1PreparedStatement[]{
   if(!claimIds.length)return [];
   const placeholders=claimIds.map(()=>'?').join(',');

@@ -414,7 +414,8 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     const url = new URL(location.href);
     if (quarter && quarter.id !== quarters[0]?.id) url.searchParams.set("period", quarter.periodEnd); else url.searchParams.delete("period");
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
-    if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
+    // Archived findings can render without belonging to the current verified set.
+    if (focusId) url.searchParams.set("finding", focusId); else url.searchParams.delete("finding");
     if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
     if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
     if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
@@ -424,10 +425,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     const next = withRailTabs(url.search, railTabs);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [quarter, quarters, current, focused, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs]);
+  }, [quarter, quarters, current, focusId, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs]);
   useEffect(() => {
-    onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
-  }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
+    onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focusId, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
+  }, [onView, quarter?.periodEnd, view, current?.id, focusId, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   const [staged, setStaged] = useState<string | null>(null);
   if ((focused?.id ?? null) !== staged) {

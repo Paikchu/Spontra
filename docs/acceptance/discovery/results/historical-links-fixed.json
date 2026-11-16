@@ -1,0 +1,20 @@
+[
+  {
+    "id": "cash-funding-gap",
+    "reload": true,
+    "title": "Research incomplete",
+    "normalRailSelection": "leverage-interest-cover",
+    "defaultProfit": true,
+    "companyView": true,
+    "errors": []
+  },
+  {
+    "id": "rpo-conversion-timing",
+    "reload": true,
+    "title": "Research incomplete",
+    "normalRailSelection": "leverage-interest-cover",
+    "defaultProfit": true,
+    "companyView": true,
+    "errors": []
+  }
+]

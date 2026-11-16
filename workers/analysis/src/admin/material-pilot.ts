@@ -1,3 +1,4 @@
+import { blankRowHeaderRepairId, BLANK_ROW_HEADER_REVISION } from "../filing-material/representation-repair.ts";
 import { z } from "zod";
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 import type { runBinding } from "../durable-runs/binding.ts";
@@ -6,7 +7,7 @@ import { materialPilotKey, materialRecoveryKey, materialStateKey } from "../fili
 import type { MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
 import { json } from "./http.ts";
 
-const schema = z.object({ requestId: z.string().uuid(), retryFailedSources: z.boolean().default(false) }).strict();
+const schema = z.object({ requestId: z.string().uuid(), retryFailedSources: z.boolean().default(false), repair:z.object({revision:z.literal(BLANK_ROW_HEADER_REVISION),sourceFilename:z.string().min(1).max(200),failureHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict().optional() }).strict();
 /** Explicit operator chunks only: no normal preparation request or automatic continuation. */
 export async function preparePilotMaterial(request: Request, env: AnalysisEnv, ticker: string, accession: string): Promise<Response> {
   const parsed = schema.safeParse(await request.json().catch(() => null));
@@ -27,7 +28,19 @@ export async function preparePilotMaterial(request: Request, env: AnalysisEnv, t
     state = { status: "preparing", filing: filingMaterialMeta(filing), progress: "operator-scoped shadow preparation" };
   }
   if (!prior && state.status === "ready") return json({ error: "Material is already ready; use its existing pinned reference" }, 409);
-  const at = new Date().toISOString(), payload = JSON.stringify({ ...input, mode: "shadow-pilot", admittedAt: at, chunk: 0, chunkStatus: "preparing" });
+  const at = new Date().toISOString();
+  if (input.repair) {
+    const saved = prior ? JSON.parse(prior.payload) : null;
+    const repairId = saved?.chunkStatus === "blocked" && !saved.repairRevision && input.retryFailedSources ? await blankRowHeaderRepairId(state,input.requestId,input.repair) : null;
+    if (!repairId) return json({error:"Repair requires the exact single null rowHeader failure and an unused repair revision"},409);
+    const repairKey = `${key}:repair:${input.repair.revision}`;
+    const repaired = await db.batch([
+      db.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) ON CONFLICT(cache_key) DO NOTHING").bind(repairKey,prior!.payload,at,key,prior!.payload),
+      db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.repairRevision',?,'$.repairSource',?,'$.repairRequestId',?,'$.repairFailureHash',?,'$.chunkStatus','preparing'),fetched_at=? WHERE cache_key=? AND payload=?").bind(input.repair.revision,input.repair.sourceFilename,repairId,input.repair.failureHash,at,key,prior!.payload),
+    ]);
+    if (!repaired[1]?.meta?.changes) return json({error:"Repair already admitted or pilot changed"},409);
+  }
+  const payload = JSON.stringify({ requestId:input.requestId,retryFailedSources:input.retryFailedSources, mode: "shadow-pilot", admittedAt: at, chunk: 0, chunkStatus: "preparing" });
   await db.batch([
     db.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO NOTHING").bind(key,payload,at),
     db.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload,'$.requestId')=?) ON CONFLICT(cache_key) DO NOTHING").bind(materialStateKey(ticker,accession),JSON.stringify(state),at,key,input.requestId),
@@ -46,7 +59,7 @@ export async function preparePilotMaterial(request: Request, env: AnalysisEnv, t
     pilot = JSON.parse(current!.payload);
   }
   if (["queued","running"].includes(pilot.chunkStatus)) {
-    try { await binding.create({ id:pilot.activeRunId,params:{ticker,accession,requestId:input.requestId,runId:pilot.activeRunId,retryFailedSources:input.retryFailedSources} }); }
+    try { await binding.create({ id:pilot.activeRunId,params:{ticker,accession,requestId:input.requestId,runId:pilot.activeRunId,retryFailedSources:input.retryFailedSources,...(pilot.repairSource && pilot.repairRequestId ? {repairSource:pilot.repairSource,repairRequestId:pilot.repairRequestId} : {})} }); }
     catch(error) { if(!/already.exists|duplicate/i.test(String(error))) return json({error:"Pilot start unconfirmed; retry the same request to join it",pilot},503); }
   }
   return json({ ...state, pilot, resumeRequired:false },202);

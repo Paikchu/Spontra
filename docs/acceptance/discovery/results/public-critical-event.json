@@ -1,0 +1,102 @@
+{
+  "eventAudit": [
+    {
+      "name": "unknown claim rejected",
+      "status": 400,
+      "receipt": {
+        "error": "Unknown event claim"
+      }
+    },
+    {
+      "name": "unknown version rejected",
+      "status": 400,
+      "receipt": {
+        "error": "Event requires an existing published report version"
+      }
+    },
+    {
+      "name": "future occurrence rejected",
+      "status": 400,
+      "receipt": {
+        "error": "Invalid event claims or future occurredAt"
+      }
+    },
+    {
+      "name": "atomic batch failure rejected",
+      "status": 400,
+      "receipt": {
+        "error": "injected index failure"
+      }
+    },
+    {
+      "name": "authenticated operator event accepted",
+      "status": 200,
+      "receipt": {
+        "version": "a34866fef196188a3d51f6935b67e53a4b7c5590b1baea9581f7f062e7aa615b",
+        "claimIds": [
+          "claim-0"
+        ],
+        "eventId": "official-release-1",
+        "reason": "Synthetic operator-confirmed changed original evidence",
+        "sourceUrl": "https://example.com/original-release",
+        "occurredAt": "2026-01-03T00:00:00.000Z",
+        "reportId": "operator-event-fixture",
+        "receivedAt": "2026-11-16T15:36:51.992Z",
+        "mode": "manual_operator",
+        "status": "invalidated"
+      }
+    },
+    {
+      "name": "exact event replay returns receipt",
+      "status": 200,
+      "receipt": {
+        "version": "a34866fef196188a3d51f6935b67e53a4b7c5590b1baea9581f7f062e7aa615b",
+        "claimIds": [
+          "claim-0"
+        ],
+        "eventId": "official-release-1",
+        "reason": "Synthetic operator-confirmed changed original evidence",
+        "sourceUrl": "https://example.com/original-release",
+        "occurredAt": "2026-01-03T00:00:00.000Z",
+        "reportId": "operator-event-fixture",
+        "receivedAt": "2026-11-16T15:36:51.992Z",
+        "mode": "manual_operator",
+        "status": "invalidated"
+      }
+    },
+    {
+      "name": "same event different payload rejected",
+      "status": 400,
+      "receipt": {
+        "error": "Event ID already belongs to a different payload"
+      }
+    }
+  ],
+  "unauthenticatedStatus": 401,
+  "auditRows": {
+    "n": 1
+  },
+  "claimStates": {
+    "claim-0": "review_required",
+    "claim-1": "valid",
+    "claim-2": "valid",
+    "claim-3": "valid",
+    "claim-4": "valid",
+    "claim-5": "valid",
+    "claim-6": "valid",
+    "claim-7": "valid",
+    "claim-8": "valid",
+    "claim-9": "valid",
+    "claim-10": "valid",
+    "claim-11": "valid",
+    "claim-12": "valid",
+    "claim-13": "valid",
+    "claim-14": "valid",
+    "claim-15": "valid",
+    "claim-16": "valid",
+    "claim-17": "valid",
+    "claim-18": "valid",
+    "claim-19": "valid"
+  },
+  "paidFetches": 0
+}

@@ -20,7 +20,7 @@ const DECISION_SCHEMA = z.object({ decisions: z.array(z.discriminatedUnion("acti
 type Organization = z.infer<typeof DECISION_SCHEMA>;
 type OrganizationBatch = { blocks: MaterialBlock[]; input: string; modelInput: string };
 
-export type PrepareMaterialOptions = { fetcher?: typeof fetch; causeId?: string; maxDocuments?: number; maxOrganizationBatches?: number; recoveryRequestId?: string };
+export type PrepareMaterialOptions = { fetcher?: typeof fetch; causeId?: string; maxDocuments?: number; maxOrganizationBatches?: number; recoveryRequestId?: string; recoverySources?: Record<string, string> };
 
 function submissionHeader(source: MaterialSource, bytes: Uint8Array, end: number): ParsedMaterialDocument {
   const text = new TextDecoder().decode(bytes.subarray(0, end)).trim();
@@ -53,7 +53,7 @@ async function extractionReceipt(env: AnalysisEnv, filing: MaterialFiling, sourc
   const recovered = await env.SEC_FILINGS.get(key);
   return { key, document: recovered ? JSON.parse(await recovered.text()) : null, successPointer };
 }
-async function extractOnce(env: AnalysisEnv, filing: MaterialFiling, source: MaterialSource, bytes: Uint8Array, recoveryRequestId?: string): Promise<ParsedMaterialDocument> {
+async function extractOnce(env: AnalysisEnv, filing: MaterialFiling, source: MaterialSource, bytes: Uint8Array, recoveryRequestId?: string, reuseRawRequestId?: string): Promise<ParsedMaterialDocument> {
   const receipt = await extractionReceipt(env, filing, source, recoveryRequestId);
   if (receipt.document) return receipt.document;
   if (recoveryRequestId) {
@@ -64,7 +64,7 @@ async function extractOnce(env: AnalysisEnv, filing: MaterialFiling, source: Mat
     const admitted = await env.SEC_FILINGS.put(receipt.key, JSON.stringify(pending), { httpMetadata: { contentType: "application/json" }, onlyIf: { etagDoesNotMatch: "*" } });
     if (!admitted) return (await extractionReceipt(env, filing, source, recoveryRequestId)).document ?? pending;
   }
-  const document = await extractMaterialDocument(env, filing, source, bytes);
+  const document = await extractMaterialDocument(env, filing, source, bytes, receipt.key, reuseRawRequestId ? `${parsedKey(filing, source)}.recovery-${reuseRawRequestId}` : undefined);
   await env.SEC_FILINGS.put(receipt.key, JSON.stringify(document), { httpMetadata: { contentType: "application/json" } });
   if (recoveryRequestId && completeExtraction(document)) await env.SEC_FILINGS.put(receipt.successPointer, receipt.key, { httpMetadata: { contentType: "text/plain" } });
   return document;
@@ -192,9 +192,9 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
     for (let index = 0; index < manifest.entries.length; index++) {
       const entry = manifest.entries[index]!;
       const source = await archiveMaterialEntry(env, manifest, entry, submissionBytes, { fetcher: options.fetcher });
-      const bytes = await readSourceBytes(env, source), alreadyParsed = (await extractionReceipt(env, filing, source, options.recoveryRequestId)).document;
+      const bytes = await readSourceBytes(env, source), alreadyParsed = (await extractionReceipt(env, filing, source, options.recoverySources?.[source.filename] ?? options.recoveryRequestId)).document;
       if (!alreadyParsed && processed >= budget) return progress(`extracting source ${index + 1} of ${manifest.entries.length}`);
-      const document = alreadyParsed ?? await extractOnce(env, filing, source, bytes, options.recoveryRequestId);
+      const document = alreadyParsed ?? await extractOnce(env, filing, source, bytes, options.recoverySources?.[source.filename] ?? options.recoveryRequestId, options.recoverySources?.[source.filename] ? options.recoveryRequestId : undefined);
       if (!alreadyParsed) processed++;
       sources.push(source); parsed.push(document);
       const added = referencedMaterialEntries(manifest, source, bytes);
@@ -202,9 +202,9 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       if (source.contentType === "application/zip" || /\.zip$/i.test(source.filename)) {
         const children = await archiveZipEntries(env, filing, source, bytes);
         for (const child of children) {
-          const cached = (await extractionReceipt(env, filing, child, options.recoveryRequestId)).document;
+          const cached = (await extractionReceipt(env, filing, child, options.recoverySources?.[child.filename] ?? options.recoveryRequestId)).document;
           if (!cached && processed >= budget) return progress(`extracting ZIP entry ${child.filename}`);
-          const childDocument = cached ?? await extractOnce(env, filing, child, await readSourceBytes(env, child), options.recoveryRequestId);
+          const childDocument = cached ?? await extractOnce(env, filing, child, await readSourceBytes(env, child), options.recoverySources?.[child.filename] ?? options.recoveryRequestId, options.recoverySources?.[child.filename] ? options.recoveryRequestId : undefined);
           if (!cached) processed++;
           sources.push(child); parsed.push(childDocument);
         }

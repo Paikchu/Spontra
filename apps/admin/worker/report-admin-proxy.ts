@@ -17,7 +17,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "public-research") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && /^(?:runs|reports|runs\/[A-Za-z0-9._:-]{1,128}|reports\/[A-Za-z0-9._:-]{1,128}|companies\/[A-Z][A-Z0-9.-]{0,11}\/context)$/.test(route);
-    const write = request.method === "POST" && /^(?:runs|runs\/[A-Za-z0-9._:-]{1,128}\/stop|exposures|reports\/[A-Za-z0-9._:-]{1,128}\/(?:review|publish|withdraw|restore))$/.test(route);
+    const write = request.method === "POST" && /^(?:runs|runs\/[A-Za-z0-9._:-]{1,128}\/stop|exposures|reports\/[A-Za-z0-9._:-]{1,128}\/(?:review|publish|withdraw|restore|invalidate))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "business-map") {

@@ -9,7 +9,7 @@ import { listEndpoints } from "../pi/endpoints.ts";
 import { sha256 } from "../sha256.ts";
 import { withRuns } from "../durable-runs/binding.ts";
 import { publicResearchRunSchema, freezePublicResearchInput } from "./generation.ts";
-import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publishPublicResearch, withdrawPublicResearch, restorePublicResearch, listPublicResearch } from "./store.ts";
+import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publishPublicResearch, withdrawPublicResearch, restorePublicResearch, listPublicResearch, invalidatePublicResearchEvent } from "./store.ts";
 
 type RunRow={run_id:string;report_id:string;input_fingerprint:string;state:string;params_json:string;result_version:string|null;error:string|null;calls_reserved:number;max_calls:number;max_tokens:number;created_at:string;updated_at:string};
 type Binding={create(options:{id:string;params:unknown}):Promise<unknown>;get(id:string):Promise<{status():Promise<unknown>;report():Promise<unknown>;terminate():Promise<void>}>};
@@ -68,7 +68,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       return json({...row,params:JSON.parse(row.params_json),params_json:undefined,usage:usage.results,machineReview:review?JSON.parse(await review.text()):null,draft,runner:await (await binding(env)?.get(row.run_id))?.report()});
     }
     if(path==="/admin/public-research/reports"&&request.method==="GET")return json(await listPublicResearch(env));
-    const report=/^\/admin\/public-research\/reports\/([a-zA-Z0-9._:-]+)(?:\/(review|publish|withdraw|restore))?$/.exec(path);
+    const report=/^\/admin\/public-research\/reports\/([a-zA-Z0-9._:-]+)(?:\/(review|publish|withdraw|restore|invalidate))?$/.exec(path);
     if(!report)return json({error:"Not found"},404);
     const id=report[1]!,action=report[2];
     if(!action&&request.method==="GET"){
@@ -76,6 +76,10 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       return json(version?{draft:await readPublicResearchDraft(env,id,version),published:await readPublicResearch(env,id,{version})}:await readPublicResearch(env,id));
     }
     if(request.method!=="POST")return json({error:"Method not allowed"},405);
+    if(action==="invalidate"){
+      const event=z.object({version:z.string().regex(/^[a-f0-9]{64}$/),claimIds:z.array(z.string().min(1).max(128)).min(1).max(200),eventId:z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/),reason:z.string().min(1).max(4000),sourceUrl:z.string().url().refine(value=>["https:","http:"].includes(new URL(value).protocol)),occurredAt:z.string().datetime({offset:true})}).strict().parse(await request.json());
+      return json(await invalidatePublicResearchEvent(env,id,event));
+    }
     const body=z.object({version:z.string().regex(/^[a-f0-9]{64}$/),review:reviewSchema.optional(),expectedCurrentVersion:z.string().nullable().optional(),reason:z.string().min(1).optional()}).parse(await request.json());
     if(action==="review"){
       if(!body.review)return json({error:"Human claim-by-claim review required"},400);

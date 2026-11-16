@@ -1,0 +1,1 @@
+{"passed":true,"checks":["blank heading only becomes empty string","original cells retained","independent review still called","raw transcript+review persisted before parse","same-attempt raw replay no model calls","invalid row label rejected and cached","financial grid check retained","negative independent review blocks"]}

@@ -47,9 +47,18 @@ const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4
 function legitimateProseNumerals(source: string, target: string): boolean {
   const available = new Map<string, number>();
   const add = (key: string) => available.set(key, (available.get(key) ?? 0) + 1);
-  for (const word of source.match(/\b[A-Za-z]+\b/g) ?? []) {
-    const month = MONTH_NAMES.indexOf(word.toLowerCase());
-    if (month >= 0) add(`calendar:${month + 1}`);
+  for (const match of source.matchAll(/\b[A-Za-z]+\b/g)) {
+    const word = match[0].toLowerCase(), month = MONTH_NAMES.indexOf(word);
+    if (month < 0) continue;
+    if (word === "may" || word === "march") {
+      // These words also name a modal/verb. Keep raw placeholders here so “May {x0}”
+      // remains a date while “may refinance” cannot authorize an invented 5月.
+      const before = source.slice(0, match.index), after = source.slice(match.index + match[0].length);
+      const dated = /^\s+(?:\{x\d+\}|\d{1,4}\b|quarter\b)/i.test(after);
+      const timeContext = /\b(?:in|during|ended|ending|since|through|by|of|from|until|before|after)\s+$/i.test(before);
+      if (!dated && !timeContext) continue;
+    }
+    add(`calendar:${month + 1}`);
   }
   const words = Object.keys(NUMBER_WORDS).join("|");
   const duration = new RegExp(`\\b(${words})(?:\\s+(?:and|or|to)\\s+(${words}))?[-\\s]+(months?|quarters?|years?|days?)\\b`, "gi");
@@ -72,7 +81,7 @@ export function checkArtifactTranslation(source: string, target: string): string
   const errors: string[] = [];
   if (tokenSet(source) !== tokenSet(target)) errors.push("artifact placeholders changed; copy every {oN}, {cN} and {xN} exactly once");
   if (inlineStructure(source) !== inlineStructure(target) || inlineStructure(target) === null) errors.push("artifact inline structure changed; keep each placeholder in its original parent element");
-  if (!/\d/.test(prose(source)) && /\d/.test(prose(target)) && !legitimateProseNumerals(prose(source), prose(target))) errors.push("artifact numbers must remain protected placeholders; do not add numeric literals");
+  if (!/\d/.test(prose(source)) && /\d/.test(prose(target)) && !legitimateProseNumerals(source, prose(target))) errors.push("artifact numbers must remain protected placeholders; do not add numeric literals");
   if (/\{x\d+\}\s*(?:万亿|亿|万)/.test(target) && !/\{x\d+\}\s*(?:万亿|亿|万)/.test(source)) errors.push("artifact amounts are formatted by the renderer; do not append another scale to a protected value");
   if (/<\/?[A-Za-z][^>]*>/.test(target)) errors.push("HTML is not a translation; return text with the original placeholders only");
   return errors;
