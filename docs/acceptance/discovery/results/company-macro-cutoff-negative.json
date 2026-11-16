@@ -1,0 +1,19 @@
+{
+  "ticker": "CRWV",
+  "asOf": "2026-11-16T20:00:00.000Z",
+  "frozenAt": "2026-11-16T23:29:04.440Z",
+  "mappingVersions": [],
+  "reports": [],
+  "gaps": [
+    {
+      "kind": "macro",
+      "industryId": null,
+      "reason": "uncovered"
+    },
+    {
+      "kind": "industry",
+      "industryId": null,
+      "reason": "uncovered: no verified business exposure mapping"
+    }
+  ]
+}

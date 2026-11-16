@@ -34,13 +34,19 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
     if(path==="/admin/public-research/runs"&&request.method==="POST"){
       const input=publicResearchRunSchema.parse(await request.json());
       if(Date.parse(input.asOf)>Date.now())return json({error:"Research asOf cannot be in the future"},400);
+      // An explicit enrichment already pins its parent, cutoff and dependencies. Replay its immutable admission before live freshness checks.
+      if(input.enrichment){
+        const admitted=(await db.prepare("SELECT * FROM public_research_runs WHERE report_id=? AND json_extract(params_json,'$.enrichment.sourceRunId')=? AND json_extract(params_json,'$.enrichment.draftVersion')=? AND json_extract(params_json,'$.asOf')=?").bind(input.reportId,input.enrichment.sourceRunId,input.enrichment.draftVersion,input.asOf).all<RunRow>()).results;
+        const existing=admitted.find(row=>{const prior=publicResearchRunSchema.safeParse(JSON.parse(row.params_json));return prior.success&&stable(prior.data)===stable(input);});
+        if(existing)return json({runId:existing.run_id,state:existing.state,version:existing.result_version,reused:true,humanReviewRequired:true},200);
+      }
       const models=new Set<string>([...AI_MODELS,...(await listEndpoints(db)).map(e=>e.name)]);
       if(!models.has(input.model))return json({error:"Unknown per-run model"},400);
       if(input.type==="macro"&&input.scope.industryId!==null)return json({error:"Macro scope must not have industryId"},400);
       if(input.type==="industry"&&!input.scope.industryId)return json({error:"Industry scope requires industryId"},400);
       const runner=binding(env);if(!runner)return json({error:"Durable research runner unavailable"},503);
       const frozen=await freezePublicResearchInput(env,input,"pending",await sha256(stable(input)));
-      const fingerprint=await sha256(stable({input,filings:frozen.frozenFilings})),runId=`public-${fingerprint.slice(0,40)}`;
+      const fingerprint=await sha256(stable({input,filings:frozen.frozenFilings,...(frozen.enrichmentBase?{enrichmentBase:frozen.enrichmentBase}:{})})),runId=`public-${fingerprint.slice(0,40)}`;
       const existing=await db.prepare("SELECT * FROM public_research_runs WHERE report_id=? AND input_fingerprint=?").bind(input.reportId,fingerprint).first<RunRow>();
       if(existing)return json({runId:existing.run_id,state:existing.state,version:existing.result_version,reused:true,humanReviewRequired:input.type!=="macro"},200);
       const spec={...frozen,runId,inputFingerprint:fingerprint},at=new Date().toISOString();

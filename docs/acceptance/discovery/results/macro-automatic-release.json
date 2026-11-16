@@ -1,0 +1,124 @@
+{
+  "commit": "a897a6a2999c9d5aab927e865f0718e78ee34236",
+  "ci": {
+    "analysis": "success",
+    "business": "success"
+  },
+  "deployments": {
+    "analysis": "ec0f17dc-3df6-4f8c-8a81-b1b5c64d1ed4",
+    "admin": "4c7b5a9d-c534-4ee0-ba3f-2b3fa0065f8b",
+    "business": "b4121435-75af-4117-a36e-3c1999e04f3d"
+  },
+  "reportVersion": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+  "reviewMode": "automatic",
+  "humanApprovalClaimed": false,
+  "status": "available",
+  "freshness": "valid",
+  "coverage": "limited",
+  "claims": 21,
+  "sources": 12,
+  "dataChecks": {
+    "candidateSha256": "43a87fff6faa29e29b2e13624c71508d6ce09a4aed5735d97897e3090f258a17",
+    "schema": "passed",
+    "sourceHashes": [
+      {
+        "id": "sb6ea764ffd0a69b6e634cf75",
+        "valid": true
+      },
+      {
+        "id": "s76a4249d7b198d23f34921c7",
+        "valid": true
+      },
+      {
+        "id": "sb8285e9fd68532ac56458145",
+        "valid": true
+      },
+      {
+        "id": "s480bad48dc4f55719b37887f",
+        "valid": true
+      },
+      {
+        "id": "audit-bea",
+        "valid": true
+      },
+      {
+        "id": "audit-sloos-table1",
+        "valid": true
+      },
+      {
+        "id": "audit-sloos",
+        "valid": true
+      },
+      {
+        "id": "audit-cpi",
+        "valid": true
+      },
+      {
+        "id": "audit-jobs-a1",
+        "valid": true
+      },
+      {
+        "id": "audit-jobs-b9",
+        "valid": true
+      },
+      {
+        "id": "audit-jobs-summary-b",
+        "valid": true
+      },
+      {
+        "id": "audit-fomc-dissent",
+        "valid": true
+      }
+    ],
+    "claims": 21,
+    "sources": 12,
+    "validUntil": "2026-11-30T00:00:00.000Z",
+    "checkedAt": "2026-11-16T23:17:56.722Z"
+  },
+  "readbackChecks": {
+    "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+    "matched": true,
+    "claims": 21,
+    "sources": 12,
+    "reviewMode": "automatic",
+    "auditCandidateSha256": "43a87fff6faa29e29b2e13624c71508d6ce09a4aed5735d97897e3090f258a17",
+    "checkedAt": "2026-11-16T23:19:36.673Z"
+  },
+  "browserChecks": [
+    {
+      "width": 1440,
+      "url": "https://spontra-business-map.max-zhangyuchen.workers.dev/research/macro-us-usd?version=7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c#source-audit-fomc-dissent",
+      "heading": "美国宏观基线：增长与通胀信号分化，贷款标准与融资定价需分开判断",
+      "claims": 21,
+      "sources": 12,
+      "limited": true,
+      "opened": true,
+      "overflow": false,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "url": "https://spontra-business-map.max-zhangyuchen.workers.dev/research/macro-us-usd?version=7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c#source-audit-fomc-dissent",
+      "heading": "美国宏观基线：增长与通胀信号分化，贷款标准与融资定价需分开判断",
+      "claims": 21,
+      "sources": 12,
+      "limited": true,
+      "opened": true,
+      "overflow": false,
+      "errors": []
+    }
+  ],
+  "tests": [
+    "npm run check passed",
+    "analysis:typecheck passed",
+    "analysis:check dry-run passed",
+    "targeted ESLint passed",
+    "actual handler/store and scripted generation positive/negative policy journeys passed"
+  ],
+  "remaining": [
+    "Industry generation still running; no completed industry report claimed.",
+    "Industry run frozen context is not retrospectively altered; published macro version recorded for incremental synthesis/review.",
+    "NBIS image and other reports human approval requirements unchanged."
+  ],
+  "rollback": "Withdraw exact macro version through existing audited endpoint if content defect found; code revert a897a6a2 via main CI. No previous published macro version exists to restore."
+}

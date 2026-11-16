@@ -1,0 +1,178 @@
+{
+  "enrichmentChecks": [
+    {
+      "name": "active original run rejected",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment requires the exact completed industry run and final draft version"
+      }
+    },
+    {
+      "name": "wrong original draft rejected",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment requires the exact completed industry run and final draft version"
+      }
+    },
+    {
+      "name": "new scope forbidden",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment must preserve original scope"
+      }
+    },
+    {
+      "name": "budget expansion forbidden",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment is bounded to 48 calls and 1000000 reported tokens, with at most one targeted repair"
+      }
+    },
+    {
+      "name": "old asOf cannot import newly published macro",
+      "status": 400,
+      "answer": {
+        "error": "Unavailable public claim policy-macro/claim-0"
+      }
+    },
+    {
+      "name": "industry dependency not accepted as macro",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment accepts only exact published macro claims"
+      }
+    },
+    {
+      "name": "inflight original cannot be enriched",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment requires the exact completed industry run and final draft version"
+      }
+    },
+    {
+      "name": "completed subset-source draft enriched using all registered notes",
+      "status": 202,
+      "answer": {
+        "runId": "public-0eb183572a9934fd3530b84ecf9829c1aef2cf4f",
+        "state": "queued",
+        "shadow": true,
+        "humanReviewRequired": true,
+        "maxCalls": 48,
+        "maxTokens": 1000000
+      }
+    },
+    {
+      "name": "same enrichment request reuses logical run",
+      "status": 200,
+      "answer": {
+        "runId": "public-0eb183572a9934fd3530b84ecf9829c1aef2cf4f",
+        "state": "queued",
+        "version": null,
+        "reused": true,
+        "humanReviewRequired": true
+      }
+    },
+    {
+      "name": "already admitted enrichment replay survives later macro withdrawal",
+      "status": 200,
+      "answer": {
+        "runId": "public-0eb183572a9934fd3530b84ecf9829c1aef2cf4f",
+        "state": "awaiting_review",
+        "version": "27ab21612a98bea105ce30d3f943751da330a1cf00d1553ae46ddb4030366114",
+        "reused": true,
+        "humanReviewRequired": true
+      }
+    },
+    {
+      "name": "new enrichment after macro withdrawal rejected",
+      "status": 400,
+      "answer": {
+        "error": "Unavailable public claim policy-macro/claim-0"
+      }
+    }
+  ],
+  "openingChecks": [
+    {
+      "stage": "synthesis",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    },
+    {
+      "stage": "review",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    },
+    {
+      "stage": "synthesis",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    },
+    {
+      "stage": "review",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    },
+    {
+      "stage": "repair",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    },
+    {
+      "stage": "review-repair",
+      "oldReviewCarried": true,
+      "oldConstraintSuperseded": true,
+      "unusedOriginalReadable": true
+    }
+  ],
+  "passing": {
+    "output": {
+      "runId": "public-0eb183572a9934fd3530b84ecf9829c1aef2cf4f",
+      "reportId": "enrichment-cloud",
+      "version": "27ab21612a98bea105ce30d3f943751da330a1cf00d1553ae46ddb4030366114",
+      "state": "awaiting_review",
+      "humanReviewRequired": true
+    },
+    "stages": [
+      "synthesis",
+      "review"
+    ]
+  },
+  "failing": {
+    "output": {
+      "runId": "public-538514fef29cc50bc5a4561da5b259fecad08a13",
+      "reportId": "enrichment-cloud",
+      "version": "6d04b0ec077a77206a8f952faacea7b3ede2ad4288314825ec939d4082137518",
+      "state": "review_failed",
+      "humanReviewRequired": true,
+      "error": "Old unresolved capacity definition problem remains"
+    },
+    "stages": [
+      "synthesis",
+      "review",
+      "repair",
+      "review-repair"
+    ]
+  },
+  "originalUnchanged": true,
+  "subsetDraftSourcesReused": true,
+  "oldFrozenFilingsRetained": true,
+  "externalCalls": 0,
+  "upstreamCoverage": {
+    "excerptOnly": "registered_excerpt_only",
+    "sourceUri": "https://example.com/new-macro-original",
+    "upstream": [
+      {
+        "reportId": "macro-upstream",
+        "version": "macro-version-exact",
+        "claimId": "claim-0"
+      }
+    ],
+    "originalFromMacroAuthor": "frozen_original"
+  },
+  "replayAfterWithdrawal": true
+}

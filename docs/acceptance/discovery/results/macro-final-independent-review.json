@@ -1,0 +1,320 @@
+{
+  "reviewer": "independent-assistant:company_research",
+  "reviewType": "independent_automated_counter_review",
+  "humanReview": false,
+  "decision": "approved_with_explicit_limited_coverage",
+  "blockingIssues": [],
+  "candidateSha256": "43a87fff6faa29e29b2e13624c71508d6ce09a4aed5735d97897e3090f258a17",
+  "reportId": "macro-us-usd",
+  "inputFingerprint": "1fdd7193aee2739cc34f1b0be46c24b7c953ccd0528ba48d15e72011bc70e68a",
+  "asOf": "2026-11-16T14:58:59.912Z",
+  "reviewedAt": "2026-11-16T23:18:44.991576+00:00",
+  "claims": [
+    {
+      "claimId": "fact:us-gdp-q3-accel",
+      "supported": true,
+      "notes": "BEA完整发布正文支持Q3 3.4%、Q2 2.2%，均为实际GDP环比折年初值；二读时间在原文。",
+      "sourceIds": [
+        "s480bad48dc4f55719b37887f"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-gdp-spr-component",
+      "supported": true,
+      "notes": "完整Technical Notes明确SPR销售减少影响政府消费分项，对GDP总额无直接影响；已消除GDP虚增推断。",
+      "sourceIds": [
+        "s480bad48dc4f55719b37887f",
+        "audit-bea"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-pce-price-deceleration",
+      "supported": true,
+      "notes": "完整PCE句支持2.1/5.0与核心2.5/3.3；SAAR与同比、能源贡献严格区分。",
+      "sourceIds": [
+        "s480bad48dc4f55719b37887f",
+        "audit-bea"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-cpi-oct-headline",
+      "supported": true,
+      "notes": "CPI完整Table A与发布标题支持月率序列；11月10日首发、11月13日快照更新分列，不能推断首次发布与修订版完全相同。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-cpi-oct-core",
+      "supported": true,
+      "notes": "Table A核心8至10月各0.3%；年化约3.7%为月率持续假设，不是PCE政策目标同口径比较。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-gasoline-shock",
+      "supported": true,
+      "notes": "完整表头支持汽油月率9.1到1.0、未季调12月37.4%；共享能源冲击不重复累计。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75",
+        "audit-cpi"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-cpi-yy-unavailable",
+      "supported": true,
+      "notes": "整体同比破折号及2025年10月拨款中断说明支持缺失判断；不推广为全部分项不可得。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75",
+        "audit-cpi"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-ffr-hold",
+      "supported": true,
+      "notes": "FOMC完整声明支持3.75至4.00、10比2维持及两位异议者主张加息25bp；反证方向已补齐。",
+      "sourceIds": [
+        "sb8285e9fd68532ac56458145",
+        "audit-fomc-dissent"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-labor-oct",
+      "supported": true,
+      "notes": "完整A1季调列支持失业率4.2到4.1、参与率61.8到61.9；家庭调查与企业调查分离。",
+      "sourceIds": [
+        "s76a4249d7b198d23f34921c7",
+        "audit-jobs-a1"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-hours-vs-payroll-index",
+      "supported": true,
+      "notes": "完整B9表头、基期与脚注支持生产及非管理员工124.9/-0.2与273.4/+0.2；精确指数比推算时薪约0.34364%，不冒充官方直接AHE。",
+      "sourceIds": [
+        "s76a4249d7b198d23f34921c7",
+        "audit-jobs-b9"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us-nfp-row-flagged",
+      "supported": true,
+      "notes": "完整Summary B年份表头支持2026年8至10月186/60/165千人，均值137千人；初值和群体明确。",
+      "sourceIds": [
+        "audit-jobs-summary-b"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "inf:us-gdp-quality",
+      "supported": true,
+      "notes": "BEA完整句支持私人最终销售4.9对4.6；未由SPR处理推出GDP虚增或Q4回落。",
+      "sourceIds": [
+        "s480bad48dc4f55719b37887f",
+        "audit-bea"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "inf:us-inflation-composition",
+      "supported": true,
+      "notes": "不把整体减核心的0.1pp当能源贡献；篮子权重未核验时不发布分解，反证保留。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75",
+        "audit-cpi"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "inf:us-pce-cpi-reconcile",
+      "supported": true,
+      "notes": "季度SAARPCE与单月CPI不同期不同口径；不作为独立可相加冲击。",
+      "sourceIds": [
+        "s480bad48dc4f55719b37887f",
+        "sb6ea764ffd0a69b6e634cf75"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "inf:us-monpol-balance",
+      "supported": true,
+      "notes": "声明10月28日在GDP10月29日和11月CPI之前；未来路径解释不倒灌进过去决策，鹰派反证完整。",
+      "sourceIds": [
+        "sb8285e9fd68532ac56458145",
+        "s480bad48dc4f55719b37887f",
+        "sb6ea764ffd0a69b6e634cf75",
+        "audit-fomc-dissent"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "inf:us-labor-cooling",
+      "supported": true,
+      "notes": "全体员工总工时+0.1与B9子群体-0.2分开；不推出全体就业降温或人均工时减少。",
+      "sourceIds": [
+        "s76a4249d7b198d23f34921c7",
+        "audit-jobs-b9",
+        "audit-jobs-summary-b"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "scen:us-base",
+      "supported": true,
+      "notes": "条件基线明确非穷尽、与其他路径可重叠、无概率无点预测；只支持条件推理，不确认未来政策。",
+      "sourceIds": [
+        "sb8285e9fd68532ac56458145",
+        "sb6ea764ffd0a69b6e634cf75",
+        "s480bad48dc4f55719b37887f"
+      ],
+      "supportMeaning": "conditional reasoning, not observed future outcome"
+    },
+    {
+      "claimId": "scen:us-downside",
+      "supported": true,
+      "notes": "条件压力情景需实际能源敞口和债务重定价时点，不重算固定利率存量债；不赋概率。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75",
+        "sb8285e9fd68532ac56458145"
+      ],
+      "supportMeaning": "conditional reasoning, not observed future outcome"
+    },
+    {
+      "claimId": "scen:us-upside",
+      "supported": true,
+      "notes": "条件改善路径不保证降息；两位支持加息委员作为反证，非互斥、非加权路径。",
+      "sourceIds": [
+        "sb6ea764ffd0a69b6e634cf75",
+        "s480bad48dc4f55719b37887f",
+        "s76a4249d7b198d23f34921c7",
+        "audit-fomc-dissent"
+      ],
+      "supportMeaning": "conditional reasoning, not observed future outcome"
+    },
+    {
+      "claimId": "fact:us:credit:large",
+      "supported": true,
+      "notes": "SLOOS原始回答(4-3)/60=1.66667%；官方定性基本不变和多数条款放松/不变明确，非信用利差。",
+      "sourceIds": [
+        "audit-sloos-table1",
+        "audit-sloos"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    },
+    {
+      "claimId": "fact:us:credit:small",
+      "supported": true,
+      "notes": "SLOOS原始回答(4-1)/59=5.08475%；不同有效样本数、Q3观察期和准入标准口径明确。",
+      "sourceIds": [
+        "audit-sloos-table1",
+        "audit-sloos"
+      ],
+      "supportMeaning": "supported by cited primary evidence with stated limits"
+    }
+  ],
+  "sourceChecks": [
+    {
+      "sourceId": "sb6ea764ffd0a69b6e634cf75",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "s76a4249d7b198d23f34921c7",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "sb8285e9fd68532ac56458145",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "s480bad48dc4f55719b37887f",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-bea",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-sloos-table1",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-sloos",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-cpi",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-jobs-a1",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-jobs-b9",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-jobs-summary-b",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    },
+    {
+      "sourceId": "audit-fomc-dissent",
+      "excerptHashMatches": true,
+      "declaredAvailableBeforeAsOf": true
+    }
+  ],
+  "removedUnsupportedHistoricalAvailability": [
+    "fact:us-fed-calendar",
+    "fact:us-treasury-method"
+  ],
+  "calculations": {
+    "b9DerivedHourlyEarningsPercent": 0.34363878057372954,
+    "threeMonthPayrollThousands": 137.0,
+    "sloosLargeNetPercent": 1.6666666666666667,
+    "sloosSmallNetPercent": 5.084745762711865
+  },
+  "freshness": {
+    "checkedDate": "2026-11-16",
+    "finding": "Checked official current GDP, CPI, employment, FOMC and SLOOS publications; retained observations are dated releases, not live market quotes. No claim of exhaustive monitoring of all intervening news.",
+    "snapshotCaveat": "Collection after report asOf is recorded honestly; dated official releases support prior public availability, but no historical full-page archive proves byte-identical original release. CPI explicitly distinguishes first publication and later snapshot update. Date-only midnight source metadata is day precision, not proven release hour.",
+    "futureVerificationDates": "Scenario verification lists are future monitoring targets, not guaranteed releases; missing calendar/SEP source remains an explicit gap."
+  },
+  "limitations": [
+    "Coverage remains limited: no verified current yield curve, FX or complete credit pricing; not an allocation recommendation or complete macro model.",
+    "No company valuation, financing rate, probability or sensitivity weight derived from macro alone.",
+    "This review is bound to local candidate bytes; root must confirm exact saved revision/readback before applying approval.",
+    "This is independent automated review, not human approval. Industry and company approval policies are unchanged."
+  ],
+  "evidenceFiles": [
+    "independent-financial-audit.md",
+    "source-checks.json",
+    "bea.html",
+    "cpi.html",
+    "empsit-full.html",
+    "sloos-table1.html",
+    "sloos.html",
+    "fomc-full.html"
+  ]
+}

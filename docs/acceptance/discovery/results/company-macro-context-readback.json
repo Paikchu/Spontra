@@ -1,0 +1,40 @@
+[
+  {
+    "ticker": "CRWV",
+    "asOf": "2026-11-16T23:24:16.837Z",
+    "reports": [
+      {
+        "id": "macro-us-usd",
+        "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+        "reviewMode": "automatic",
+        "applicability": "requires_company_review"
+      }
+    ],
+    "gaps": [
+      {
+        "kind": "industry",
+        "industryId": null,
+        "reason": "uncovered: no verified business exposure mapping"
+      }
+    ]
+  },
+  {
+    "ticker": "NBIS",
+    "asOf": "2026-11-16T23:24:17.964Z",
+    "reports": [
+      {
+        "id": "macro-us-usd",
+        "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+        "reviewMode": "automatic",
+        "applicability": "requires_company_review"
+      }
+    ],
+    "gaps": [
+      {
+        "kind": "industry",
+        "industryId": null,
+        "reason": "uncovered: no verified business exposure mapping"
+      }
+    ]
+  }
+]
