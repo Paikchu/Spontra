@@ -324,9 +324,9 @@ export class PiHost {
   }
 
   /** What each session of this Agent did, turn by turn, for the admin. */
-  sessionsReport(): Array<{ operationId: string; kind: string; turns: number; spent: number; active: boolean; trail: TurnRecord[] }> {
+  sessionsReport(): Array<{ operationId: string; kind: string; turns: number; spent: number; active: boolean; capped: boolean; lastRound: boolean; trail: TurnRecord[] }> {
     return this.db().exec<Row & { active: number }>("SELECT * FROM pi_bindings ORDER BY started_at").toArray().map((row) => ({
-      operationId: row.operation_id, kind: row.kind, turns: row.turns, spent: row.spent ?? 0, active: !!row.active,
+      operationId: row.operation_id, kind: row.kind, turns: row.turns, spent: row.spent ?? 0, active: !!row.active, capped: !!row.capped, lastRound: !!row.last_round,
       trail: this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", row.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord),
     }));
   }

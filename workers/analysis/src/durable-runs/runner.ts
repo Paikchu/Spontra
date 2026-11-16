@@ -138,7 +138,10 @@ export class TaskRunner extends Agent<Env, RunView> {
       if (rearm) console.warn(JSON.stringify({ event: "run-alarm-rearmed", name: this.name, was: at }));
     }
     const row = this.row();
-    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport(), sdkUsage: await this.pi.usageReport(), alarm };
+    // Admin polls use report(), not status(): restore the task replay wake as well as Pi's own alarm.
+    if (row) await this.reviveIfLost(row).catch((error: unknown) => console.error(JSON.stringify({ event: "run-revive-failed", kind: row.kind, id: row.id, error: error instanceof Error ? error.message : String(error) })));
+    const wake = this.db().exec<{ wake_id: string | null; wake_at: number | null }>("SELECT wake_id, wake_at FROM run WHERE k = 1").toArray()[0] ?? null;
+    return { wake, status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport(), sdkUsage: await this.pi.usageReport(), alarm };
   }
 
   /** Scheduled by a read: settles and delivers the sessions whose run ended unsettled (pi/host.ts recoverEnded). */
