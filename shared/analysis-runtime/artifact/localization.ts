@@ -39,12 +39,40 @@ const needsTranslation = (text: string, ticker: string) => {
   return /[A-Za-z]{2,}/.test(words) && words !== ticker && !ORIGINAL_TERMS.has(words.toLowerCase()) && !/^(?:Q|FY)(?:\s+(?:Q|FY))*$/.test(words);
 };
 
+const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+
+/** Calendar names and spelled durations are prose, not protected numeric figures.
+ * Admit only their exact counted numeral/unit equivalents; money, identifiers and other new digits remain forbidden. */
+function legitimateProseNumerals(source: string, target: string): boolean {
+  const available = new Map<string, number>();
+  const add = (key: string) => available.set(key, (available.get(key) ?? 0) + 1);
+  for (const word of source.match(/\b[A-Za-z]+\b/g) ?? []) {
+    const month = MONTH_NAMES.indexOf(word.toLowerCase());
+    if (month >= 0) add(`calendar:${month + 1}`);
+  }
+  const words = Object.keys(NUMBER_WORDS).join("|");
+  const duration = new RegExp(`\\b(${words})(?:\\s+(?:and|or|to)\\s+(${words}))?[-\\s]+(months?|quarters?|years?|days?)\\b`, "gi");
+  const units: Record<string, string> = { month: "月", quarter: "季度", year: "年", day: "天" };
+  for (const match of source.matchAll(duration)) for (const word of [match[1], match[2]]) if (word) add(`${units[match[3]!.toLowerCase().replace(/s$/, "")]}:${NUMBER_WORDS[word.toLowerCase()]}`);
+  let valid = true;
+  const rest = target.replace(/(?<![\d.,$€£¥￥])([1-9]\d*(?:\s*[、和及与或至/]\s*[1-9]\d*)*)\s*(个)?(季度|月|年|天)(?![\d])/g, (_whole, values: string, counter: string | undefined, unit: string) => {
+    for (const value of values.match(/\d+/g) ?? []) {
+      const keys = [...(unit === "月" && !counter ? [`calendar:${value}`] : []), `${unit}:${value}`];
+      const key = keys.find(k => (available.get(k) ?? 0) > 0);
+      if (!key) valid = false; else available.set(key, available.get(key)! - 1);
+    }
+    return "";
+  });
+  return valid && !/\d/.test(rest);
+}
+
 /** A model translates text only. It cannot invent markup, remove a figure or alter a protected inline element. */
 export function checkArtifactTranslation(source: string, target: string): string[] {
   const errors: string[] = [];
   if (tokenSet(source) !== tokenSet(target)) errors.push("artifact placeholders changed; copy every {oN}, {cN} and {xN} exactly once");
   if (inlineStructure(source) !== inlineStructure(target) || inlineStructure(target) === null) errors.push("artifact inline structure changed; keep each placeholder in its original parent element");
-  if (!/\d/.test(prose(source)) && /\d/.test(prose(target))) errors.push("artifact numbers must remain protected placeholders; do not add numeric literals");
+  if (!/\d/.test(prose(source)) && /\d/.test(prose(target)) && !legitimateProseNumerals(prose(source), prose(target))) errors.push("artifact numbers must remain protected placeholders; do not add numeric literals");
   if (/\{x\d+\}\s*(?:万亿|亿|万)/.test(target) && !/\{x\d+\}\s*(?:万亿|亿|万)/.test(source)) errors.push("artifact amounts are formatted by the renderer; do not append another scale to a protected value");
   if (/<\/?[A-Za-z][^>]*>/.test(target)) errors.push("HTML is not a translation; return text with the original placeholders only");
   return errors;

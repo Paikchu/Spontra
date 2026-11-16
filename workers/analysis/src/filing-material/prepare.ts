@@ -20,7 +20,7 @@ const DECISION_SCHEMA = z.object({ decisions: z.array(z.discriminatedUnion("acti
 type Organization = z.infer<typeof DECISION_SCHEMA>;
 type OrganizationBatch = { blocks: MaterialBlock[]; input: string; modelInput: string };
 
-export type PrepareMaterialOptions = { fetcher?: typeof fetch; causeId?: string; maxDocuments?: number; recoveryRequestId?: string };
+export type PrepareMaterialOptions = { fetcher?: typeof fetch; causeId?: string; maxDocuments?: number; maxOrganizationBatches?: number; recoveryRequestId?: string };
 
 function submissionHeader(source: MaterialSource, bytes: Uint8Array, end: number): ParsedMaterialDocument {
   const text = new TextDecoder().decode(bytes.subarray(0, end)).trim();
@@ -231,7 +231,7 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       if (cached) answers.push(parseOrganizationReceipt(JSON.parse(await cached.text()), batch));
       else pending.push(index);
     }
-    const completed = await Promise.allSettled(pending.slice(0, PER_RUN_BATCHES).map(index => organizeBatch(env, filing, version, batches[index]!)));
+    const completed = await Promise.allSettled(pending.slice(0, options.maxOrganizationBatches ?? PER_RUN_BATCHES).map(index => organizeBatch(env, filing, version, batches[index]!)));
     for (const result of completed) {
       if (result.status === "rejected") throw result.reason;
       answers.push(result.value);

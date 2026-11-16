@@ -1,3 +1,4 @@
+import { dossierPresentation } from "../../../../shared/analysis-runtime/artifact/dossier-presentation.ts";
 import { SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import type { FindingsResponse, PublishedFindingArticle } from "../../../../shared/analysis-contract/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
@@ -25,7 +26,7 @@ export async function enrichFindings(env: ArtifactStoreEnv, response: FindingsRe
       const match = /^\/Archives\/edgar\/data\/\d+\/(\d{10})(\d{2})(\d{6})(?:\/|$)/i.exec(url.pathname);
       return match ? [`${match[1]}-${match[2]}-${match[3]}`] : [];
     }))];
-    return { findingId, title: artifact.title, lang: artifact.lang, version: artifact.version, hash: artifact.hash,
+    return { findingId, status: dossierPresentation(stored.document).status, title: artifact.title, lang: artifact.lang, version: artifact.version, hash: artifact.hash,
       publishedAt: row.published_at, periodEnd: publication.periodEnd, sourceAccessions, subject };
   }));
   return { ...response, findings: { ...publication, ...(response.pendingResearch ? { pendingResearch: response.pendingResearch } : {}), articles: Object.fromEntries(articles.filter((a): a is PublishedFindingArticle => a !== null).map(a => [a.findingId, a])) } };

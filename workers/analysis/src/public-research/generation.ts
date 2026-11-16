@@ -173,8 +173,13 @@ export async function executePublicResearchRun(spec:PublicResearchRunSpec,step:W
     const results = await Promise.all(roles.map(stage => env.PI!.poll<State>(`${run.runId}:${stage}`)));
     return results.every(Boolean) ? results.map(r => r!.output) : null;
   }, 30000);
-  const [a,b] = branches;
-  const notes=[a?.notes,b?.notes].filter((x):x is ResearchNotes=>!!x);
+  // A bounded specialist can stop before finish_research. Keep its registered original excerpts,
+  // while making clear that no specialist conclusions were completed; never promote raw reads.
+  const notes:ResearchNotes[]=branches.flatMap((branch,index)=>branch?.notes?[branch.notes]:branch?.sources.length?[{
+    conclusions:[],
+    gaps:[`${roles[index]} ended before submitting its research conclusions. Only registered source excerpts are available; synthesis must independently evaluate them and retain unresolved gaps.`],
+    sources:branch.sources,
+  }]:[]);
   if(!notes.length)return step.do("failed-no-evidence",()=>finishRun(env,run.runId,"failed",null,"Both evidence branches ended without verified source excerpts"));
   const synthesis=await session("synthesis",{notes});let draft=synthesis?.draft;
   if(!draft)return step.do("failed-no-draft",()=>finishRun(env,run.runId,"failed",null,"No complete structured draft within allowance"));

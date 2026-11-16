@@ -397,7 +397,7 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   }
   const source=upstream??analysisFetcher(env);
   let readFailureStatus=0, readRetryAfter:string|null=null;
-  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);if(!response.ok){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
+  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);const sourcePath=new URL(input instanceof Request?input.url:String(input)).pathname;const absentCompanyArtifact=response.status===404&&/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/artifacts\/company-analysis\/?$/.test(sourcePath);if(!response.ok&&!absentCompanyArtifact){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
   const moduleJson=(body:unknown)=>{const response=json(body,readFailureStatus||200);if(readFailureStatus===429)response.headers.set("retry-after",readRetryAfter??"60");return response;};
   if(!fetcher)return json({error:"Read service unavailable"},503);
   // An analysis draft opened by the visual review through its signed, short-lived link (docs/analysis-html-artifact.md §7.1).
@@ -508,7 +508,7 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{},...(bundle?.pendingResearch?{pendingResearch:bundle.pendingResearch}:{})});if(bundle?.status!=="ready")response.headers.set("cache-control","no-store");if(cache&&bundle?.status==="ready"&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    // The company analysis and dossiers select a translated artifact for the reader's locale.
-   if(match[2]==="/artifacts/company-analysis")return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);
+   if(match[2]==="/artifacts/company-analysis"){try{return await supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);}catch{readFailureStatus ||= 503;return moduleJson({schemaVersion:"artifact-response.v1",status:"unavailable",artifact:null});}}
    if(match[2].startsWith("/artifacts/dossier/"))return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher,locale),artifactSettled);
    if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
    if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));

@@ -1,3 +1,4 @@
+import { preparePilotMaterial } from "./material-pilot.ts";
 import { INDUSTRY_CATEGORIES, type IndustryCategory } from "../../../../shared/analysis-contract/business-classification.ts";
 import type { MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { PeerTier } from "../../../../shared/analysis-contract/business-tags.ts";
@@ -9,7 +10,7 @@ import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialS
 import { findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
-import { materialRecoveryKey } from "../filing-material/store.ts";
+import { materialRecoveryKey, materialPilotKey, isPilotMaterial } from "../filing-material/store.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { json } from "./http.ts";
 
@@ -34,9 +35,11 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
   }
   if (parts[0] === "materials" && TICKER_PATTERN.test(parts[1] ?? "") && ACCESSION.test(parts[2] ?? "")) {
     const ticker = parts[1]!, accession = parts[2]!;
+    if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare-pilot") return preparePilotMaterial(request, env, ticker, accession);
     const state = await getFilingMaterial(env, ticker, accession);
     if (!state) return json({ error: "未找到该申报材料。" }, 404);
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare") {
+      if (await isPilotMaterial(env, ticker, accession)) return json({ error: "This accession is reserved for explicit shadow preparation; use prepare-pilot" }, 409);
       const body = await request.text();
       let options: { retryFailedSources?: boolean; requestId?: string };
       try {
@@ -72,7 +75,10 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       return json(pending, 202);
     }
     if (request.method === "GET") {
-      if (parts.length === 3) return json(state);
+      if (parts.length === 3) {
+        const pilot = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker,accession)).first<{payload:string}>();
+        return json({ ...state, ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}) });
+      }
       if (state.status !== "ready") return json(state, 409);
       const snapshot = await readMaterialSnapshot(env, { ...state.ref, version: url.searchParams.get("version") ?? state.ref.version });
       if (parts.length === 4 && parts[3] === "index") return json(snapshot);

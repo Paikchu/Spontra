@@ -34,7 +34,7 @@ export const TASK_NAMES = [
 export type TaskName = typeof TASK_NAMES[number];
 
 /** What a filing event says about the filing, for subscribers that only want some forms. */
-export type EventDetail = { form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string;
+export type EventDetail = { mode?: "shadow-pilot"; form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string;
   /** The layer a `feature.settings` event is about. */ feature?: Layer };
 export type PipelineEvent = { type: EventType; ticker: string; cik?: string | null; task?: TaskName | null; detail?: EventDetail | null };
 
@@ -133,8 +133,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   // A company's baseline lists current reports no `filing.discovered` announced.
   "archive.requested": [{ task: "archive" }],
   "filing.material.requested": [{ task: "filing-material" }],
-  "filing.material.ready": [{ task: "filing-analysis", when: e => reportedForm(form(e)) }, { task: "collect", when: e => PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e)) },
-    { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "valuation" }, { task: "business-classification", when: e => PERIODIC.test(form(e)) }],
+  "filing.material.ready": [{ task: "filing-analysis", when: e => e.detail?.mode !== "shadow-pilot" && (reportedForm(form(e))) }, { task: "collect", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e))) },
+    { task: "analyst", when: e => e.detail?.mode !== "shadow-pilot" && (/^10-[QK](?:\/A)?$/.test(form(e))) }, { task: "valuation", when: e => e.detail?.mode !== "shadow-pilot" }, { task: "business-classification", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e))) }],
   // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],

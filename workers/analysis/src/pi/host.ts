@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { currentPiTracer, emitTurnSpans, PiTurnTraces, type TurnTrace } from "./tracing.ts";
 import { within } from "./within.ts";
-import { CompactionTask, createRegistry, GenerationTask, Harness, hook, ProviderDoc, type ConversationId, type HookApi, type ToolRegistration } from "@earendil-works/pi-durable";
+import { CompactionTask, createRegistry, GenerationTask, Harness, hook, ProviderDoc, UsageDoc, type ConversationId, type HookApi, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 import { PiHarness } from "agents/harness/pi";
 import { defaultBudgetLine, fitResult, type Recipe, type TurnRecord } from "../recipe.ts";
@@ -290,6 +290,16 @@ export class PiHost {
     if (session === "") return this.finish<O>(operationId);
     // The check must return, whatever Pi's promises do: on time it means "look again on the next wake".
     return within(POLL_WAIT_MS, async (signal) => {
+      // A transport denial is persisted before the SDK sees its connection error. End only that capped operation:
+      // the SDK may otherwise retry it indefinitely, despite every further provider request being correctly blocked.
+      const row = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
+      if (row?.capped && row.session) {
+        const binding = await this.bound(row.conversation);
+        if (binding?.loaded.strictBudget) {
+          await this.harness.sessions.get(row.session).abort(operationId);
+          return this.settle<O>(operationId, { status: "done" });
+        }
+      }
       await this.ensureStarted(operationId);
       const pending = await this.harness.pending({ session }).catch(() => []);
       if (pending.some((p) => p.operationId === operationId)) return null;
@@ -319,6 +329,23 @@ export class PiHost {
       operationId: row.operation_id, kind: row.kind, turns: row.turns, spent: row.spent ?? 0, active: !!row.active,
       trail: this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", row.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord),
     }));
+  }
+
+  /** SDK ledger includes summarization attempts omitted by ordinary afterResponse hooks. Read only. */
+  async usageReport() {
+    const sessions = await Promise.all(this.db().exec<Row>("SELECT * FROM pi_bindings ORDER BY started_at").toArray().map(async row => {
+      try {
+        const conversation = await this.harness.conversation(row.session);
+        const usage = await (await this.harness.pi()).snapshot(UsageDoc, conversation.id, BACKGROUND_CONTEXT) ?? { models: {}, tools: {} };
+        return { operationId: row.operation_id, session: row.session, status: "available" as const, usage };
+      } catch { return { operationId: row.operation_id, session: row.session, status: "unavailable" as const, usage: null }; }
+    }));
+    const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+    for (const session of sessions) for (const usage of Object.values(session.usage?.models ?? {})) {
+      for (const key of Object.keys(tokens) as Array<keyof typeof tokens>) tokens[key] += typeof usage[key] === "number" ? usage[key] : 0;
+    }
+    return { source: "pi.usage", includesCompaction: true, status: sessions.some(s => !s.usage) ? "partial" : "available", tokens, sessions,
+      scope: "SDK-reported committed model responses including compaction; in-flight or unreported provider charges excluded. Not a provider monetary invoice. D1 ai_usage remains the separate ordinary-turn ledger." };
   }
 
   /**

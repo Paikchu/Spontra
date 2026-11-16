@@ -35,7 +35,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "library") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && /^(?:|companies\/[A-Z][A-Z0-9.-]{0,11}|materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}(?:\/(?:index|markdown|tables(?:\/[^/]+)?))?|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?)$/.test(route);
-    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/prepare|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
+    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:prepare|prepare-pilot)|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "reports") {

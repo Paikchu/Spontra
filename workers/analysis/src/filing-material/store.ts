@@ -9,6 +9,10 @@ export const MATERIAL_PREFIX = "sec-materials/v1/";
 export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_ORGANIZER_VERSION}:${MATERIAL_ARCHIVE_INVENTORY_VERSION}`;
 export const materialStatePrefix = (ticker: string) => `filing-material:state:v1:${ticker}:`;
 export const materialStateKey = (ticker: string, accession: string) => `${materialStatePrefix(ticker)}${accession}`;
+export const materialPilotKey = (ticker: string, accession: string) => `filing-material:pilot:v1:${ticker}:${accession}`;
+export async function isPilotMaterial(env: Pick<AnalysisEnv, "DB">, ticker: string, accession: string): Promise<boolean> {
+  return !!await env.DB!.prepare("SELECT 1 FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker, accession)).first();
+}
 export const materialRecoveryKey = (ticker: string, accession: string) => `filing-material:recovery:v1:${ticker}:${accession}`;
 export const materialBase = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/${ref.version}`;
 export const materialSnapshotKey = (ref: MaterialRef) => `${materialBase(ref)}/index.json`;
@@ -63,6 +67,7 @@ export async function writeMaterialState(env: Pick<AnalysisEnv, "DB">, state: Ma
 
 export async function requestFilingMaterial(env: Pick<AnalysisEnv, "DB">, filing: MaterialFiling): Promise<MaterialState> {
   const existing = (await new D1SecRepository(env.DB!).getCache<MaterialState>(materialStateKey(filing.ticker, filing.accession)))?.payload;
+  if (existing && await isPilotMaterial(env, filing.ticker, filing.accession)) return existing;
   if (existing && (existing.status !== "ready" || existing.preparationVersion === MATERIAL_PREPARATION_VERSION)) return existing;
   const state: MaterialState = { status: "preparing", filing, progress: "awaiting accession archive" };
   const at = new Date().toISOString(), db = env.DB!;
@@ -77,11 +82,12 @@ export async function requestFilingMaterial(env: Pick<AnalysisEnv, "DB">, filing
 
 export async function publishMaterialState(env: Pick<AnalysisEnv, "DB">, state: Extract<MaterialState, { status: "ready" }>, owner: string, causeId?: string): Promise<boolean> {
   const db = env.DB!, at = state.preparedAt, filing = state.filing;
+  const pilot = await isPilotMaterial(env, filing.ticker, filing.accession);
   const results = await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM sec_cache WHERE cache_key = ? AND json_extract(payload, '$.owner') = ? AND json_extract(payload, '$.expiresAt') > ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(materialStateKey(filing.ticker, filing.accession), JSON.stringify(state), at, leaseKey(filing), owner, Date.now()),
     outboxStatement(db, { type: "filing.material.ready", ticker: filing.ticker, cik: filing.cik, causeId,
-      detail: { accession: filing.accession, form: filing.form } }, at, { sql: "changes() > 0", binds: [] }),
+      detail: { accession: filing.accession, form: filing.form, ...(pilot ? { mode: "shadow-pilot" } : {}) } }, at, { sql: "changes() > 0", binds: [] }),
   ]);
   return (results[0]?.meta?.changes ?? 0) > 0;
 }

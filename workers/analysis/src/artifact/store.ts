@@ -1,3 +1,4 @@
+import { dossierPresentation } from "../../../../shared/analysis-runtime/artifact/dossier-presentation.ts";
 import { companyResearchDependencyStatus } from "../public-research/context.ts";
 import type { ArtifactDocument, ArtifactKind, PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
 import { sha256 } from "../sha256.ts";
@@ -122,7 +123,7 @@ export async function localizedEdition(env: ArtifactStoreEnv, id: string, stored
         const translation: NonNullable<PublishedArtifact["translation"]> = translated?.status === "ready"
           ? { locale: "zh-CN", status: "ready" }
           : { locale: "zh-CN", status: translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 };
-        return { ...toPublished(id, edition, publishedAt), researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
+        return { ...toPublished(id, edition, publishedAt), ...(stored.document.kind === "dossier" && dossierPresentation(stored.document).status === "incomplete" ? { title: "研究尚未完成" } : {}), researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
       }
     }
   }
@@ -159,7 +160,7 @@ const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
   ...(s.document.researchContext ? { researchContext: s.document.researchContext } : {}),
   id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version,
   title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title
-    : s.document.kind === "dossier" ? s.document.blocks.find(b => b.id === "thesis")?.title ?? s.document.title : s.document.title,
+    : s.document.kind === "dossier" ? dossierPresentation(s.document).title : s.document.title,
   html: s.html, css: s.css, hash: s.hash, publishedAt: at, degraded: s.degraded,
   lang: isLocale(s.document.lang) ? s.document.lang : "en", translation: null,
 });

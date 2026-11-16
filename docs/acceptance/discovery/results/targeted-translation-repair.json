@@ -1,0 +1,7 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "../../scripts/i18n/fixture-api" without a file extension (apps/business-site/vite.config.ts:4:28). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+3:14:27 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+3:14:28 PM [vite] (client) [optimizer] scanning dependencies...
+3:14:30 PM [vite] (client) [optimizer] bundling dependencies...
+{"environment":"actual local D1 + actual admin repair helper","passed":6,"checks":["only selected sole numeric rejection cleared","unselected source retained","ready source retained","mixed/semantic rejections retained","different translator version retained","repeated receipt does not clear new rejection"]}

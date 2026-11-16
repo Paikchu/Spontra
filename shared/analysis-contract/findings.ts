@@ -168,9 +168,9 @@ export type StatementHighlight = {
 /** One report's headline figures per statement view, most notable first. */
 export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
 
-/** Only completed, published analyst articles. Detector questions remain internal research inputs. */
+/** Published analyst articles; legacy incomplete documents remain reachable and explicitly marked. */
 export type PublishedFindingArticle = {
-  findingId: string; title: string; lang: string; version: number; hash: string; publishedAt: string;
+  findingId: string; status?: "complete" | "incomplete"; title: string; lang: string; version: number; hash: string; publishedAt: string;
   periodEnd: string; sourceAccessions: string[]; subject: string;
 };
 

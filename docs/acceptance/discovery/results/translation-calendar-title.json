@@ -1,0 +1,20 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "../../scripts/i18n/fixture-api" without a file extension (apps/business-site/vite.config.ts:4:28). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+{
+  "fixture": "actual saved production source and artifacts; local only",
+  "passed": 11,
+  "checks": [
+    "saved source calendar and coordinated durations",
+    "Chinese spelled duration remains valid",
+    "hyphenated duration",
+    "added financial amount rejected",
+    "changed calendar rejected",
+    "duplicate calendar rejected",
+    "invented identifier rejected",
+    "protected unit repetition rejected",
+    "actual cash original thesis presentation",
+    "actual rpo original thesis presentation",
+    "actual capital original thesis presentation"
+  ]
+}

@@ -1,3 +1,5 @@
+import { extractArtifactTranslation } from "../../../../shared/analysis-runtime/artifact/localization.ts";
+import { readArtifactVersion } from "../artifact/store.ts";
 import { readValuationResponse } from "../valuation/store.ts";
 import { valuationFingerprint } from "../valuation/workflow.ts";
 import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiUsageDay, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
@@ -20,7 +22,7 @@ import { json } from "./http.ts";
 import { z } from "zod";
 import type { TranslationStarted } from "../../../../shared/analysis-contract/translations-admin.ts";
 import { failedInputKey } from "../pipeline/workflow-task.ts";
-import { readSources } from "../translation/translate.ts";
+import { readSources, TRANSLATION_VERSION } from "../translation/translate.ts";
 import { sha256 } from "../sha256.ts";
 import { scopeTickers } from "../pipeline/router.ts";
 import { contentPublishedStatement } from "../publication/publish.ts";
@@ -149,6 +151,19 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   return json({ runId, reused: false } satisfies AiRunStarted, 202);
 }
 
+/** Only this pinned artifact's sole numeric-literal rejections become pending, once per repair receipt. */
+export function artifactNumericRepairStatements(db: D1Database, receiptKey: string, unitHashes: string[]): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [];
+  for (let i = 0; i < unitHashes.length; i += 400) statements.push(db.prepare(`DELETE FROM i18n_strings
+    WHERE locale='zh-CN' AND status='rejected' AND version=?
+      AND source_sha256 IN (SELECT value FROM json_each(?))
+      AND json_valid(problems) AND json_array_length(problems)=1
+      AND json_extract(problems,'$[0]')=?
+      AND EXISTS (SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload,'$.resetPending')=1)`)
+    .bind(TRANSLATION_VERSION, JSON.stringify(unitHashes.slice(i, i + 400)), "artifact numbers must remain protected placeholders; do not add numeric literals", receiptKey));
+  return statements;
+}
+
 /** Repair one frozen edition without regenerating research or translating unrelated reports. */
 async function repairArtifactTranslation(request: Request, env: AnalysisEnv, db: D1Database, ticker: string, now: number): Promise<Response> {
   const parsed = z.object({ requestId: z.string().regex(UUID), artifactId: z.string().min(1).max(240), sourceVersion: z.number().int().positive(), sourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(await request.json());
@@ -159,13 +174,18 @@ async function repairArtifactTranslation(request: Request, env: AnalysisEnv, db:
   const current = await db.prepare("SELECT artifact_id FROM analysis_artifacts WHERE artifact_id=? AND ticker=? AND published_version=? AND published_hash=?")
     .bind(artifactId, ticker, sourceVersion, sourceHash).first();
   if (!current) return json({ error: "报告版本已变化，请重新读取当前版本。" }, 409);
-  // Stable identity across request IDs: concurrent clicks cannot buy duplicate repairs.
-  const fingerprint = await sha256(`protected-literals-v1|${ticker}|${artifactId}|${sourceVersion}|${sourceHash}`);
+  const stored = await readArtifactVersion(env, artifactId, sourceVersion);
+  if (!stored || stored.hash !== sourceHash || stored.document.ticker !== ticker || stored.document.lang !== "en") return json({ error: "固定的英文报告版本不可用。" }, 409);
+  const unitHashes = [...new Set(await Promise.all(extractArtifactTranslation(stored.document).units.map(unit => sha256(unit.text))))];
+  // Repair revision is separate from the translator version: no unrelated report is re-enqueued.
+  // Stable across request IDs so concurrent clicks cannot buy duplicate repairs.
+  const fingerprint = await sha256(`protected-literals-v2-calendar|${ticker}|${artifactId}|${sourceVersion}|${sourceHash}`);
   const runId = `translate-repair-${fingerprint.slice(0, 40)}`, key = `translate:repair:${fingerprint}`, at = new Date(now).toISOString();
   const first = "EXISTS (SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload, '$.resetPending')=1)";
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key,payload,fetched_at) VALUES (?,?,?) ON CONFLICT(cache_key) DO NOTHING")
       .bind(key, JSON.stringify({ ticker, artifactId, sourceVersion, sourceHash, requestId: parsed.data.requestId, runId, resetPending: true }), at),
+    ...artifactNumericRepairStatements(db, key, unitHashes),
     // Keep published_r2_key / published_hash intact until the replacement passes review.
     db.prepare(`UPDATE analysis_artifact_translations SET status='translating', error=NULL, updated_at=? WHERE artifact_id=? AND source_version=? AND source_hash=? AND locale='zh-CN' AND ${first}`)
       .bind(at, artifactId, sourceVersion, sourceHash, key),

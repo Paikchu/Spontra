@@ -28,7 +28,7 @@ function ReportBody({ report }: { report: PublicReportVersion }) {
     <section aria-labelledby="research-changes"><h2 id="research-changes">{m.changes}</h2><ul>{report.changes.map((change, i) => <li key={i}>{change}</li>)}</ul></section>
     <ReportMarkdown markdown={report.bodyMarkdown} />
     <section aria-labelledby="research-claims"><h2 id="research-claims">{m.notes}</h2>{report.claims.map(claim => <details key={claim.id} id={`claim-${claim.id}`}>
-      <summary>{claim.title}</summary><p>{claim.statement}</p><p>{claim.verification}</p>
+      <summary>{claim.title}{report.claimStates[claim.id] !== "valid" && <span className="public-research-claim-state">{freshnessWords[report.claimStates[claim.id] ?? "unavailable"]}</span>}</summary><p>{claim.statement}</p><p>{claim.verification}</p>
       <ul>{claim.counterEvidence.map((text, i) => <li key={i}>{text}</li>)}</ul>
       <ul>{claim.sourceIds.map(sourceId => { const source = report.sources.find(item => item.id === sourceId); return source ? <li key={sourceId}><a href={`#source-${sourceId}`} onClick={() => { const details = document.getElementById(`source-${sourceId}`); if (details instanceof HTMLDetailsElement) details.open = true; }}>{source.title} · {source.locator}</a></li> : null; })}</ul>
     </details>)}</section>

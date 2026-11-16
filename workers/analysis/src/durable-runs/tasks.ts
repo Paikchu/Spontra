@@ -1,3 +1,4 @@
+import { runMaterialPilotChunk, type MaterialPilotChunk } from "../filing-material/pilot.ts";
 import { executePublicResearchRun, type PublicResearchRunSpec } from "../public-research/generation.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { assertFeatureTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams } from "../core.ts";
@@ -64,6 +65,9 @@ const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name
 
 /** What each run kind executes; the bodies the Workflow classes had. */
 export const RUN_TASKS: Record<RunKind, Task> = {
+  async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
+    return runMaterialPilotChunk(env, step, params);
+  },
   async PUBLIC_RESEARCH_WORKFLOW(params: PublicResearchRunSpec, { env, step, id }) {
     try { return await executePublicResearchRun(params, durableSteps(step, env, id), env); }
     catch (error) {

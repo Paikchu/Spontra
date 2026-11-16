@@ -1,0 +1,5 @@
+{"passed":true,"checks":["POST202 performs no source work","concurrent active request joins same durable id","actual durable engine executes one bounded chunk","no automatic next chunk","explicit resume completes","zero publication subscribers","ready replay no spend"]}
+{"negativePassed":true,"checks":["lost durable journal replay fails closed without repeating extraction"]}
+{"missingStateAndGetPassed":true}
+{"financialNegativePassed":true,"checks":["table columns remain blocking","blocked admission cannot start another chunk"]}
+{"interruptedActivePassed":true}

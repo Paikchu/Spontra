@@ -1,3 +1,4 @@
+import { isPilotMaterial } from "../filing-material/store.ts";
 import type { AiModel, AiEffort } from "../../../../shared/analysis-contract/ai-models-admin.ts";
 import { companyResearchDependencyStatements } from "../public-research/context.ts";
 import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
@@ -118,6 +119,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       return null;
     },
     onPublish: async (state, published) => {
+      if (!spec.shadow && await isPilotMaterial(env, ticker, accession)) throw new Error("Material reserved for explicit shadow review; normal publication blocked");
       const now = new Date().toISOString();
       const headline = state.composer.blocks.find(b => b.id === "summary")?.title || state.composer.artifact.title;
       const summary = filingSummary(filing, { headline, text: published.text, ...(state.category ? { category: state.category } : {}) }, now);
@@ -182,6 +184,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
 
 /** Rebuilds the session from its spec, on start and after an eviction. */
 export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<PiLoaded> {
+  if (!spec.shadow && await isPilotMaterial(env, spec.ticker, spec.filing.accessionNumber)) throw new Error("Material reserved for explicit shadow review; normal analysis blocked");
   const profile = profileById(spec.profile);
   const store = env as unknown as Parameters<typeof readPublishedDocument>[0];
   const document = spec.mode === "revise" && profile.id === "periodic" ? await readPublishedDocument(store, "filing-report", spec.ticker, spec.filing.accessionNumber).catch(() => null) : null;

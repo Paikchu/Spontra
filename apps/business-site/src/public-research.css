@@ -40,6 +40,7 @@
 .public-research-document blockquote { border-left: 2px solid var(--border); margin: 16px 0; padding-left: 16px; color: var(--muted-foreground); }
 .public-research-document details { border-bottom: 1px solid var(--hairline); padding: 12px 0; }
 .public-research-document summary { cursor: pointer; min-height: 32px; }
+.public-research-claim-state { display: inline-block; margin-inline-start: 8px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
 .public-research-document a, .public-research-history a { text-underline-offset: 4px; }
 .public-research-history { border-top: 1px solid var(--border); margin-top: 32px; }
 .public-research-history ol { list-style: none; padding: 0; }

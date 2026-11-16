@@ -1,0 +1,51 @@
+{
+  "at": "2026-11-16T15:18:18.212Z",
+  "scope": "Actual executePublicResearchRun and synthesis loader, scripted Pi budget outcomes; no provider or production writes",
+  "networkCalls": 0,
+  "logs": [
+    {
+      "mode": "completed-and-partial",
+      "status": "passed",
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis"
+      ],
+      "result": {
+        "runId": "synthetic-partial-run",
+        "state": "failed",
+        "version": null,
+        "error": "No complete structured draft within allowance"
+      }
+    },
+    {
+      "mode": "both-partial",
+      "status": "passed",
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis"
+      ],
+      "result": {
+        "runId": "synthetic-partial-run",
+        "state": "failed",
+        "version": null,
+        "error": "No complete structured draft within allowance"
+      }
+    },
+    {
+      "mode": "no-registered-evidence",
+      "status": "passed",
+      "startedStages": [
+        "research-demand",
+        "research-financing"
+      ],
+      "result": {
+        "runId": "synthetic-partial-run",
+        "state": "failed",
+        "version": null,
+        "error": "Both evidence branches ended without verified source excerpts"
+      }
+    }
+  ]
+}

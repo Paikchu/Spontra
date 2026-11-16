@@ -56,12 +56,13 @@ import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationAdjustmentControl } from "./ValuationAdjustment";
 import { ValuationPanel } from "./ValuationPanel";
 import { ArtifactFrame } from "./ArtifactFrame";
-import { usePreview, usePublishedArtifact } from "./artifact-reads";
+import { usePreview, usePublishedArtifactRead } from "./artifact-reads";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
 import { useMedia, useSideScroll } from "./side-scroll";
 
 const m = messages({
+  companyReportLoading: "Loading company report…", companyReportMissing: "Company report has not been generated yet", companyReportFailed: "Company report could not be loaded", companyReportRetry: "Retry",
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
   companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue", composition: "Revenue mix", foldBusinesses: "Collapse businesses", unfoldBusinesses: "Expand businesses",
   topLevelCount: (n: number) => `Total revenue · ${n} top-level ${n === 1 ? "business" : "businesses"}`,
@@ -92,6 +93,7 @@ const m = messages({
   statMissing: "N/A", notApplicable: "Not applicable to model", notInFiling: "Not disclosed in filing",
   swipe: "Swipe horizontally to see full flow",
 }, {
+  companyReportLoading: "正在加载公司报告…", companyReportMissing: "公司报告尚未生成", companyReportFailed: "公司报告加载失败", companyReportRetry: "重试",
   lastYear: "上年同期", lastQuarter: "上季度", yearAgo: "上年同期", lastQuarterPeriod: "上季度",
   companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收", composition: "营收构成", foldBusinesses: "收起业务", unfoldBusinesses: "展开业务",
   topLevelCount: (n: number) => `总营收 · ${n} 个一级业务`,
@@ -390,9 +392,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
-  const companyArtifact = usePublishedArtifact(ticker, layers?.findings === false ? null : "company-analysis", revisions.company);
+  const [companyReportRetry, setCompanyReportRetry] = useState(0);
+  const companyArtifact = usePublishedArtifactRead(ticker, layers?.findings === false ? null : "company-analysis", revisions.company, companyReportRetry);
   const companyPreview = usePreview("company-analysis", layers?.findings === false ? null : ticker);
-  const companyReport = companyPreview ?? companyArtifact;
+  const companyReport = companyPreview ?? companyArtifact.artifact;
   // A reader's report drafted for the visual review opens on the stage by itself.
   const stageDraft = usePreview("stage-report", "*");
   // Start with the income statement; valuation remains an explicit tab or deep link.
@@ -402,7 +405,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     if (VIEWS.includes(v as View)) return v as View;
     return homeView;
   });
-  const view: View = chosenView === "company" && companyReport ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  const view: View = chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
@@ -715,7 +718,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens}
         head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
         <EventLens event={focusedEvent} publication={events} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
-      : view === "company" && companyReport ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={companyReport} /></div>
+      : view === "company" ? <div className="lens-stage company-report" tabIndex={0}>{companyReport ? <ArtifactFrame artifact={companyReport} /> : <div className="empty" role="status" aria-busy={companyArtifact.status === "loading"}><p>{companyArtifact.status === "loading" ? m.companyReportLoading : companyArtifact.status === "failed" ? m.companyReportFailed : m.companyReportMissing}</p>{companyArtifact.status === "failed" && <Button onClick={() => setCompanyReportRetry(value => value + 1)}>{m.companyReportRetry}</Button>}</div>}</div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary">

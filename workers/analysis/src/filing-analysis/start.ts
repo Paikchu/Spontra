@@ -1,3 +1,4 @@
+import { isPilotMaterial } from "../filing-material/store.ts";
 import { freezeCompanyResearch } from "../public-research/context.ts";
 import { requireDb } from "../core.ts";
 import { filingSessions } from "../durable-runs/binding.ts";
@@ -75,6 +76,11 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
     result.started.push(row.accession);
   };
   for (const row of due) {
+    if (await isPilotMaterial(env, ticker, row.accession)) {
+      await updateFiling(db, ticker, row.accession, { status: "waiting", reason: "Material reserved for explicit shadow review", runId }, at);
+      result.waiting.push(row.accession);
+      continue;
+    }
     const pending = (await repository.getCache<{ filing: SecFiling; options: StartOptions }>(requestKey(row.accession)))?.payload;
     const material = await getFilingMaterial(env, ticker, row.accession);
     let filing = byAccession.get(row.accession) ?? pending?.filing;

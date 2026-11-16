@@ -1,0 +1,28 @@
+[
+  {
+    "width": 390,
+    "missing": true,
+    "networkFailure": true,
+    "retry": true,
+    "defaultProfit": true,
+    "writes": [
+      "http://127.0.0.1:4191/api/business/v1/telemetry",
+      "http://127.0.0.1:4191/api/business/v1/telemetry",
+      "http://127.0.0.1:4191/api/business/v1/telemetry"
+    ],
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "missing": true,
+    "networkFailure": true,
+    "retry": true,
+    "defaultProfit": true,
+    "writes": [
+      "http://127.0.0.1:4191/api/business/v1/telemetry",
+      "http://127.0.0.1:4191/api/business/v1/telemetry",
+      "http://127.0.0.1:4191/api/business/v1/telemetry"
+    ],
+    "errors": []
+  }
+]

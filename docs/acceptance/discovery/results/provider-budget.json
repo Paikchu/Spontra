@@ -34,6 +34,17 @@
       "case": "actual automatic-summary provider path shares same gate",
       "actualProviderRequests": 1,
       "compactions": 1
+    },
+    {
+      "case": "SDK per-session and aggregate usage include successful compaction",
+      "ordinaryTokens": 13,
+      "includingCompactionTokens": 26,
+      "actualProviderRequests": 2
+    },
+    {
+      "case": "denied transport with SDK retries explicitly aborted to terminal",
+      "terminal": "unanswered",
+      "additionalProviderRequests": 0
     }
   ],
   "paidCalls": 0,

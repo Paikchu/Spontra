@@ -1,0 +1,95 @@
+{
+  "url": "https://businessview.info/companies/CRWV?view=valuation&lang=en&valuationAdjustment=dd7c3a35c7234ed3df92b6adedffe344",
+  "id": "dd7c3a35c7234ed3df92b6adedffe344",
+  "postStatus": 200,
+  "getStatus": 200,
+  "freshReaderStatus": 401,
+  "reloadSameId": true,
+  "identicalSavedPayload": true,
+  "publishedVersion": "f81defe0289ba65cd7030ecd5a065260",
+  "publishedReportHashBefore": "4b57d7f6c59088e8c012e22122a081ed94f0c6c7b0cfc9d8f0bff0dc79e3b2ef",
+  "publishedReportHashAfter": "4b57d7f6c59088e8c012e22122a081ed94f0c6c7b0cfc9d8f0bff0dc79e3b2ef",
+  "result": {
+    "schemaVersion": "valuation-adjustment.v1",
+    "kind": "hypothetical_sensitivity",
+    "ticker": "CRWV",
+    "baseVersionId": "f81defe0289ba65cd7030ecd5a065260",
+    "calculatorVersion": "valuation.calc.v12",
+    "researchAsOf": "2026-11-15T20:55:13.380Z",
+    "financialPeriodEnd": "2026-09-30",
+    "currency": "USD",
+    "referenceQuote": {
+      "price": 53.130001068115234,
+      "currency": "USD",
+      "priceDate": "2026-11-13",
+      "source": "Yahoo Finance",
+      "sourceUrl": "https://query1.finance.yahoo.com/v8/finance/chart/CRWV?range=1mo&interval=1d",
+      "fetchedAt": "2026-11-15T20:55:13.380Z",
+      "usable": true,
+      "limitations": []
+    },
+    "input": {
+      "ticker": "CRWV",
+      "baseVersionId": "f81defe0289ba65cd7030ecd5a065260",
+      "factor": "discountRate",
+      "delta": 0.01
+    },
+    "method": "fcff_cash_flow_only",
+    "horizonMonths": 12,
+    "shares": 559000000,
+    "cases": [
+      {
+        "key": "bear",
+        "before": -31.93388342407076,
+        "after": -45.02052937321542,
+        "absoluteChange": -13.086645949144657,
+        "fractionChange": null,
+        "gapToReference": -1.8473654897069722
+      },
+      {
+        "key": "base",
+        "before": 68.41590319105873,
+        "after": 39.69072004968999,
+        "absoluteChange": -28.72518314136874,
+        "fractionChange": -0.4198611989547312,
+        "gapToReference": -0.2529508892950224
+      },
+      {
+        "key": "bull",
+        "before": 172.33164861676318,
+        "after": 127.54180388520318,
+        "absoluteChange": -44.789844731559995,
+        "fractionChange": -0.2599049280330692,
+        "gapToReference": 1.4005609132529173
+      }
+    ],
+    "evidenceIds": [
+      "e580dfcef6b",
+      "ea82422b213",
+      "e91b6f0c7c1",
+      "e879a367274",
+      "ece3bfe171e",
+      "da_ttm",
+      "operating_margin_ttm",
+      "ecd4e817129"
+    ],
+    "limitations": [
+      "Reader-selected sensitivity, not a new fact, an observed event or published investment research.",
+      "Cash-flow method only. Peer multiples, method weights and scenario probabilities are not reconstructed or reweighted.",
+      "Only the selected annual driver or discount rate changes. Other cash flows, shares, bridge and quotation date stay fixed.",
+      "Discount-rate changes do not reset existing debt coupons; a financing cash-flow change requires a separate evidenced operating model."
+    ],
+    "id": "dd7c3a35c7234ed3df92b6adedffe344",
+    "createdAt": "2026-11-16T15:10:37.868Z"
+  },
+  "nbis": {
+    "version": "a1e064c169f37394e83a53b697ebe37f",
+    "model": null,
+    "controlVisible": false
+  },
+  "pageErrors": [],
+  "modelCalls": 0,
+  "privateAdjustmentsCreatedThisAttempt": 1,
+  "previousConfirmedAdjustment": "6684018025a0f75a31d8f6f4828e96ef",
+  "tlsNote": "Execution browser ignores untrusted environment certificate"
+}

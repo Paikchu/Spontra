@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createModels, createProvider } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import { Harness, MemoryStorage, createRegistry, hook, GenerationTask, CompactionTask, ProviderDoc } from '@earendil-works/pi-durable';
+import { Harness, MemoryStorage, createRegistry, hook, GenerationTask, CompactionTask, ProviderDoc, UsageDoc } from '@earendil-works/pi-durable';
 import { installProviderRequestGate } from '../workers/analysis/src/pi/request-budget.ts';
 
 const db = new DatabaseSync(':memory:');
@@ -74,6 +74,30 @@ try {
     await harness.waitForTask(task,BACKGROUND_CONTEXT);
     assert.ok(compactions>0);assert.equal(calls,1);
     results.push({case:'actual automatic-summary provider path shares same gate',actualProviderRequests:calls,compactions});
+    const beforeUsage=await harness.snapshot(UsageDoc,root.id,BACKGROUND_CONTEXT);
+    db.prepare("UPDATE allowance SET max_calls=2 WHERE id='run'").run();
+    const allowedSummary=await root.compact('Synthetic successful compaction for SDK usage accounting.',BACKGROUND_CONTEXT);
+    await harness.waitForTask(allowedSummary,BACKGROUND_CONTEXT);
+    const afterUsage=await harness.snapshot(UsageDoc,root.id,BACKGROUND_CONTEXT);
+    assert.equal(calls,2);
+    assert.equal(beforeUsage.models['synthetic/synthetic'].totalTokens,13);
+    assert.equal(afterUsage.models['synthetic/synthetic'].totalTokens,26);
+    const aggregate=await harness.usage(BACKGROUND_CONTEXT);
+    assert.equal(aggregate.models['synthetic/synthetic'].totalTokens,26);
+    results.push({case:'SDK per-session and aggregate usage include successful compaction',ordinaryTokens:13,includingCompactionTokens:26,actualProviderRequests:calls});
   } finally {await harness.close(BACKGROUND_CONTEXT);}
+  reset(0);
+  let markDenied;const deniedTransport=new Promise(resolve=>{markDenied=resolve;});
+  const blockedModels=modelsFor(async()=>async()=>{try{reserve();}catch(error){markDenied();throw error;}});
+  const retryHarness=await Harness.open(new MemoryStorage(),{models:blockedModels,registry:createRegistry(),settings:{retry:{enabled:true,maxRetries:20,baseDelayMs:1000},compaction:{enabled:false}}},BACKGROUND_CONTEXT);
+  try {
+    const conversation=await retryHarness.root(BACKGROUND_CONTEXT,{agent:{model:{provider:'synthetic',modelId:'synthetic'}}});
+    const operation=await conversation.submit({type:'input',content:'Retain partial work; denied transport must terminate.'},BACKGROUND_CONTEXT);
+    await deniedTransport;
+    await conversation.abort(BACKGROUND_CONTEXT);
+    const terminal=await operation.wait(BACKGROUND_CONTEXT);
+    assert.equal(terminal.status,'unanswered');assert.equal(calls,0);
+    results.push({case:'denied transport with SDK retries explicitly aborted to terminal',terminal:terminal.status,additionalProviderRequests:calls});
+  }finally{await retryHarness.close(BACKGROUND_CONTEXT);}
   console.log(JSON.stringify({status:'passed',results,paidCalls:0,tokenBudget:'reported-usage soft threshold; not a hard charge cap'},null,2));
 } finally {await new Promise(resolve=>server.close(resolve));db.close();}

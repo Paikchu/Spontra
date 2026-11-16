@@ -138,7 +138,7 @@ export class TaskRunner extends Agent<Env, RunView> {
       if (rearm) console.warn(JSON.stringify({ event: "run-alarm-rearmed", name: this.name, was: at }));
     }
     const row = this.row();
-    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport(), alarm };
+    return { status: row?.status ?? null, error: row?.error ? JSON.parse(row.error) as unknown : null, step: this.state.step, updatedAt: this.state.updatedAt, sessions: this.pi.sessionsReport(), sdkUsage: await this.pi.usageReport(), alarm };
   }
 
   /** Scheduled by a read: settles and delivers the sessions whose run ended unsettled (pi/host.ts recoverEnded). */
