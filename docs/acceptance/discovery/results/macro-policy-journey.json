@@ -1,0 +1,121 @@
+{
+  "policyChecks": [
+    {
+      "name": "exact macro automatic review accepted",
+      "status": 200
+    },
+    {
+      "name": "macro automatic reviewed draft publishes",
+      "status": 200
+    },
+    {
+      "name": "industry rejects automatic review",
+      "status": 400
+    },
+    {
+      "name": "industry cannot publish after refused automatic review",
+      "status": 400
+    },
+    {
+      "name": "legacy omitted mode remains human review",
+      "status": 200
+    },
+    {
+      "name": "industry still publishes after explicit human review",
+      "status": 200
+    }
+  ],
+  "generationChecks": [
+    {
+      "scenario": "macro-approved",
+      "outcome": {
+        "runId": "policy-macro-approved",
+        "reportId": "macro-approved",
+        "version": "39c017c1a7fa013da6a44c8011dd9e4ddbe037c638db3b60e8cedf955c4de571",
+        "state": "published",
+        "humanReviewRequired": false
+      },
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis",
+        "review"
+      ],
+      "currentVersion": "39c017c1a7fa013da6a44c8011dd9e4ddbe037c638db3b60e8cedf955c4de571"
+    },
+    {
+      "scenario": "macro-failed",
+      "outcome": {
+        "runId": "policy-macro-failed",
+        "reportId": "policy-macro",
+        "version": "e77f4cc17d41915b2d7640da11a18f6a236ee833a6dc0b0ce478f88424f64f71",
+        "state": "review_failed",
+        "humanReviewRequired": false,
+        "error": "Unsupported material conclusion"
+      },
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis",
+        "review",
+        "repair"
+      ],
+      "currentVersion": "7e964d1d2ec7423eaf4dbd6741245fcd5de12b6b642c6866c6d4144e18bb7e62"
+    },
+    {
+      "scenario": "macro-invalid-time",
+      "outcome": {
+        "runId": "policy-macro-invalid-time",
+        "reportId": "policy-macro",
+        "version": "79b991b08b69dcb469d7b24c61104f97a8dd32ab1a963058e4a494a371c6a9a3",
+        "state": "review_failed",
+        "humanReviewRequired": false,
+        "error": "Public research rejected: future source source-1"
+      },
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis",
+        "review"
+      ],
+      "currentVersion": "7e964d1d2ec7423eaf4dbd6741245fcd5de12b6b642c6866c6d4144e18bb7e62"
+    },
+    {
+      "scenario": "macro-cas-conflict",
+      "outcome": {
+        "runId": "policy-macro-cas-conflict",
+        "reportId": "policy-macro",
+        "version": "9d96d71814b1cc78eab17e52380c7b4ff96c6533c8985cdf098807a4c4972d83",
+        "state": "review_failed",
+        "humanReviewRequired": false,
+        "error": "Publication conflict: current version changed; review and retry explicitly"
+      },
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis",
+        "review"
+      ],
+      "currentVersion": "7e964d1d2ec7423eaf4dbd6741245fcd5de12b6b642c6866c6d4144e18bb7e62"
+    },
+    {
+      "scenario": "industry-approved",
+      "outcome": {
+        "runId": "policy-industry-approved",
+        "reportId": "industry-approved",
+        "version": "a544f159d06eef1b52fbaf433f3504ed0ae12a05aebd9d0d16b13da27fbd5931",
+        "state": "awaiting_review",
+        "humanReviewRequired": true
+      },
+      "startedStages": [
+        "research-demand",
+        "research-financing",
+        "synthesis",
+        "review"
+      ],
+      "currentVersion": null
+    }
+  ],
+  "externalCalls": 0,
+  "scope": "Actual authenticated handlers, stores, full generation orchestration with scripted independent sessions; no models or production writes"
+}

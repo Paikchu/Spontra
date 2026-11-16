@@ -14,10 +14,10 @@ import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publ
 type RunRow={run_id:string;report_id:string;input_fingerprint:string;state:string;params_json:string;result_version:string|null;error:string|null;calls_reserved:number;max_calls:number;max_tokens:number;created_at:string;updated_at:string};
 type Binding={create(options:{id:string;params:unknown}):Promise<unknown>;get(id:string):Promise<{status():Promise<unknown>;report():Promise<unknown>;terminate():Promise<void>}>};
 const binding=(env:AnalysisEnv)=>(withRuns(env) as AnalysisEnv & {PUBLIC_RESEARCH_WORKFLOW?:Binding}).PUBLIC_RESEARCH_WORKFLOW;
-const reviewSchema=z.object({reviewer:z.string().min(3),reviewedAt:z.string().datetime({offset:true}),authorRunId:z.string(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string().min(1)})),conclusion:z.enum(["approved","rejected"]),notes:z.string().min(1)});
+const reviewSchema=z.object({mode:z.enum(["human","automatic"]).default("human"),reviewer:z.string().min(3),reviewedAt:z.string().datetime({offset:true}),authorRunId:z.string(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string().min(1)})),conclusion:z.enum(["approved","rejected"]),notes:z.string().min(1)});
 const stable=(v:unknown):string=>JSON.stringify(v,(_k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b))):x);
 
-/** Explicit operator-scoped shadow runs; nothing here changes the global model or starts company-wide propagation. */
+/** Explicit operator runs: macro may publish after independent automatic review; industry remains human-gated. */
 export async function handlePublicResearchAdminRequest(request:Request,env:AnalysisEnv):Promise<Response>{
   if(!await authenticateAdmin(request,env.REPORT_ADMIN_PASSWORD,Date.now()))return json({error:"请登录管理后台。"},401);
   if(!env.DB)return json({error:"Research database unavailable"},503);
@@ -42,7 +42,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       const frozen=await freezePublicResearchInput(env,input,"pending",await sha256(stable(input)));
       const fingerprint=await sha256(stable({input,filings:frozen.frozenFilings})),runId=`public-${fingerprint.slice(0,40)}`;
       const existing=await db.prepare("SELECT * FROM public_research_runs WHERE report_id=? AND input_fingerprint=?").bind(input.reportId,fingerprint).first<RunRow>();
-      if(existing)return json({runId:existing.run_id,state:existing.state,version:existing.result_version,reused:true},200);
+      if(existing)return json({runId:existing.run_id,state:existing.state,version:existing.result_version,reused:true,humanReviewRequired:input.type!=="macro"},200);
       const spec={...frozen,runId,inputFingerprint:fingerprint},at=new Date().toISOString();
       // Atomic admission: duplicate fingerprints join one logical task; no more than two active operator runs.
       await db.prepare("INSERT OR IGNORE INTO public_research_runs(run_id,report_id,input_fingerprint,state,params_json,max_calls,max_tokens,created_at,updated_at) SELECT ?,?,?,'queued',?,?,?,?,? WHERE (SELECT COUNT(*) FROM public_research_runs WHERE state IN ('queued','running'))<2")
@@ -51,7 +51,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       if(!admitted)return json({error:"Two research runs are already active; no model call started"},409);
       try{await runner.create({id:runId,params:spec});}
       catch(error){if(!/already_exists/.test(String(error))){await db.prepare("UPDATE public_research_runs SET state='failed',error=?,updated_at=? WHERE run_id=?").bind(String(error).slice(0,1000),at,runId).run();throw error;}}
-      return json({runId,state:"queued",shadow:true,humanReviewRequired:true,maxCalls:input.maxCalls,maxTokens:input.maxTokens},202);
+      return json({runId,state:"queued",shadow:input.type!=="macro",humanReviewRequired:input.type!=="macro",maxCalls:input.maxCalls,maxTokens:input.maxTokens},202);
     }
     if(path==="/admin/public-research/runs"&&request.method==="GET")return json((await db.prepare("SELECT run_id,report_id,state,result_version,error,calls_reserved,max_calls,max_tokens,created_at,updated_at FROM public_research_runs ORDER BY created_at DESC LIMIT 40").all()).results);
     const runMatch=/^\/admin\/public-research\/runs\/([a-zA-Z0-9._:-]+)(?:\/(stop))?$/.exec(path);
@@ -65,7 +65,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       const usage=await db.prepare("SELECT model,COUNT(*) calls,SUM(input_tokens) input_tokens,SUM(cached_tokens) cached_tokens,SUM(output_tokens) output_tokens,SUM(duration_ms) duration_ms FROM ai_usage WHERE run_id=? GROUP BY model").bind(row.run_id).all();
       const review=await env.SEC_FILINGS.get(`public-research/runs/${row.run_id}/machine-review.json`);
       const draft=row.result_version?await readPublicResearchDraft(env,row.report_id,row.result_version):null;
-      return json({...row,params:JSON.parse(row.params_json),params_json:undefined,usage:usage.results,machineReview:review?JSON.parse(await review.text()):null,draft,runner:await (await binding(env)?.get(row.run_id))?.report()});
+      return json({...row,params:JSON.parse(row.params_json),params_json:undefined,humanReviewRequired:JSON.parse(row.params_json).type!=="macro",usage:usage.results,machineReview:review?JSON.parse(await review.text()):null,draft,runner:await (await binding(env)?.get(row.run_id))?.report()});
     }
     if(path==="/admin/public-research/reports"&&request.method==="GET")return json(await listPublicResearch(env));
     const report=/^\/admin\/public-research\/reports\/([a-zA-Z0-9._:-]+)(?:\/(review|publish|withdraw|restore|invalidate|revise))?$/.exec(path);
@@ -86,10 +86,10 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
     }
     const body=z.object({version:z.string().regex(/^[a-f0-9]{64}$/),review:reviewSchema.optional(),expectedCurrentVersion:z.string().nullable().optional(),reason:z.string().min(1).optional()}).parse(await request.json());
     if(action==="review"){
-      if(!body.review)return json({error:"Human claim-by-claim review required"},400);
+      if(!body.review)return json({error:"Explicit independent claim-by-claim review required"},400);
       const draft=await readPublicResearchDraft(env,id,body.version);
       if(!draft||draft.authorRunId!==body.review.authorRunId)return json({error:"Review authorRunId does not match this draft"},409);
-      await reviewPublicResearch(env,id,body.version,body.review);return json({reviewed:true,reportId:id,version:body.version});
+      await reviewPublicResearch(env,id,body.version,body.review);return json({reviewed:true,reportId:id,version:body.version,mode:body.review.mode});
     }
     if(action==="publish"){
       if(body.expectedCurrentVersion===undefined)return json({error:"Explicit expectedCurrentVersion (or null) required"},400);

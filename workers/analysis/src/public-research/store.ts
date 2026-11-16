@@ -68,7 +68,7 @@ export async function revisePublicResearchDraft(env:PublicResearchEnv,reportId:s
   const prior=await db.prepare("SELECT request_hash,receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.baseVersion).first<{request_hash:string;receipt_json:string}>();
   if(prior){if(prior.request_hash!==requestHash)throw new Error("Base version already revised; use the exact returned revision as the next base");return JSON.parse(prior.receipt_json);}
   if(await db.prepare("SELECT version FROM public_research_versions WHERE report_id=? AND version=?").bind(reportId,version).first())throw new Error("Revision content already exists; its review state cannot be reused by this correction");
-  const receipt={reportId,baseVersion:input.baseVersion,version,operator:input.operator,reason:input.reason,sourceChecks:input.sourceChecks,revisedAt:new Date().toISOString(),state:"draft",humanReviewRequired:true};
+  const receipt={reportId,baseVersion:input.baseVersion,version,operator:input.operator,reason:input.reason,sourceChecks:input.sourceChecks,revisedAt:new Date().toISOString(),state:"draft",humanReviewRequired:draft.type!=="macro"};
   await saveDraftWithAudit(env,draft,[db.prepare("INSERT INTO public_research_revisions(report_id,base_version,version,request_hash,receipt_json) VALUES(?,?,?,?,?) ON CONFLICT(report_id,base_version) DO UPDATE SET request_hash=CASE WHEN request_hash=excluded.request_hash THEN request_hash ELSE NULL END").bind(reportId,input.baseVersion,version,requestHash,JSON.stringify(receipt))]);
   const saved=await db.prepare("SELECT receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.baseVersion).first<{receipt_json:string}>();
   return JSON.parse(saved!.receipt_json);
@@ -85,6 +85,8 @@ export async function readPublicResearchDraft(env: PublicResearchEnv, reportId: 
 export async function reviewPublicResearch(env: PublicResearchEnv, reportId: string, version: string, review: ResearchReview, now = new Date().toISOString()): Promise<void> {
   const draft = await readPublicResearchDraft(env,reportId,version);
   if (!draft) throw new Error("Public research draft body missing");
+  review={...review,mode:review.mode??"human"};
+  if(review.mode==="automatic"&&draft.type!=="macro")throw new Error("Automatic review is permitted only for macro reports");
   if(review.conclusion==='rejected'){
     if(!review.reviewer.trim() || review.reviewer===draft.authorRunId || review.authorRunId!==draft.authorRunId || !review.notes.trim())throw new Error("Independent rejection record required");
     await database(env).prepare("UPDATE public_research_versions SET state='failed',review_json=?,error=? WHERE report_id=? AND version=? AND state IN ('draft','reviewing','reviewed')").bind(JSON.stringify(review),review.notes,reportId,version).run();
@@ -130,7 +132,7 @@ async function materializePublished(env: PublicResearchEnv, row: VersionRow, now
   if(!draft || !row.published_at || !row.review_json) return null;
   const invalid=await database(env).prepare("SELECT claim_id FROM public_research_claim_invalidations WHERE report_id=? AND version=?").bind(row.report_id,row.version).all<{claim_id:string}>();
   const invalidIds=new Set(invalid.results.map(item=>item.claim_id));
-  const report: PublicReportVersion={...draft,version:row.version,publishedAt:row.published_at,supersedes:row.supersedes,freshnessStatus:row.state==='withdrawn'?'unavailable':row.freshness??'valid',review:JSON.parse(row.review_json) as ResearchReview,claimStates:Object.fromEntries(draft.claims.map(claim=>[claim.id,invalidIds.has(claim.id)?"review_required":"valid"])),bodyMarkdown:renderPublicResearch(draft)};
+  const report: PublicReportVersion={...draft,version:row.version,publishedAt:row.published_at,supersedes:row.supersedes,freshnessStatus:row.state==='withdrawn'?'unavailable':row.freshness??'valid',review:{mode:"human",...JSON.parse(row.review_json)} as ResearchReview,claimStates:Object.fromEntries(draft.claims.map(claim=>[claim.id,invalidIds.has(claim.id)?"review_required":"valid"])),bodyMarkdown:renderPublicResearch(draft)};
   for(const dependency of draft.dependencies){
     const upstream=await readPublicResearch(env,dependency.reportId,{version:dependency.version,asOf:now});
     if(!upstream.report||!publicClaimUsable(upstream.report,dependency.claimId))for(const ownerClaimId of dependency.ownerClaimIds)report.claimStates[ownerClaimId]="review_required";

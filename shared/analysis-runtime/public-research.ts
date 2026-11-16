@@ -58,6 +58,7 @@ export function validatePublicResearch(input: unknown, review: ResearchReview, n
   const fail = (message: string): never => { throw new Error(`Public research rejected: ${message}`); };
   const time = Date.parse(now);
   const claims = new Map(report.claims.map(claim => [claim.id, claim]));
+  if (review.mode === "automatic" && report.type !== "macro") fail("automatic review is permitted only for macro reports");
   if (review.conclusion !== "approved" || review.reviewer === report.authorRunId || review.authorRunId !== report.authorRunId || !review.reviewer.trim() || !review.notes.trim()) fail("independent review required");
   if (!Number.isFinite(Date.parse(review.reviewedAt)) || Date.parse(review.reviewedAt) < Date.parse(report.generatedAt) || Date.parse(review.reviewedAt) > time) fail("invalid review time");
   const reviewed = new Map(review.claimChecks.map(check => [check.claimId, check]));

@@ -8,6 +8,7 @@ export type PublicResearchDraft = typeof publicResearchDraftSchema["_output"];
 export type CompanyResearchExposure = typeof companyResearchExposureSchema["_output"];
 export type ResearchFreshness = "valid" | "updating" | "review_required" | "stale" | "unavailable";
 export type ResearchReview = {
+  mode?: "human" | "automatic";
   reviewer: string; reviewedAt: string; authorRunId: string;
   claimChecks: Array<{ claimId: string; supported: boolean; notes: string }>;
   conclusion: "approved" | "rejected"; notes: string;

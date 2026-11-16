@@ -49,6 +49,7 @@ export const companyResearchExposureSchema = z.object({
   weightBasis: text.nullable(), status: z.enum(["verified", "disputed"]),
 });
 export const researchReviewSchema = z.object({
+  mode: z.enum(["human", "automatic"]).default("human"),
   reviewer: text, reviewedAt: timestamp, authorRunId: text,
   claimChecks: z.array(z.object({ claimId: id, supported: z.boolean(), notes: text })),
   conclusion: z.enum(["approved", "rejected"]), notes: text,
