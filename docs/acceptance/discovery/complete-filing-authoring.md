@@ -45,3 +45,15 @@
 真实任务第二次提交仅剩一章计算绑定失败，初版整稿回滚却要求再提交六章，增加了修正成本。现移除这一额外约束，恢复原 `save` 按章保存合法私有草稿的语义。首轮缺章、重复或非法 ID 仍在保存前整体拒绝；坏章节不保存，`finish` 的全章、来源、内容、语义和渲染要求均不变。提示也明确以来源链接绑定事实，避免在正文显示内部编号或把 E… 笔记当来源。
 
 最终实际 Miniflare 工具旅程 12 场景、49 断言通过：包含中间章错误金额、后章引用/原文范围/HTML 失败，前五章保留且未发布，真实 `finish` 因缺章拒绝，随后只补失败章、其余内容逐字不变；已有编辑、混合错误和非定期报告兼容。新结果 `/tmp/spontra-complete-report-submission/focused-repair-results.json`，SHA-256：`ee70acb6b685d902d43c3e652d0f352724dea882c3082a9ac1a9248e44cf4d52`。该旅程模型、HTTP、发布尝试和生产操作均为零。
+
+## 原 finish 的影子验收与精确版本
+
+仅当 `publicationMode === "shadow"` 时，原 `finish` 复用既有 `reviewRendering` 的 `strict`、`requireVisual`、`expectedHash` 和同一 `renderingProblems` 检查；每次都要求真实审核完整且达到原 80 分、各项至少 7 的门槛，不再采用常规报告的首轮建议语义。记录完整 QA 回执，包含非法标识、视口、度量与被检查 hash；通过后复用同一个 draft 版本，避免另存版本导致最终 hash 与截图不一致。非影子常规路径和 operator staged 路径保持原行为。没有新增外观模板、强制样式或自动安全布局替换。
+
+9 场景、52 断言的实际 native filing loader、工具、原 `finish`、Chromium/ArtifactFrame 旅程通过：59 分第二次仍失败、单项不足 7、重大问题、缺配置、未知标识、缺手机视口均拒绝；恰好 80 分且全部达标才得到同一版本/hash 的影子结果，公开 v6 不变；operator 与非影子路径兼容。64 次模型 HTTP 均为明确合成响应，174 张截图来自真实浏览器，真实模型和生产操作均为零。结果 `/tmp/spontra-normal-shadow-finish/normal-shadow-results.json`，SHA-256：`4f863e5ad1c030c249f735132e087c796448f6886fb84849bd487bb547a7b614`。这份本地证据不替代 CRWV 真实稿件的审核。
+
+原真实任务于 09:42:55 UTC 自然结束，Pi 计数 140/140，六章、43 条笔记、24 项计算和固定宏观/行业引用均保留。其第二次全文审核有 15 项问题，最后编辑尚未重审；独立预检确认已修 10 项，其余涉及活跃计算标签和新增口径问题，当前不能发布。只允许既有的一个受限续作复用该 checkpoint 定点修复，不重置父账本，不再全量取证。父上限统计 Pi 请求与 compaction，独立内容和语义审核另记，不将其误称为所有模型请求的总上限。
+
+## 证据笔记的读取与订正闭环
+
+原 `revise_evidence` 要求原笔记哈希，`read_evidence` 却未提供。现只在读取结果追加 `noteHash`，供现有订正工具使用；提取的哈希函数与原有 canonical 算法一致，来源、引文、事实及过时写入检查不变。实际 `runTool`、`handPolicy`、原来源读取的读→改→再读旅程 9 项通过：正确哈希可修、笔记 ID 保留，错误/过时哈希、伪引文、未知事实均拒绝，分离的父状态不变。模型、外部 HTTP 和生产操作均为零。结果 `/tmp/spontra-evidence-hash/results.json`，SHA-256：`0779c7e541518196119af6a2897acea51512ed8b5d7fa282b36b3a68cfa5b2d5`。

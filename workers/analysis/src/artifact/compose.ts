@@ -256,7 +256,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
     const css = await documentCss(state);
     const doc = toDocument(c, reviewedDraft?.version ?? 0);
     if (reviewedDraft) {
-      if (operatorState(c).operatorValidation?.digest !== await operatorDigest(state)) return fail("Not published: the final invariant check changed the research inputs. Run prepare again.");
+      if (setup.operatorValidation && operatorState(c).operatorValidation?.digest !== await operatorDigest(state)) return fail("Not published: the final invariant check changed the research inputs. Run prepare again.");
       const stored = await readArtifactVersion(setup.env, artifactId(c.artifact.kind, c.artifact.ticker, c.artifact.subject), reviewedDraft.version);
       if (!stored || stored.hash !== reviewedDraft.hash || stored.css !== css || JSON.stringify(stored.document) !== JSON.stringify(doc) || await sha256(`${stored.html}\n${stored.css}`) !== reviewedDraft.hash) return fail("Not published: the saved draft no longer matches the exact document and charts that passed rendering.");
     }
@@ -265,7 +265,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
     const before = new Map((prior?.blocks ?? []).map(b => [b.id, b.html]));
     c.changes = { from: prior?.version ?? null, added: c.blocks.filter(b => !before.has(b.id)).map(b => b.id), changed: c.blocks.filter(b => before.has(b.id) && before.get(b.id) !== b.html).map(b => b.id),
       removed: [...before.keys()].filter(id => !c.blocks.some(b => b.id === id)), unchanged: c.blocks.filter(b => before.get(b.id) === b.html).map(b => b.id) };
-    // An operator reuses the immutable draft the browser actually checked, including its versioned HTML hash.
+    // A strictly reviewed shadow reuses the immutable draft the browser actually checked, including its HTML hash.
     const saved = reviewedDraft ?? await saveVersion(setup.env, doc, css, setup.publicationMode === "shadow" ? "draft" : "published", setup.ledger.runId ?? null);
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, "changes", 0, c.changes);
     const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id);
@@ -443,6 +443,21 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
       if (issues.length) return fail(`Not published yet. The independent filing audit found problems:\n\n${issues.map(issue => `Block "${issue.block}": ${issue.quote ? `"${issue.quote}". ` : ""}${issue.problem}${issue.replacement ? ` Correction: ${issue.replacement}` : issue.suggestion ? ` Suggestion: ${issue.suggestion}` : ""}`).join("\n\n")}\n\nUse view_issue and the normal research and editing tools to correct the report, then call finish again.`);
     }
     c.phase = "render";
+    if (setup.publicationMode === "shadow") {
+      const round = ++(c.rounds ??= { content: 0, render: 0 }).render;
+      const draft = await saveDraft(state);
+      const ids = c.blocks.map(b => b.id);
+      const qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), ids, setup.ledger, { strict: true, requireVisual: true, expectedHash: draft.hash });
+      await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", round, { shadow: true, hash: draft.hash, ...qa });
+      for (const id of Object.keys(c.open)) {
+        c.open[id] = c.open[id]!.filter(issue => issue.kind === "content");
+        if (!c.open[id]!.length) delete c.open[id];
+      }
+      for (const issue of qa.issues) if (issue.severity !== "minor" || issue.kind === "interaction") (c.open[issue.block] ??= []).push(issue);
+      const problems = renderingProblems(qa, ids);
+      if (problems.length) return fail(`Not published yet. The rendered report has problems:\n${problems.join("\n")}${qa.scores ? `\nDesign scores: ${Object.entries(qa.scores).map(([key, value]) => `${key} ${value}`).join(", ")}` : ""}\nCorrect the named problems, then call finish again.`);
+      return publish(state, draft);
+    }
     const rendering = await settleRendering(state, lowBudget(state));
     if (rendering.length) return fail(`Not published yet. The rendered report has problems:\n\n${rendering.join("\n\n")}\n\nUse view_issue for details, change the layout with edit_block keeping the words exactly, then call finish again.`);
     return publish(state);

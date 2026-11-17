@@ -22,6 +22,7 @@ import { excerpts, transcripts } from "./research.ts";
 import { sha256 } from "../sha256.ts";
 
 export type Evidence = { id: string; section: string; ordinal: number; statement: string; quote: string; facts: string[]; origin: "session" };
+const evidenceHash = (entry: Evidence) => sha256(JSON.stringify(entry, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
 export type Lead = { id: string; source: "session"; priority: "high" | "normal"; question: string; why: string; refs: string[];
   verdict?: "highlight" | "risk" | "nothing unusual" | "open"; finding?: string; evidence?: string[] };
 export type InvestmentChain = { id: string; priorAssumption: string; newEvidence: string; revisedAssumption: string; financialEffect: string; valuationEffect: string; quantificationStatus: "quantifiable" | "sensitivity_only" | "not_quantifiable"; sourceIds: string[]; computationRefs: string[]; missingInputs: string[]; counterEvidence: string; verification: string; window: string };
@@ -455,8 +456,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     handTool<S>({name:"revise_evidence",description:"Correct one existing evidence note against the exact original note hash and pinned original quotation. Preserves the note id and never changes the archived parent checkpoint.",input_schema:object({id:{type:"string"},expectedOldHash:{type:"string"},section:{type:"string"},quote:{type:"string"},statement:{type:"string"},facts:strings},["id","expectedOldHash","section","quote","statement","facts"])},async(args,state)=>{
       const s=p(state),id=str(args.id),at=s.evidence.findIndex(note=>note.id===id);
       if(at<0)return fail("Existing evidence note required");
-      const stable=(value:unknown):string=>JSON.stringify(value,(_key,item)=>item&&typeof item==="object"&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
-      if(await sha256(stable(s.evidence[at]))!==str(args.expectedOldHash))return fail("Evidence note changed; exact original hash required");
+      if(await evidenceHash(s.evidence[at]!)!==str(args.expectedOldHash))return fail("Evidence note changed; exact original hash required");
       const section=str(args.section),quote=str(args.quote),statement=str(args.statement),facts=list(args.facts).map(String);
       const original=await sectionText(section);
       if(!statement||statement.length>400||!quote||quote.length>600||!original||!quoteInText(quote,original))return fail("Evidence correction requires the exact pinned original quotation and a bounded statement");
@@ -465,12 +465,12 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       const entry:Evidence={...s.evidence[at]!,section,statement,quote,facts};s.evidence[at]=entry;
       return ok(JSON.stringify(entry));
     }),
-    handTool<S>({ name: "read_evidence", description: "Read notes in full: by ids (E12, E40), or those whose statement holds a word. Each gives the statement, the section to cite, the exact words and the fact ids.", input_schema: object({ ids: strings, search: { type: "string" } }) },
-      (args, state) => {
+    handTool<S>({ name: "read_evidence", description: "Read notes in full: by ids (E12, E40), or those whose statement holds a word. Each gives the statement, the section to cite, the exact words, fact ids and noteHash. Use that noteHash as expectedOldHash for revise_evidence; never guess it.", input_schema: object({ ids: strings, search: { type: "string" } }) },
+      async (args, state) => {
         const s = p(state);
         const ids = new Set(list(args.ids).map(String)), word = str(args.search).toLowerCase();
         const found = s.evidence.filter(e => ids.size ? ids.has(e.id) : word ? `${e.statement} ${e.quote}`.toLowerCase().includes(word) : true).slice(0, 60);
-        return ok(found.length ? found.map(e => `${e.id} [cite as ${e.section}${e.ordinal >= 0 ? `#${e.ordinal}` : ""}] ${e.statement}\n  "${e.quote}"${e.facts.length ? `\n  facts: ${e.facts.join(", ")}` : ""}`).join("\n") : "No note matches.");
+        return ok(found.length ? (await Promise.all(found.map(async e => `${e.id} [cite as ${e.section}${e.ordinal >= 0 ? `#${e.ordinal}` : ""}] ${e.statement}\n  "${e.quote}"${e.facts.length ? `\n  facts: ${e.facts.join(", ")}` : ""}\n  noteHash: ${await evidenceHash(e)}`))).join("\n") : "No note matches.");
       }),
   ];
 
