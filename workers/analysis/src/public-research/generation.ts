@@ -15,8 +15,9 @@ import { listFilingMaterials, readMaterialSnapshot } from "../filing-material/st
 import { readFilingMarkdown, readFilingTable, sourceText } from "../filing-material/read.ts";
 import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { sha256 } from "../sha256.ts";
+import { withRuns, type RunStub } from "../durable-runs/binding.ts";
 import { readPublicResearch, readPublicResearchDraft, savePublicResearchDraft, reviewPublicResearch, publishPublicResearch } from "./store.ts";
-import { publicResearchCheckpoint, savePublicResearchCheckpoint, type PublicResearchStage } from "./checkpoint.ts";
+import { publicResearchCheckpoint, readStoppedPublicResearchCheckpoint, savePublicResearchCheckpoint, type PublicResearchStage } from "./checkpoint.ts";
 
 const stamp = z.string().datetime({ offset: true }).transform(value => new Date(value).toISOString());
 export const publicResearchRunSchema = z.object({
@@ -28,10 +29,13 @@ export const publicResearchRunSchema = z.object({
   allowedDomains: z.array(z.string().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/)).min(1).max(40),
   filings: z.array(z.object({ ticker: z.string().regex(/^[A-Z0-9.-]{1,12}$/), accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/) })).max(12).default([]),
   dependencies: z.array(researchDependencySchema).default([]),
-  enrichment: z.object({sourceRunId:z.string().regex(/^public-[a-f0-9]{40}$/),draftVersion:z.string().regex(/^[a-f0-9]{64}$/)}).strict().optional(),
+  enrichment: z.union([
+    z.object({sourceRunId:z.string().regex(/^public-[a-f0-9]{40}$/),draftVersion:z.string().regex(/^[a-f0-9]{64}$/),operatorReviewIssues:z.array(z.string().trim().min(1).max(2000)).max(20).optional()}).strict(),
+    z.object({sourceRunId:z.string().regex(/^public-[a-f0-9]{40}$/),checkpointHash:z.string().regex(/^[a-f0-9]{64}$/),operatorReviewIssues:z.array(z.string().trim().min(1).max(2000)).max(20).optional()}).strict(),
+  ]).optional(),
 });
 export type PublicResearchRunInput = z.infer<typeof publicResearchRunSchema>;
-export type PublicResearchRunSpec = PublicResearchRunInput & { runId: string; inputFingerprint: string; expectedCurrentVersion?: string | null; enrichmentBase?: {checkpointKey:string;checkpointHash:string;evidenceRunIds:string[]}; frozenFilings: MaterialRef[]; frozenContext: Array<{reportId:string;version:string;claim:ResearchClaim;authorRunId?:string;observations?:Observation[];sources:SourceSnapshot[]}>; startedAt: string };
+export type PublicResearchRunSpec = PublicResearchRunInput & { runId: string; inputFingerprint: string; expectedCurrentVersion?: string | null; enrichmentBase?: {checkpointKey:string;checkpointHash:string;evidenceRunIds:string[];reviewCheckpointKey?:string;reviewCheckpointHash?:string}; frozenFilings: MaterialRef[]; frozenContext: Array<{reportId:string;version:string;claim:ResearchClaim;authorRunId?:string;observations?:Observation[];sources:SourceSnapshot[]}>; startedAt: string };
 type Evidence = { rawKey?: string; id: string; uri: string; title: string; text: string; publishedAt: string | null; revision: string; locator: string };
 type ResearchNotes = { conclusions: string[]; gaps: string[]; sources: SourceSnapshot[] };
 type MachineReview = { approved: boolean; claimChecks: ResearchReview["claimChecks"]; issues: string[] };
@@ -42,18 +46,19 @@ const PROMPT_VERSION = "public-research.discovery.v2";
 const now = () => new Date().toISOString();
 const dayStamp = (s: string) => s.includes("T") ? s : `${s.slice(0,10)}T00:00:00.000Z`;
 const withinDomain = (uri: string, domains: string[]) => { const h = new URL(uri).hostname; return domains.some(d => h === d || h.endsWith(`.${d}`)); };
+const evidenceStages = ["research-demand","research-financing","synthesis","repair"];
 
 const evidenceNotesSchema=z.array(z.object({conclusions:z.array(z.string()),gaps:z.array(z.string()),sources:z.array(sourceSnapshotSchema)}));
-const enrichmentDirective="DEPENDENCY UPDATE: The source question and draft describe a historical run without usable macro context and its historical call/token budget. The current executionBudget overrides that old budget; this run has no research branches and at most one targeted repair, with budget reserved across synthesis, review, repair and review-repair. Do not fetch new web evidence. At this new asOf, macro reports may be validly published after automatic independent review; only the exact published macro claims frozen in publicContext may now be evaluated. This supersedes only the historical instruction to ignore unavailable/unapproved macro research. Industry publication still requires human approval. Preserve the supplied industry draft, verified sources, claim IDs and company differences; change only conclusions actually affected by these macro claims, record precise ownerClaimIds, explain rejection/non-applicability, and do not apply the same shock twice. Do not regenerate the industry report from scratch or invent missing company exposure. The original independent review is supplied as previousReview: its unresolved issues and failed claimChecks remain blockers until specifically resolved against original evidence. Adding macro context does not waive old errors; if originals cannot resolve them, retain the gap and fail review.";
+const enrichmentDirective="DEPENDENCY UPDATE: The source question and draft describe a historical run without usable macro context and its historical call/token budget. The current executionBudget overrides that old budget; this run has no research branches and at most one targeted repair, with budget reserved across synthesis, review, repair and review-repair. Do not fetch new web evidence. You may read only the already frozen prepared filings to resolve old evidence gaps; register exact excerpts before citing them. At this new asOf, macro reports may be validly published after automatic independent review; only the exact published macro claims frozen in publicContext may now be evaluated. This supersedes only the historical instruction to ignore unavailable/unapproved macro research. Industry publication still requires human approval. Preserve the supplied industry draft, verified sources, claim IDs and company differences; change only conclusions actually affected by these macro claims or resolved original evidence gaps, record precise ownerClaimIds, explain rejection/non-applicability, and do not apply the same shock twice. Do not regenerate the industry report from scratch or invent missing company exposure. The original independent review is supplied as previousReview: its unresolved issues and failed claimChecks remain blockers until specifically resolved against original evidence. If previousReview is null or partial, the original independent review is incomplete and EVERY claim needs fresh independent review. Adding macro context does not waive old errors; if originals cannot resolve them, retain the gap and fail review.";
 async function enrichmentEvidence(env:AnalysisEnv,run:PublicResearchRunSpec):Promise<{draft:PublicResearchDraft;notes:ResearchNotes[];previousReview:MachineReview|null}>{
   if(!run.enrichment||!run.enrichmentBase)throw new Error("Enrichment checkpoint required");
   const object=await env.SEC_FILINGS.get(run.enrichmentBase.checkpointKey);
   if(!object)throw new Error("Original research notes unavailable");
   const text=await object.text();if(await sha256(text)!==run.enrichmentBase.checkpointHash)throw new Error("Original research notes changed after enrichment admission");
-  const draft=await readPublicResearchDraft(env,run.reportId,run.enrichment.draftVersion);
-  if(!draft||draft.authorRunId!==run.enrichment.sourceRunId)throw new Error("Original industry draft identity mismatch");
   const checkpoint=JSON.parse(text),notes=evidenceNotesSchema.parse(checkpoint.notes);
-  for(const source of notes.flatMap(note=>note.sources)){
+  const draft="draftVersion" in run.enrichment?await readPublicResearchDraft(env,run.reportId,run.enrichment.draftVersion):publicResearchDraftSchema.parse(checkpoint.draft);
+  if(!draft||draft.authorRunId!==run.enrichment.sourceRunId||draft.reportId!==run.reportId)throw new Error("Original industry draft identity mismatch");
+  for(const source of notes.flatMap(note=>note.sources).concat(draft.sources)){
     if(await sha256(source.excerpt)!==source.contentHash)throw new Error("Reused source excerpt hash mismatch");
     const originals:string[]=[];
     const readOriginal=async(key:string)=>{
@@ -62,7 +67,7 @@ async function enrichmentEvidence(env:AnalysisEnv,run:PublicResearchRunSpec):Pro
       const body=await object.text();if(await sha256(body)!==match[1]&&await publicSourceRevision(body)!==match[1])throw new Error("Original evidence body hash mismatch");originals.push(body);
     };
     if(/^[a-f0-9]{64}$/.test(source.revision))await readOriginal(`public-research/evidence/${source.revision}.txt`);
-    for(const role of ["research-demand","research-financing"]){
+    for(const role of evidenceStages){
       let cursor:string|undefined;
       do{
         const page=await env.SEC_FILINGS.list({prefix:`public-research/runs/${run.enrichment.sourceRunId}/evidence/${role}/${source.id}/`,...(cursor?{cursor}:{})});
@@ -74,7 +79,13 @@ async function enrichmentEvidence(env:AnalysisEnv,run:PublicResearchRunSpec):Pro
     if(!source.excerpt.split(/\n\n+/).filter(Boolean).every(part=>originals.some(original=>original.includes(part))))throw new Error(`Registered original evidence unavailable for ${source.id}`);
   }
   if(!notes.some(note=>note.sources.length))throw new Error("Original industry notes contain no registered evidence");
-  const previousReview=checkpoint.review==null?null:z.object({approved:z.boolean(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string()})),issues:z.array(z.string())}).parse(checkpoint.review);
+  let originalReview=checkpoint.review;
+  if(run.enrichmentBase.reviewCheckpointKey){
+    const reviewObject=await env.SEC_FILINGS.get(run.enrichmentBase.reviewCheckpointKey),body=await reviewObject?.text();
+    if(!body||await sha256(body)!==run.enrichmentBase.reviewCheckpointHash)throw new Error("Original independent review changed after admission");
+    originalReview=JSON.parse(body).review;
+  }
+  const previousReview=originalReview==null?null:z.object({approved:z.boolean(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string()})),issues:z.array(z.string())}).parse(originalReview);
   return {draft,notes,previousReview};
 }
 
@@ -84,17 +95,34 @@ export async function freezePublicResearchInput(env: AnalysisEnv, input: PublicR
   if(input.enrichment){
     if(input.type!=="industry"||!input.dependencies.length)throw new Error("Enrichment requires industry scope and published macro dependencies");
     if(input.maxCalls>48||input.maxTokens>1000000)throw new Error("Enrichment is bounded to 48 calls and 1000000 reported tokens, with at most one targeted repair");
-    const row=await env.DB!.prepare("SELECT state,result_version,params_json FROM public_research_runs WHERE run_id=? AND report_id=?").bind(input.enrichment.sourceRunId,input.reportId).first<{state:string;result_version:string|null;params_json:string}>();
-    if(!row||!["awaiting_review","review_failed"].includes(row.state)||row.result_version!==input.enrichment.draftVersion)throw new Error("Enrichment requires the exact completed industry run and final draft version");
+    const row=await env.DB!.prepare("SELECT state,result_version,params_json,input_fingerprint FROM public_research_runs WHERE run_id=? AND report_id=?").bind(input.enrichment.sourceRunId,input.reportId).first<{state:string;result_version:string|null;params_json:string;input_fingerprint:string}>();
+    if(!row||("draftVersion" in input.enrichment?(!["awaiting_review","review_failed"].includes(row.state)||row.result_version!==input.enrichment.draftVersion):row.state!=="stopped"))throw new Error("Enrichment requires the exact completed draft version or a stopped industry checkpoint");
     inherited=JSON.parse(row.params_json) as PublicResearchRunSpec;
+    if(inherited.runId!==input.enrichment.sourceRunId||inherited.inputFingerprint!==row.input_fingerprint)throw new Error("Original research admission identity mismatch");
     if(inherited.type!=="industry"||inherited.enrichment)throw new Error("Enrichment cannot restart research or recursively retry an enrichment run");
     for(const key of ["reportId","type","language","question","scope","filings"] as const)if(JSON.stringify(input[key])!==JSON.stringify(inherited[key]))throw new Error(`Enrichment must preserve original ${key}`);
     if(Date.parse(input.asOf)<Date.parse(inherited.asOf))throw new Error("Enrichment cannot backdate the research cutoff");
-    const checkpointKey=`public-research/runs/${input.enrichment.sourceRunId}/machine-review.json`,object=await env.SEC_FILINGS.get(checkpointKey);
-    if(!object)throw new Error("Completed original notes checkpoint unavailable");
-    const checkpoint=await object.text(),receipt=JSON.parse(checkpoint);
-    if(receipt.runId!==input.enrichment.sourceRunId||(receipt.version&&receipt.version!==input.enrichment.draftVersion))throw new Error("Original notes belong to another research result");
-    enrichmentBase={checkpointKey,checkpointHash:await sha256(checkpoint),evidenceRunIds:[input.enrichment.sourceRunId]};
+    if("draftVersion" in input.enrichment){
+      const checkpointKey=`public-research/runs/${input.enrichment.sourceRunId}/machine-review.json`,object=await env.SEC_FILINGS.get(checkpointKey);
+      if(!object)throw new Error("Completed original notes checkpoint unavailable");
+      const checkpoint=await object.text(),receipt=JSON.parse(checkpoint);
+      if(receipt.runId!==input.enrichment.sourceRunId||(receipt.version&&receipt.version!==input.enrichment.draftVersion))throw new Error("Original notes belong to another research result");
+      enrichmentBase={checkpointKey,checkpointHash:await sha256(checkpoint),evidenceRunIds:[input.enrichment.sourceRunId]};
+    }else{
+      const runner=(withRuns(env) as AnalysisEnv & {PUBLIC_RESEARCH_WORKFLOW?:Pick<RunStub,"readPublicResearchSession">}).PUBLIC_RESEARCH_WORKFLOW;
+      if(!runner)throw new Error("Stopped research storage unavailable");
+      const identity={runId:inherited.runId,reportId:inherited.reportId,inputFingerprint:inherited.inputFingerprint};
+      const base=await readStoppedPublicResearchCheckpoint(env,identity,"synthesis",runner);
+      if(!base||base.contentHash!==input.enrichment.checkpointHash)throw new Error("Stopped synthesis checkpoint hash mismatch or unavailable");
+      if(!base.checkpoint.stageSubmitted||!base.checkpoint.draft)throw new Error("Stopped synthesis has no complete submitted draft");
+      if(base.checkpoint.asOf!==inherited.asOf||base.checkpoint.runStartedAt!==inherited.startedAt)throw new Error("Stopped synthesis time identity mismatch");
+      const archived=await savePublicResearchCheckpoint(env,base.checkpoint);
+      enrichmentBase={checkpointKey:archived.key,checkpointHash:archived.contentHash,evidenceRunIds:[input.enrichment.sourceRunId]};
+      for(const stage of ["review-repair","review"] as const){
+        const previous=await readStoppedPublicResearchCheckpoint(env,identity,stage,runner);
+        if(previous?.checkpoint.review){const saved=await savePublicResearchCheckpoint(env,previous.checkpoint);enrichmentBase.reviewCheckpointKey=saved.key;enrichmentBase.reviewCheckpointHash=saved.contentHash;break;}
+      }
+    }
   }
   const frozenFilings: MaterialRef[] = inherited?[...inherited.frozenFilings]:[];
   for (const filing of inherited?[]:input.filings) {
@@ -156,7 +184,7 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         text=await (await env.SEC_FILINGS.get(`public-research/evidence/${source.revision}.txt`))?.text();
         if(!text){
           const originals=new Map<string,string>();
-          for(const evidenceRunId of [...new Set([run.runId,...(run.enrichmentBase?.evidenceRunIds??[]),...run.frozenContext.flatMap(context=>context.authorRunId?[context.authorRunId]:[])])])for(const role of ["research-demand","research-financing"]){
+          for(const evidenceRunId of [...new Set([run.runId,...(run.enrichmentBase?.evidenceRunIds??[]),...run.frozenContext.flatMap(context=>context.authorRunId?[context.authorRunId]:[])])])for(const role of evidenceStages){
             const prefix=`public-research/runs/${evidenceRunId}/evidence/${role}/${source.id}/`;
             let cursor:string|undefined;
             do{
@@ -194,6 +222,8 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         state.raw[id]={id,uri:target.url,title:target.title,text:"",rawKey,publishedAt:target.publishedAt?dayStamp(target.publishedAt):null,revision,locator:"original document"};
         return {id,title:target.title,url:target.url,revision,publicationDate:target.publishedAt,text:text.slice(0,24000),nextOffset:text.length>24000?24000:null,totalCharacters:text.length};
       },observe:(_a,v)=>JSON.stringify(v)}),
+    ] : []),
+    ...(research||run.enrichment ? [
       tool({name:"read_filing",description:"Read only a frozen prepared filing Markdown, including tables, paginate by cursor/anchor. Empty selector returns table of contents.",parameters:z.object({index:z.number().int().min(0),anchor:z.string().optional(),cursor:z.string().optional(),tableId:z.string().optional()}),execute:async({index,anchor,cursor,tableId},{state})=>{
         const ref=run.frozenFilings[index]; if(!ref)throw new Error("Unknown frozen filing index"); const snapshot=await readMaterialSnapshot(env,ref);
         if(!anchor&&!cursor&&!tableId)return {index,ref,filing:snapshot.filing,toc:snapshot.toc,tables:snapshot.tables.map(t=>({id:t.tableId,title:t.title,description:t.description}))};
@@ -213,13 +243,14 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         return {evidence:evidenceIds.map(id=>({id,uri:state.raw[id]!.uri,locator:state.raw[id]!.locator})),...page};
       },observe:(_a,v)=>JSON.stringify(v)}),
       tool({name:"register_source",description:"Register an exact substring of a fetched source, with verified publication/observation dates and precise original locator. Source IDs and hashes are assigned by code.",parameters:z.object({rawId:z.string(),excerpt:z.string().min(20).max(20000),locator:z.string().min(1),publishedAt:stamp,periodStart:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),periodEnd:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)}),execute:async(a,{state})=>{
-        const raw=state.raw[a.rawId]; const original=raw?.rawKey?await (await env.SEC_FILINGS.get(raw.rawKey))?.text():raw?.text; if(!raw||!original?.includes(a.excerpt))throw new Error("Excerpt must match fetched original text exactly");
+        // The stored source schema trims text; hash that same exact substring, including table contents.
+        const excerpt=a.excerpt.trim(),raw=state.raw[a.rawId]; const original=raw?.rawKey?await (await env.SEC_FILINGS.get(raw.rawKey))?.text():raw?.text; if(!raw||excerpt.length<20||!original?.includes(excerpt))throw new Error("Excerpt must match fetched original text exactly");
         if(!withinDomain(raw.uri,run.allowedDomains))throw new Error("Source domain outside approved scope");
         if(raw.publishedAt&&raw.publishedAt.slice(0,10)!==a.publishedAt.slice(0,10))throw new Error("Publication date differs from retrieved source metadata");
         if(Date.parse(a.publishedAt)>Date.parse(run.asOf)||a.periodEnd>run.asOf.slice(0,10))throw new Error("Future evidence not permitted");
         if(raw.revision==="content-pending")raw.revision=await publicSourceRevision(raw.text);
-        const hash=await sha256(a.excerpt),id=`s${(await sha256(`${raw.uri}:${raw.revision}`)).slice(0,24)}`;
-        const source:SourceSnapshot={id,canonicalId:raw.uri,uri:raw.uri,title:raw.title,locator:a.locator,excerpt:a.excerpt,contentHash:hash,revision:raw.revision,publishedAt:a.publishedAt,availableAt:a.publishedAt,collectedAt:now(),observationPeriod:{start:a.periodStart,end:a.periodEnd},usage:"public",authorization:"Public primary disclosure; quoted for attributed research. No redistribution of licensed datasets."};
+        const hash=await sha256(excerpt),id=`s${(await sha256(`${raw.uri}:${raw.revision}`)).slice(0,24)}`;
+        const source:SourceSnapshot={id,canonicalId:raw.uri,uri:raw.uri,title:raw.title,locator:a.locator,excerpt,contentHash:hash,revision:raw.revision,publishedAt:a.publishedAt,availableAt:a.publishedAt,collectedAt:now(),observationPeriod:{start:a.periodStart,end:a.periodEnd},usage:"public",authorization:"Public primary disclosure; quoted for attributed research. No redistribution of licensed datasets."};
         // One immutable reference per original: parallel tool calls never replace a shared manifest.
         const originalHash=await sha256(original);
         const originalKey=raw.rawKey??`public-research/evidence/${originalHash}.txt`;
@@ -231,6 +262,8 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
         else if(!held.excerpt.includes(source.excerpt)){held.excerpt+=`\n\n${source.excerpt}`;held.locator+=`; ${source.locator}`;const mergedExcerpt=held.excerpt,mergedHash=await sha256(mergedExcerpt);if(held.excerpt===mergedExcerpt)held.contentHash=mergedHash;held.observationPeriod.start=[held.observationPeriod.start,source.observationPeriod.start].sort()[0]!;held.observationPeriod.end=[held.observationPeriod.end,source.observationPeriod.end].sort().at(-1)!;}
         return held??source;
       },observe:(_a,v)=>JSON.stringify(v)}),
+    ] : []),
+    ...(research ? [
       tool({name:"finish_research",description:"Save the evidence-backed specialist conclusions and concrete gaps. Do not create a reader-facing report here.",parameters:z.object({conclusions:z.array(z.string()).min(1),gaps:z.array(z.string())}),execute:(a,{state})=>{if(!state.sources.length)throw new Error("No registered source evidence");state.notes={...a,sources:state.sources};state.submitted=true;return state.notes;},observe:(_a,v)=>JSON.stringify(v)}),
     ] : reviewing ? [
       tool({name:"submit_review",description:"Independently check EVERY claim against source excerpt, time, units, inference strength and duplicated shocks. Reject unsupported statements; identify precise affected claim IDs for one local repair.",parameters:z.object({approved:z.boolean(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string().min(1)})),issues:z.array(z.string())}),execute:(a,{state})=>{
@@ -252,7 +285,7 @@ export async function publicResearchLoader(spec: SessionSpec, env: AnalysisEnv):
     ]),
   ];
   const role=research?(spec.stage==="research-demand"?"Investigate demand, growth, pricing, capacity, contracts, policy and industry comparisons. Read original evidence, including inconvenient counterexamples.":"Independently investigate rates, credit, FX, energy, cash generation, capital expenditure, financing and downside mechanisms. Seek evidence that could contradict optimistic demand assumptions."):reviewing?`You are an independent skeptical reviewer. You did not author the draft. Inspect every claim using original excerpts and frozen context; return specific issues. Do not rewrite or approve by tone. ${run.type==="macro"?"Macro publication requires your complete approval and deterministic source, data and time validation. Reject any material unresolved error.":"Human review is still required after yours."}`:spec.stage==="synthesis"&&run.enrichment?enrichmentDirective:spec.stage==="repair"?"Repair ONLY issues in the independent review. Retain sound findings and all registered evidence. Do not restart research or invent new sources.":"Synthesize both independent specialist results into one coherent public report. Reconcile contradictions against original evidence. Do not concatenate specialists' prose. State concrete limitations and never manufacture missing consensus or company impacts.";
-  const recipe:Recipe<SessionSpec,State,State>={id:`${PROMPT_VERSION}.${spec.stage}`,budget:{turns:research?18:reviewing?8:spec.stage==="repair"?8:24,wallMs:45*60_000,tokens:Math.floor(run.maxTokens/(run.enrichment?4:6))},resultChars:50000,callsPerTurn:4,system:()=>`${SYSTEM}\n\n${role}${run.enrichment?`\n${enrichmentDirective} Current budget: ${run.maxCalls} total provider calls; ${run.maxTokens} reported tokens; ${Math.floor(run.maxTokens/4)} tokens per possible stage. Source originals and registered excerpts are available only through read_evidence; inspect them before adopting a new macro premise.`:""}\nOutput language: ${run.language}. Scope: ${JSON.stringify(run.scope)}. asOf=${run.asOf}. Only approved source domains: ${run.allowedDomains.join(", ")}.`,open:()=>({hits:run.sourceUrls.map(s=>({url:s.url,title:s.title,snippet:"Operator-selected primary source; read before citing.",score:1,publishedAt:s.publishedAt??null})),used:{searches:0,webReads:0},raw:{},sources,notes:null,draft:null,review:null,submitted:false}),tools:()=>tools,policy:{allow:tools.map(t=>t.name)},settled:s=>s.submitted,settle:s=>s,nudge:"Continue with tools. Finish by submitting the role's structured result; state concrete gaps instead of inventing evidence."};
+  const recipe:Recipe<SessionSpec,State,State>={id:`${PROMPT_VERSION}.${spec.stage}`,budget:{turns:research?18:reviewing?8:spec.stage==="repair"?8:24,wallMs:45*60_000,tokens:Math.floor(run.maxTokens/(run.enrichment?4:6))},resultChars:50000,callsPerTurn:4,system:()=>`${SYSTEM}\n\n${role}${run.enrichment?`\n${enrichmentDirective} Current budget: ${run.maxCalls} total provider calls; ${run.maxTokens} reported tokens; ${Math.floor(run.maxTokens/4)} tokens per possible stage. Source originals and registered excerpts are available through read_evidence, with already frozen prepared filings available through read_filing; inspect them before adopting a new premise.`:""}\nOutput language: ${run.language}. Scope: ${JSON.stringify(run.scope)}. asOf=${run.asOf}. Only approved source domains: ${run.allowedDomains.join(", ")}.`,open:()=>({hits:run.sourceUrls.map(s=>({url:s.url,title:s.title,snippet:"Operator-selected primary source; read before citing.",score:1,publishedAt:s.publishedAt??null})),used:{searches:0,webReads:0},raw:{},sources,notes:null,draft:null,review:null,submitted:false}),tools:()=>tools,policy:{allow:tools.map(t=>t.name)},settled:s=>s.submitted,settle:s=>s,nudge:"Continue with tools. Finish by submitting the role's structured result; state concrete gaps instead of inventing evidence."};
   return {recipe,input:spec,strictBudget:true,model:run.model,effort:run.effort,ledger:{kind:"public-research",runId:run.runId},reserve:async()=>{
     const row=await env.DB!.prepare("UPDATE public_research_runs SET calls_reserved=calls_reserved+1,updated_at=? WHERE run_id=? AND state='running' AND calls_reserved<max_calls RETURNING calls_reserved").bind(now(),run.runId).first();return !!row;
   }};
@@ -267,7 +300,7 @@ export async function executePublicResearchRun(spec:PublicResearchRunSpec,step:W
     const input:SessionSpec={run,stage,...(run.enrichment?{previousReview}:{}),...extra};
     const openingExtra=run.enrichment&&extra.notes?{...extra,notes:extra.notes.map(note=>({conclusions:note.conclusions,gaps:note.gaps,sourceIds:note.sources.map(source=>source.id)}))}:extra;
     const publicContext=run.enrichment?run.frozenContext.map(context=>({...context,sources:context.sources.map(({id,uri,title,revision,locator})=>({id,uri,title,revision,locator}))})):run.frozenContext;
-    const opening=JSON.stringify({question:run.question,scope:run.scope,asOf:run.asOf,...(stage.startsWith("research-")?{frozenFilings:run.frozenFilings,seedSources:run.sourceUrls.map((source,index)=>({id:`h${index+1}`,...source}))}:{}),publicContext,...(run.enrichment?{executionBudget:{maxCalls:run.maxCalls,maxTokens:run.maxTokens,possibleStages:4,stageTokens:Math.floor(run.maxTokens/4),maxTargetedRepairs:1,researchBranches:0},dependencyUpdate:enrichmentDirective,originalRunId:run.enrichment.sourceRunId,originalDraftVersion:run.enrichment.draftVersion,previousReview}:{}),...openingExtra});
+    const opening=JSON.stringify({question:run.question,scope:run.scope,asOf:run.asOf,...(stage.startsWith("research-")||run.enrichment?{frozenFilings:run.frozenFilings}:{}),...(stage.startsWith("research-")?{seedSources:run.sourceUrls.map((source,index)=>({id:`h${index+1}`,...source}))}:{}),publicContext,...(run.enrichment?{executionBudget:{maxCalls:run.maxCalls,maxTokens:run.maxTokens,possibleStages:4,stageTokens:Math.floor(run.maxTokens/4),maxTargetedRepairs:1,researchBranches:0},dependencyUpdate:enrichmentDirective,originalRunId:run.enrichment.sourceRunId,...("draftVersion" in run.enrichment?{originalDraftVersion:run.enrichment.draftVersion}:{originalCheckpointHash:run.enrichment.checkpointHash}),previousReview,originalReviewStatus:previousReview&&baseDraft&&baseDraft.claims.every(claim=>previousReview!.claimChecks.filter(check=>check.claimId===claim.id).length===1)?"complete":"incomplete; independently review every claim",operatorReview:{issues:run.enrichment.operatorReviewIssues??[],status:"Unverified operator review hypotheses, not facts or approval. Prioritize checking these against frozen originals, resolve evidence gaps before other edits, and retain unresolved issues as review blockers."}}:{}),...openingExtra});
     const result=await runRecipeSession<State,State>(env,step,"public-research",input,opening,`${run.runId}:${stage}`);
     await step.do(`archive-${stage}`,()=>savePublicResearchCheckpoint(env,publicResearchCheckpoint(run,stage,result.output,input)));
     return result.output;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicResearchDraftSchema, sourceSnapshotSchema } from "../../../../shared/analysis-runtime/public-research-schema.ts";
 import type { AnalysisEnv } from "../operations.ts";
+import type { StoredPiSession } from "../pi/host.ts";
 import { sha256 } from "../sha256.ts";
 
 export const publicResearchStageSchema = z.enum(["research-demand", "research-financing", "synthesis", "review", "repair", "review-repair"]);
@@ -64,4 +65,21 @@ export async function readPublicResearchCheckpoint(env: Pick<AnalysisEnv, "SEC_F
   const checkpoint = checkpointSchema.parse(JSON.parse(body));
   assertIdentity(checkpoint, run, stage);
   return { key, contentHash, checkpoint };
+}
+
+/** A stopped legacy run is read through its storage-only RPC, never status()/report() recovery. */
+export async function readStoppedPublicResearchCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, run: Identity, stage: PublicResearchStage,
+  runner: { readPublicResearchSession(id: string, stage: string): Promise<{ runId: string; status: "terminated"; session: StoredPiSession } | null> }) {
+  const archived = await readPublicResearchCheckpoint(env, run, stage);
+  // The RPC checks the runner is terminated and has no active sessions even when an archive exists.
+  const stored = await runner.readPublicResearchSession(run.runId, stage);
+  if (stored) {
+    if (stored.runId !== run.runId || stored.status !== "terminated" || stored.session.active || stored.session.kind !== "public-research" || stored.session.operationId !== `${run.runId}:${stage}`) throw new Error("Stopped research storage identity mismatch");
+    const spec = stored.session.spec as { run: Identity & { asOf: string; startedAt: string }; stage: string; notes?: unknown[]; draft?: unknown; review?: unknown };
+    if (spec.stage !== stage || spec.run.runId !== run.runId || spec.run.reportId !== run.reportId || spec.run.inputFingerprint !== run.inputFingerprint) throw new Error("Research session specification does not match admitted run");
+    if (archived) return archived;
+    const checkpoint = publicResearchCheckpoint(spec.run, stage, stored.session.state as Parameters<typeof publicResearchCheckpoint>[2], spec);
+    return { key: null, contentHash: await sha256(JSON.stringify(checkpoint)), checkpoint };
+  }
+  return archived;
 }

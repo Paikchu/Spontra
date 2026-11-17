@@ -1,0 +1,315 @@
+{
+  "at": "2026-11-17T00:30:13.268Z",
+  "scope": "Actual authenticated admin handler/proxy, SQLite and content-addressed object-store admission; actual executePublicResearchRun and tool actions with scripted Pi results. No provider or production calls.",
+  "stoppedChecks": [
+    {
+      "name": "stopped wrong full hash refused",
+      "status": 400,
+      "answer": {
+        "error": "Stopped synthesis checkpoint hash mismatch or unavailable"
+      }
+    },
+    {
+      "name": "D1 active source refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment requires the exact completed draft version or a stopped industry checkpoint"
+      }
+    },
+    {
+      "name": "D1 stopped but runner active refused",
+      "status": 400,
+      "answer": {
+        "error": "Legacy storage export requires a terminated research runner"
+      }
+    },
+    {
+      "name": "terminated runner with active session refused",
+      "status": 400,
+      "answer": {
+        "error": "Research still has active sessions; storage export refused"
+      }
+    },
+    {
+      "name": "stored admission fingerprint mismatch refused",
+      "status": 400,
+      "answer": {
+        "error": "Research session specification does not match admitted run"
+      }
+    },
+    {
+      "name": "missing stopped synthesis refused",
+      "status": 400,
+      "answer": {
+        "error": "Stopped synthesis checkpoint hash mismatch or unavailable"
+      }
+    },
+    {
+      "name": "unsubmitted stopped synthesis refused",
+      "status": 400,
+      "answer": {
+        "error": "Stopped synthesis has no complete submitted draft"
+      }
+    },
+    {
+      "name": "stopped synthesis without complete draft refused",
+      "status": 400,
+      "answer": {
+        "error": "Stopped synthesis has no complete submitted draft"
+      }
+    },
+    {
+      "name": "recursive stopped continuation refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment cannot restart research or recursively retry an enrichment run"
+      }
+    },
+    {
+      "name": "stopped scope mutation refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment must preserve original scope"
+      }
+    },
+    {
+      "name": "stopped language mutation refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment must preserve original language"
+      }
+    },
+    {
+      "name": "stopped filing list mutation refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment must preserve original filings"
+      }
+    },
+    {
+      "name": "stopped question mutation refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment must preserve original question"
+      }
+    },
+    {
+      "name": "stopped call allowance expansion refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment is bounded to 48 calls and 1000000 reported tokens, with at most one targeted repair"
+      }
+    },
+    {
+      "name": "stopped token allowance expansion refused",
+      "status": 400,
+      "answer": {
+        "error": "Enrichment is bounded to 48 calls and 1000000 reported tokens, with at most one targeted repair"
+      }
+    },
+    {
+      "name": "stopped operator review issue count bounded",
+      "status": 400,
+      "answer": {
+        "error": "[\n  {\n    \"origin\": \"array\",\n    \"code\": \"too_big\",\n    \"maximum\": 20,\n    \"inclusive\": true,\n    \"path\": [\n      \"enrichment\",\n      \"operatorReviewIssues\"\n    ],\n    \"message\": \"Too big: expected array to have <=20 items\"\n  }\n]"
+      }
+    },
+    {
+      "name": "stopped operator review issue size bounded",
+      "status": 400,
+      "answer": {
+        "error": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"too_big\",\n    \"maximum\": 2000,\n    \"inclusive\": true,\n    \"path\": [\n      \"enrichment\",\n      \"operatorReviewIssues\",\n      0\n    ],\n    \"message\": \"Too big: expected string to have <=2000 characters\"\n  }\n]"
+      }
+    },
+    {
+      "name": "ambiguous enrichment selectors refused",
+      "status": 400,
+      "answer": {
+        "error": "[\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"checkpointHash\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"checkpointHash\\\"\"\n        }\n      ],\n      [\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"draftVersion\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"draftVersion\\\"\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"enrichment\"\n    ],\n    \"message\": \"Invalid input\"\n  }\n]"
+      }
+    },
+    {
+      "name": "stopped cutoff before macro publication refused",
+      "status": 400,
+      "answer": {
+        "error": "Unavailable public claim policy-macro/claim-0"
+      }
+    },
+    {
+      "name": "complete stopped synthesis admitted as new human-gated run",
+      "status": 202,
+      "answer": {
+        "runId": "public-c4761069960c1b9ed0712d13d1bc6744890204fa",
+        "state": "queued",
+        "shadow": true,
+        "humanReviewRequired": true,
+        "maxCalls": 48,
+        "maxTokens": 1000000
+      }
+    },
+    {
+      "name": "stopped continuation exact request reused",
+      "status": 200,
+      "answer": {
+        "runId": "public-c4761069960c1b9ed0712d13d1bc6744890204fa",
+        "state": "queued",
+        "version": null,
+        "reused": true,
+        "humanReviewRequired": true
+      }
+    },
+    {
+      "name": "changed operator hypothesis has a distinct frozen fingerprint",
+      "status": 202,
+      "answer": {
+        "runId": "public-ba9ed799da3c67a7d7ffe2cc110c36755fffc36c",
+        "state": "queued",
+        "shadow": true,
+        "humanReviewRequired": true,
+        "maxCalls": 48,
+        "maxTokens": 1000000
+      }
+    },
+    {
+      "name": "corrupt archived stopped synthesis fails closed",
+      "status": 400,
+      "answer": {
+        "error": "Research checkpoint archive hash mismatch"
+      }
+    }
+  ],
+  "stoppedPassing": {
+    "output": {
+      "runId": "public-c4761069960c1b9ed0712d13d1bc6744890204fa",
+      "reportId": "stopped-cloud",
+      "version": "a1786af1c807c1bab350b2ef13a98c2a6a5c71a0a592402329fdba526cb9db9b",
+      "state": "awaiting_review",
+      "humanReviewRequired": true
+    },
+    "stages": [
+      "synthesis",
+      "review"
+    ],
+    "openingAudit": [
+      {
+        "stage": "synthesis",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      },
+      {
+        "stage": "review",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      }
+    ]
+  },
+  "stoppedFailing": {
+    "output": {
+      "runId": "public-ba9ed799da3c67a7d7ffe2cc110c36755fffc36c",
+      "reportId": "stopped-cloud",
+      "version": "d62090c9aeaacf3d5ff648b156521a344044f4a71faf85d5e7b20b82da78d39a",
+      "state": "review_failed",
+      "humanReviewRequired": true,
+      "error": "Synthetic unresolved P0 remains"
+    },
+    "stages": [
+      "synthesis",
+      "review",
+      "repair",
+      "review-repair"
+    ],
+    "openingAudit": [
+      {
+        "stage": "synthesis",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      },
+      {
+        "stage": "review",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      },
+      {
+        "stage": "repair",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      },
+      {
+        "stage": "review-repair",
+        "originalReview": "incomplete; independently review every claim",
+        "operatorReviewHypotheses": true,
+        "frozenFilingsReadable": true,
+        "sourceOriginalReadable": true,
+        "budget": {
+          "maxCalls": 48,
+          "maxTokens": 1000000,
+          "possibleStages": 4,
+          "stageTokens": 250000,
+          "maxTargetedRepairs": 1,
+          "researchBranches": 0
+        }
+      }
+    ]
+  },
+  "originalRunUnchanged": true,
+  "originalStateUnchanged": true,
+  "publishedPointerUnchanged": true,
+  "partialReviewPreserved": true,
+  "fullDraftHashBound": true,
+  "archivePreferred": true,
+  "externalCalls": 0,
+  "limitations": [
+    "Scripted independent review verifies code flow; this is not review of the real industry content.",
+    "Separate Miniflare checkpoint journey covers the real terminated TaskRunner/PiHost RPC lifecycle."
+  ]
+}

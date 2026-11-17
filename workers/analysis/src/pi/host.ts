@@ -340,10 +340,9 @@ export class PiHost {
   readEndedSession(operationId: string): StoredPiSession | null {
     const sql = this.agent.sql;
     if (!sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='pi_bindings'").toArray().length) return null;
+    if (sql.exec<{ n: number }>("SELECT COUNT(*) n FROM pi_bindings WHERE active = 1").toArray()[0]!.n) throw new Error("Research still has active sessions; storage export refused");
     const row = sql.exec<Row & { active: number }>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
     if (!row) return null;
-    if (row.active) throw new Error("Research stage is still active; storage export refused");
-    if (sql.exec<{ n: number }>("SELECT COUNT(*) n FROM pi_bindings WHERE active = 1").toArray()[0]!.n) throw new Error("Research still has active sessions; storage export refused");
     return { operationId: row.operation_id, kind: row.kind, spec: JSON.parse(row.spec), state: unpackState(row.state), active: false,
       startedAt: row.started_at, turns: row.turns, spent: row.spent ?? 0, capped: !!row.capped, finished: !!row.finished };
   }

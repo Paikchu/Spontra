@@ -38,7 +38,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       if(Date.parse(input.asOf)>Date.now())return json({error:"Research asOf cannot be in the future"},400);
       // An explicit enrichment already pins its parent, cutoff and dependencies. Replay its immutable admission before live freshness checks.
       if(input.enrichment){
-        const admitted=(await db.prepare("SELECT * FROM public_research_runs WHERE report_id=? AND json_extract(params_json,'$.enrichment.sourceRunId')=? AND json_extract(params_json,'$.enrichment.draftVersion')=? AND json_extract(params_json,'$.asOf')=?").bind(input.reportId,input.enrichment.sourceRunId,input.enrichment.draftVersion,input.asOf).all<RunRow>()).results;
+        const admitted=(await db.prepare("SELECT * FROM public_research_runs WHERE report_id=? AND json_extract(params_json,'$.enrichment.sourceRunId')=? AND json_extract(params_json,'$.asOf')=?").bind(input.reportId,input.enrichment.sourceRunId,input.asOf).all<RunRow>()).results;
         const existing=admitted.find(row=>{const prior=publicResearchRunSchema.safeParse(JSON.parse(row.params_json));return prior.success&&stable(prior.data)===stable(input);});
         if(existing)return json({runId:existing.run_id,state:existing.state,version:existing.result_version,reused:true,humanReviewRequired:true},200);
       }
