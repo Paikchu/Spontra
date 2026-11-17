@@ -66,7 +66,7 @@ const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name
 
 /** What each run kind executes; the bodies the Workflow classes had. */
 export const RUN_TASKS: Record<RunKind, Task> = {
-  async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step});},
+  async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step,id}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step,executionId:id});},
   async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
     return runMaterialPilotChunk(env, step, params);
   },

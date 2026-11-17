@@ -1,0 +1,71 @@
+{
+  "at": "2026-11-17T05:35:19.909Z",
+  "scope": "Actual saved CRWV state and complete pinned Q3/Q2 material mirrors; production native correction/prepare/reuse path, local R2-read instrumentation only",
+  "before": {
+    "gets": 9295,
+    "unique": 338,
+    "bytes": 592338437,
+    "markdownSearch": {
+      "gets": 9171,
+      "unique": 302,
+      "bytes": 545067825
+    }
+  },
+  "after": {
+    "gets": 345,
+    "unique": 338,
+    "bytes": 64471306,
+    "markdownSearch": {
+      "gets": 302,
+      "unique": 302,
+      "bytes": 18136365
+    }
+  },
+  "getsReductionPercent": 96.28832705755784,
+  "byteReductionPercent": 89.11579901406938,
+  "uniqueMarkdownCacheBytes": 18446846,
+  "fiveInputHashesUnchanged": true,
+  "fiveInputHashes": [
+    {
+      "id": "highlights",
+      "inputHash": "e95fb6b04a47a23f9940adc42d1f8cdd2a8e157efcd5789a1807c476521a4ede",
+      "blockHash": "dd04df21354c0fb741a1f0d4db825f1a485b26782417dac6d07ab397c1b48727",
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "risks",
+      "inputHash": "0187ca42129d8e48db12e03d6ccd55aa3c7ca81f0baa255f72c9d4f409b85a69",
+      "blockHash": "d6b1b01af79e320a8492b186b00571014438239e33736e8425fef0354cf4e323",
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "overlooked",
+      "inputHash": "94f17d3d1ed2499c4726d230ed8c3fb2a684ab91fe9c0a399865a81ea292bf63",
+      "blockHash": "b7290aa9022ddebd03cc7a132e6bb130c1828c8ba50be67957df020b106936da",
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "versus-prior",
+      "inputHash": "56ad58c2fa518cb0308c17d44af3632c4ca92ba764823f5466215507b9ba3bf9",
+      "blockHash": "a5b120105d6d62045b68d9f923b9f745786c4a01e8693795b479d785bcf71807",
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "what-to-watch",
+      "inputHash": "67a93cac4bb4e1386b46ed47879369232cf0fc381a8d87081b95f24b38e45259",
+      "blockHash": "9a186309f0a2e5cbf6205cd087d26249cfa98a2af79ec1d8e1053ba0a4a9a0ca",
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    }
+  ],
+  "networkCalls": 0,
+  "modelCalls": 0,
+  "applicationDatabaseWrites": 0,
+  "bucketWrites": 0,
+  "limitations": [
+    "Before/after are local actual saved-material replay, not a measured production latency.",
+    "Original v1 request identities are explicitly historical reconstructions, not hashes recorded at the original HTTP send.",
+    "345 total reads include material indexes, saved states and source metadata deliberately not cached; cache residency is only the unique material range bytes.",
+    "Runtime preparation omits the one correction-tool rehearsal and its extra material-index/source-record reads.",
+    "No production task or deployment was changed, and no retry entrypoint was used for these measurements."
+  ]
+}

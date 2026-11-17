@@ -14,7 +14,7 @@ import { artifactId, previewToken, publishStatements, readArtifactVersion, saveW
 import { filingMemoryStatements } from "./memory-source.ts";
 import { sha256 } from "../sha256.ts";
 import { handleShadowRecovery, shadowKey as key, type ShadowRun } from "./shadow-resume.ts";
-import { handleFilingOperatorCompletion, handleFilingReviewerCorrections, readFilingOperatorStatus, stopFilingOperator } from "./operator-completion.ts";
+import { handleFilingOperatorCompletion, handleFilingReviewerCorrections, handleFilingPreparationRecovery, readFilingOperatorStatus, stopFilingOperator } from "./operator-completion.ts";
 import { stableOperatorValue } from "./operator-plan.ts";
 
 type ValidatedShadow = { spec: FilingSpec; version: number; hash: string; text: string; degraded: string[]; validatedAt: string; researchUses: ResearchUse[]; work: FilingWork; operator?:FilingOperatorAuthor };
@@ -61,6 +61,7 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
   if (!run || run.runId !== runId || run.ticker !== ticker || run.accession !== accession) return reply({ error: "Shadow run not found" }, 404);
   if(action==="operator-complete")return handleFilingOperatorCompletion(request,env,run);
   if(action==="apply-reviewer-corrections")return handleFilingReviewerCorrections(request,env,run);
+  if(action==="recover-preparation")return handleFilingPreparationRecovery(request,env,run);
   const operator=run.spec.operatorCompletion?await readFilingOperatorStatus(env,run):null;
   if(operator&&action==="stop"&&request.method==="POST")return reply(await stopFilingOperator(env,run));
   if(operator&&(action==="resume"||action==="checkpoint"))return reply({error:"External operator operations do not open or resume Pi sessions; inspect their stored phase receipts"},409);

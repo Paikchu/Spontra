@@ -10,7 +10,7 @@ import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, basename } from "node:path";
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 
@@ -50,6 +50,19 @@ const fixture = { at, ticker, accession, state, runs, parents };
 const checks = [], outbound = [], blockedOutbound = [], browserTelemetry = [], screenshots = [];
 let transportMode = "pass", mf, chrome, chromeEndpoint, transportRelease, transportHeld;
 let slowR2Key = null, slowR2Release, slowR2EnteredResolve, slowR2EnteredAt = null, slowR2Evidence = null;
+const recoveryMode = process.env.SPONTRA_PREPARATION_RECOVERY_ACCEPTANCE === "1";
+const recoveryHolds = new Map(), recoveryStorageWrites = [], recoveryReadReturns = [];
+const legacyOperator = recoveryMode ? { commit: execFileSync("git", ["rev-parse", "82a0"], { cwd: root, encoding: "utf8" }).trim(), source: execFileSync("git", ["show", "82a0:workers/analysis/src/filing-analysis/operator-completion.ts"], { cwd: root, encoding: "utf8" }) } : null;
+const legacyExecutionId = `shadow-${ticker}-${accession}-operator-fix-${uuid(432)}`;
+const historicalOperatorPlugin = { name: "actual-82a0-operator-callback", setup(bundle) {
+  bundle.onResolve({ filter: /^fixture:operator-82a0$/ }, () => ({ path: "operator-82a0.ts", namespace: "historical-operator" }));
+  bundle.onLoad({ filter: /.*/, namespace: "historical-operator" }, () => ({ contents: legacyOperator.source, loader: "ts", resolveDir: resolve(root, "workers/analysis/src/filing-analysis") }));
+  bundle.onLoad({ filter: /\/durable-runs\/tasks\.ts$/ }, async ({ path }) => {
+    const contents = await readFile(path, "utf8"), original = /async FILING_OPERATOR_COMPLETION_WORKFLOW\(params,\{env:raw,step,id\}\)\{return executeFilingOperatorCompletion\(params,\{env:await companyPolicyEnvironment\(raw\),step,executionId:id\}\);\},/;
+    if (!original.test(contents)) throw Error("The current task mapper changed; cannot transparently select the legacy implementation");
+    return { contents: `import{executeFilingOperatorCompletion as executeActual82a0}from'fixture:operator-82a0';\n` + contents.replace(original, `async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step,id}){const legacy=id===${JSON.stringify(legacyExecutionId)};await raw.DB.prepare('INSERT OR IGNORE INTO fixture_execution_implementations(execution_id,implementation,source_sha) VALUES(?,?,?)').bind(id,legacy?'82a0':'current',legacy?${JSON.stringify(sha(legacyOperator.source))}:null).run();const env=await companyPolicyEnvironment(raw);return legacy?executeActual82a0(params,{env,step}):executeFilingOperatorCompletion(params,{env,step,executionId:id});},`), loader: "ts", resolveDir: resolve(root, "workers/analysis/src/durable-runs") };
+  });
+} };
 const check = (name, ok, detail) => { if (!ok) throw new Error(`${name}: ${JSON.stringify(detail)}`); checks.push({ name, status: "passed", ...(detail === undefined ? {} : { detail }) }); console.log(`PASS ${name}`); };
 
 // The only browser substitute is its Cloudflare connection endpoint; every CDP command goes to real Chromium.
@@ -122,23 +135,35 @@ import{createAdminSession}from ${JSON.stringify(resolve(root, "workers/analysis/
 import{packState}from ${JSON.stringify(resolve(root, "workers/analysis/src/pi/state.ts"))};
 import{saveVersion,readPreview}from ${JSON.stringify(resolve(root, "workers/analysis/src/artifact/store.ts"))};
 import{readPublishedArtifact}from ${JSON.stringify(resolve(root, "workers/analysis/src/artifact/store.ts"))};
+import{AsyncLocalStorage}from 'node:async_hooks';
 import{D1SecRepository}from ${JSON.stringify(resolve(root, "workers/analysis/src/sec/d1.ts"))};
 import{getPublicFiling}from ${JSON.stringify(resolve(root, "workers/analysis/src/sec/public-api.ts"))};
 import{judge}from ${JSON.stringify(resolve(root, "workers/analysis/src/artifact/openai.ts"))};
 import{reserveFilingOperatorReview}from ${JSON.stringify(resolve(root, "workers/analysis/src/filing-analysis/operator-completion.ts"))};
+import{filingOperatorHarness}from ${JSON.stringify(resolve(root, "workers/analysis/src/filing-analysis/recipe.ts"))};
+import{executeFilingOperatorCompletion as executeCurrentOperator}from ${JSON.stringify(resolve(root, "workers/analysis/src/filing-analysis/operator-completion.ts"))};
+import{companyPolicyEnvironment}from ${JSON.stringify(resolve(root, "workers/analysis/src/financial-data/company-policy.ts"))};
+import{unpackState}from ${JSON.stringify(resolve(root, "workers/analysis/src/pi/state.ts"))};
+import{withPreparedMaterialReadCache,readFilingMarkdown}from ${JSON.stringify(resolve(root, "workers/analysis/src/filing-material/read.ts"))};
 import{AdminGateway as RealAdminGateway}from ${JSON.stringify(resolve(root, "workers/analysis/src/index.ts"))};
 // Only R2 transport latency is injected. The real get completes before its response is deliberately held.
-const delayedR2=env=>({...env,SEC_FILINGS:new Proxy(env.SEC_FILINGS,{get(bucket,name){if(name==='get')return async(...args)=>{const object=await bucket.get(...args);await env.R2_READ_GATE.fetch('https://fixture-r2-gate.invalid/after-read',{method:'POST',body:JSON.stringify({key:args[0],found:!!object})});return object;};const value=Reflect.get(bucket,name);return typeof value==='function'?value.bind(bucket):value;}})});
-export class AdminGateway extends RealAdminGateway{constructor(ctx,env){super(ctx,delayedR2(env));}}
+const delayedR2=(env,owner='default')=>({...env,SEC_FILINGS:new Proxy(env.SEC_FILINGS,{get(bucket,name){if(name==='get')return async(...args)=>{const object=await bucket.get(...args);await env.R2_READ_GATE.fetch('https://fixture-r2-gate.invalid/after-read',{method:'POST',body:JSON.stringify({method:'get',key:args[0],found:!!object,owner})});if(${JSON.stringify(recoveryMode)})await env.R2_READ_GATE.fetch('https://fixture-r2-gate.invalid/returned-read',{method:'POST',body:JSON.stringify({method:'get-returned',key:args[0],owner})});return object;};if(name==='put'&&${JSON.stringify(recoveryMode)})return async(...args)=>{const result=await bucket.put(...args);await env.R2_READ_GATE.fetch('https://fixture-r2-gate.invalid/after-write',{method:'POST',body:JSON.stringify({method:'put',key:args[0],owner})});return result;};const value=Reflect.get(bucket,name);return typeof value==='function'?value.bind(bucket):value;}})});
+const timingScope=new AsyncLocalStorage(),nativeSetTimeout=globalThis.setTimeout;
+if(${JSON.stringify(recoveryMode)})globalThis.setTimeout=(callback,delay,...args)=>{const active=timingScope.getStore();if(delay===660000&&active?.fixtureAcceleratesPreparation()){active.fixtureTimerMarker(delay,1000);return nativeSetTimeout(callback,1000,...args);}return nativeSetTimeout(callback,delay,...args);};
+export class AdminGateway extends RealAdminGateway{constructor(ctx,env){super(ctx,delayedR2(env,'gateway'));}}
 export class CompletionRunner extends TaskRunner{
-  constructor(ctx,env){env=delayedR2(env);const sql=ctx.storage.sql,f=JSON.parse(env.FIXTURE),own=ctx.id.name?.replace(/^FILING:/,''),source=[...f.runs,...f.parents].find(run=>run.runId===own);
+  constructor(ctx,env){env=delayedR2(env,ctx.id.name);const sql=ctx.storage.sql,f=JSON.parse(env.FIXTURE),own=ctx.id.name?.replace(/^FILING:/,''),source=[...f.runs,...f.parents].find(run=>run.runId===own);
     sql.exec("CREATE TABLE IF NOT EXISTS fixture_dispatches(kind TEXT,operation_id TEXT)");
+    sql.exec("CREATE TABLE IF NOT EXISTS fixture_timer_events(requested INTEGER,effective INTEGER)");
     if(source){sql.exec("CREATE TABLE IF NOT EXISTS pi_bindings(conversation TEXT PRIMARY KEY,session TEXT NOT NULL,operation_id TEXT NOT NULL,kind TEXT NOT NULL,spec TEXT NOT NULL,state TEXT NOT NULL,started_at INTEGER NOT NULL,turns INTEGER NOT NULL DEFAULT 0,quiet INTEGER NOT NULL DEFAULT 0,last_round INTEGER NOT NULL DEFAULT 0,capped INTEGER NOT NULL DEFAULT 0,finished INTEGER NOT NULL DEFAULT 0,asked TEXT,round TEXT,active INTEGER NOT NULL DEFAULT 1,spent INTEGER NOT NULL DEFAULT 0,startup TEXT,reserved_at INTEGER)");sql.exec("INSERT OR IGNORE INTO pi_bindings VALUES('synthetic-source','synthetic-session',?,'filing',?,?,0,40,0,0,1,0,NULL,NULL,0,1234,NULL,NULL)",source.runId+':shadow',JSON.stringify(source.spec),packState(f.state));}
     super(ctx,env);
   }
   async start(kind,id,params,createdAt){this.ctx.storage.sql.exec("INSERT INTO fixture_dispatches VALUES(?,?)",kind,id);return super.start(kind,id,params,createdAt);}
   async startSession(kind,spec,opening,operationId){this.ctx.storage.sql.exec("INSERT INTO fixture_dispatches VALUES(?,?)",kind,operationId);throw Error('Any operator Pi author dispatch is forbidden in this journey');}
-  fixtureSnapshot(){const sql=this.ctx.storage.sql,tables=sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray().map(r=>r.name);return{tables,dispatches:sql.exec('SELECT * FROM fixture_dispatches').toArray(),sessions:tables.includes('pi_bindings')?sql.exec('SELECT operation_id,spec,state,active,capped,finished,startup FROM pi_bindings').toArray():[],run:tables.includes('run')?sql.exec('SELECT * FROM run').toArray():[],steps:tables.includes('steps')?sql.exec('SELECT * FROM steps').toArray():[]};}
+  async advance(){return timingScope.run(this,()=>super.advance());}
+  fixtureAcceleratesPreparation(){return ${JSON.stringify([432, 436].map(n => `FILING_OPERATOR_COMPLETION_WORKFLOW:shadow-${ticker}-${accession}-operator-fix-${uuid(n)}`))}.includes(this.ctx.id.name)&&this.state.step==='operator:corrections';}
+  fixtureTimerMarker(requested,effective){this.ctx.storage.sql.exec('INSERT INTO fixture_timer_events VALUES(?,?)',requested,effective);}
+  fixtureSnapshot(){const sql=this.ctx.storage.sql,tables=sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray().map(r=>r.name);return{tables,dispatches:sql.exec('SELECT * FROM fixture_dispatches').toArray(),timers:sql.exec('SELECT * FROM fixture_timer_events').toArray(),sessions:tables.includes('pi_bindings')?sql.exec('SELECT operation_id,spec,state,active,capped,finished,startup FROM pi_bindings').toArray():[],run:tables.includes('run')?sql.exec('SELECT * FROM run').toArray():[],steps:tables.includes('steps')?sql.exec('SELECT * FROM steps').toArray():[]};}
   fixtureMutateSource(columns){for(const[key,value]of Object.entries(columns)){if(!['active','capped','finished','startup','spec'].includes(key))throw Error('Fixture column not allowed');this.ctx.storage.sql.exec('UPDATE pi_bindings SET '+key+'=?',value);}return true;}
   fixtureEvict(){this.ctx.abort('Synthetic local cold restart');}
 }
@@ -146,12 +171,28 @@ export default{async fetch(request,rawEnv){const env=delayedR2(rawEnv),url=new U
  if(url.pathname==='/fixture/auth')return Response.json({token:await createAdminSession(env.REPORT_ADMIN_PASSWORD)});
  if(url.pathname==='/fixture/snapshot')return Response.json(await stub().fixtureSnapshot());
  if(url.pathname==='/fixture/advance'){await stub().advance();return Response.json(await stub().fixtureSnapshot());}
+ if(url.pathname==='/fixture/run-status')return Response.json(await stub().status());
+ if(url.pathname==='/fixture/stale-execution'){try{await executeCurrentOperator({runId:id},{env:await companyPolicyEnvironment(env),executionId:url.searchParams.get('execution'),step:{do(){throw Error('Stale execution reached a task step');},sleep(){throw Error('Stale execution reached sleep');},waitFor(){throw Error('Stale execution reached wait');}}});return Response.json({accepted:true});}catch(error){return Response.json({error:String(error)},{status:409});}}
  if(url.pathname==='/fixture/evict'){await stub().fixtureEvict();return Response.json({evicted:true});}
  if(url.pathname==='/fixture/mutate-source')return Response.json(await stub().fixtureMutateSource(await request.json()));
  if(url.pathname==='/fixture/preview')return Response.json(await readPreview(env,url.searchParams.get('token')||''));
  if(url.pathname==='/fixture/read-public')return Response.json({filing:await getPublicFiling(new D1SecRepository(env.DB),f.ticker,f.accession),artifact:await readPublishedArtifact(env,'filing-report',f.ticker,f.accession)});
  if(url.pathname==='/fixture/index-filing'){await new D1SecRepository(env.DB).upsertFilingIndex(f.runs[0].spec.filing);return Response.json({indexed:true});}
- if(url.pathname==='/fixture/review-request'){try{return Response.json(await judge({...env,MODEL_REQUEST_GATE:()=>reserveFilingOperatorReview(env,id,url.searchParams.get('lease'))},{stage:'fixture-gate',system:'Synthetic local gate transport only',text:'{"fixture":true}',schema:{type:'object',properties:{ok:{type:'boolean'}}},maxRetries:Number(url.searchParams.get('retries')||0),ledger:{kind:'synthetic-acceptance',ticker:f.ticker,runId:id}}));}catch(error){return Response.json({error:String(error)},{status:503});}}
+ if(url.pathname==='/fixture/review-request'){try{return Response.json(await judge({...env,MODEL_REQUEST_GATE:async()=>{const record=JSON.parse((await env.DB.prepare('SELECT payload FROM sec_cache WHERE cache_key=?').bind('filing-operator:'+id).first()).payload);await reserveFilingOperatorReview(env,id,url.searchParams.get('lease'),url.searchParams.get('execution')||record.executionId||id);}},{stage:'fixture-gate',system:'Synthetic local gate transport only',text:'{"fixture":true}',schema:{type:'object',properties:{ok:{type:'boolean'}}},maxRetries:Number(url.searchParams.get('retries')||0),ledger:{kind:'synthetic-acceptance',ticker:f.ticker,runId:id}}));}catch(error){return Response.json({error:String(error)},{status:503});}}
+ if(url.pathname==='/fixture/material-range-cache'){
+   const row=JSON.parse((await env.DB.prepare('SELECT payload FROM sec_cache WHERE cache_key=?').bind('filing-operator:'+id).first()).payload),saved=await(await env.SEC_FILINGS.get(row.stateRef.key)).text(),reads=[];
+   const tracked={...env,MODEL_REQUEST_GATE:async()=>{throw Error('Cache read acceptance forbids model calls');},SEC_FILINGS:new Proxy(env.SEC_FILINGS,{get(bucket,name){if(name==='get')return async(...args)=>{const entry={key:args[0],range:args[1]?.range??null,arrayBuffers:0,texts:0};reads.push(entry);const object=await bucket.get(...args);if(!object)return null;return new Proxy(object,{get(object,method){if(method==='arrayBuffer')return()=>{entry.arrayBuffers++;return object.arrayBuffer();};if(method==='text')return()=>{entry.texts++;return object.text();};const value=Reflect.get(object,method,object);return typeof value==='function'?value.bind(object):value;}});};const value=Reflect.get(bucket,name,bucket);return typeof value==='function'?value.bind(bucket):value;}})};
+   const active=unpackState(saved),summary=active.composer.blocks.find(block=>block.id==='summary');summary.title='Cache read journey';summary.html='<h2>Cache read journey</h2><p>HEDGE evidence search.</p><p><data value="164000000" data-ref="c2">164000000</data> USD.</p>';summary.sources=['c2'];summary.state='draft';active.composer.passed={};
+   const refuseShadow=async()=>{throw Error('Read acceptance cannot validate or publish');},harness=await filingOperatorHarness(tracked,row.spec,active,refuseShadow),ranges=()=>reads.filter(read=>read.range);
+   const first=await harness.contentInput(active,'summary'),firstReads=ranges().length,second=await harness.contentInput(active,'summary'),secondReads=ranges().length-firstReads;
+   const fresh=await filingOperatorHarness(tracked,row.spec,structuredClone(active),refuseShadow),beforeFresh=ranges().length,third=await fresh.contentInput(fresh.state,'summary'),freshReads=ranges().length-beforeFresh;
+   const material=JSON.parse(await(await tracked.SEC_FILINGS.get('sec-materials/v1/'+row.spec.material.ticker+'/'+row.spec.material.accession+'/'+row.spec.material.version+'/index.json')).text()),alias=structuredClone(material);alias.ref.version+='-alias';
+   const cacheEnv=withPreparedMaterialReadCache(tracked,[material,alias]),beforeCross=ranges().length,page=await readFilingMarkdown(cacheEnv,material),aliasPage=await readFilingMarkdown(cacheEnv,alias),crossReads=ranges().length-beforeCross;
+   const retry=structuredClone(material);retry.ref.version+='-recovery';retry.markdown.key+='.cache-recovery';const retryEnv=withPreparedMaterialReadCache(tracked,[retry]),beforeRetry=ranges().length;let firstFailure='';try{await readFilingMarkdown(retryEnv,retry);}catch(error){firstFailure=String(error);}
+   const originalMarkdown=await(await env.SEC_FILINGS.get(material.markdown.key)).text();await env.SEC_FILINGS.put(retry.markdown.key,originalMarkdown);const recovered=await readFilingMarkdown(retryEnv,retry),recoveryReads=ranges().length-beforeRetry;
+   const indexKey='sec-materials/v1/'+row.spec.material.ticker+'/'+row.spec.material.accession+'/'+row.spec.material.version+'/index.json';
+   return Response.json({firstReads,secondReads,freshReads,crossReads,recoveryReads,firstFailure,indexReads:reads.filter(read=>read.key===indexKey).length,bodyEqual:JSON.stringify(first.body)===JSON.stringify(second.body)&&JSON.stringify(first.body)===JSON.stringify(third.body),inputHashes:[first.inputHash,second.inputHash,third.inputHash],blockHashes:[first.blockHash,second.blockHash,third.blockHash],foundSourceIds:first.payload.found.map(source=>source.id),crossTextEqual:page.text===aliasPage.text&&page.text===originalMarkdown,recovered:recovered.text===originalMarkdown,eachRangeObjectConsumedOnce:reads.filter(read=>read.range).every(read=>read.arrayBuffers<=1),reads});
+ }
  if(url.pathname==='/fixture/public'){let saved;for(let n=1;n<=6;n++)saved=await saveVersion(env,{schema:'analysis-artifact.v1',kind:'filing-report',ticker:f.ticker,subject:f.accession,lang:'en',title:'Stable public fixture',blocks:[{id:'summary',title:'Stable public fixture',html:'<h2>Stable public fixture</h2><p>Synthetic existing public content.</p>',sources:[],state:'passed'}],charts:[],sources:[]},'','draft','synthetic-baseline');await env.DB.prepare('UPDATE analysis_artifacts SET published_version=?,published_hash=?,published_at=? WHERE artifact_id=?').bind(saved.version,saved.hash,f.at,'filing-report:'+f.ticker+':'+f.accession).run();return Response.json(saved);}
  if(url.pathname.startsWith('/api/admin/'))return handleAdminRequest(request,{...env,ASSETS:{fetch:()=>new Response('Not found',{status:404})}});
  if(url.pathname.startsWith('/admin/'))return handleReportAdminRequest(request,env);
@@ -193,17 +234,18 @@ const opRow = id => jsonRow(`filing-operator:${id}`);
 const rawRow = key => db.prepare("SELECT * FROM sec_cache WHERE cache_key=?").bind(key).first();
 const send = (n, op, plan, options = {}) => request((options.proxy ? reportPath(sourceId(n)).replace("/admin/", "/api/admin/") : reportPath(sourceId(n))) + "/operator-complete", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json", "idempotency-key": uuid(op), ...(options.proxy ? { origin: "http://localhost" } : {}), ...options.headers }, body: JSON.stringify(plan) });
 const sendCorrection = (runId, operation, input, options = {}) => request((options.proxy ? reportPath(runId).replace("/admin/", "/api/admin/") : reportPath(runId)) + "/apply-reviewer-corrections", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json", "idempotency-key": uuid(operation), ...(options.proxy ? { origin: "http://localhost" } : {}), ...options.headers }, body: JSON.stringify(input) });
+const sendPreparationRecovery = (runId, operation, input, options = {}) => request((options.proxy ? reportPath(runId).replace("/admin/", "/api/admin/") : reportPath(runId)) + "/recover-preparation", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json", "idempotency-key": uuid(operation), ...(options.proxy ? { origin: "http://localhost" } : {}), ...options.headers }, body: JSON.stringify(input) });
 const planFor = async n => {
   const exported = await request(reportPath(sourceId(n)) + "/checkpoint", { headers: { authorization: "Bearer " + token } });
   if (exported.status !== 200) throw Error("Source checkpoint unavailable: " + JSON.stringify(exported));
   return { schemaVersion: "filing-operator-plan.v1", sourceRunId: sourceId(n), expectedCheckpointHash: exported.body.checkpointHash, expectedPublicVersion: publicBaseline.version, expectedPublicHash: publicBaseline.hash, author: { model: "gpt-6.1-sol", effort: "max", runId: `synthetic-external-sol-author-${n}`, promptVersion: "synthetic-operator-completion.v1" }, reason: "Synthetic local acceptance: replace outdated arithmetic with independently checked static illustration; never publish", pinnedReads: [{ tool: "read_filing_markdown", args: { maxChars: 48000 } }, { tool: "query_facts", args: {} }], computeCalls: [{ expectedResultId: "c2", args: { label: "Static quarter sensitivity annualized for illustration only", formula: `${factIds[0]}*4`, unit: "USD" }, expected: { value: 164000000, unit: "USD", tolerance: 0 } }, { expectedResultId: "c3", args: { label: "Static nine-month sensitivity normalized to a year for illustration only", formula: `${factIds[1]}/3*4`, unit: "USD" }, expected: { value: 164000000, unit: "USD", tolerance: 0 } }], oldToNew: { c1: "c2" }, evidenceCorrections: [{ id: "E7", expectedOldHash: sha(stable(oldNote)), section: "source-block", quote: originalQuote, statement: "Static disclosed sensitivity has unresolved hedge netting; annualization is illustrative and is not a future net-interest forecast", facts: factIds }], closeLeads: { leads: [{ id: "L1", verdict: "open", finding: "Synthetic pinned source does not establish hedge overlap; retain this specific uncertainty", evidence: ["source-block"] }] }, researchUses: [{ reportId: "synthetic-macro", version: publicResearch.reports[0].report.version, claimId: "macro-claim-1", decision: "rejected", reason: "Synthetic static company sensitivity does not establish a macro-driven future net cost; debt reset and hedge overlaps remain unresolved", companySources: ["source-block"], financialVariable: "cashInterest" }], investmentChains: [{ id: "chain-1", priorAssumption: "An obsolete net cost forecast was unsupported", newEvidence: originalQuote, revisedAssumption: "Use the disclosed static sensitivity without double deducting hedges", financialEffect: "Synthetic illustrative static annualization is 164000000 USD; actual future net cash interest is not established", valuationEffect: "No target price without tax, share count, dated debt resets and hedge reconciliation", quantificationStatus: "sensitivity_only", sourceIds: ["source-block"], computationRefs: ["c2", "c3"], missingInputs: ["Debt reset dates, net hedge treatment, tax, economic shares and a valuation model"], counterEvidence: "Hedges and debt balances can change", verification: "Read next dated original debt and hedge disclosure", window: "Synthetic illustration only" }], charts: [{ id: "static-comparison", title: "Synthetic static annualization illustration", type: "bar", aspect: "wide", series: [{ label: "Illustration only; no forward forecast", points: [{ period: "2025-09-30", ref: "c2" }, { period: "2025-12-31", ref: "c3" }] }] }], blocks: blockIds.map((id, i) => ({ id, html: `<h2>Synthetic ${id === "summary" ? "static sensitivity" : id} case ${n}</h2><p>Synthetic static sensitivity is an illustration; future net interest and a price target remain unestablished. <cite data-source="source-block">Pinned original evidence</cite>.</p><p>Static illustration: <data value="164000000" data-ref="c2">164000000</data> USD. Hedge netting remains unresolved.</p>${i === 1 ? '<figure data-chart="static-comparison"></figure>' : ""}` })) };
 };
-async function drive(id, { terminal = true, limit = 160 } = {}) {
+async function drive(id, { terminal = true, limit = 160, executionId = id } = {}) {
   let saved;
   for (let n = 0; n < limit; n++) {
     saved = await opRow(id);
     if (saved && ["validated", "failed", "unknown"].includes(saved.status)) return saved;
-    await request(`/fixture/advance?id=${id}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`);
+    await request(`/fixture/advance?id=${executionId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`);
     if (!terminal) return opRow(id);
     await pause(30);
   }
@@ -345,6 +387,116 @@ async function runCorrectionInterruptionBoundaries() {
   const stoppedRow = await opRow(stopped.runId);
   check("explicit stop fences an in-flight reviewer correction and preserves inherited budget", stop.status === 200 && stop.body.status === "stopped" && stoppedRow.status === "failed" && !stoppedRow.validatedKey && stoppedRow.reviewCallsInherited === 7 && stoppedRow.reviewCalls === 1 && outbound.length === stoppedHttp);
 }
+async function preparationIdentity(runId) {
+  const raw = await rawRow(`filing-operator:${runId}`), row = JSON.parse(raw.payload);
+  return { expectedRecordHash: sha(raw.payload), expectedPlanHash: row.planHash, expectedPreparationStateHash: row.stages.corrections?.afterStateRef?.hash ?? row.stateRef?.hash ?? "0".repeat(64), expectedPublicVersion: publicBaseline.version, expectedPublicHash: publicBaseline.hash };
+}
+async function rejectPreparation(name, runId, input, operation = 801, options = {}) {
+  const before = outbound.length, answer = await sendPreparationRecovery(runId, operation, input, options);
+  check(name, [400, 409, 413].includes(answer.status) && outbound.length === before, { status: answer.status, error: answer.body.error, providerHttp: outbound.length - before });
+  return answer;
+}
+async function holdPreparation(n, correctionNumber) {
+  const source = await startSemanticFailure(n), runId = `shadow-${ticker}-${accession}-operator-fix-${uuid(correctionNumber)}`, owner = `FILING_OPERATOR_COMPLETION_WORKFLOW:${runId}`;
+  let arrived, timer;
+  const seen = new Promise((resolve, reject) => { arrived = resolve; timer = setTimeout(() => reject(Error("Actual preparation did not reach the held R2 material read")), 15000); });
+  const hold = { runId, owner, arrived, released: false }; recoveryHolds.set(owner, hold);
+  const admitted = await sendCorrection(source.runId, correctionNumber, source.input);
+  check(`preparation ${correctionNumber} starts through the real correction endpoint`, admitted.status === 202 && admitted.body.runId === runId, admitted);
+  const progress = drive(runId).then(value => ({ value }), error => ({ error: String(error) }));
+  const read = await seen; clearTimeout(timer);
+  const row = await opRow(runId);
+  check(`preparation ${correctionNumber} completes corrections and holds a real R2 read before any billing`, read.found && row.phase.name === "prepare" && row.phase.status === "started" && row.stages.corrections.status === "done" && row.reviewCalls === 0 && row.reviewCallsInherited === 7, { phase: row.phase.name, status: row.phase.status, calls: row.reviewCalls, inherited: row.reviewCallsInherited, readKey: read.key });
+  return { runId, owner, source, hold, progress };
+}
+async function waitNativePreparationTimeout(target) {
+  await target.progress;
+  let row, status;
+  for (let n = 0; n < 200; n++) {
+    row = await opRow(target.runId); status = await request(`/fixture/run-status?id=${target.runId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`);
+    if (row.status === "unknown" && ["errored", "terminated"].includes(status.body.status)) break;
+    await pause(25);
+  }
+  const runner = (await request(runnerPath(target.runId))).body;
+  check("native RunStep timeout produces the exact unbilled unknown record and a genuinely errored old runner", row.status === "unknown" && row.phase.name === "prepare" && row.phase.status === "unknown" && row.phase.expiresAt === 0 && row.error === "step operator:prepare timed out after 660s" && row.reviewCalls === 0 && row.reviewCallsInherited === 7 && status.body.status === "errored" && runner.steps.some(step => step.name === "operator:corrections" && JSON.parse(step.record).done) && runner.timers.some(timer => timer.requested === 660000 && timer.effective === 1000), { error: row.error, status: row.status, runnerStatus: status.body.status, timers: runner.timers, waitedRealElevenMinutes: false });
+  return { row, runner, status: status.body.status, input: await preparationIdentity(target.runId) };
+}
+async function runRecoveredPreparationCase(n, correctionNumber, operation, { capped = false } = {}) {
+  const target = await holdPreparation(n, correctionNumber), earlyInput = await preparationIdentity(target.runId);
+  await rejectPreparation("active preparation cannot be recovered or duplicated", target.runId, earlyInput, operation);
+  const ended = await waitNativePreparationTimeout(target), sourceLedger = await rawRow(`filing-operator:${target.source.runId}`), originalRaw = await rawRow(`filing-operator:${target.runId}`), originalFailure = await (await bucket.get(`research-shadow/${target.runId}/failed.json`)).text();
+  const implementation = await db.prepare("SELECT * FROM fixture_execution_implementations WHERE execution_id=?").bind(target.runId).first();
+  check("old timeout executes the requested actual production implementation", implementation.implementation === (correctionNumber === 432 ? "82a0" : "current") && (correctionNumber !== 432 || implementation.source_sha === sha(legacyOperator.source)), implementation);
+  if (!capped) {
+    const path = reportPath(target.runId) + "/recover-preparation";
+    check("preparation recovery requires admin authentication", (await request(path, { method: "POST", body: "{}" })).status === 401);
+    check("preparation recovery proxy enforces same origin", (await sendPreparationRecovery(target.runId, operation, ended.input, { proxy: true, headers: { origin: "https://other.invalid" } })).status === 403);
+    check("preparation recovery proxy is POST only", (await request(path.replace("/admin/", "/api/admin/"))).status === 404);
+    check("preparation recovery requires a UUID", (await sendPreparationRecovery(target.runId, operation, ended.input, { headers: { "idempotency-key": "invalid" } })).status === 400);
+    for (const field of ["expectedRecordHash", "expectedPlanHash", "expectedPreparationStateHash", "expectedPublicHash"]) await rejectPreparation(`preparation recovery binds exact ${field}`, target.runId, { ...ended.input, [field]: "f".repeat(64) }, operation);
+    await rejectPreparation("preparation recovery binds exact public version", target.runId, { ...ended.input, expectedPublicVersion: 5 }, operation);
+    for (const field of ["html", "plan", "state", "executionId", "maxCalls"]) await rejectPreparation(`preparation recovery rejects client ${field}`, target.runId, { ...ended.input, [field]: "Untrusted input" }, operation);
+    await rejectPreparation("preparation recovery identity is bounded to eight KiB", target.runId, { ...ended.input, padding: "x".repeat(9000) }, operation);
+  }
+  let paidArrived, timer;
+  const paid = new Promise((resolve, reject) => { paidArrived = resolve; timer = setTimeout(() => reject(Error("Recovered execution did not reach its one changed-block review")), 20000); });
+  transportMode = "hold-content"; transportHeld = paidArrived;
+  const beforeRecoveryHttp = outbound.length, shadowRowsBefore = (await db.prepare("SELECT COUNT(*) n FROM sec_cache WHERE cache_key LIKE 'research-shadow:%' AND cache_key NOT LIKE '%:resume'").first()).n;
+  const admitted = await Promise.all([sendPreparationRecovery(target.runId, operation, ended.input, { proxy: true }), sendPreparationRecovery(target.runId, operation, ended.input, { proxy: true })]);
+  const executionId = `${target.runId}-preparation-recovery`;
+  check("explicit recovery claims once with the same operation and a new execution id", admitted.every(answer => answer.status === 202 && answer.body.runId === target.runId && answer.body.executionId === executionId) && admitted.filter(answer => answer.body.replay).length === 1, admitted);
+  const progress = drive(target.runId, { executionId, limit: 400 }).then(value => ({ value }), error => ({ error: String(error) }));
+  await paid; clearTimeout(timer); transportHeld = undefined; transportMode = "pass";
+  const active = await opRow(target.runId), activeRaw = await rawRow(`filing-operator:${target.runId}`), newRunner = (await request(runnerPath(executionId))).body;
+  check("recovery inherits completed corrections and the original seven without creating another shadow or author", active.executionId === executionId && active.reviewCalls === 1 && active.reviewCallsInherited === 7 && active.phase.name === "content:summary" && JSON.stringify(active.stages.corrections) === JSON.stringify(ended.row.stages.corrections) && JSON.parse(newRunner.run[0].params).runId === target.runId && newRunner.dispatches.length === 1 && newRunner.sessions.length === 0 && (await db.prepare("SELECT COUNT(*) n FROM sec_cache WHERE cache_key LIKE 'research-shadow:%' AND cache_key NOT LIKE '%:resume'").first()).n === shadowRowsBefore, { runId: target.runId, executionId, newCalls: active.reviewCalls, inherited: active.reviewCallsInherited, dispatches: newRunner.dispatches.length });
+  check("recovery archives the exact timed-out record and original failure bytes", await (await bucket.get(active.preparationRecovery.recordRef.key)).text() === originalRaw.payload && await (await bucket.get(active.preparationRecovery.failureRef.key)).text() === originalFailure && active.preparationRecovery.stateRef.hash === ended.row.stages.corrections.afterStateRef.hash && active.planHash === ended.row.planHash);
+  const stale = await request(`/fixture/stale-execution?id=${target.runId}&execution=${target.runId}`);
+  check("current task rejects a stale execution bootstrap without entering any step or mutating the active row", stale.status === 409 && /execution/i.test(stale.body.error) && !/reached a task step/.test(stale.body.error) && JSON.stringify(await rawRow(`filing-operator:${target.runId}`)) === JSON.stringify(activeRaw), stale);
+  const staleGate = await request(`/fixture/review-request?id=${target.runId}&lease=${active.phase.leaseToken}&execution=${target.runId}&retries=2`);
+  check("old epoch cannot reserve or send even with the new active lease", staleGate.status === 503 && outbound.length === beforeRecoveryHttp + 1 && JSON.stringify(await rawRow(`filing-operator:${target.runId}`)) === JSON.stringify(activeRaw));
+  const versionsBefore = (await db.prepare("SELECT * FROM analysis_artifact_versions ORDER BY version").all()).results, lateAt = Date.now();
+  target.hold.released = true; target.hold.release();
+  await pause(750);
+  const lateWrites = recoveryStorageWrites.filter(write => write.owner === target.owner && write.at >= lateAt), afterLate = await rawRow(`filing-operator:${target.runId}`);
+  check("actual late preparation callback reaches its state-write boundary without altering the new active row lease or common timeout receipt", target.hold.returnedAt >= lateAt && recoveryReadReturns.some(read=>read.owner===target.owner&&read.key===target.hold.read.key&&read.at>=lateAt) && lateWrites.length > 0 && JSON.stringify(afterLate) === JSON.stringify(activeRaw) && await (await bucket.get(`research-shadow/${target.runId}/failed.json`)).text() === originalFailure && JSON.stringify((await db.prepare("SELECT * FROM analysis_artifact_versions ORDER BY version").all()).results) === JSON.stringify(versionsBefore) && outbound.length === beforeRecoveryHttp + 1 && lateWrites.every(write => write.key.includes("/states/")), { implementation: implementation.implementation, returnedAt: target.hold.returnedAt, immutableUnreferencedStateWrites: lateWrites, activeExecutionId: active.executionId, activeLease: active.phase.leaseToken });
+  const replayBefore = outbound.length, replay = await sendPreparationRecovery(target.runId, operation, ended.input);
+  check("exact recovery replay never dispatches a second execution", replay.status === 202 && replay.body.replay && replay.body.dispatchRetried === false && (await request(runnerPath(executionId))).body.dispatches.length === 1 && outbound.length === replayBefore);
+  await rejectPreparation("a different UUID cannot recover the same preparation again", target.runId, ended.input, operation + 1);
+  await rejectPreparation("a changed identity cannot replace a recovery claim", target.runId, { ...ended.input, expectedRecordHash: "e".repeat(64) }, operation);
+  if (capped) {
+    for (let n = 0; n < 4; n++) await request(`/fixture/review-request?id=${target.runId}&lease=${active.phase.leaseToken}&execution=${executionId}`);
+    const blocked = await request(`/fixture/review-request?id=${target.runId}&lease=${active.phase.leaseToken}&execution=${executionId}&retries=2`);
+    check("recovered execution still shares twelve total requests with its inherited seven", blocked.status === 503 && (await opRow(target.runId)).reviewCalls === 5 && outbound.length === beforeRecoveryHttp + 5);
+  }
+  transportRelease(); await progress;
+  const final = await drive(target.runId, { executionId, limit: 400 });
+  if (capped) check("recovered preparation cannot reset a consumed twelve-request allowance", final.status === "failed" && final.reviewCalls === 5 && final.reviewCallsInherited === 7 && !final.validatedKey && outbound.length === beforeRecoveryHttp + 5, { status: final.status, total: final.reviewCalls + final.reviewCallsInherited });
+  else {
+    const sent = outbound.slice(beforeRecoveryHttp);
+    check("legacy preparation recovery completes only three new reviews and retains seven inherited calls", final.status === "validated" && final.runId === target.runId && final.executionId === executionId && final.reviewCalls === 3 && final.reviewCallsInherited === 7 && sent.length === 3 && sent[0].stage === "content" && sent[0].block === "summary" && sent[1].stage === "semantic" && sent[2].stage === "visual", { status: final.status, newCalls: final.reviewCalls, inherited: final.reviewCallsInherited, stages: sent.map(row => ({ stage: row.stage, block: row.block })) });
+    const preview = await request(reportPath(target.runId), { headers: { authorization: "Bearer " + token } });
+    check("same recovered shadow is readable as validated and still requires independent human approval", preview.status === 200 && preview.body.status === "validated_shadow" && preview.body.previewToken && preview.body.callsReserved === 10 && !await jsonRow(`research-shadow:${target.runId}:review`));
+    const self = await request(reportPath(target.runId) + "/promote", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ expectedHash: final.hash, reviewer: final.spec.operatorCompletion.author.runId, reviewNotes: "Forbidden self approval", approvedChainIds: ["chain-1"] }) });
+    check("preparation recovery does not grant author self-approval or public promotion", self.status === 400);
+  }
+  const pointer = await db.prepare("SELECT published_version,published_hash FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first();
+  check("recovery and late callbacks preserve original failed seven and public six", JSON.stringify(await rawRow(`filing-operator:${target.source.runId}`)) === JSON.stringify(sourceLedger) && pointer.published_version === 6 && pointer.published_hash === publicBaseline.hash);
+  return { runId: target.runId, oldImplementation: implementation, oldRunnerStatus: ended.status, executionId, timerAcceleration: ended.runner.timers, originalCalls: 7, addedCalls: final.reviewCalls, status: final.status, lateUnreferencedStateWrites: lateWrites, oldCallbackReturnedAt: target.hold.returnedAt, publicPointer: pointer };
+}
+async function runPreparationRecoveryJourney() {
+  const recovered = await runRecoveredPreparationCase(32, 432, 801);
+  const paid = await startHeldReviewerCorrection(33, 433); await db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.phase.expiresAt',0) WHERE cache_key=?").bind(`filing-operator:${paid.runId}`).run(); transportRelease(); await paid.progress;
+  const paidRow = await drive(paid.runId);
+  check("paid unknown fixture reflects one real reserved provider HTTP", paidRow.status === "unknown" && paidRow.reviewCalls === 1);
+  await rejectPreparation("paid or non-prepare unknown work cannot recover preparation", paid.runId, await preparationIdentity(paid.runId), 803);
+  const bad = await startSemanticFailure(34), usage = await db.prepare("SELECT * FROM ai_usage WHERE run_id=? AND stage='artifact-review-highlights' AND outcome='ok' LIMIT 1").bind(bad.runId).first(); await db.prepare("UPDATE ai_usage SET model='incompatible-synthetic-model' WHERE id=?").bind(usage.id).run();
+  const failed = await failDeferredCorrection("failed proof recovery fixture", bad, bad.input, 434); await rejectPreparation("a deterministic failed proof is not an unknown preparation timeout", failed.runId, await preparationIdentity(failed.runId), 804); await db.prepare("UPDATE ai_usage SET model=? WHERE id=?").bind(usage.model, usage.id).run();
+  const stopped = await startHeldReviewerCorrection(35, 435); await request(reportPath(stopped.runId) + "/stop", { method: "POST", headers: { authorization: "Bearer " + token } }); transportRelease(); await stopped.progress; await drive(stopped.runId);
+  await rejectPreparation("explicitly stopped work cannot recover preparation", stopped.runId, await preparationIdentity(stopped.runId), 805);
+  const currentCapped = await runRecoveredPreparationCase(36, 436, 806, { capped: true });
+  check("preparation recovery journey sends no production or external research requests", blockedOutbound.length === 0, blockedOutbound);
+  return { recovered, currentCapped, historicalSource: { commit: legacyOperator.commit, sha256: sha(legacyOperator.source), sourcePath: "workers/analysis/src/filing-analysis/operator-completion.ts" }, timerSimulation: "Only local native setTimeout(660000) in the targeted old prepare invocation is accelerated to 1000ms; no passed receipts or terminal statuses are injected" };
+}
 
 async function runReviewerCorrectionJourney() {
   const runId = operationId(103), source = await opRow(runId), input = await reviewerCorrectionInput(runId);
@@ -420,12 +572,25 @@ async function withChangedFailedState(runId, change, work) {
 try {
   chrome = spawn(process.env.CHROMIUM_PATH || "/usr/bin/chromium", ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", `--user-data-dir=${resolve(scratch, "chrome")}`], { stdio: ["ignore", "ignore", "pipe"] });
   chromeEndpoint = await new Promise((resolve, reject) => { let stderr = ""; const timer = setTimeout(() => reject(Error("Local Chromium CDP startup timeout")), 20000); chrome.once("error", reject); chrome.stderr.on("data", bytes => { stderr += bytes; const found = /DevTools listening on (ws:\/\/[^\s]+)/.exec(stderr); if (found) { clearTimeout(timer); resolve(found[1]); } }); });
-  await build({ entryPoints: [workerPath], outfile: bundlePath, bundle: true, format: "esm", platform: "node", target: "es2022", conditions: ["workerd", "worker", "browser"], external: ["cloudflare:*", "node:*"], banner: { js: "import {createRequire as localCreateRequire} from 'node:module'; const require=localCreateRequire('/local-worker.mjs');" }, loader: { ".css": "text", ".txt": "text" }, plugins: [{ name: "local-axe-text", setup(bundle) { bundle.onLoad({ filter: /\/axe\.min\.js$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "text" })); } }] });
-  mf = new Miniflare(convertV4MiniflareOptions({ name: "filing-operator-acceptance", modules: true, modulesRoot: scratch, scriptPath: bundlePath, compatibilityDate: "2026-08-26", compatibilityFlags: ["nodejs_compat"], durableObjects: { TASK_RUNS: { className: "CompletionRunner", useSQLite: true } }, serviceBindings: { SPONTRA_ANALYSIS: { name: "filing-operator-acceptance", entrypoint: "AdminGateway" }, BROWSER: { external: { address: browserAddress } }, R2_READ_GATE: async incoming => { const read = await incoming.json(); if (slowR2Key && read.key === slowR2Key) { slowR2EnteredAt ??= Date.now(); slowR2EnteredResolve?.({ ...read, enteredAt: slowR2EnteredAt }); await new Promise(resolve => { slowR2Release = resolve; }); } return Response.json({ allowed: true }); } }, d1Databases: { DB: "filing-operator-acceptance" }, r2Buckets: ["SEC_FILINGS"], bindings: { FIXTURE: JSON.stringify(fixture), REPORT_ADMIN_PASSWORD: "synthetic-local-only", DEEPSEEK_API_KEY: "synthetic-local-only", OPENAI_API_KEY: "synthetic-local-only", OPENAI_REVIEW_MODEL: "gpt-6.1-sol", BUSINESS_SITE_ORIGIN: pageOrigin }, outboundService: modelTransport }));
+  await build({ entryPoints: [workerPath], outfile: bundlePath, bundle: true, format: "esm", platform: "node", target: "es2022", conditions: ["workerd", "worker", "browser"], external: ["cloudflare:*", "node:*"], banner: { js: "import {createRequire as localCreateRequire} from 'node:module'; const require=localCreateRequire('/local-worker.mjs');" }, loader: { ".css": "text", ".txt": "text" }, plugins: [{ name: "local-axe-text", setup(bundle) { bundle.onLoad({ filter: /\/axe\.min\.js$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "text" })); } }, ...(recoveryMode ? [historicalOperatorPlugin] : [])] });
+  mf = new Miniflare(convertV4MiniflareOptions({ name: "filing-operator-acceptance", modules: true, modulesRoot: scratch, scriptPath: bundlePath, compatibilityDate: "2026-08-26", compatibilityFlags: ["nodejs_compat"], durableObjects: { TASK_RUNS: { className: "CompletionRunner", useSQLite: true } }, serviceBindings: { SPONTRA_ANALYSIS: { name: "filing-operator-acceptance", entrypoint: "AdminGateway" }, BROWSER: { external: { address: browserAddress } }, R2_READ_GATE: async incoming => {
+      const read = await incoming.json();
+      if (read.method === "put") recoveryStorageWrites.push({ ...read, at: Date.now() });
+      if (read.method === "get-returned") recoveryReadReturns.push({ ...read, at: Date.now() });
+      if (read.method === "get" && recoveryMode && recoveryHolds.has(read.owner) && read.key.endsWith("/index.json")) {
+        const hold = recoveryHolds.get(read.owner), current = await opRow(hold.runId);
+        if (!hold.released && current?.phase?.name === "prepare" && current.status === "running") {
+          hold.enteredAt = Date.now(); hold.read = read; hold.arrived?.(read);
+          await new Promise(resolve => { hold.release = resolve; }); hold.returnedAt = Date.now();
+        }
+      }
+      if (slowR2Key && read.key === slowR2Key) { slowR2EnteredAt ??= Date.now(); slowR2EnteredResolve?.({ ...read, enteredAt: slowR2EnteredAt }); await new Promise(resolve => { slowR2Release = resolve; }); }
+      return Response.json({ allowed: true });
+    } }, d1Databases: { DB: "filing-operator-acceptance" }, r2Buckets: ["SEC_FILINGS"], bindings: { FIXTURE: JSON.stringify(fixture), REPORT_ADMIN_PASSWORD: "synthetic-local-only", DEEPSEEK_API_KEY: "synthetic-local-only", OPENAI_API_KEY: "synthetic-local-only", OPENAI_REVIEW_MODEL: "gpt-6.1-sol", BUSINESS_SITE_ORIGIN: pageOrigin }, outboundService: modelTransport }));
   request = async (path, options = {}) => { const response = await mf.dispatchFetch("http://localhost" + path, options), body = await response.text(); try { return { status: response.status, body: JSON.parse(body) }; } catch { return { status: response.status, body }; } };
   ({ DB: db, SEC_FILINGS: bucket } = await mf.getBindings());
   for (const file of ["0001_normal_doctor_strange.sql", "0002_flat_blockbuster.sql", "0003_neat_toro.sql", "0004_silky_may_parker.sql", "0005_fresh_bloodaxe.sql", "0019_pipeline_events.sql", "0049_analysis_artifacts.sql", "0023_ai_usage.sql", "0032_ai_tool_settings.sql", "0060_public_research.sql"]) for (const statement of (await readFile(resolve(root, "workers/analysis/migrations", file), "utf8")).replace(/--[^\n]*/g, "").split(";").map(value => value.trim()).filter(Boolean)) await db.prepare(statement).run();
-  for (const statement of ["CREATE TABLE financial_company_settings(ticker TEXT PRIMARY KEY,enabled INTEGER)", "CREATE TABLE business_feature_settings(ticker TEXT,feature TEXT,generate INTEGER)", "ALTER TABLE ai_usage ADD COLUMN user_hash TEXT", "ALTER TABLE ai_usage ADD COLUMN conversation_id TEXT"]) await db.prepare(statement).run();
+  for (const statement of ["CREATE TABLE financial_company_settings(ticker TEXT PRIMARY KEY,enabled INTEGER)", "CREATE TABLE business_feature_settings(ticker TEXT,feature TEXT,generate INTEGER)", "ALTER TABLE ai_usage ADD COLUMN user_hash TEXT", "ALTER TABLE ai_usage ADD COLUMN conversation_id TEXT", "CREATE TABLE fixture_execution_implementations(execution_id TEXT PRIMARY KEY,implementation TEXT NOT NULL,source_sha TEXT)"]) await db.prepare(statement).run();
   await bucket.put(`${materialBase}/index.json`, JSON.stringify(snapshot)); await bucket.put(snapshot.markdown.key, markdown);
   for (const run of [...parents, ...runs]) {
     await db.prepare("INSERT INTO sec_cache VALUES(?,?,?)").bind(`research-shadow:${run.runId}`, JSON.stringify(run), at).run();
@@ -435,16 +600,35 @@ try {
   token = (await request("/fixture/auth")).body.token;
   publicBaseline = (await request("/fixture/public")).body;
   check("fixture has an immutable sixth public version", publicBaseline.version === 6 && /^[a-f0-9]{64}$/.test(publicBaseline.hash), publicBaseline);
-  if (process.env.SPONTRA_ASYNC_PROOF_ONLY === "1") {
+  if (recoveryMode) {
+    const preparationRecovery = await runPreparationRecoveryJourney(), baselineFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-correction-material-cache.json"), baselineBytes = await readFile(baselineFile, "utf8"), baseline = JSON.parse(baselineBytes);
+    const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-preparation-recovery.json"), implementations = (await db.prepare("SELECT * FROM fixture_execution_implementations ORDER BY execution_id").all()).results;
+    const results = { at: new Date().toISOString(), scope: "explicit-single-unbilled-preparation-recovery-with-actual-82a0-late-callback", environment: "Real handlers/proxy/named AdminGateway/TaskRunner/native RunStep/composer/current recovery implementation plus the complete historical 82a0 operator module", synthetic: { material: true, providerResponses: true, timerAcceleration: true, passedReceipts: false, finalRunnerStatus: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, preparationRecovery, implementations, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, recoveryReadReturns, recoveryStorageWrites, scratch, baselineAcceptance: { file: basename(baselineFile), at: baseline.at, sha256: sha(baselineBytes), checks: baseline.checks.length }, notVerified: ["Real provider investment and visual judgement", "Production recovery or deployment", "Waiting an actual eleven-minute wall-clock timeout", "Repeating the historical full or cache journeys on this run"] };
+    await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
+    console.log(JSON.stringify({ resultFile, scope: results.scope, checks: checks.length, syntheticProviderHttpCalls: outbound.length, actualModelCalls: 0, screenshots: screenshots.length }));
+  } else if (process.env.SPONTRA_ASYNC_PROOF_ONLY === "1") {
+    const cacheMode = process.env.SPONTRA_MATERIAL_RANGE_CACHE_ACCEPTANCE === "1";
     await runDeferredProofFailures();
     await runCorrectionInterruptionBoundaries();
     const finalPointer = await db.prepare("SELECT published_version,published_hash FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first();
     check("all asynchronous proof budget and interruption failures preserve the exact public version and hash", finalPointer.published_version === 6 && finalPointer.published_hash === publicBaseline.hash, finalPointer);
     check("narrow async proof journey contacts no production or other outbound endpoint", blockedOutbound.length === 0, blockedOutbound);
-    const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-correction-async-admission.json");
-    const baselineFile = resolve(root, "docs/acceptance/discovery/results/filing-operator-completion.json");
+    let materialRangeCache;
+    if (cacheMode) {
+      const beforeHttp = outbound.length, beforeLedger = await rawRow(`filing-operator:${operationId(128)}`), read = await request(`/fixture/material-range-cache?id=${operationId(128)}`);
+      check("cache read journey uses the actual operator content-input harness and pinned material search", read.status === 200 && read.body.firstReads > 0 && read.body.foundSourceIds.includes("source-block"), read);
+      materialRangeCache = read.body;
+      check("repeated contentInput in one harness reuses bytes without another R2 range get", materialRangeCache.secondReads === 0, materialRangeCache.secondReads);
+      check("cached and fresh actual provider bodies and full input/block hashes are identical", materialRangeCache.bodyEqual && new Set(materialRangeCache.inputHashes).size === 1 && new Set(materialRangeCache.blockHashes).size === 1, { inputHashes: materialRangeCache.inputHashes, blockHashes: materialRangeCache.blockHashes });
+      check("a fresh operator harness performs its own index and byte-range reads", materialRangeCache.freshReads > 0 && materialRangeCache.indexReads >= 2, { freshReads: materialRangeCache.freshReads, indexReads: materialRangeCache.indexReads });
+      check("distinct prepared refs sharing an immutable object keep their range reads separate", materialRangeCache.crossReads === 2 && materialRangeCache.crossTextEqual, { crossReads: materialRangeCache.crossReads, textEqual: materialRangeCache.crossTextEqual });
+      check("a missing material range is not retained as a successful cache result", /MATERIAL_MARKDOWN_MISSING/.test(materialRangeCache.firstFailure) && materialRangeCache.recoveryReads === 2 && materialRangeCache.recovered, { firstFailure: materialRangeCache.firstFailure, recoveryReads: materialRangeCache.recoveryReads });
+      check("R2 bodies are consumed once while cache reads leave model requests and stored research unchanged", materialRangeCache.eachRangeObjectConsumedOnce && outbound.length === beforeHttp && JSON.stringify(await rawRow(`filing-operator:${operationId(128)}`)) === JSON.stringify(beforeLedger));
+    }
+    const resultFile = resolve(root, cacheMode ? "docs/acceptance/discovery/results/filing-reviewer-correction-material-cache.json" : "docs/acceptance/discovery/results/filing-reviewer-correction-async-admission.json");
+    const baselineFile = resolve(root, cacheMode ? "docs/acceptance/discovery/results/filing-reviewer-correction-async-admission.json" : "docs/acceptance/discovery/results/filing-operator-completion.json");
     const previousBytes = await readFile(baselineFile, "utf8"), previous = JSON.parse(previousBytes);
-    const results = { at: new Date().toISOString(), scope: "async-proof-admission-and-budget-interruption-only", environment: "Real proxy, named AdminGateway, named TaskRunner, actual tools and actual local R2 get with controlled latency", synthetic: { material: true, providerResponses: true, parentCheckpoints: true, userSignoff: false }, actualModelCalls: 0, productionAccess: false, slowR2Admission: slowR2Evidence, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots: [], scratch, baselineAcceptance: { file: "filing-operator-completion.json", at: previous.at, sha256: sha(previousBytes), checks: previous.checks.length }, notVerified: ["Real provider investment/visual judgement", "Production request/deployment", "Full wide journey repeated on this run"] };
+    const results = { at: new Date().toISOString(), scope: cacheMode ? "prepared-material-range-cache-and-async-proof-budget-interruption" : "async-proof-admission-and-budget-interruption-only", environment: "Real proxy, named AdminGateway, named TaskRunner, actual tools and actual local R2 get with controlled latency", synthetic: { material: true, providerResponses: true, parentCheckpoints: true, userSignoff: false }, actualModelCalls: 0, productionAccess: false, slowR2Admission: slowR2Evidence, ...(materialRangeCache ? { materialRangeCache } : {}), checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots: [], scratch, baselineAcceptance: { file: basename(baselineFile), at: previous.at, sha256: sha(previousBytes), checks: previous.checks.length }, notVerified: ["Real provider investment/visual judgement", "Production request/deployment", "Full wide journey repeated on this run"] };
     await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
     console.log(JSON.stringify({ resultFile, scope: results.scope, checks: checks.length, syntheticProviderHttpCalls: outbound.length, actualModelCalls: 0, slowR2Admission: slowR2Evidence }));
   } else {
@@ -616,6 +800,7 @@ try {
   }
 } finally {
   transportRelease?.(); slowR2Release?.();
+  for (const hold of recoveryHolds.values()) { hold.released = true; hold.release?.(); }
   if (mf) await mf.dispose();
   for (const socket of sockets) socket.terminate(); socketServer.close(); browserServer.closeAllConnections(); pageServer.closeAllConnections();
   await Promise.all([new Promise(resolve => browserServer.close(resolve)), new Promise(resolve => pageServer.close(resolve))]);

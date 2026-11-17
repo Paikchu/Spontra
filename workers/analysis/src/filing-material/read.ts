@@ -5,9 +5,16 @@ import type { AnalysisEnv } from "../operations.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import { MATERIAL_READ_BYTES } from "../../../../shared/analysis-contract/filing-material.ts";
 
-type MaterialReadEnv = { SEC_FILINGS: Pick<AnalysisEnv["SEC_FILINGS"], "get"> };
+type PreparedReadCache={prepared:ReadonlySet<string>;ranges:Map<string,Promise<Uint8Array>>};
+type MaterialReadEnv = { SEC_FILINGS: Pick<AnalysisEnv["SEC_FILINGS"], "get">;preparedMaterialReads?:PreparedReadCache };
 const encoder = new TextEncoder();
 const SOURCE_BYTES = MATERIAL_READ_BYTES;
+const preparedIdentity=(snapshot:MaterialSnapshot)=>JSON.stringify([snapshot.ref.ticker,snapshot.ref.accession,snapshot.ref.version,snapshot.markdown.key,snapshot.markdown.bytes]);
+
+/** One operator harness reuses only its pinned material bytes; mutable storage and R2 bodies are never cached. */
+export function withPreparedMaterialReadCache<T extends MaterialReadEnv>(env:T,snapshots:readonly MaterialSnapshot[]):T{
+  return {...env,preparedMaterialReads:{prepared:new Set(snapshots.map(preparedIdentity)),ranges:new Map()}};
+}
 
 export const filingMaterialMeta = (filing: SecFiling): MaterialFiling => ({
   ticker: filing.ticker, accession: filing.accessionNumber, cik: filing.cik, form: filing.form,
@@ -23,11 +30,20 @@ const position = (cursor: string | undefined) => {
 
 async function markdownBytes(env: MaterialReadEnv, snapshot: MaterialSnapshot, offset: number, length: number): Promise<Uint8Array> {
   if (!length) return new Uint8Array();
-  const object = await env.SEC_FILINGS.get(snapshot.markdown.key, { range: { offset, length } });
-  if (!object) throw new Error(`MATERIAL_MARKDOWN_MISSING:${snapshot.ref.accession}:${snapshot.ref.version}`);
-  const bytes = new Uint8Array(await object.arrayBuffer());
-  if (bytes.length !== length) throw new Error(`MATERIAL_RANGE_INCOMPLETE:${offset}:${length}`);
-  return bytes;
+  const read=async()=>{
+    const object = await env.SEC_FILINGS.get(snapshot.markdown.key, { range: { offset, length } });
+    if (!object) throw new Error(`MATERIAL_MARKDOWN_MISSING:${snapshot.ref.accession}:${snapshot.ref.version}`);
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    if (bytes.length !== length) throw new Error(`MATERIAL_RANGE_INCOMPLETE:${offset}:${length}`);
+    return bytes;
+  };
+  const identity=preparedIdentity(snapshot),cache=env.preparedMaterialReads;
+  if(!cache?.prepared.has(identity))return read();
+  const key=JSON.stringify([identity,offset,length]);
+  let pending=cache.ranges.get(key);
+  if(!pending){pending=read();cache.ranges.set(key,pending);}
+  try{return new Uint8Array(await pending);}
+  catch(error){if(cache.ranges.get(key)===pending)cache.ranges.delete(key);throw error;}
 }
 
 export const materialBlockId = (sourceId: string): string => /^(.+)#(?:(?:rows:)?\d+-\d+|cell:\d+:\d+)$/.exec(sourceId)?.[1] ?? sourceId;

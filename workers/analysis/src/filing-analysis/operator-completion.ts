@@ -28,7 +28,9 @@ const lineageClaim=(runId:string)=>`${shadowKey(runId)}:operator-completion`;
 type StateRef={key:string;hash:string};
 type Phase={name:string;status:"started"|"done"|"failed"|"unknown";leaseToken:string;expiresAt:number;beforeStateRef:StateRef;afterStateRef?:StateRef;receipt?:unknown;error?:string};
 type ReviewerCorrection={sourceOperatorRunId:string;sourceRecordRef:StateRef;failedStateRef:StateRef;semanticReceiptHash:string;correctionsHash:string;changedBlocks:string[]};
-export type FilingOperatorRun={runId:string;sourceRunId:string;rootRunId:string;checkpointHash:string;planHash:string;requestId:string;checkpointKey:string;planKey:string;spec:FilingSpec;baseVersion:number|null;baseHash:string|null;status:"claimed"|"running"|"failed"|"unknown"|"validated";reviewCalls:number;reviewCallsInherited?:number;correction?:ReviewerCorrection;maxReviewCalls:12;createdAt:string;phase?:Phase;stages:Record<string,Phase>;stateRef?:StateRef;validatedKey?:string;version?:number;hash?:string;error?:string};
+type PreparationRecovery={requestId:string;inputHash:string;previousExecutionId:string;executionId:string;recordRef:StateRef;failureRef:StateRef;stateRef:StateRef;runnerStatus:"errored"|"terminated";createdAt:string};
+export type FilingOperatorRun={runId:string;executionId?:string;preparationRecovery?:PreparationRecovery;sourceRunId:string;rootRunId:string;checkpointHash:string;planHash:string;requestId:string;checkpointKey:string;planKey:string;spec:FilingSpec;baseVersion:number|null;baseHash:string|null;status:"claimed"|"running"|"failed"|"unknown"|"validated";reviewCalls:number;reviewCallsInherited?:number;correction?:ReviewerCorrection;maxReviewCalls:12;createdAt:string;phase?:Phase;stages:Record<string,Phase>;stateRef?:StateRef;validatedKey?:string;version?:number;hash?:string;error?:string};
+const executionOf=(run:FilingOperatorRun)=>run.executionId??run.runId;
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store"}});
 const db=(env:AnalysisEnv)=>{if(!env.DB)throw new Error("Operator storage unavailable");return env.DB;};
 async function readRun(env:AnalysisEnv,id:string):Promise<FilingOperatorRun|null>{const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(id)).first<{payload:string}>();return row?JSON.parse(row.payload):null;}
@@ -204,46 +206,101 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
   }catch(error){return reply({error:error instanceof Error?error.message:String(error)},409);}
 }
 
-async function failOperation(env:AnalysisEnv,id:string,status:"failed"|"unknown",reason:string){
-  const saved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status',?,'$.error',?,'$.phase.status',?,'$.phase.expiresAt',0),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status')!='validated'").bind(status,reason,status,new Date().toISOString(),operatorKey(id)).run();
-  if(saved.meta.changes)await env.SEC_FILINGS.put(`research-shadow/${id}/failed.json`,JSON.stringify({status:"failed",reason,at:new Date().toISOString(),operator:true}));
+const preparationRecoverySchema=z.object({expectedRecordHash:z.string().regex(/^[a-f0-9]{64}$/),expectedPlanHash:z.string().regex(/^[a-f0-9]{64}$/),expectedPreparationStateHash:z.string().regex(/^[a-f0-9]{64}$/),expectedPublicVersion:z.number().int().positive().nullable(),expectedPublicHash:z.string().regex(/^[a-f0-9]{64}$/).nullable()}).strict();
+const preparationClaim=(id:string)=>`${operatorKey(id)}:preparation-recovery`;
+type OperatorRunner={create(input:{id:string;params:{runId:string}}):Promise<unknown>;get(id:string):Promise<{status():Promise<{status:string;error?:unknown}>}>};
+const operatorRunner=(env:AnalysisEnv)=>(withRuns(env) as AnalysisEnv&{FILING_OPERATOR_COMPLETION_WORKFLOW?:OperatorRunner}).FILING_OPERATOR_COMPLETION_WORKFLOW;
+
+/** Explicitly redoes only a timed-out, never-billed preparation after its old task is terminal. */
+export async function handleFilingPreparationRecovery(request:Request,env:AnalysisEnv,shadow:ShadowRun):Promise<Response>{
+  if(request.method!=="POST")return reply({error:"Method not allowed"},405);
+  const requestId=request.headers.get("idempotency-key")??"";
+  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(requestId))return reply({error:"A UUID idempotency-key is required"},400);
+  try{
+    const body=await request.text();if(new TextEncoder().encode(body).byteLength>8192)return reply({error:"Preparation identity exceeds 8 KiB"},413);
+    const input=preparationRecoverySchema.parse(JSON.parse(body)),inputHash=await sha256(stableOperatorValue(input));
+    const replay=async(payload:string)=>{const claim=JSON.parse(payload);if(claim.requestId!==requestId||claim.inputHash!==inputHash)throw new Error("This operation already has its single preparation recovery");return reply({...claim,replay:true,dispatchRetried:false,operation:await readRun(env,shadow.runId)},202);};
+    const existing=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(preparationClaim(shadow.runId)).first<{payload:string}>();if(existing)return await replay(existing.payload);
+    const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(shadow.runId)).first<{payload:string}>(),run=row?JSON.parse(row.payload) as FilingOperatorRun:null;
+    if(!run||run.runId!==shadow.runId||stableOperatorValue(run.spec)!==stableOperatorValue(shadow.spec)||!run.correction||run.preparationRecovery||run.status!=="unknown"||run.phase?.name!=="prepare"||run.phase.status!=="unknown"||run.phase.expiresAt!==0||run.error!=="step operator:prepare timed out after 660s"||run.reviewCalls!==0||run.validatedKey||run.version||run.hash||run.stages.prepare||Object.keys(run.stages).some(name=>name.startsWith("content:")||["semantic","render","shadow"].includes(name))){
+      const claimed=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(preparationClaim(shadow.runId)).first<{payload:string}>();if(claimed)return await replay(claimed.payload);
+      throw new Error("Only the exact unbilled preparation timeout can be recovered once");
+    }
+    const corrected=run.stages.corrections;
+    if(corrected?.status!=="done"||!corrected.afterStateRef||stableOperatorValue(corrected.afterStateRef)!==stableOperatorValue(run.phase.beforeStateRef)||stableOperatorValue(run.stateRef)!==stableOperatorValue(corrected.afterStateRef)||run.planHash!==input.expectedPlanHash||corrected.afterStateRef.hash!==input.expectedPreparationStateHash||await sha256(row!.payload)!==input.expectedRecordHash)throw new Error("Exact timed-out record, original plan and completed correction state required");
+    await assertBase(env,run);if(run.baseVersion!==input.expectedPublicVersion||run.baseHash!==input.expectedPublicHash)throw new Error("The exact public base changed");
+    const original=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(run.correction.sourceOperatorRunId)).first<{payload:string}>();
+    if(!original||await sha256(original.payload)!==run.correction.sourceRecordRef.hash)throw new Error("The original failed author-review record changed");
+    const runner=operatorRunner(env);if(!runner)throw new Error("Operator runner unavailable");
+    const previousExecutionId=executionOf(run),oldStatus=await(await runner.get(previousExecutionId)).status();
+    if(oldStatus.status!=="errored"&&oldStatus.status!=="terminated")throw new Error("The previous task must be terminal, never active or waiting");
+    const failure=await(await env.SEC_FILINGS.get(`research-shadow/${run.runId}/failed.json`))?.text();
+    if(!failure||JSON.parse(failure).status!=="failed"||JSON.parse(failure).reason!==run.error)throw new Error("The original timeout failure receipt is required; stopped work cannot recover");
+    const executionId=`${run.runId}-preparation-recovery`,createdAt=new Date().toISOString(),recordRef={key:`filing-operator/${run.runId}/preparation-recovery/records/${input.expectedRecordHash}.json`,hash:input.expectedRecordHash},failureHash=await sha256(failure),failureRef={key:`filing-operator/${run.runId}/preparation-recovery/failures/${failureHash}.json`,hash:failureHash};
+    await putImmutable(env,recordRef.key,row!.payload);await putImmutable(env,failureRef.key,failure);
+    const recovery:PreparationRecovery={requestId,inputHash,previousExecutionId,executionId,recordRef,failureRef,stateRef:corrected.afterStateRef,runnerStatus:oldStatus.status,createdAt};
+    const claim={runId:run.runId,...recovery,originalCalls:run.reviewCallsInherited??0,addedCalls:0,maxReviewCalls:12,publicReportUnchanged:true};
+    const next={...run,executionId,preparationRecovery:recovery,status:"claimed" as const};delete next.error;
+    const artifact=artifactId("filing-report",shadow.ticker,shadow.accession);
+    try{await db(env).batch([
+      db(env).prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,CASE WHEN EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) AND EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) AND COALESCE((SELECT published_version FROM analysis_artifacts WHERE artifact_id=?),-1)=? AND COALESCE((SELECT v.hash FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id=v.artifact_id AND a.published_version=v.version WHERE a.artifact_id=?),'')=? THEN ? ELSE NULL END,?)`).bind(preparationClaim(run.runId),operatorKey(run.runId),row!.payload,operatorKey(run.correction.sourceOperatorRunId),original.payload,artifact,run.baseVersion??-1,artifact,run.baseHash??"",JSON.stringify(claim),createdAt),
+      db(env).prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=? AND payload=?").bind(JSON.stringify(next),createdAt,operatorKey(run.runId),row!.payload),
+    ]);}catch(error){const prior=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(preparationClaim(run.runId)).first<{payload:string}>();if(prior)return await replay(prior.payload);throw error;}
+    try{await runner.create({id:executionId,params:{runId:run.runId}});}catch(error){await failOperation(env,run.runId,"unknown",`Preparation recovery dispatch uncertain; never automatically redispatched: ${String(error)}`,executionId);}
+    return reply({...claim,status:(await readRun(env,run.runId))?.status,replay:false},202);
+  }catch(error){return reply({error:error instanceof Error?error.message:String(error)},409);}
+}
+
+async function failOperation(env:AnalysisEnv,id:string,status:"failed"|"unknown",reason:string,executionId=id){
+  const saved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status',?,'$.error',?,'$.phase.status',?,'$.phase.expiresAt',0),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status')!='validated' AND COALESCE(json_extract(payload,'$.executionId'),json_extract(payload,'$.runId'))=?").bind(status,reason,status,new Date().toISOString(),operatorKey(id),executionId).run();
+  const current=saved.meta.changes?await readRun(env,id):null;
+  if(current&&executionOf(current)===executionId){const key=executionId===id?`research-shadow/${id}/failed.json`:`filing-operator/${id}/executions/${executionId}/failed.json`;await env.SEC_FILINGS.put(key,JSON.stringify({status:"failed",reason,at:new Date().toISOString(),operator:true,executionId}));}
 }
 
 /** Atomic before-send reservation shared by every independent provider/SDK retry. */
-export async function reserveFilingOperatorReview(env:AnalysisEnv,id:string,leaseToken:string){
-  const reserved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.reviewCalls',json_extract(payload,'$.reviewCalls')+1) WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND (json_extract(payload,'$.phase.name') LIKE 'content:%' OR json_extract(payload,'$.phase.name') IN ('semantic','render')) AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND json_extract(payload,'$.reviewCalls')+COALESCE(json_extract(payload,'$.reviewCallsInherited'),0)<12 RETURNING cache_key").bind(operatorKey(id),leaseToken,Date.now()).first();
+export async function reserveFilingOperatorReview(env:AnalysisEnv,id:string,leaseToken:string,executionId=id){
+  const reserved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.reviewCalls',json_extract(payload,'$.reviewCalls')+1) WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND (json_extract(payload,'$.phase.name') LIKE 'content:%' OR json_extract(payload,'$.phase.name') IN ('semantic','render')) AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND COALESCE(json_extract(payload,'$.executionId'),json_extract(payload,'$.runId'))=? AND json_extract(payload,'$.reviewCalls')+COALESCE(json_extract(payload,'$.reviewCallsInherited'),0)<12 RETURNING cache_key").bind(operatorKey(id),leaseToken,Date.now(),executionId).first();
   if(!reserved)throw new Error("Operator independent-review allowance or lease exhausted");
 }
 
 export async function readFilingOperatorStatus(env:AnalysisEnv,shadow:ShadowRun){
-  const run=await readRun(env,shadow.runId);if(!run)return {runId:shadow.runId,status:"unavailable"};
+  const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(shadow.runId)).first<{payload:string}>();if(!row)return {runId:shadow.runId,status:"unavailable"};
+  const run=JSON.parse(row.payload) as FilingOperatorRun;
   const expired=run.status==="running"&&run.phase?.status==="started"&&run.phase.expiresAt<=Date.now();
   const current=await publicBase(env,shadow.ticker,shadow.accession);
-  return {...run,totalReviewCalls:run.reviewCalls+(run.reviewCallsInherited??0),status:expired?"unknown":run.status,leaseExpired:!!expired,published:false,humanReviewRequired:true,authorUsage:{status:"unavailable",tokens:null,cost:null},reviewBudgetScope:"All independent provider HTTP sends including SDK retries and visual review, plus inherited failed requests when corrected; author session usage is unavailable",publicReportUnchanged:current.version===run.baseVersion&&current.hash===run.baseHash};
+  return {...run,recordHash:await sha256(row.payload),executionId:executionOf(run),totalReviewCalls:run.reviewCalls+(run.reviewCallsInherited??0),status:expired?"unknown":run.status,leaseExpired:!!expired,published:false,humanReviewRequired:true,authorUsage:{status:"unavailable",tokens:null,cost:null},reviewBudgetScope:"All independent provider HTTP sends including SDK retries and visual review, plus inherited failed requests when corrected; author session usage is unavailable",publicReportUnchanged:current.version===run.baseVersion&&current.hash===run.baseHash};
 }
 export async function stopFilingOperator(env:AnalysisEnv,shadow:ShadowRun){await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status','failed','$.error','Stopped by administrator','$.phase.status','failed','$.phase.expiresAt',0) WHERE cache_key=?").bind(operatorKey(shadow.runId)).run();await env.SEC_FILINGS.put(`research-shadow/${shadow.runId}/failed.json`,JSON.stringify({status:"stopped",reason:"Stopped by administrator",at:new Date().toISOString()}));return{runId:shadow.runId,status:"stopped"};}
 
 /** Durable deterministic tools followed by independent stages. No Pi session or original budget is reopened. */
-export async function executeFilingOperatorCompletion(params:{runId:string},context:{env:AnalysisEnv;step:RunStep}){
-  const {env,step}=context,id=params.runId;let state:FilingState;
+export async function executeFilingOperatorCompletion(params:{runId:string},context:{env:AnalysisEnv;step:RunStep;executionId?:string}){
+  const {env,step}=context,id=params.runId,executionId=context.executionId??id;let state:FilingState;
   try{
-    let run=await readRun(env,id);if(run?.status==="validated")return{runId:id,status:run.status,version:run.version,hash:run.hash,reviewCalls:run.reviewCalls,replay:true,publicReportUnchanged:true,humanReviewRequired:true};if(!run||!["claimed","running"].includes(run.status))throw new NonRetryableError("Operator operation is not active");
+    let run=await readRun(env,id);if(!run||executionOf(run)!==executionId)throw new NonRetryableError("Operator execution was superseded");if(run.status==="validated")return{runId:id,status:run.status,version:run.version,hash:run.hash,reviewCalls:run.reviewCalls,replay:true,publicReportUnchanged:true,humanReviewRequired:true};if(!["claimed","running"].includes(run.status))throw new NonRetryableError("Operator operation is not active");
     const sourceText=await(await env.SEC_FILINGS.get(run.checkpointKey))?.text(),planText=await(await env.SEC_FILINGS.get(run.planKey))?.text();
     if(!sourceText||await sha256(sourceText)!==run.checkpointHash||!planText||await sha256(planText)!==run.planHash)throw new NonRetryableError("Operator frozen inputs changed");
-    const plan=filingOperatorPlanSchema.parse(JSON.parse(planText)),source=JSON.parse(sourceText);state=run.correction?await readState(env,run.correction.failedStateRef):unpackState<FilingState>(source.state);
+    const plan=filingOperatorPlanSchema.parse(JSON.parse(planText)),source=JSON.parse(sourceText);
+    if(run.preparationRecovery){
+      const recovery=run.preparationRecovery,record=await(await env.SEC_FILINGS.get(recovery.recordRef.key))?.text(),failure=await(await env.SEC_FILINGS.get(recovery.failureRef.key))?.text();
+      if(!record||await sha256(record)!==recovery.recordRef.hash||!failure||await sha256(failure)!==recovery.failureRef.hash)throw new NonRetryableError("Preparation timeout archives changed");
+      const previous=JSON.parse(record) as FilingOperatorRun;
+      if(previous.status!=="unknown"||previous.reviewCalls!==0||previous.error!=="step operator:prepare timed out after 660s"||previous.phase?.name!=="prepare"||previous.phase.status!=="unknown"||previous.planHash!==run.planHash||previous.checkpointHash!==run.checkpointHash||executionOf(previous)!==recovery.previousExecutionId||recovery.executionId!==executionId||previous.stages.corrections?.status!=="done"||stableOperatorValue(previous.stages.corrections.afterStateRef)!==stableOperatorValue(recovery.stateRef)||stableOperatorValue(previous.phase.beforeStateRef)!==stableOperatorValue(recovery.stateRef)||stableOperatorValue(run.stages.corrections)!==stableOperatorValue(previous.stages.corrections))throw new NonRetryableError("Preparation recovery no longer matches its exact unbilled timeout and completed corrections");
+      state=await readState(env,recovery.stateRef);
+    }else state=run.correction?await readState(env,run.correction.failedStateRef):unpackState<FilingState>(source.state);
+    const bootstrap=await readRun(env,id);if(!bootstrap||executionOf(bootstrap)!==executionId||!["claimed","running"].includes(bootstrap.status))throw new NonRetryableError("Operator execution changed during input loading");
     let stateRef=await writeState(env,id,state);
     const phases=[run.correction?"corrections":"tools","prepare",...PERIODIC_BLOCKS.map(block=>`content:${block}`),"semantic","render","shadow"];
     for(const name of phases){
       const output=await step.do(`operator:${name}`,{retries:{limit:0,delay:0},timeout:"11 minutes"},async()=>{
-        const current=await readRun(env,id);if(!current||!["claimed","running"].includes(current.status))throw new NonRetryableError("Operator operation is not active");
+        const current=await readRun(env,id);if(!current||executionOf(current)!==executionId||!["claimed","running"].includes(current.status))throw new NonRetryableError("Operator execution is not active");
         const completed=current.stages[name];if(completed?.status==="done"&&completed.afterStateRef)return completed;
-        if(current.phase?.status==="started"){await failOperation(env,id,"unknown","A phase was interrupted; billable work is never automatically replayed");throw new NonRetryableError("Interrupted operator phase; inspect its receipts");}
+        if(current.phase?.status==="started"){await failOperation(env,id,"unknown","A phase was interrupted; billable work is never automatically replayed",executionId);throw new NonRetryableError("Interrupted operator phase; inspect its receipts");}
         await assertBase(env,current);await assertFrozenResearch(env,current,state);if(current.correction)await correctionSource(env,current);
         const phase:Phase={name,status:"started",leaseToken:crypto.randomUUID(),expiresAt:Date.now()+OPERATOR_PHASE_LEASE_MS,beforeStateRef:stateRef};
-        const started=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status','running','$.phase',json(?)),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status') IN ('claimed','running') AND COALESCE(json_extract(payload,'$.phase.status'),'')!='started'").bind(JSON.stringify(phase),new Date().toISOString(),operatorKey(id)).run();
+        const started=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status','running','$.phase',json(?)),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status') IN ('claimed','running') AND COALESCE(json_extract(payload,'$.phase.status'),'')!='started' AND COALESCE(json_extract(payload,'$.executionId'),json_extract(payload,'$.runId'))=?").bind(JSON.stringify(phase),new Date().toISOString(),operatorKey(id),executionId).run();
         if(!started.meta.changes)throw new NonRetryableError("Operator phase claim conflicted");
-        const live=async()=>{const row=await readRun(env,id);if(!row||row.status!=="running"||row.phase?.status!=="started"||row.phase.leaseToken!==phase.leaseToken||row.phase.expiresAt<=Date.now())throw new Error("Operator phase lease expired or operation stopped");return row;};
-        const gate=()=>reserveFilingOperatorReview(env,id,phase.leaseToken);
+        const live=async()=>{const row=await readRun(env,id);if(!row||executionOf(row)!==executionId||row.status!=="running"||row.phase?.status!=="started"||row.phase.leaseToken!==phase.leaseToken||row.phase.expiresAt<=Date.now())throw new Error("Operator execution or phase lease expired or operation stopped");return row;};
+        const gate=()=>reserveFilingOperatorReview(env,id,phase.leaseToken,executionId);
         const reviewEnv={...env,MODEL_REQUEST_GATE:gate};let pending:Record<string,unknown>|null=null;
         const harness=await filingOperatorHarness(reviewEnv,current.spec,state,async(work,published)=>{
           await live();await assertBase(env,current);await assertFrozenResearch(env,current,work);
@@ -274,14 +331,14 @@ export async function executeFilingOperatorCompletion(params:{runId:string},cont
         let validatedKey:string|null=null,version:number|null=null,hash:string|null=null;
         if(name==="shadow"&&!result.error){if(!pending)throw new Error("The real shadow harness produced no validation result");await assertBase(env,current);const body=JSON.stringify(pending);validatedKey=`filing-operator/${id}/validated/${await sha256(body)}.json`;await putImmutable(env,validatedKey,body);version=(pending as {version:number}).version;hash=(pending as {hash:string}).hash;}
         const artifact=artifactId("filing-report",current.spec.ticker,current.spec.filing.accessionNumber);
-        const complete=await db(env).prepare(`UPDATE sec_cache SET payload=json_set(payload,'$.status',?,'$.phase',json(?),'$.stages.'||?,json(?),'$.stateRef',json(?),'$.validatedKey',?,'$.version',?,'$.hash',?),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND COALESCE((SELECT published_version FROM analysis_artifacts WHERE artifact_id=?),-1)=? AND COALESCE((SELECT v.hash FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id=v.artifact_id AND a.published_version=v.version WHERE a.artifact_id=?),'')=?`)
-          .bind(result.error?"failed":name==="shadow"?"validated":"running",JSON.stringify(done),JSON.stringify(name),JSON.stringify(done),JSON.stringify(afterStateRef),validatedKey,version,hash,new Date().toISOString(),operatorKey(id),phase.leaseToken,Date.now(),artifact,current.baseVersion??-1,artifact,current.baseHash??"").run();
+        const complete=await db(env).prepare(`UPDATE sec_cache SET payload=json_set(payload,'$.status',?,'$.phase',json(?),'$.stages.'||?,json(?),'$.stateRef',json(?),'$.validatedKey',?,'$.version',?,'$.hash',?),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND COALESCE(json_extract(payload,'$.executionId'),json_extract(payload,'$.runId'))=? AND COALESCE((SELECT published_version FROM analysis_artifacts WHERE artifact_id=?),-1)=? AND COALESCE((SELECT v.hash FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id=v.artifact_id AND a.published_version=v.version WHERE a.artifact_id=?),'')=?`)
+          .bind(result.error?"failed":name==="shadow"?"validated":"running",JSON.stringify(done),JSON.stringify(name),JSON.stringify(done),JSON.stringify(afterStateRef),validatedKey,version,hash,new Date().toISOString(),operatorKey(id),phase.leaseToken,Date.now(),executionId,artifact,current.baseVersion??-1,artifact,current.baseHash??"").run();
         if(!complete.meta.changes)throw new Error("Operator completion fence failed; no validated shadow is exposed");
-        if(result.error){await failOperation(env,id,"failed",result.observation);throw new NonRetryableError(result.observation);}
+        if(result.error){await failOperation(env,id,"failed",result.observation,executionId);throw new NonRetryableError(result.observation);}
         return done;
       });
       stateRef=output.afterStateRef!;state=await readState(env,stateRef);
     }
     run=(await readRun(env,id))!;return{runId:id,status:run.status,version:run.version,hash:run.hash,reviewCalls:run.reviewCalls,publicReportUnchanged:true,humanReviewRequired:true};
-  }catch(error){const current=await readRun(env,id);if(current&&current.status!=="validated"&&current.status!=="failed"&&current.status!=="unknown")await failOperation(env,id,current.phase?.status==="started"?"unknown":"failed",error instanceof Error?error.message:String(error));throw new NonRetryableError(error instanceof Error?error.message:String(error));}
+  }catch(error){const current=await readRun(env,id);if(current&&executionOf(current)===executionId&&current.status!=="validated"&&current.status!=="failed"&&current.status!=="unknown")await failOperation(env,id,current.phase?.status==="started"?"unknown":"failed",error instanceof Error?error.message:String(error),executionId);throw new NonRetryableError(error instanceof Error?error.message:String(error));}
 }

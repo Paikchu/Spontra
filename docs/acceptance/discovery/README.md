@@ -186,3 +186,11 @@ CRWV生产原先没有verified行业映射，不能仅凭本地能力宣称已�
 171项真实本地操作旅程通过（107次合成HTTP、66张真实Chromium截图），其中模拟纠偏为原7+新3=累计10/12。另用真实8份前后状态、7行模型账本与完整固定Q3/Q2材料做零网络、零模型的[共同执行路径离线预检](results/filing-reviewer-correction-real-input-preflight.json)：只改摘要一句，研究数据和26个计算不变，五块完整请求逐字段一致。独立代理也复核该结论。旧回执当时没有完整HTTP哈希或历史endpoint URL，此处明确是基于保存状态和原v1逻辑的历史输入重建，不补造旧时间戳或原请求哈希。
 
 生产纠偏首次 POST 在认领前遭遇管理代理固定 30 秒超时并返回 503；同一 trace 的 Analysis 被取消，D1 无新 claim/child，新增用量为 0，原稿仍 failed7、公开 v6 不变，尚无新 validated。修复将完整大材料与五块输入证明留在 TaskRunner 的非付费阶段，API 仅做精确身份与原子认领后返回 202；证明不符仍在首个模型调用前 failed0，代理超时不延长。正式 gates、真实新页面及用户固定版本签核仍待完成。全仓check、类型、构建、定向lint与dry-run通过，旧9 errors/5 warnings不扩大整改。
+
+## 固定材料复用及零模型准备阶段恢复（2026-11-17）
+
+`82a0d391` 部署后，原请求 `bdffab8d-669a-4af9-83e9-f73f33bdcb38` 在约4秒内返回202。实际服务器状态证明仅替换摘要一句，其余五章、研究记录和26项计算不变；独立财务复核未发现阻塞。但五章证明的重复串行读取触及660秒阶段上限，保存为 `unknown/prepare/new0/inherited7`；原失败7次、公开v6及所有稿件保留。尚无新validated，也没有用户对CRWV的签核。
+
+[固定材料范围缓存](filing-material-range-cache.md)只作用于单个operator harness，绑定已冻结材料版本和字节范围；读取从9,295次降至345次，五章完整inputHash、blockHash及digest相同。54项本地操作通过；普通Pi、DB和当前依赖不使用该缓存。
+
+[一次显式准备恢复](filing-reviewer-preparation-recovery.md)只接受精确660秒超时、零新增模型请求、旧TaskRunner已终止且修正已完成的同一操作。原超时payload和failure不可变归档；原7次和总12次额度不重置。72项本地专项通过，包括exact82a0模块的真实迟到回调、并发认领、预算和拒绝路径，均使用合成模型响应；不是生产恢复或真实新稿验收。全仓check、类型、构建、定向lint及dry-run通过；下一步须确认本提交CI与生产版本，再显式恢复原操作、完成真实gates、页面验收和固定版本人工签核。

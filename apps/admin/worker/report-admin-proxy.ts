@@ -42,7 +42,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "reports") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (route === "" || /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:runs\/[A-Za-z0-9_-]{1,160}|shadow\/[A-Za-z0-9_-]{1,160}(?:\/checkpoint)?)$/.test(route));
-    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck|shadow|shadow\/[A-Za-z0-9_-]{1,160}\/(?:promote|stop|resume|operator-complete|apply-reviewer-corrections))$/.test(route);
+    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck|shadow|shadow\/[A-Za-z0-9_-]{1,160}\/(?:promote|stop|resume|operator-complete|apply-reviewer-corrections|recover-preparation))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "financials") {

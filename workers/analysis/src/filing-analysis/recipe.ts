@@ -16,7 +16,7 @@ import { SEC_SUMMARY_VERSION, type SecFiling, type SecFilingSummary } from "../s
 import type { AnyTool } from "../tools/registry.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import { readMaterialSnapshot } from "../filing-material/index.ts";
-import { materialBlockId, readFilingMarkdown, searchFilingMarkdown, sourceText } from "../filing-material/read.ts";
+import { materialBlockId, readFilingMarkdown, searchFilingMarkdown, sourceText, withPreparedMaterialReadCache } from "../filing-material/read.ts";
 import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "./profiles.ts";
 import { recordRunSummary, recordRunTurn, updateFiling } from "./store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
@@ -239,6 +239,6 @@ export async function filingOperatorHarness(env:AnalysisEnv,spec:FilingSpec,stat
   if(!spec.shadow||!spec.operatorCompletion)throw new Error("An admitted external shadow plan is required");
   const snapshot=await readMaterialSnapshot(env,spec.material),refs=[...new Map((state.periodic?.materials??[]).map(ref=>[`${ref.accession}:${ref.version}`,ref])).values()];
   const prior=await Promise.all(refs.filter(ref=>ref.accession!==snapshot.ref.accession||ref.version!==snapshot.ref.version).map(ref=>readMaterialSnapshot(env,ref)));
-  const recipe=filingRecipe(env,spec,profileById(spec.profile),snapshot,null,state,prior,{onShadow});
+  const recipe=filingRecipe(withPreparedMaterialReadCache(env,[snapshot,...prior]),spec,profileById(spec.profile),snapshot,null,state,prior,{onShadow});
   return {recipe,stages:recipe.operatorStages!,contentInput:recipe.operatorContentInput!,state:recipe.open(spec)};
 }
