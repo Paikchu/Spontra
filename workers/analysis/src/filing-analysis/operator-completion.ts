@@ -103,13 +103,42 @@ const correctionClaim=(runId:string)=>`${operatorKey(runId)}:reviewer-correction
 const phaseReceipt=(phase:Phase|undefined)=>phase?.receipt as ComposerPhaseReceipt|undefined;
 const correctionPhase=(correction:FilingReviewerCorrectionReview)=>correction.sourcePhase??"semantic";
 const correctionReceiptHash=(correction:FilingReviewerCorrectionReview)=>"contentReceiptHash"in correction?correction.contentReceiptHash:correction.semanticReceiptHash;
+const reviewPhases=[...PERIODIC_BLOCKS.map(id=>`content:${id}`),"semantic"];
+const cumulativeReviews=(run:FilingOperatorRun)=>run.reviewCalls+(run.reviewCallsInherited??0);
+const frozenOperatorIdentity=(run:FilingOperatorRun)=>{
+  const spec={...run.spec,sessionId:undefined,jobId:undefined,jobVersion:undefined,operatorCompletion:{...run.spec.operatorCompletion,reviewerCorrection:undefined}};
+  return stableOperatorValue({sourceRunId:run.sourceRunId,rootRunId:run.rootRunId,checkpointHash:run.checkpointHash,checkpointKey:run.checkpointKey,planHash:run.planHash,planKey:run.planKey,baseVersion:run.baseVersion,baseHash:run.baseHash,spec});
+};
 
 async function correctionSource(env:AnalysisEnv,run:FilingOperatorRun){
   const ref=run.correction!.sourceRecordRef,body=await(await env.SEC_FILINGS.get(ref.key))?.text();
   if(!body||await sha256(body)!==ref.hash)throw new Error("The immutable failed operator record changed");
   const source=JSON.parse(body) as FilingOperatorRun,current=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(source.runId)).first<{payload:string}>();
-  if(!current||await sha256(current.payload)!==ref.hash)throw new Error("The original failed operator ledger changed");
+  if(source.runId!==run.correction!.sourceOperatorRunId||!current||await sha256(current.payload)!==ref.hash)throw new Error("The original failed operator ledger changed");
   return source;
+}
+
+/** A content correction may advance through the fixed audit order, never restart it or reset its budget. */
+async function correctionLineage(env:AnalysisEnv,leaf:FilingOperatorRun){
+  const chain:FilingOperatorRun[]=[],seen=new Set<string>(),identity=frozenOperatorIdentity(leaf);
+  let source=leaf;
+  for(;;){
+    if(seen.has(source.runId)||chain.length>=reviewPhases.length||frozenOperatorIdentity(source)!==identity)throw new Error("The bounded correction ancestry or frozen original inputs changed");
+    seen.add(source.runId);chain.push(source);
+    const paid=Object.values(source.stages).filter(phase=>reviewPhases.includes(phase.name)&&!phaseReceipt(phase)?.reusedFrom).length;
+    if(source.status!=="failed"||source.phase?.status!=="failed"||!reviewPhases.includes(source.phase.name)||source.validatedKey||source.version||source.hash||!Number.isSafeInteger(source.reviewCalls)||source.reviewCalls<Math.max(1,paid)||!Number.isSafeInteger(source.reviewCallsInherited??0)||(source.reviewCallsInherited??0)<0||cumulativeReviews(source)>OPERATOR_REVIEW_REQUESTS||source.maxReviewCalls!==OPERATOR_REVIEW_REQUESTS||source.stages.prepare?.status!=="done")throw new Error("Every correction ancestor must retain its completed failed review and cumulative allowance");
+    const failure=await(await env.SEC_FILINGS.get(`research-shadow/${source.runId}/failed.json`))?.text();
+    if(!failure||JSON.parse(failure).status!=="failed")throw new Error("A stopped or interrupted correction ancestor cannot be reused");
+    if(!source.correction){
+      if(source.reviewCallsInherited||source.spec.operatorCompletion?.reviewerCorrection||source.stages.tools?.status!=="done")throw new Error("The correction ancestry must end at the original completed tools operation");
+      return chain;
+    }
+    const correction=source.correction,metadata=source.spec.operatorCompletion?.reviewerCorrection,previous=correctionPhase(correction),next=source.phase.name;
+    if(!previous.startsWith("content:")||reviewPhases.indexOf(next)<=reviewPhases.indexOf(previous)||source.stages.corrections?.status!=="done"||!metadata||metadata.sourceOperatorRunId!==correction.sourceOperatorRunId||metadata.failedStateHash!==correction.failedStateRef.hash||correctionPhase(metadata)!==previous||correctionReceiptHash(metadata)!==correctionReceiptHash(correction)||metadata.correctionsHash!==correction.correctionsHash||metadata.reviewCallsInherited!==source.reviewCallsInherited)throw new Error("Reviewer corrections must move strictly forward from a content failure with exact metadata");
+    const parent=await correctionSource(env,source),receipt=phaseReceipt(parent.stages[previous]);
+    if(parent.phase?.name!==previous||parent.phase.status!=="failed"||!receipt||receipt.success||receipt.unavailable||await sha256(JSON.stringify(receipt))!==correctionReceiptHash(correction)||stableOperatorValue(parent.stateRef)!==stableOperatorValue(correction.failedStateRef)||source.reviewCallsInherited!==cumulativeReviews(parent))throw new Error("The correction parent receipt, failed state or inherited total changed");
+    source=parent;
+  }
 }
 
 async function applyReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState){
@@ -141,14 +170,25 @@ async function applyReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,st
 
 async function prepareReviewerCorrection(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState,harness:Awaited<ReturnType<typeof filingOperatorHarness>>){
   const prepared=await harness.stages.prepare(state);if(prepared.error)return prepared;
-  const source=await correctionSource(env,run),reused=[];
+  const source=await correctionSource(env,run),lineage=await correctionLineage(env,source),reused=[];
   for(const id of PERIODIC_BLOCKS.filter(id=>!run.correction!.changedBlocks.includes(id))){
-    const phase=source.stages[`content:${id}`],receipt=phaseReceipt(phase);
+    let owner=source,phase=owner.stages[`content:${id}`],receipt=phaseReceipt(phase);
     if(!phase&&correctionPhase(run.correction!)!=="semantic")continue;
     if(phase?.status!=="done"||!receipt?.success||!phase.afterStateRef||receipt.stage!=="content"||receipt.blockId!==id)throw new Error("The original block has no completed real content proof");
+    const sourceAfter=await readState(env,phase.afterStateRef),sourceValidation=(sourceAfter.composer as OperatorComposerState).operatorValidation;
+    if(sourceValidation?.runId!==source.runId||JSON.stringify(sourceValidation.content[id])!==JSON.stringify(receipt))throw new Error("A successful content receipt must be present in its actual saved after-state");
+    if(receipt.reusedFrom){
+      const inherited=receipt.reusedFrom;
+      owner=lineage.find(ancestor=>ancestor.runId===inherited.sourceRunId)!;
+      if(!owner)throw new Error("A reused content proof must resolve to this exact frozen ancestry");
+      phase=owner.stages[`content:${id}`];receipt=phaseReceipt(phase);
+      if(phase?.status!=="done"||!receipt?.success||receipt.reusedFrom||!phase.afterStateRef||receipt.stage!=="content"||receipt.blockId!==id||inherited.sourcePhase!==phase.name||inherited.receiptHash!==await sha256(JSON.stringify(receipt))||stableOperatorValue(inherited.beforeStateRef)!==stableOperatorValue(phase.beforeStateRef)||stableOperatorValue(inherited.afterStateRef)!==stableOperatorValue(phase.afterStateRef)||inherited.inputHash!==receipt.inputHash||inherited.blockHash!==receipt.blockHash||inherited.requestPolicy!==receipt.requestPolicy)throw new Error("A reused content proof must name the actual original successful provider receipt");
+    }
     const before=await readState(env,phase.beforeStateRef),after=await readState(env,phase.afterStateRef),input=await harness.contentInput(before,id),current=await harness.contentInput(state,id);
+    const originalValidation=(after.composer as OperatorComposerState).operatorValidation;
+    if(originalValidation?.runId!==owner.runId||JSON.stringify(originalValidation.content[id])!==JSON.stringify(receipt))throw new Error("The original provider receipt does not match its saved after-state");
     if(!input||!current||input.inputHash!==current.inputHash||input.blockHash!==current.blockHash)throw new Error(`Unchanged block ${id} no longer has the exact original review input`);
-    const rows=await db(env).prepare("SELECT at,model,reasoning,outcome FROM ai_usage WHERE run_id=? AND stage=? AND outcome='ok' AND at>=? AND at<=? ORDER BY at").bind(source.runId,`artifact-review-${id}`,new Date(phase.expiresAt-OPERATOR_PHASE_LEASE_MS).toISOString(),receipt.at).all<{at:string;model:string;reasoning:string|null;outcome:"ok"}>();
+    const rows=await db(env).prepare("SELECT at,model,reasoning,outcome FROM ai_usage WHERE run_id=? AND stage=? AND outcome='ok' AND at>=? AND at<=? ORDER BY at").bind(owner.runId,`artifact-review-${id}`,new Date(phase.expiresAt-OPERATOR_PHASE_LEASE_MS).toISOString(),receipt.at).all<{at:string;model:string;reasoning:string|null;outcome:"ok"}>();
     if(rows.results.length!==1||rows.results[0]!.model!==input.model||rows.results[0]!.reasoning!==input.reasoning)throw new Error(`Original successful provider usage for ${id} does not match the reconstructed request`);
     if(!receipt.inputHash){
       // Old v1 receipts did not store a wire-request hash. Do not infer unchanged historical configuration
@@ -157,7 +197,7 @@ async function prepareReviewerCorrection(env:AnalysisEnv,run:FilingOperatorRun,s
       const changed=(at:string)=>!Number.isFinite(Date.parse(at))||Date.parse(at)>Date.parse(rows.results[0]!.at);
       if(settings&&changed(settings.updated_at)||endpoint&&(changed(endpoint.updated_at)||endpoint.base_url!==input.endpoint.url||endpoint.thinking_level!==input.endpoint.thinkingLevel)||!endpoint&&(input.endpoint.url!==DEEPSEEK_BASE_URL||input.endpoint.thinkingLevel!==null))throw new Error(`Legacy configuration for ${id} cannot be reconstructed as unchanged`);
     }
-    const proof={sourceRunId:source.runId,sourcePhase:`content:${id}`,beforeStateRef:phase.beforeStateRef,afterStateRef:phase.afterStateRef,receiptHash:await sha256(JSON.stringify(receipt)),receipt,input,passedBefore:before.composer.passed?.[id]??[],passedAfter:after.composer.passed?.[id]??[],usage:{...rows.results[0]!,reasoning:rows.results[0]!.reasoning!,runId:source.runId,stage:`artifact-review-${id}`},reconstruction:"reconstructedLegacy-v1" as const};
+    const proof={sourceRunId:owner.runId,sourcePhase:`content:${id}`,beforeStateRef:phase.beforeStateRef,afterStateRef:phase.afterStateRef,receiptHash:await sha256(JSON.stringify(receipt)),receipt,input,passedBefore:before.composer.passed?.[id]??[],passedAfter:after.composer.passed?.[id]??[],usage:{...rows.results[0]!,reasoning:rows.results[0]!.reasoning!,runId:owner.runId,stage:`artifact-review-${id}`},reconstruction:"reconstructedLegacy-v1" as const};
     const result=await harness.stages.reuseContent(state,id,proof);if(result.error)throw new Error(result.observation);
     reused.push({id,receipt:result.receipt});
   }
@@ -186,7 +226,8 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
     const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(shadow.runId)).first<{payload:string}>(),source=row?JSON.parse(row.payload) as FilingOperatorRun:null;
     const contentBlock="expectedContentBlockId"in input?input.expectedContentBlockId:null;
     const reviewPhase=contentBlock?`content:${contentBlock}`:"semantic",expectedReceiptHash="expectedContentReceiptHash"in input?input.expectedContentReceiptHash:input.expectedSemanticReceiptHash;
-    if(!source||source.runId!==shadow.runId||stableOperatorValue(source.spec)!==stableOperatorValue(shadow.spec)||!source.spec.operatorCompletion||source.correction||source.spec.operatorCompletion.reviewerCorrection||source.status!=="failed"||source.phase?.name!==reviewPhase||source.phase.status!=="failed"||source.validatedKey||source.version||source.hash)throw new Error("Only the original operator's completed failed content or semantic phase can receive its single correction");
+    if(!source||source.runId!==shadow.runId||stableOperatorValue(source.spec)!==stableOperatorValue(shadow.spec)||!source.spec.operatorCompletion||source.status!=="failed"||source.phase?.name!==reviewPhase||source.phase.status!=="failed"||source.validatedKey||source.version||source.hash)throw new Error("Only an exact completed failed content or semantic leaf may receive its single forward correction");
+    await correctionLineage(env,source);
     const failed=source.stages[reviewPhase],receipt=phaseReceipt(failed);
     if(!failed||failed.status!=="failed"||!receipt||receipt.stage!==(contentBlock?"content":"semantic")||contentBlock&&receipt.blockId!==contentBlock||receipt.success||receipt.unavailable||!receipt.issues.length||!failed.afterStateRef||stableOperatorValue(source.stateRef)!==stableOperatorValue(failed.afterStateRef)||source.planHash!==input.expectedPlanHash||source.stateRef?.hash!==input.expectedFailedStateHash||await sha256(JSON.stringify(receipt))!==expectedReceiptHash||await sha256(JSON.stringify(source.phase.receipt??null))!==expectedReceiptHash)throw new Error("The exact completed failed review receipt, state and original plan are required");
     const issues=contentBlock?receipt.issues.filter(issue=>issue.severity==="major"):receipt.issues;
@@ -194,10 +235,11 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
     if(issues.some(issue=>issue.kind!=="content"||(contentBlock?issue.block!==contentBlock||issue.origin!==undefined:issue.origin!=="semantic"))||issues.some(issue=>issue.severity!=="major"||!PERIODIC_BLOCKS.includes(issue.block as typeof PERIODIC_BLOCKS[number])||!issue.quote||!issue.replacement?.trim()||/[<>]/.test(issue.replacement)||/^delete\.?$/i.test(issue.replacement.trim())))throw new Error("Every material issue must have an unambiguous plain-text reviewer replacement");
     if(contentBlock&&(!receipt.inputHash||!receipt.blockHash||!receipt.requestPolicy))throw new Error("The failed content review must retain its actual request and block identity");
     const preceding=contentBlock?PERIODIC_BLOCKS.slice(0,PERIODIC_BLOCKS.indexOf(contentBlock)):[...PERIODIC_BLOCKS];
-    if(source.stages.tools?.status!=="done"||source.stages.prepare?.status!=="done"||preceding.some(id=>source.stages[`content:${id}`]?.status!=="done"||!phaseReceipt(source.stages[`content:${id}`])?.success)||contentBlock&&(PERIODIC_BLOCKS.slice(PERIODIC_BLOCKS.indexOf(contentBlock)+1).some(id=>source.stages[`content:${id}`])||["semantic","render","shadow"].some(name=>source.stages[name])))throw new Error("Completed original tools, preparation and all preceding content proofs are required");
+    if(preceding.some(id=>source.stages[`content:${id}`]?.status!=="done"||!phaseReceipt(source.stages[`content:${id}`])?.success)||contentBlock&&(PERIODIC_BLOCKS.slice(PERIODIC_BLOCKS.indexOf(contentBlock)+1).some(id=>source.stages[`content:${id}`])||["semantic","render","shadow"].some(name=>source.stages[name])))throw new Error("Completed preparation and all preceding content proofs are required");
     if(preceding.some(id=>!phaseReceipt(source.stages[`content:${id}`])?.inputHash))throw new Error("Reusing a prior content audit requires its actual original request hash; a changed prompt cannot be proven from a hashless legacy receipt");
     const freshReviews=contentBlock?PERIODIC_BLOCKS.length-preceding.length+2:3;
-    if(!Number.isSafeInteger(source.reviewCalls)||source.reviewCalls<(contentBlock?preceding.length+1:PERIODIC_BLOCKS.length+1)||source.reviewCalls+freshReviews>OPERATOR_REVIEW_REQUESTS||source.reviewCallsInherited||source.maxReviewCalls!==OPERATOR_REVIEW_REQUESTS)throw new Error("The inherited review allowance must cover every fresh content audit, full semantic audit and strict rendering review");
+    const reviewCallsInherited=cumulativeReviews(source);
+    if(reviewCallsInherited+freshReviews>OPERATOR_REVIEW_REQUESTS)throw new Error("The inherited review allowance must cover every fresh content audit, full semantic audit and strict rendering review");
     const failure=await(await env.SEC_FILINGS.get(`research-shadow/${source.runId}/failed.json`))?.text();
     if(!failure||JSON.parse(failure).status!=="failed")throw new Error("A completed failure receipt is required; stopped or interrupted work is not correctable");
     await assertBase(env,source);if(source.baseVersion!==input.expectedPublicVersion||source.baseHash!==input.expectedPublicHash)throw new Error("Exact unchanged public version and hash required");
@@ -206,12 +248,12 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
     const runId=`shadow-${shadow.ticker}-${shadow.accession}-operator-fix-${requestId}`,now=new Date().toISOString(),sourceRecordHash=await sha256(row!.payload),sourceRecordRef={key:`filing-operator/${runId}/correction-source/${sourceRecordHash}.json`,hash:sourceRecordHash};
     await putImmutable(env,sourceRecordRef.key,row!.payload);
     const identity:FilingReviewerCorrectionReview=contentBlock?{sourcePhase:`content:${contentBlock}`,contentReceiptHash:expectedReceiptHash}:{semanticReceiptHash:expectedReceiptHash};
-    const spec:FilingSpec={...source.spec,sessionId:runId,jobId:runId,jobVersion:"operator.reviewer-correction.v1",operatorCompletion:{...source.spec.operatorCompletion,reviewerCorrection:{sourceOperatorRunId:source.runId,failedStateHash:source.stateRef.hash,...identity,correctionsHash,reviewCallsInherited:source.reviewCalls}}};
-    const run:FilingOperatorRun={...source,runId,requestId,spec,status:"claimed",reviewCalls:0,reviewCallsInherited:source.reviewCalls,createdAt:now,stages:{},correction:{sourceOperatorRunId:source.runId,sourceRecordRef,failedStateRef:source.stateRef,...identity,correctionsHash,changedBlocks}};
-    delete run.phase;delete run.stateRef;delete run.validatedKey;delete run.version;delete run.hash;delete run.error;
+    const spec:FilingSpec={...source.spec,sessionId:runId,jobId:runId,jobVersion:"operator.reviewer-correction.v1",operatorCompletion:{...source.spec.operatorCompletion,reviewerCorrection:{sourceOperatorRunId:source.runId,failedStateHash:source.stateRef.hash,...identity,correctionsHash,reviewCallsInherited}}};
+    const run:FilingOperatorRun={...source,runId,requestId,spec,status:"claimed",reviewCalls:0,reviewCallsInherited,createdAt:now,stages:{},correction:{sourceOperatorRunId:source.runId,sourceRecordRef,failedStateRef:source.stateRef,...identity,correctionsHash,changedBlocks}};
+    delete run.executionId;delete run.preparationRecovery;delete run.phase;delete run.stateRef;delete run.validatedKey;delete run.version;delete run.hash;delete run.error;
     // Large pinned states and full evidence proofs belong to the durable non-billable phases below.
     // The HTTP admission binds their exact identities and claims once without rereading them synchronously.
-    const claim={runId,sourceOperatorRunId:source.runId,requestId,inputHash,planHash:source.planHash,failedStateHash:source.stateRef.hash,...identity,correctionsHash,reviewCallsInherited:source.reviewCalls,maxReviewCalls:12,createdAt:now,publicReportUnchanged:true};
+    const claim={runId,sourceOperatorRunId:source.runId,requestId,inputHash,planHash:source.planHash,failedStateHash:source.stateRef.hash,...identity,correctionsHash,reviewCallsInherited,maxReviewCalls:12,createdAt:now,publicReportUnchanged:true};
     const newShadow:ShadowRun={runId,ticker:shadow.ticker,accession:shadow.accession,createdAt:now,baseVersion:source.baseVersion,callsReserved:0,maxCalls:12,spec},artifact=artifactId("filing-report",shadow.ticker,shadow.accession);
     try{await db(env).batch([
       db(env).prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,CASE WHEN EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) AND COALESCE((SELECT published_version FROM analysis_artifacts WHERE artifact_id=?),-1)=? AND COALESCE((SELECT v.hash FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id=v.artifact_id AND a.published_version=v.version WHERE a.artifact_id=?),'')=? THEN ? ELSE NULL END,?)`).bind(correctionClaim(source.runId),operatorKey(source.runId),row!.payload,artifact,source.baseVersion??-1,artifact,source.baseHash??"",JSON.stringify(claim),now),

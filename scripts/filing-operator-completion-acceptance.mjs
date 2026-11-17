@@ -53,6 +53,7 @@ let slowR2Key = null, slowR2Release, slowR2EnteredResolve, slowR2EnteredAt = nul
 const recoveryMode = process.env.SPONTRA_PREPARATION_RECOVERY_ACCEPTANCE === "1";
 const visualContractMode = process.env.SPONTRA_VISUAL_REVIEW_CONTRACT_ACCEPTANCE === "1";
 const contentCorrectionMode = process.env.SPONTRA_CONTENT_REVIEWER_CORRECTION_ACCEPTANCE === "1";
+const monotoneCorrectionMode = process.env.SPONTRA_MONOTONE_REVIEWER_CORRECTION_ACCEPTANCE === "1";
 const visualViewports = ["1440x900 light", "390x844 light", "1280x800 dark"];
 const visualScores = { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 };
 const visualContractCases = [
@@ -235,6 +236,8 @@ async function modelTransport(incoming) {
   if (stage === "gate") return completion(body, { ok: true });
   if (stage === "content" && transportMode === "malformed-content") return completion(body, {});
   if (stage === "content" && transportMode === "malformed-content-issue") return completion(body, { issues: [{}] });
+  if (stage === "content" && transportMode === "monotone-highlights-fail" && input.block.id === "highlights") return completion(body, { issues: [{ quote: reviewerQuote, problem: "Synthetic later-block reference requires this exact correction", replacement: reviewerReplacement, severity: "major" }] });
+  if (stage === "content" && transportMode === "monotone-risks-fail" && input.block.id === "risks") return completion(body, { issues: [{ quote: reviewerQuote, problem: "Synthetic later risk correction with an already reused summary", replacement: reviewerReplacement, severity: "major" }] });
   if (stage === "content" && transportMode === "content-correction-source") return completion(body, { issues: [
     { quote: reviewerQuote, problem: "Synthetic bounded content issue", replacement: reviewerReplacement, severity: "major" },
     { quote: "Hedge netting remains unresolved.", problem: "not covered: synthetic author methodology advice", severity: "minor" },
@@ -248,7 +251,7 @@ async function modelTransport(incoming) {
   if (stage === "content") return completion(body, { issues: transportMode === "content-fail" ? [{ quote: input.block.sentences[0].text, problem: "Synthetic injected unsupported claim", replacement: "DELETE", suggestion: "Synthetic injection only", severity: "major" }] : [] });
   if (stage === "visual") return completion(body, visualContractMode ? visualContractCases.find(item => item.name === transportMode).verdict : { scores: { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 }, issues: [] });
   const computations = input.computations.map(item => ({ id: item.id, status: "holds", problem: "Synthetic provider receipt: exact pinned arithmetic and stated static basis", sources: ["source-block"] }));
-  return completion(body, { verdict: ["semantic-fail", "semantic-noquote"].includes(transportMode) ? "fail" : "pass", complete: true, summary: "SYNTHETIC independent-provider transport response, not real investment review", computations, issues: ["semantic-fail", "semantic-noquote"].includes(transportMode) ? [{ block: "summary", quote: transportMode === "semantic-noquote" ? "" : reviewerQuote, problem: "Synthetic injected semantic failure", replacement: reviewerReplacement, suggestion: "Synthetic injection only", sources: ["source-block"], evidence: originalQuote }] : [] });
+  return completion(body, { verdict: ["semantic-fail", "semantic-noquote", "monotone-semantic-fail"].includes(transportMode) ? "fail" : "pass", complete: true, summary: "SYNTHETIC independent-provider transport response, not real investment review", computations, issues: ["semantic-fail", "semantic-noquote", "monotone-semantic-fail"].includes(transportMode) ? [{ block: transportMode === "monotone-semantic-fail" ? "risks" : "summary", quote: transportMode === "semantic-noquote" ? "" : reviewerQuote, problem: "Synthetic injected semantic failure", replacement: reviewerReplacement, suggestion: "Synthetic injection only", sources: ["source-block"], evidence: originalQuote }] : [] });
 }
 
 const reportPath = id => `/admin/reports/${ticker}/${accession}/shadow/${id}`;
@@ -636,7 +639,8 @@ async function withChangedFailedState(runId, change, work) {
 
 async function contentCorrectionInput(runId) {
   const row = await opRow(runId);
-  return { expectedPlanHash: row.planHash, expectedFailedStateHash: row.stateRef.hash, expectedContentBlockId: "summary", expectedContentReceiptHash: sha(JSON.stringify(row.stages["content:summary"].receipt)), expectedPublicVersion: publicBaseline.version, expectedPublicHash: publicBaseline.hash };
+  const block = row.phase.name.slice(8);
+  return { expectedPlanHash: row.planHash, expectedFailedStateHash: row.stateRef.hash, expectedContentBlockId: block, expectedContentReceiptHash: sha(JSON.stringify(row.stages[row.phase.name].receipt)), expectedPublicVersion: publicBaseline.version, expectedPublicHash: publicBaseline.hash };
 }
 async function contentFailure(n) {
   transportMode = "content-correction-source";
@@ -687,7 +691,7 @@ async function runContentCorrectionJourney() {
   const replayCalls = outbound.length, replay = await sendCorrection(source.runId, 410, source.input);
   check("content correction exact replay never redispatches or sends HTTP", replay.status === 202 && replay.body.replay && replay.body.dispatchRetried === false && outbound.length === replayCalls && (await request(runnerPath(fixed.runId))).body.dispatches.length === 1);
   await rejectReviewerCorrection("content correction rejects another UUID", source.runId, source.input, { operation: 411 });
-  await rejectReviewerCorrection("content correction rejects recursive child corrections", fixed.runId, source.input, { operation: 412 });
+  await rejectReviewerCorrection("validated content correction cannot receive another correction", fixed.runId, source.input, { operation: 412 });
   const self = await request(reportPath(fixed.runId) + "/promote", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ expectedHash: fixed.hash, reviewer: source.row.spec.operatorCompletion.author.runId, reviewNotes: "Synthetic forbidden self approval", approvedChainIds: ["chain-1"] }) });
   check("content correction cannot self-approve or change the public report", self.status === 400 && (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId).first()).published_version === 6);
   for (const [n, mode, expectedPhase] of [[11, "semantic-fail", "semantic"], [12, "visual-unavailable", "render"]]) {
@@ -727,6 +731,94 @@ async function runContentCorrectionBudget() {
   return { sourceRunId: source.runId, correctedRunId: failed.runId, inherited: 1, added: 11, total: 12 };
 }
 
+async function laterContentFailure(n) {
+  const original = await contentFailure(n), rootLedger = await rawRow(`filing-operator:${original.runId}`), before = outbound.length;
+  transportMode = "monotone-highlights-fail";
+  const admitted = await sendCorrection(original.runId, 500 + n, original.input, { proxy: true }), row = await drive(admitted.body.runId);
+  transportMode = "pass";
+  check(`monotone source ${n} preserves one plus two actual requests and its passed summary`, admitted.status === 202 && row.status === "failed" && row.phase.name === "content:highlights" && row.reviewCalls === 2 && row.reviewCallsInherited === 1 && outbound.length - before === 2 && row.stages["content:summary"].receipt.success && !row.stages.tools && !row.stages.semantic && JSON.stringify(await rawRow(rootLedger.cache_key)) === JSON.stringify(rootLedger), { status: row.status, phase: row.phase.name, own: row.reviewCalls, inherited: row.reviewCallsInherited });
+  return { original, rootLedger, runId: row.runId, row, input: await contentCorrectionInput(row.runId) };
+}
+async function withCorrectionLedger(source, edit, work, editShadow = false) {
+  const key = `filing-operator:${source.runId}`, old = await rawRow(key), oldShadow = editShadow ? await rawRow(`research-shadow:${source.runId}`) : null, row = JSON.parse(old.payload);
+  edit(row);
+  await db.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").bind(JSON.stringify(row), key).run();
+  if (oldShadow) { const shadow = JSON.parse(oldShadow.payload); shadow.spec = row.spec; await db.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").bind(JSON.stringify(shadow), oldShadow.cache_key).run(); }
+  try { return await work(); }
+  finally {
+    await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(old.payload, old.fetched_at, key).run();
+    if (oldShadow) await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(oldShadow.payload, oldShadow.fetched_at, oldShadow.cache_key).run();
+  }
+}
+async function runMonotoneCorrectionJourney() {
+  const source = await laterContentFailure(17), leafLedger = await rawRow(`filing-operator:${source.runId}`), leafState = await (await bucket.get(source.row.stateRef.key)).text(), leafFailure = await (await bucket.get(`research-shadow/${source.runId}/failed.json`)).text();
+  for (const [name, edit, editShadow] of [
+    ["same-phase recursion", row => { row.correction.sourcePhase = "content:highlights"; row.spec.operatorCompletion.reviewerCorrection.sourcePhase = "content:highlights"; }, true],
+    ["backward phase recursion", row => { row.correction.sourcePhase = "content:risks"; row.spec.operatorCompletion.reviewerCorrection.sourcePhase = "content:risks"; }, true],
+    ["recursive semantic correction", row => { row.correction.sourcePhase = "semantic"; row.spec.operatorCompletion.reviewerCorrection.sourcePhase = "semantic"; }, true],
+    ["cyclic ancestor identity", row => { row.correction.sourceOperatorRunId = row.runId; row.spec.operatorCompletion.reviewerCorrection.sourceOperatorRunId = row.runId; }, true],
+    ["lost inherited original request", row => { row.reviewCallsInherited = 0; row.spec.operatorCompletion.reviewerCorrection.reviewCallsInherited = 0; }, true],
+    ["changed frozen material", row => { row.spec.material.version = "synthetic-different-frozen-version"; }, true],
+    ["changed root identity", row => { row.rootRunId = sourceId(999); }],
+    ["insufficient cumulative allowance", row => { row.reviewCalls = 5; }],
+    ["unknown paid result", row => { row.status = "unknown"; }],
+  ]) await withCorrectionLedger(source, edit, () => rejectReviewerCorrection(`monotone correction rejects ${name}`, source.runId, source.input, { operation: 601 }), editShadow);
+  await withCorrectionLedger(source.original, row => { row.reviewCalls++; }, () => rejectReviewerCorrection("monotone correction rejects a changed live ancestor counter", source.runId, source.input, { operation: 601 }));
+  await withCorrectionLedger(source.original, row => { row.spec.material.version = "synthetic-changed-ancestor-material"; }, () => rejectReviewerCorrection("monotone correction rejects a changed live ancestor specification", source.runId, source.input, { operation: 601 }));
+  await rejectReviewerCorrection("monotone correction binds the failed later content hash", source.runId, { ...source.input, expectedContentReceiptHash: "e".repeat(64) }, { operation: 601 });
+  await rejectReviewerCorrection("monotone correction cannot jump to an unexecuted later block", source.runId, { ...source.input, expectedContentBlockId: "risks" }, { operation: 601 });
+  const before = outbound.length, admission = await sendCorrection(source.runId, 601, source.input, { proxy: true }), final = await drive(admission.body.runId), calls = outbound.slice(before);
+  check("one then three then ten cumulative requests preserve all original failed ledgers", admission.status === 202 && final.status === "validated" && final.reviewCallsInherited === 3 && final.reviewCalls === 7 && final.reviewCalls + final.reviewCallsInherited === 10 && calls.length === 7 && JSON.stringify(await rawRow(source.rootLedger.cache_key)) === JSON.stringify(source.rootLedger) && JSON.stringify(await rawRow(leafLedger.cache_key)) === JSON.stringify(leafLedger) && await (await bucket.get(source.row.stateRef.key)).text() === leafState && await (await bucket.get(`research-shadow/${source.runId}/failed.json`)).text() === leafFailure, { source: 1, failedChild: 2, inherited: final.reviewCallsInherited, new: final.reviewCalls, total: 10 });
+  const reused = final.stages["content:summary"].receipt, expected = source.row.stages["content:summary"];
+  check("passed summary is bound to its actual unchanged request and original provider receipt", final.stages.prepare.receipt.reusedContent.length === 1 && reused.reusedFrom.sourceRunId === source.runId && reused.reusedFrom.receiptHash === sha(JSON.stringify(expected.receipt)) && reused.inputHash === expected.receipt.inputHash && reused.blockHash === expected.receipt.blockHash && !calls.some(call => call.block === "summary") && calls.slice(0, 5).every((call, i) => call.stage === "content" && call.block === blockIds[i + 1]) && calls[5].stage === "semantic" && calls[6].stage === "visual", { reusedFrom: reused.reusedFrom, calls: calls.map(({ stage, block }) => ({ stage, block })) });
+  check("monotone correction keeps the original plan source and tools without fabricating another tools stage", !final.stages.tools && final.planHash === source.row.planHash && final.checkpointHash === source.row.checkpointHash && final.sourceRunId === source.row.sourceRunId && final.rootRunId === source.row.rootRunId && final.spec.operatorCompletion.reviewerCorrection.reviewCallsInherited === 3 && final.spec.operatorCompletion.reviewerCorrection.sourcePhase === "content:highlights");
+  const oldWork = JSON.parse(leafState), corrected = JSON.parse(await (await bucket.get(final.stages.corrections.afterStateRef.key)).text());
+  check("later content correction changes only its one reviewer quote and no research inputs", corrected.composer.blocks.find(block => block.id === "highlights").html === oldWork.composer.blocks.find(block => block.id === "highlights").html.replace(reviewerQuote, reviewerReplacement) && blockIds.filter(id => id !== "highlights").every(id => JSON.stringify(corrected.composer.blocks.find(block => block.id === id)) === JSON.stringify(oldWork.composer.blocks.find(block => block.id === id))) && JSON.stringify({ ...corrected, composer: null }) === JSON.stringify({ ...oldWork, composer: null }));
+  const replayCalls = outbound.length, replay = await sendCorrection(source.runId, 601, source.input);
+  check("each failed leaf has one correction claim and exact replay never dispatches again", replay.status === 202 && replay.body.replay && !replay.body.dispatchRetried && outbound.length === replayCalls && (await request(runnerPath(final.runId))).body.dispatches.length === 1);
+  await rejectReviewerCorrection("another request cannot bypass the same failed leaf claim", source.runId, source.input, { operation: 602 });
+  const self = await request(reportPath(final.runId) + "/promote", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ expectedHash: final.hash, reviewer: source.row.spec.operatorCompletion.author.runId, reviewNotes: "Synthetic forbidden self approval", approvedChainIds: ["chain-1"] }) });
+  check("monotone validated shadow remains private and cannot self-approve", self.status === 400 && (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first()).published_version === 6);
+
+  const forged = await laterContentFailure(19), forgedBefore = outbound.length;
+  await withCorrectionLedger(forged, row => { row.stages["content:summary"].receipt.inputHash = "f".repeat(64); }, async () => {
+    const accepted = await sendCorrection(forged.runId, 603, forged.input), failed = await drive(accepted.body.runId);
+    check("forged success metadata is rejected by immutable saved-state proof before provider HTTP", accepted.status === 202 && failed.status === "failed" && failed.phase.name === "prepare" && failed.reviewCalls === 0 && failed.reviewCallsInherited === 3 && !failed.validatedKey && outbound.length === forgedBefore, { status: failed.status, phase: failed.phase.name, calls: failed.reviewCalls, error: failed.error });
+  });
+
+  const semanticSource = await laterContentFailure(21); transportMode = "monotone-semantic-fail";
+  const semanticAdmission = await sendCorrection(semanticSource.runId, 604, semanticSource.input), semantic = await drive(semanticAdmission.body.runId); transportMode = "pass";
+  check("later semantic failure keeps its real passed-prefix proof and nine cumulative calls", semanticAdmission.status === 202 && semantic.status === "failed" && semantic.phase.name === "semantic" && semantic.reviewCalls === 6 && semantic.reviewCallsInherited === 3 && semantic.stages["content:summary"].receipt.reusedFrom.sourceRunId === semanticSource.runId && !semantic.stages.render);
+  const semanticLedger = await rawRow(`filing-operator:${semantic.runId}`), semanticBefore = outbound.length, semanticFixedAdmission = await sendCorrection(semantic.runId, 605, await reviewerCorrectionInput(semantic.runId)), semanticFixed = await drive(semanticFixedAdmission.body.runId);
+  check("content lineage may advance once to semantic with transitive original content proof and exactly twelve total requests", semanticFixedAdmission.status === 202 && semanticFixed.status === "validated" && semanticFixed.reviewCallsInherited === 9 && semanticFixed.reviewCalls === 3 && outbound.length - semanticBefore === 3 && semanticFixed.stages.prepare.receipt.reusedContent.length === 5 && semanticFixed.stages["content:summary"].receipt.reusedFrom.sourceRunId === semanticSource.runId && JSON.stringify(await rawRow(semanticLedger.cache_key)) === JSON.stringify(semanticLedger), { status: semanticFixed.status, inherited: semanticFixed.reviewCallsInherited, own: semanticFixed.reviewCalls, total: semanticFixed.reviewCallsInherited + semanticFixed.reviewCalls, error: semanticFixed.error });
+  const legacy = await startSemanticFailure(20), legacyAdmission = await sendCorrection(legacy.runId, 606, legacy.input); transportMode = "monotone-semantic-fail"; const repeatedSemantic = await drive(legacyAdmission.body.runId); transportMode = "pass";
+  check("a semantic correction can fail honestly without rendering or reopening its own semantic stage", repeatedSemantic.status === "failed" && repeatedSemantic.phase.name === "semantic" && repeatedSemantic.reviewCalls === 2 && repeatedSemantic.reviewCallsInherited === 7 && !repeatedSemantic.stages.render);
+  await rejectReviewerCorrection("a failed semantic correction never receives a recursive correction", repeatedSemantic.runId, await reviewerCorrectionInput(repeatedSemantic.runId), { operation: 607 });
+  const riskSource = await laterContentFailure(22); transportMode = "monotone-risks-fail";
+  const riskAdmission = await sendCorrection(riskSource.runId, 609, riskSource.input), riskFailure = await drive(riskAdmission.body.runId); transportMode = "pass";
+  check("a risks leaf has only two own requests despite its third content-phase index", riskAdmission.status === 202 && riskFailure.status === "failed" && riskFailure.phase.name === "content:risks" && riskFailure.reviewCalls === 2 && riskFailure.reviewCallsInherited === 3 && riskFailure.stages["content:summary"].receipt.reusedFrom && riskFailure.stages["content:highlights"].receipt.success, { phase: riskFailure.phase.name, own: riskFailure.reviewCalls, inherited: riskFailure.reviewCallsInherited });
+  const riskBefore = outbound.length, riskFixedAdmission = await sendCorrection(riskFailure.runId, 610, await contentCorrectionInput(riskFailure.runId)), riskFixed = await drive(riskFixedAdmission.body.runId);
+  check("reused-prefix risks leaf is admitted by cumulative allowance and completes at eleven", riskFixedAdmission.status === 202 && riskFixed.status === "validated" && riskFixed.reviewCallsInherited === 5 && riskFixed.reviewCalls === 6 && outbound.length - riskBefore === 6 && riskFixed.stages.prepare.receipt.reusedContent.length === 2, { status: riskFixed.status, own: riskFixed.reviewCalls, inherited: riskFixed.reviewCallsInherited, error: riskFixed.error });
+  check("all monotone correction cases preserve public six and forbid external provider or production access", (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first()).published_version === 6 && blockedOutbound.length === 0);
+  return { sourceRunId: source.original.runId, failedChildRunId: source.runId, correctedRunId: final.runId, cumulative: [1, 3, 10], semanticContinuation: { failedRunId: semantic.runId, correctedRunId: semanticFixed.runId, cumulative: [1, 3, 9, 12] }, reusedPrefix: { failedRunId: riskFailure.runId, correctedRunId: riskFixed.runId, cumulative: [1, 3, 5, 11], failedOwnRequests: 2 } };
+}
+
+async function runMonotoneCorrectionBudget() {
+  const source = await laterContentFailure(18), oldRoot = await rawRow(`filing-operator:${source.original.runId}`), oldLeaf = await rawRow(`filing-operator:${source.runId}`), entered = new Promise(resolve => { transportHeld = resolve; });
+  transportMode = "hold-content";
+  const admission = await sendCorrection(source.runId, 608, source.input), progress = drive(admission.body.runId, { limit: 1000 });
+  await Promise.race([entered, progress.then(() => { throw Error("Monotone budget fixture ended before its actual held provider request"); })]);
+  const active = await opRow(admission.body.runId), before = outbound.length;
+  check("cumulative-three child reserves only its first new request while summary is reused", active.reviewCalls === 1 && active.reviewCallsInherited === 3 && active.phase.name === "content:highlights" && active.stages.prepare.receipt.reusedContent.length === 1);
+  for (let i = 0; i < 9; i++) {
+    const answer = await request(`/fixture/review-request?id=${admission.body.runId}&lease=${active.phase.leaseToken}&retries=0`);
+    check(`cumulative-three gate request ${i + 1} shares the original twelve-send maximum`, i < 8 ? answer.status === 200 : answer.status === 503, { status: answer.status });
+  }
+  transportMode = "pass"; transportRelease(); const failed = await progress;
+  check("the ancestor one and child two plus nine fresh requests stop exactly at twelve", admission.status === 202 && failed.status === "failed" && failed.reviewCalls === 9 && failed.reviewCallsInherited === 3 && outbound.length - before === 8 && !failed.stages.semantic && !failed.stages.render && !failed.validatedKey && JSON.stringify(await rawRow(oldRoot.cache_key)) === JSON.stringify(oldRoot) && JSON.stringify(await rawRow(oldLeaf.cache_key)) === JSON.stringify(oldLeaf), { status: failed.status, phase: failed.phase.name, inherited: failed.reviewCallsInherited, own: failed.reviewCalls });
+  return { sourceRunId: source.runId, correctedRunId: failed.runId, cumulative: 12, inherited: 3, fresh: 9 };
+}
+
 try {
   chrome = spawn(process.env.CHROMIUM_PATH || "/usr/bin/chromium", ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", `--user-data-dir=${resolve(scratch, "chrome")}`], { stdio: ["ignore", "ignore", "pipe"] });
   chromeEndpoint = await new Promise((resolve, reject) => { let stderr = ""; const timer = setTimeout(() => reject(Error("Local Chromium CDP startup timeout")), 20000); chrome.once("error", reject); chrome.stderr.on("data", bytes => { stderr += bytes; const found = /DevTools listening on (ws:\/\/[^\s]+)/.exec(stderr); if (found) { clearTimeout(timer); resolve(found[1]); } }); });
@@ -758,7 +850,12 @@ try {
   token = (await request("/fixture/auth")).body.token;
   publicBaseline = (await request("/fixture/public")).body;
   check("fixture has an immutable sixth public version", publicBaseline.version === 6 && /^[a-f0-9]{64}$/.test(publicBaseline.hash), publicBaseline);
-  if (contentCorrectionMode) {
+  if (monotoneCorrectionMode) {
+    const monotoneCorrection = await runMonotoneCorrectionJourney(), budget = await runMonotoneCorrectionBudget(), compatibility = await runContentCorrectionJourney(), resultFile = resolve(root, "docs/acceptance/discovery/results/filing-monotone-reviewer-correction.json");
+    const results = { at: new Date().toISOString(), scope: "strictly-forward-content-to-semantic-reviewer-corrections-with-one-shared-twelve-request-budget", environment: "Actual proxy, named AdminGateway, TaskRunner, source tools, composer stages and Chromium; provider transport only is synthetic", synthetic: { fixedMaterials: true, providerResponses: true, passedReceipts: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, monotoneCorrection, budget, compatibility, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, scratch, notVerified: ["Real provider investment or visual quality", "Production correction or deployment", "Human approval"] };
+    await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
+    console.log(JSON.stringify({ resultFile, checks: checks.length, syntheticProviderHttpCalls: outbound.length, screenshots: screenshots.length, actualModelCalls: 0 }));
+  } else if (contentCorrectionMode) {
     const budgetOnly = process.env.SPONTRA_CONTENT_CORRECTION_BUDGET_ONLY === "1";
     const contentCorrection = budgetOnly ? await runContentCorrectionBudget() : await runContentCorrectionJourney(), resultFile = resolve(root, budgetOnly ? "docs/acceptance/discovery/results/filing-content-reviewer-correction-budget.json" : "docs/acceptance/discovery/results/filing-content-reviewer-correction.json");
     const results = { at: new Date().toISOString(), scope: "single-actual-content-reviewer-correction-with-shared-twelve-request-limit", environment: "Actual proxy, named AdminGateway, TaskRunner, source tools, composer stages and Chromium; provider transport only is synthetic", synthetic: { fixedMaterials: true, providerResponses: true, passedReceipts: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, contentCorrection, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, scratch, notVerified: ["Real provider investment or visual quality", "Production correction or deployment", "Human approval"] };

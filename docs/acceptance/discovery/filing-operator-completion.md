@@ -136,3 +136,25 @@ node scripts/filing-operator-completion-acceptance.mjs
 另加 `SPONTRA_CONTENT_CORRECTION_BUDGET_ONLY=1` 只执行无截图的预算与历史 hash 反向旅程，结果为 [预算证明](results/filing-content-reviewer-correction-budget.json)：实际 1 次继承加 11 次新 HTTP 后，下一次发送被拦截；缺少旧实际请求 hash 的 semantic 复用入场也被拒绝。
 
 最终主旅程 40/40、预算旅程 18/18 通过（均 exit 0）；共 55 次明确合成的 provider HTTP，54 张真实 Chromium 截图，真实模型与生产访问为 0。主旅程验证新内容纠偏累计 9/12、旧 semantic 在真实请求一致时累计 10/12；另测剩余额度不足、错身份、多 major、markup/缺失/删除 replacement、unknown/paused/stopped、公开 CAS、递归与重放，以及 semantic 或 visual 失败不能变成 validated shadow。历史 39 项和首轮预算结果另按 SHA 保存在 `/tmp`，本轮未重跑或覆盖旧 171/47/54/72/52 项证据。
+
+## 按真实审核阶段单向推进的有界纠错
+
+现有 `apply-reviewer-corrections` 允许已纠正内容的失败叶继续接受**更后阶段**的一条实际 reviewer plain replacement。固定顺序为 `content:summary → content:highlights → content:risks → content:overlooked → content:versus-prior → content:what-to-watch → semantic`。只允许严格前进；相同阶段、回跳、循环、对 semantic 纠错再纠错，以及 render、unknown、stopped 均不开放。每个失败叶仍只有一个原子 claim，精确重放不重新派发。这替代上节对所有纠错子稿一律拒绝的限制，不改变单句修改和独立审核门槛。
+
+服务器最多遍历七个阶段的冻结父链，逐级核对不可变 source record、当前原始账本、实际失败回执、同一 plan/checkpoint/material/spec/root 和公开基准。纠错子叶须已有 `corrections done` 与 `prepare done`，原 tools 完整证明来自真实祖先，不能为子叶补造一个 tools 阶段。子叶继承数必须精确等于 `父.reviewCalls + 父.reviewCallsInherited`，并与 typed generation metadata 一致；所有 SDK 重试继续共享最初 12 次发送上限。
+
+可复用内容仍必须完成真实审核。若父阶段自身也是复用，服务器沿同一冻结父链找到最初实际 provider 阶段，验证阶段 after-state 保存的回执、原始 before/after 状态、完整请求与块哈希、来源、模型/有效 effort 及实际 `ai_usage`，再调用原 `reuseContent`。不把中间复用回执伪称新调用；没有执行、没有实际 inputHash、请求改变或只有伪造 passed 标记都不能复用。每个新候选仍通过原 `apply_fixes` 单点替换和完整 prepare；全文 semantic 与严格三视口 visual 不复用、不跳过，人工 promote 保持独立。
+
+例如原 content:summary 失败 1 次，纠错子稿 summary 通过而 highlights 失败新增 2 次，累计为 3 次。下一次只纠正 highlights：summary 的真实原始输入相同才复用，后五章、全文 semantic 与 visual 共需 7 次，最终正常累计 10/12。最低新调用数按真正 fresh 的阶段计算，不能拿子叶自身新调用数与内容阶段下标比较；已有复用 summary 的 risks 失败子叶可能只有 2 次自身调用、继承 3 次，该节点仍可按累计 5 次正确入场。
+
+本轮本地命令：
+
+```bash
+SPONTRA_MONOTONE_REVIEWER_CORRECTION_ACCEPTANCE=1 node scripts/filing-operator-completion-acceptance.mjs
+```
+
+结果独立保存为 [单向纠错旅程](results/filing-monotone-reviewer-correction.json)，旧 40/18 项结果原样保留。它使用实际 proxy、AdminGateway、TaskRunner、原工具、composer stages 与 Chromium，只有 provider 响应为明确合成数据；不证明真实投资结论、真实视觉审阅或生产发布，也不代表用户签核。
+
+本轮 91/91 项通过、exit 0：93 次合成 provider HTTP，108 张真实 Chromium 截图，真实模型和生产访问为 0。实际覆盖累计 `1 → 3 → 10`、内容纠错前进到 semantic 的 `1 → 3 → 9 → 12`、自有调用数低于阶段下标的 risks 叶 `1 → 3 → 5 → 11`，以及累计 3 次后只能再发 9 次的硬上限。错祖先账本/spec/hash、同阶段或逆序/循环、伪造通过回执、剩余额度不足、旧单 content/semantic 兼容、公开 CAS、重放、人审边界，以及全文 semantic 或 visual 失败不能发布均有实际正反向断言。Analysis 类型检查、定向 ESLint、脚本语法和 `git diff --check` 均通过；本轮未执行生产纠错或真实模型审核。
+
+冻结改动后另执行 `npm run check`（包含边界、根目录/两应用类型检查及两应用构建）、`npm run analysis:typecheck`、Analysis dry-run，均 exit 0。全仓 lint 仍为原有 9 errors / 5 warnings；本次修改的 TypeScript 和旅程脚本定向 lint 为 0。本地检查不代表 Git CI、生产部署或真实报告审核已通过，后续逐项记录实际结果。
