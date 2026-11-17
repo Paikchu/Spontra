@@ -1,5 +1,6 @@
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
+import { isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
 import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
@@ -133,6 +134,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   const impact = impactCalculationTool<S>({
     sourceExists: (state, id) => !!state.composer.sources[id],
     sourceValues: (state, id) => p(state).facts[id] ? [p(state).facts[id]!.value] : p(state).computed[id] ? [p(state).computed[id]!.value] : p(state).impactComputations?.[id] ? Object.values(p(state).impactComputations![id]!.values) : null,
+    sourceCalculation: (state, id) => p(state).impactComputations?.[id] ?? null,
     record: (state, result, inputs) => {
       const results = p(state).impactComputations ??= {};
       const id = `impact${Object.keys(results).length + 1}`;
@@ -155,7 +157,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(status)) return fail("Unknown quantification status.");
         if (computationRefs.some(id => !p(state).computed[id] && !p(state).impactComputations?.[id])) return fail("Calculations must reference this session's deterministic compute results.");
         if (status !== "not_quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id] && p(state).impactComputations?.[id]?.status !== "calculated")) return fail("Unavailable calculations cannot support quantified or sensitivity results; name the missing inputs.");
-        if (status === "quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id]?.limitations.some(note => note.startsWith("Sensitivity only:")))) return fail("An assumed calculation is sensitivity only, not a quantified event result.");
+        if (status === "quantifiable" && computationRefs.some(id => isSensitivityCalculation(p(state).impactComputations?.[id]))) return fail("An assumed calculation is sensitivity only, not a quantified event result.");
         if (status !== "not_quantifiable" && !computationRefs.length) return fail("A quantitative or sensitivity chain needs computed results.");
         if (status !== "quantifiable" && !missingInputs.length) return fail("List specific missing inputs that prevent a full valuation result.");
         const chain: InvestmentChain = { ...Object.fromEntries(textFields.map(key => [key, str(args[key])])) as Pick<InvestmentChain, typeof textFields[number]>, quantificationStatus: status as InvestmentChain["quantificationStatus"], sourceIds, computationRefs, missingInputs };

@@ -1,6 +1,7 @@
 import type { InvestmentChain } from "../filing-analysis/periodic.ts";
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
+import { isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
 import { companyResearchDependencyStatements } from "../public-research/context.ts";
 import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
 import { freezeCompanyResearch } from "../public-research/context.ts";
@@ -277,7 +278,7 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
       if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(String(status))) return { observation: "Unknown quantification state.", error: true };
       if (status !== "not_quantifiable" && (!computationRefs.length || computationRefs.some(id => state.impactComputations?.[id]?.status !== "calculated"))) return { observation: "A quantified or sensitivity result needs successful compute_investment_impact results.", error: true };
       if (status !== "quantifiable" && !missingInputs.length) return { observation: "Name the missing inputs preventing a full valuation result.", error: true };
-      if (status === "quantifiable" && computationRefs.some(id => state.impactComputations?.[id]?.limitations.some(note => note.startsWith("Sensitivity only:")))) return { observation: "Assumed inputs yield sensitivity only, not a quantified event.", error: true };
+      if (status === "quantifiable" && computationRefs.some(id => isSensitivityCalculation(state.impactComputations?.[id]))) return { observation: "Assumed inputs yield sensitivity only, not a quantified event.", error: true };
       const chain: InvestmentChain = { ...texts as Pick<InvestmentChain, typeof fields[number]>, sourceIds, computationRefs, missingInputs, quantificationStatus: status as InvestmentChain["quantificationStatus"] };
       state.investmentChains = [...(state.investmentChains ?? []).filter(c => c.id !== chain.id), chain];
       return { observation: JSON.stringify(chain) };
@@ -377,6 +378,7 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
   const impact = impactCalculationTool<AnalystState>({
     sourceExists: (state, id) => !!state.composer.sources[id],
     sourceValues: (state, id) => id === "d1" ? spec.finding.resolved.flatMap(row => [row.current.value, ...(row.compare ? [row.compare.value] : [])]) : state.impactComputations?.[id] ? Object.values(state.impactComputations[id]!.values) : null,
+    sourceCalculation: (state, id) => state.impactComputations?.[id] ?? null,
     record: (state, result, inputs) => {
       const results = state.impactComputations ??= {};
       const id = `impact${Object.keys(results).length + 1}`;

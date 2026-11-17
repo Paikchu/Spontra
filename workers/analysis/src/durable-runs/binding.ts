@@ -1,4 +1,5 @@
 import type { RunState } from "./engine.ts";
+import type { StoredPiSession } from "../pi/host.ts";
 
 /** The run kinds, named by the env property each one is reached through. */
 export const RUN_BINDINGS = [
@@ -14,6 +15,7 @@ export type RunStub = {
   status(): Promise<RunState>;
   terminate(): Promise<void>;
   report(): Promise<unknown>;
+  readPublicResearchSession(runId: string, stage: string): Promise<{ runId: string; status: "terminated"; session: StoredPiSession } | null>;
   startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void>;
 };
 type RunNamespace = { idFromName(name: string): unknown; get(id: never): unknown };
@@ -38,6 +40,11 @@ export function runBinding(namespace: RunNamespace, kind: RunKind) {
     async get(id: string) {
       const run = await stub(id);
       return { id, status: () => run.status(), terminate: () => run.terminate(), report: () => run.report() };
+    },
+    // Do not initialize/reroute an Agent through getAgentByName on a storage-only read.
+    async readPublicResearchSession(id: string, stage: string) {
+      const run = namespace.get(namespace.idFromName(runName(kind, id)) as never) as RunStub;
+      return run.readPublicResearchSession(id, stage);
     },
   };
 }

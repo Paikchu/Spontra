@@ -1,0 +1,49 @@
+[
+  {
+    "viewport": [
+      390,
+      844
+    ],
+    "scroll": {
+      "top": 4752,
+      "max": 4752,
+      "overflow": false,
+      "rail": 8
+    },
+    "errors": []
+  },
+  {
+    "viewport": [
+      768,
+      1024
+    ],
+    "scroll": {
+      "top": 3747,
+      "max": 3747,
+      "overflow": false,
+      "rail": 12
+    },
+    "errors": []
+  },
+  {
+    "viewport": [
+      1440,
+      900
+    ],
+    "scroll": {
+      "top": 3565,
+      "max": 3565,
+      "overflow": false,
+      "rail": 12
+    },
+    "errors": []
+  },
+  {
+    "negative": [
+      "forbidden",
+      "server failure",
+      "withdrawn"
+    ],
+    "passed": true
+  }
+]

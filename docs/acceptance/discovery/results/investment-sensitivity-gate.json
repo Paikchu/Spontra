@@ -1,0 +1,439 @@
+{
+  "gate": "G6",
+  "issue": "Assumed exposure accepted as quantified investment impact",
+  "recordedAt": "2026-11-16T23:51:47.418Z",
+  "baselineCommit": "f522338d87bb208c249ba24204f932d2b0377458",
+  "scope": "Local actual registered filing and analyst tools using synthetic evidence; no real generation or publishing",
+  "rootCause": "calculateImpact emitted Sensitivity only; while both record gates matched only Sensitivity only:. Subsequent compute calls also lost assumed-input classification when a prior result was cited as fact.",
+  "changes": [
+    "Optional typed quantificationBasis on saved v1 ImpactCalculation results",
+    "Direct assumed exposure and depreciation classification",
+    "Shared sensitivity predicate with backward compatibility for colon, semicolon and Accounting sensitivity only.",
+    "Calculation-source classification inherited across fact-labelled compute inputs",
+    "Same record gate for filing and analyst tools"
+  ],
+  "safety": {
+    "modelCalls": 0,
+    "networkCalls": 0,
+    "databaseCalls": 0,
+    "productionWrites": 0,
+    "commits": 0,
+    "pushes": 0,
+    "deployments": 0
+  },
+  "baseline": {
+    "command": "node --experimental-strip-types --no-warnings /tmp/spontra-g6-sensitivity-journey.mjs --baseline",
+    "mode": "original HEAD source loaded without changing workspace",
+    "checks": 4,
+    "results": [
+      {
+        "journey": "filing",
+        "step": "all numeric facts still produce revenue sensitivity",
+        "status": "pass",
+        "actual": 10
+      },
+      {
+        "journey": "filing",
+        "step": "baseline reproduces sensitivity accepted as quantified defect",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "all numeric facts still produce revenue sensitivity",
+        "status": "pass",
+        "actual": 10
+      },
+      {
+        "journey": "analyst",
+        "step": "baseline reproduces sensitivity accepted as quantified defect",
+        "status": "pass",
+        "actual": false
+      }
+    ]
+  },
+  "journey": {
+    "command": "node --experimental-strip-types --no-warnings /tmp/spontra-g6-sensitivity-journey.mjs",
+    "checks": 52,
+    "results": [
+      {
+        "journey": "filing",
+        "step": "all numeric facts still produce revenue sensitivity",
+        "status": "pass",
+        "actual": 10
+      },
+      {
+        "journey": "filing",
+        "step": "assumed exposure cannot be recorded as quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "rejected recording did not mutate chains",
+        "status": "pass",
+        "actual": 0
+      },
+      {
+        "journey": "filing",
+        "step": "typed semantic sensitivity",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "filing",
+        "step": "sensitivity-only recording remains allowed",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "typed gate does not depend on prose",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "classification survives session JSON restore",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "fact-labelled second calculation inherits sensitivity",
+        "status": "pass",
+        "actual": [
+          90,
+          "sensitivity_only"
+        ]
+      },
+      {
+        "journey": "filing",
+        "step": "second calculation cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "third calculation retains complete sensitivity chain",
+        "status": "pass",
+        "actual": [
+          0.9,
+          "sensitivity_only"
+        ]
+      },
+      {
+        "journey": "filing",
+        "step": "third calculation cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "third calculation remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 0 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 0 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 0 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 1 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 1 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 1 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 2 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 2 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "legacy 2 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "filing",
+        "step": "explicit numeric assumptions stay sensitivity",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "filing",
+        "step": "sourced calculation positive path remains available",
+        "status": "pass",
+        "actual": [
+          "sourced_inputs",
+          false
+        ]
+      },
+      {
+        "journey": "filing",
+        "step": "missing exposure retains unavailable gate",
+        "status": "pass",
+        "actual": [
+          "unavailable",
+          true,
+          true
+        ]
+      },
+      {
+        "journey": "filing",
+        "step": "specific unquantifiable gap remains allowed",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "filing",
+        "step": "ordinary arithmetic cannot consume impact refs",
+        "status": "pass",
+        "actual": [
+          true,
+          0
+        ]
+      },
+      {
+        "journey": "analyst",
+        "step": "all numeric facts still produce revenue sensitivity",
+        "status": "pass",
+        "actual": 10
+      },
+      {
+        "journey": "analyst",
+        "step": "assumed exposure cannot be recorded as quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "rejected recording did not mutate chains",
+        "status": "pass",
+        "actual": 0
+      },
+      {
+        "journey": "analyst",
+        "step": "typed semantic sensitivity",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "analyst",
+        "step": "sensitivity-only recording remains allowed",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "typed gate does not depend on prose",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "classification survives session JSON restore",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "fact-labelled second calculation inherits sensitivity",
+        "status": "pass",
+        "actual": [
+          90,
+          "sensitivity_only"
+        ]
+      },
+      {
+        "journey": "analyst",
+        "step": "second calculation cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "third calculation retains complete sensitivity chain",
+        "status": "pass",
+        "actual": [
+          0.9,
+          "sensitivity_only"
+        ]
+      },
+      {
+        "journey": "analyst",
+        "step": "third calculation cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "third calculation remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 0 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 0 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 0 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 1 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 1 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 1 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 2 cannot become quantified",
+        "status": "pass",
+        "actual": true
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 2 remains usable as sensitivity",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "legacy 2 propagates sensitivity into typed successor",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "analyst",
+        "step": "explicit numeric assumptions stay sensitivity",
+        "status": "pass",
+        "actual": "sensitivity_only"
+      },
+      {
+        "journey": "analyst",
+        "step": "sourced calculation positive path remains available",
+        "status": "pass",
+        "actual": [
+          "sourced_inputs",
+          false
+        ]
+      },
+      {
+        "journey": "analyst",
+        "step": "missing exposure retains unavailable gate",
+        "status": "pass",
+        "actual": [
+          "unavailable",
+          true,
+          true
+        ]
+      },
+      {
+        "journey": "analyst",
+        "step": "specific unquantifiable gap remains allowed",
+        "status": "pass",
+        "actual": false
+      },
+      {
+        "journey": "analyst",
+        "step": "no second arithmetic API bypass exists",
+        "status": "pass",
+        "actual": false
+      }
+    ]
+  },
+  "existingJourney": {
+    "command": "node --experimental-strip-types --no-warnings scripts/price-impact-acceptance.ts",
+    "status": "pass",
+    "checks": 19,
+    "artifact": "/tmp/spontra-g6-price-impact-regression.json"
+  },
+  "checks": [
+    {
+      "command": "npm run analysis:typecheck",
+      "status": "pass",
+      "exitCode": 0
+    },
+    {
+      "command": "npx --no-install eslint shared/analysis-contract/price-impact.ts shared/analysis-runtime/price-impact.ts workers/analysis/src/price-impact/tool.ts workers/analysis/src/filing-analysis/periodic.ts workers/analysis/src/analyst/agent.ts scripts/price-impact-acceptance.ts",
+      "status": "pass",
+      "exitCode": 0,
+      "warnings": 0
+    },
+    {
+      "command": "git diff --check",
+      "status": "pass",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "status": "failed_in_concurrent_change",
+      "exitCode": 2,
+      "diagnostic": "scripts/company-public-context-acceptance.ts(106,182): TS2322 Type ready is not assignable to passed | draft | conservative | safe-layout",
+      "ownerNotified": true
+    }
+  ],
+  "notCovered": [
+    "real model-generated report",
+    "production publishing",
+    "historically laundered v1 descendants without a sensitivity marker or retained provenance"
+  ],
+  "limitation": "Existing saved v1 results with sensitivity notes remain blocked and propagate classification. Already-laundered historical descendants that retained neither sensitivity metadata nor inspectable provenance cannot be reconstructed from numbers alone."
+}

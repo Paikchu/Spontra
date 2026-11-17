@@ -26,8 +26,8 @@ export function ResearchList({ reports }: { reports: PublicReportSummary[] }) {
     <a href={researchHref(report.reportId, report.version)} data-nav lang={report.language}>
       <span className="public-research-meta"><span>{report.scope.regions.join(" · ")} · {report.scope.currency}</span><span>{freshnessWords[report.freshnessStatus]}</span></span>
       <h3>{report.title}</h3>
-      <p>{report.summary}</p>
-      <span className="public-research-meta"><span>{m.asOf} <time dateTime={report.asOf}>{report.asOf.slice(0, 10)}</time></span>{report.coverage === "limited" && <span>{m.limited}</span>}</span>
+      <p className="public-research-preview">{report.summary}</p>
+      <span className="public-research-list-foot"><span className="public-research-meta"><span>{m.asOf} <time dateTime={report.asOf}>{report.asOf.slice(0, 10)}</time></span>{report.coverage === "limited" && <span>{m.limited}</span>}</span><span className="public-research-read">{m.read} <span aria-hidden="true">→</span></span></span>
     </a>
   </li>)}</ol>;
 }

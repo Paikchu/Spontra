@@ -16,6 +16,7 @@ import { readFilingMarkdown, readFilingTable, sourceText } from "../filing-mater
 import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { sha256 } from "../sha256.ts";
 import { readPublicResearch, readPublicResearchDraft, savePublicResearchDraft, reviewPublicResearch, publishPublicResearch } from "./store.ts";
+import { publicResearchCheckpoint, savePublicResearchCheckpoint, type PublicResearchStage } from "./checkpoint.ts";
 
 const stamp = z.string().datetime({ offset: true }).transform(value => new Date(value).toISOString());
 export const publicResearchRunSchema = z.object({
@@ -34,7 +35,7 @@ export type PublicResearchRunSpec = PublicResearchRunInput & { runId: string; in
 type Evidence = { rawKey?: string; id: string; uri: string; title: string; text: string; publishedAt: string | null; revision: string; locator: string };
 type ResearchNotes = { conclusions: string[]; gaps: string[]; sources: SourceSnapshot[] };
 type MachineReview = { approved: boolean; claimChecks: ResearchReview["claimChecks"]; issues: string[] };
-type Stage = "research-demand" | "research-financing" | "synthesis" | "review" | "repair" | "review-repair";
+type Stage = PublicResearchStage;
 type SessionSpec = { run: PublicResearchRunSpec; stage: Stage; notes?: ResearchNotes[]; draft?: PublicResearchDraft; review?: MachineReview; previousReview?: MachineReview | null };
 type State = WebToolState & { raw: Record<string, Evidence>; sources: SourceSnapshot[]; notes: ResearchNotes | null; draft: PublicResearchDraft | null; review: MachineReview | null; submitted: boolean };
 const PROMPT_VERSION = "public-research.discovery.v2";
@@ -268,6 +269,7 @@ export async function executePublicResearchRun(spec:PublicResearchRunSpec,step:W
     const publicContext=run.enrichment?run.frozenContext.map(context=>({...context,sources:context.sources.map(({id,uri,title,revision,locator})=>({id,uri,title,revision,locator}))})):run.frozenContext;
     const opening=JSON.stringify({question:run.question,scope:run.scope,asOf:run.asOf,...(stage.startsWith("research-")?{frozenFilings:run.frozenFilings,seedSources:run.sourceUrls.map((source,index)=>({id:`h${index+1}`,...source}))}:{}),publicContext,...(run.enrichment?{executionBudget:{maxCalls:run.maxCalls,maxTokens:run.maxTokens,possibleStages:4,stageTokens:Math.floor(run.maxTokens/4),maxTargetedRepairs:1,researchBranches:0},dependencyUpdate:enrichmentDirective,originalRunId:run.enrichment.sourceRunId,originalDraftVersion:run.enrichment.draftVersion,previousReview}:{}),...openingExtra});
     const result=await runRecipeSession<State,State>(env,step,"public-research",input,opening,`${run.runId}:${stage}`);
+    await step.do(`archive-${stage}`,()=>savePublicResearchCheckpoint(env,publicResearchCheckpoint(run,stage,result.output,input)));
     return result.output;
   };
   if (!env.PI || !step.waitFor) throw new Error("Public research requires durable Pi sessions");
@@ -281,6 +283,7 @@ export async function executePublicResearchRun(spec:PublicResearchRunSpec,step:W
       const results = await Promise.all(roles.map(stage => env.PI!.poll<State>(`${run.runId}:${stage}`)));
       return results.every(Boolean) ? results.map(r => r!.output) : null;
     }, 30000);
+    for (const [index,branch] of branches.entries()) await step.do(`archive-${roles[index]}`,()=>savePublicResearchCheckpoint(env,publicResearchCheckpoint(run,roles[index]!,branch)));
     // A bounded specialist can stop before finish_research. Keep its registered original excerpts,
     // while making clear that no specialist conclusions were completed; never promote raw reads.
       notes=branches.flatMap((branch,index)=>branch?.notes?[branch.notes]:branch?.sources.length?[{

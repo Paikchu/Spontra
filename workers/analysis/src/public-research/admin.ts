@@ -8,11 +8,13 @@ import { AI_MODELS } from "../../../../shared/analysis-contract/ai-models-admin.
 import { listEndpoints } from "../pi/endpoints.ts";
 import { sha256 } from "../sha256.ts";
 import { withRuns } from "../durable-runs/binding.ts";
-import { publicResearchRunSchema, freezePublicResearchInput } from "./generation.ts";
+import { publicResearchRunSchema, freezePublicResearchInput, type PublicResearchRunSpec } from "./generation.ts";
 import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publishPublicResearch, withdrawPublicResearch, restorePublicResearch, listPublicResearch, invalidatePublicResearchEvent, revisePublicResearchDraft } from "./store.ts";
+import { publicResearchCheckpoint, publicResearchStageSchema, readPublicResearchCheckpoint } from "./checkpoint.ts";
+import type { StoredPiSession } from "../pi/host.ts";
 
 type RunRow={run_id:string;report_id:string;input_fingerprint:string;state:string;params_json:string;result_version:string|null;error:string|null;calls_reserved:number;max_calls:number;max_tokens:number;created_at:string;updated_at:string};
-type Binding={create(options:{id:string;params:unknown}):Promise<unknown>;get(id:string):Promise<{status():Promise<unknown>;report():Promise<unknown>;terminate():Promise<void>}>};
+type Binding={create(options:{id:string;params:unknown}):Promise<unknown>;get(id:string):Promise<{status():Promise<unknown>;report():Promise<unknown>;terminate():Promise<void>}>;readPublicResearchSession(id:string,stage:string):Promise<{runId:string;status:"terminated";session:StoredPiSession}|null>};
 const binding=(env:AnalysisEnv)=>(withRuns(env) as AnalysisEnv & {PUBLIC_RESEARCH_WORKFLOW?:Binding}).PUBLIC_RESEARCH_WORKFLOW;
 const reviewSchema=z.object({mode:z.enum(["human","automatic"]).default("human"),reviewer:z.string().min(3),reviewedAt:z.string().datetime({offset:true}),authorRunId:z.string(),claimChecks:z.array(z.object({claimId:z.string(),supported:z.boolean(),notes:z.string().min(1)})),conclusion:z.enum(["approved","rejected"]),notes:z.string().min(1)});
 const stable=(v:unknown):string=>JSON.stringify(v,(_k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b))):x);
@@ -60,6 +62,29 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       return json({runId,state:"queued",shadow:input.type!=="macro",humanReviewRequired:input.type!=="macro",maxCalls:input.maxCalls,maxTokens:input.maxTokens},202);
     }
     if(path==="/admin/public-research/runs"&&request.method==="GET")return json((await db.prepare("SELECT run_id,report_id,state,result_version,error,calls_reserved,max_calls,max_tokens,created_at,updated_at FROM public_research_runs ORDER BY created_at DESC LIMIT 40").all()).results);
+    const checkpointMatch=/^\/admin\/public-research\/runs\/([^/]+)\/checkpoints\/([^/]+)$/.exec(path);
+    if(checkpointMatch){
+      if(request.method!=="GET")return json({error:"Method not allowed"},405);
+      const runId=z.string().regex(/^public-[a-f0-9]{40}$/).parse(checkpointMatch[1]),stage=publicResearchStageSchema.parse(checkpointMatch[2]);
+      const row=await db.prepare("SELECT * FROM public_research_runs WHERE run_id=?").bind(runId).first<RunRow>();
+      if(!row)return json({error:"Run not found"},404);
+      const identity={runId,reportId:row.report_id,inputFingerprint:row.input_fingerprint};
+      const archived=await readPublicResearchCheckpoint(env,identity,stage);
+      const metadata={runId,state:row.state,resultVersion:row.result_version,callsReserved:row.calls_reserved,stage,published:false,reviewStatus:"unreviewed",warning:"Storage checkpoint only; it is not an independently approved or published report."};
+      if(archived)return json({...metadata,source:"stage-archive",...archived});
+      // The legacy path must never poll/settle/resume a task to recover its saved state.
+      if(row.state!=="stopped")return json({error:"No archived checkpoint; legacy export requires a stopped run"},409);
+      const runner=binding(env);if(!runner)return json({error:"Durable research storage unavailable"},503);
+      const stored=await runner.readPublicResearchSession(runId,stage);
+      if(!stored)return json({error:"Research stage checkpoint not found"},404);
+      if(stored.runId!==runId||stored.status!=="terminated"||stored.session.active||stored.session.kind!=="public-research"||stored.session.operationId!==`${runId}:${stage}`)throw new Error("Stopped research storage identity mismatch");
+      const spec=stored.session.spec as {run:PublicResearchRunSpec;stage:string;notes?:unknown[];draft?:unknown;review?:unknown};
+      if(spec.stage!==stage||spec.run.runId!==runId||spec.run.reportId!==row.report_id||spec.run.inputFingerprint!==row.input_fingerprint)throw new Error("Research session specification does not match admitted run");
+      const state=stored.session.state as Parameters<typeof publicResearchCheckpoint>[2];
+      const checkpoint=publicResearchCheckpoint(spec.run,stage,state,spec);
+      const {operationId,kind,active,startedAt,turns,spent,capped,finished}=stored.session,session={operationId,kind,active,startedAt,turns,spent,capped,finished};
+      return json({...metadata,source:"stopped-session-storage",runnerStatus:stored.status,session,contentHash:await sha256(JSON.stringify(checkpoint)),checkpoint});
+    }
     const runMatch=/^\/admin\/public-research\/runs\/([a-zA-Z0-9._:-]+)(?:\/(stop))?$/.exec(path);
     if(runMatch){
       const row=await db.prepare("SELECT * FROM public_research_runs WHERE run_id=?").bind(runMatch[1]).first<RunRow>();if(!row)return json({error:"Run not found"},404);

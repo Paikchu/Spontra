@@ -35,7 +35,6 @@ export function valuationPublicResearchGate(state:ValuationState):string|null{
   if(!state.publicResearch)return null; // A historical pre-integration checkpoint keeps its original information set.
   const context=adapter(state),background=publicResearchTools(state.publicResearch);
   const issue=background.precheck(context);if(issue)return issue;
-  for(const {report} of state.publicResearch.reports)if(!(context.researchUses??[]).some(use=>use.reportId===report.reportId&&use.version===report.version))return `Record an adopted, rejected or not_applicable public claim decision for ${report.reportId}; use company evidence, never industry-average exposure.`;
   const payload=JSON.stringify({dimensions:[...state.dimensions.values()],calculation:state.calc,composition:state.composed});
   for(const [id,dependency] of Object.entries(state.publicEvidence??{}))if(payload.includes(id)&&!(context.researchUses??[]).some(use=>use.reportId===dependency.reportId&&use.version===dependency.version&&use.claimId===dependency.claimId))return `Record applicability before citing public valuation evidence ${id}.`;
   return null;

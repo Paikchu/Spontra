@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { calculateImpact, impactCalculationSchema } from "../../../../shared/analysis-runtime/price-impact.ts";
+import { calculateImpact, impactCalculationSchema, isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
 import { defineTool, type AnyTool } from "../tools/registry.ts";
 
@@ -13,6 +13,8 @@ export function impactCalculationTool<S>(adapter: {
   sourceExists(state: S, id: string): boolean;
   /** Null means the source has no machine-readable number: that leaf must be an explicit assumption. */
   sourceValues(state: S, id: string): readonly number[] | null;
+  /** Derived figures retain their sensitivity classification even when the next tool input is declared a fact. */
+  sourceCalculation(state: S, id: string): ImpactCalculation | null;
   record(state: S, result: ImpactCalculation, inputs: InputBasis[]): string;
 }): AnyTool<S> {
   return defineTool<S>()({
@@ -36,7 +38,10 @@ export function impactCalculationTool<S>(adapter: {
       }
       if (inputs.some(i => !leaves.some(([path]) => path === i.path))) return { observation: "Not accepted: an input path is not a numeric leaf of this calculation.", error: true };
       const result = calculateImpact(calculation);
-      if (inputs.some(i => i.basis === "assumption")) result.limitations.unshift("Sensitivity only: one or more inputs are explicitly assumed. Do not present this calculation as an observed event effect.");
+      if (inputs.some(i => i.basis === "assumption" || isSensitivityCalculation(adapter.sourceCalculation(state, i.sourceId)))) {
+        result.quantificationBasis = "sensitivity_only";
+        result.limitations.unshift("Sensitivity only: one or more inputs are assumed or derived from a sensitivity. Do not present this calculation as an observed event effect.");
+      }
       const id = adapter.record(state, result, inputs);
       return { observation: JSON.stringify({ id, ...result }), error: false };
     },

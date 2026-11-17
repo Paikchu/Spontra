@@ -65,6 +65,11 @@ export type PiOutcome<O = unknown> = {
   state: unknown;
 };
 
+export type StoredPiSession = {
+  operationId: string; kind: string; spec: unknown; state: unknown; active: false;
+  startedAt: number; turns: number; spent: number; capped: boolean; finished: boolean;
+};
+
 type Binding = {
   conversation: string; session: string; operationId: string; kind: string; spec: unknown;
   loaded: PiLoaded; tools: AnyTool<unknown>[]; system: string; state: unknown;
@@ -329,6 +334,18 @@ export class PiHost {
       operationId: row.operation_id, kind: row.kind, turns: row.turns, spent: row.spent ?? 0, active: !!row.active, capped: !!row.capped, lastRound: !!row.last_round,
       trail: this.db().exec<{ entry: string }>("SELECT entry FROM pi_trail WHERE conversation = ? ORDER BY seq", row.conversation).toArray().map((r) => JSON.parse(r.entry) as TurnRecord),
     }));
+  }
+
+  /** Storage only: never opens Pi, rebuilds a recipe, settles it, or schedules a wake. */
+  readEndedSession(operationId: string): StoredPiSession | null {
+    const sql = this.agent.sql;
+    if (!sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='pi_bindings'").toArray().length) return null;
+    const row = sql.exec<Row & { active: number }>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
+    if (!row) return null;
+    if (row.active) throw new Error("Research stage is still active; storage export refused");
+    if (sql.exec<{ n: number }>("SELECT COUNT(*) n FROM pi_bindings WHERE active = 1").toArray()[0]!.n) throw new Error("Research still has active sessions; storage export refused");
+    return { operationId: row.operation_id, kind: row.kind, spec: JSON.parse(row.spec), state: unpackState(row.state), active: false,
+      startedAt: row.started_at, turns: row.turns, spent: row.spent ?? 0, capped: !!row.capped, finished: !!row.finished };
   }
 
   /** SDK ledger includes summarization attempts omitted by ordinary afterResponse hooks. Read only. */

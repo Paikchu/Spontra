@@ -16,6 +16,7 @@ import { analystLoader } from "../analyst/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
 import { businessLoader } from "../company-analysis-workflow.ts";
 import { companyComposeLoader } from "../company-analysis/compose-agent.ts";
+import { publicResearchStageSchema } from "../public-research/checkpoint.ts";
 
 type RunRow = { kind: RunKind; id: string; params: string; created_at: number; status: RunStatus; error: string | null; output: string | null };
 /** What a connected client (the admin, a chat) sees of the run, kept current with every wake. */
@@ -45,7 +46,14 @@ export class TaskRunner extends Agent<Env, RunView> {
     scheduleTraceFlush: () => this.schedule(new Date(Date.now() + 1000), "flushPiTraces"),
     scheduleRecovery: () => this.schedule(1, "recoverPiSessions"),
   });
-  private readonly piInstalled = this.lifecycle.use(this.pi.harness);
+  // PiHarness.onStart opens/resumes sessions. A terminated object must stay inert even on a cold admin read.
+  private readonly piInstalled = this.storedRun()?.status === "terminated" ? null : this.lifecycle.use(this.pi.harness);
+
+  private storedRun(): RunRow | undefined {
+    const sql = this.ctx.storage.sql;
+    if (!sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='run'").toArray().length) return undefined;
+    return sql.exec<RunRow>("SELECT kind, id, params, created_at, status, error, output FROM run WHERE k = 1").toArray()[0];
+  }
 
   private loaders(): Record<string, PiLoader> {
     const env = () => companyPolicyEnvironment(this.taskEnv());
@@ -105,6 +113,19 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   /** Starts a Pi session that runs on its own; this returns as soon as Pi has stored the input. */
   async startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void> { await this.pi.start(kind, spec, opening, { operationId }); }
+
+  /** Legacy stopped-run export: only SQL reads; deliberately independent of report()/status() recovery. */
+  async readPublicResearchSession(runId: string, stageName: string) {
+    const stage = publicResearchStageSchema.parse(stageName), row = this.storedRun();
+    if (!/^public-[a-f0-9]{40}$/.test(runId) || row?.kind !== "PUBLIC_RESEARCH_WORKFLOW" || row.id !== runId) throw new Error("Research run identity mismatch");
+    if (row.status !== "terminated") throw new Error("Legacy storage export requires a terminated research runner");
+    const session = this.pi.readEndedSession(`${runId}:${stage}`);
+    if (!session) return null;
+    if (session.kind !== "public-research") throw new Error("Research session kind mismatch");
+    const spec = session.spec as { stage?: unknown; run?: { runId?: unknown } };
+    if (spec.stage !== stage || spec.run?.runId !== runId) throw new Error("Research session identity mismatch");
+    return { runId, status: row.status, session };
+  }
 
   /** Scheduled after a turn ends: a wake of its own, whose trace is live, writes the turns' spans. */
   flushPiTraces() { this.pi.flushTraces(); }

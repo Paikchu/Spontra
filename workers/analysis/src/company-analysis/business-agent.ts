@@ -60,8 +60,6 @@ export function businessRecipe(spec: BusinessSpec, deps: { database: CompanyAnal
         }),
         handTool<BusinessState>(SCHEMAS[2]!, (_args, s) => {
           const issue=background.precheck(s);if(issue)return {observation:issue,error:true};
-          const missing=spec.publicResearch?.reports.find(({report})=>!(s.researchUses??[]).some(use=>use.reportId===report.reportId&&use.version===report.version));
-          if(missing)return {observation:`Record at least one explicit adopted/rejected/not_applicable decision for ${missing.report.reportId}, with a company-specific reason.`,error:true};
           s.done = true; return { observation: "Research finished." };
         }),
         handSearch<BusinessState>("search_web", s => SEARCHES - s.searches, (batch, s) => { s.searches++; return answer(s, "web_search", research.registerSearch(batch)); }),

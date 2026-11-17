@@ -1,0 +1,354 @@
+{
+  "productionFixture": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+  "generatedReports": 0,
+  "results": [
+    {
+      "viewport": [
+        1440,
+        900
+      ],
+      "passed": true,
+      "preview": {
+        "height": 69,
+        "fullHeight": 162,
+        "clamp": "3"
+      },
+      "headerHeight": 303.34375,
+      "preserved": {
+        "missing": [],
+        "duplicateIds": [],
+        "claims": 21,
+        "sources": 12
+      },
+      "scroll": {
+        "top": 13283,
+        "max": 13283,
+        "horizontal": false,
+        "rail": 12
+      },
+      "errors": [],
+      "apiWrites": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1180,
+        757
+      ],
+      "passed": true,
+      "preview": {
+        "height": 69,
+        "fullHeight": 162,
+        "clamp": "3"
+      },
+      "headerHeight": 289.53125,
+      "preserved": {
+        "missing": [],
+        "duplicateIds": [],
+        "claims": 21,
+        "sources": 12
+      },
+      "scroll": {
+        "top": 13412,
+        "max": 13412,
+        "horizontal": false,
+        "rail": 12
+      },
+      "errors": [],
+      "apiWrites": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024
+      ],
+      "passed": true,
+      "preview": {
+        "height": 69,
+        "fullHeight": 254,
+        "clamp": "3"
+      },
+      "headerHeight": 272.125,
+      "preserved": {
+        "missing": [],
+        "duplicateIds": [],
+        "claims": 21,
+        "sources": 12
+      },
+      "scroll": {
+        "top": 14891,
+        "max": 14891,
+        "horizontal": false,
+        "rail": 12
+      },
+      "errors": [],
+      "apiWrites": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "passed": true,
+      "preview": {
+        "height": 69,
+        "fullHeight": 346,
+        "clamp": "3"
+      },
+      "headerHeight": 326.0625,
+      "preserved": {
+        "missing": [],
+        "duplicateIds": [],
+        "claims": 21,
+        "sources": 12
+      },
+      "scroll": {
+        "top": 17227,
+        "max": 17227,
+        "horizontal": false,
+        "rail": 8
+      },
+      "errors": [],
+      "apiWrites": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        340,
+        740
+      ],
+      "passed": true,
+      "preview": {
+        "height": 69,
+        "fullHeight": 416,
+        "clamp": "3"
+      },
+      "headerHeight": 326.0625,
+      "preserved": {
+        "missing": [],
+        "duplicateIds": [],
+        "claims": 21,
+        "sources": 12
+      },
+      "scroll": {
+        "top": 18403,
+        "max": 18403,
+        "horizontal": false,
+        "rail": 8
+      },
+      "errors": [],
+      "apiWrites": [
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        },
+        {
+          "method": "POST",
+          "url": "http://127.0.0.1:4194/api/business/v1/telemetry"
+        }
+      ]
+    },
+    {
+      "negative": [
+        "forbidden",
+        "server failure",
+        "withdrawn"
+      ],
+      "passed": true
+    }
+  ]
+}

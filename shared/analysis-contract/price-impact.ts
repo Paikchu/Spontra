@@ -45,6 +45,8 @@ export type PriceImpact = PriceImpactIdentity & (
 export type ImpactCalculation = {
   calculatorVersion: "impact.calc.v1";
   status: "calculated" | "unavailable";
+  /** Optional only for saved v1 results predating this field; sourced inputs do not establish event attribution. */
+  quantificationBasis?: "sourced_inputs" | "sensitivity_only";
   /** All money uses base currency units and shares uses individual shares. No implicit millions conversion. */
   currency: string;
   values: Record<string, number>;

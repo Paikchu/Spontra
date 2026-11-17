@@ -20,10 +20,16 @@ export const impactCalculationSchema = z.discriminatedUnion("kind", [
 ]);
 export type ImpactCalculationInput = z.infer<typeof impactCalculationSchema>;
 
+/** Saved v1 calculations used prose for this distinction. Keep those results conservative when resumed. */
+export function isSensitivityCalculation(result: ImpactCalculation | null | undefined): boolean {
+  return !!result && (result.quantificationBasis === "sensitivity_only" || result.limitations.some(note => /^(?:Accounting )?Sensitivity only\b/i.test(note)));
+}
+
 /** Deterministic scenario arithmetic, not a prediction, valuation method or source verification. */
 export function calculateImpact(input: ImpactCalculationInput): ImpactCalculation {
   const p = impactCalculationSchema.parse(input);
-  const output: ImpactCalculation = { calculatorVersion: "impact.calc.v1", status: "calculated", currency: p.currency, values: {}, formulas: {}, missingInputs: [], limitations: [] };
+  const quantificationBasis = p.kind === "depreciation" || p.kind === "revenue_exposure" && p.exposureBasis === "assumed_sensitivity" ? "sensitivity_only" : "sourced_inputs";
+  const output: ImpactCalculation = { calculatorVersion: "impact.calc.v1", status: "calculated", quantificationBasis, currency: p.currency, values: {}, formulas: {}, missingInputs: [], limitations: [] };
   const missing = (fields: string[]) => { output.missingInputs.push(...fields); output.status = "unavailable"; return output; };
   const put = (name: string, value: number, formula: string) => { if (!Number.isFinite(value)) throw new Error(`Nonfinite ${name}`); output.values[name] = value; output.formulas[name] = formula; };
   if (p.kind === "interest") {

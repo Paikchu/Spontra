@@ -1,0 +1,153 @@
+{
+  "at": "2026-11-16T23:59:23.987Z",
+  "scope": "Local Cloudflare runtime, synthetic 19-claim stopped run, real authenticated admin handler/R2/TaskRunner/PiHost SQL; no model/provider/production calls",
+  "checks": [
+    {
+      "name": "authentication required",
+      "status": "passed"
+    },
+    {
+      "name": "terminated cold startup never opens/restores Pi",
+      "status": "passed",
+      "detail": []
+    },
+    {
+      "name": "full legacy stopped synthesis exported",
+      "status": "passed",
+      "detail": 200
+    },
+    {
+      "name": "source tail beyond 4000 characters survives",
+      "status": "passed"
+    },
+    {
+      "name": "full source excerpt hash matches",
+      "status": "passed"
+    },
+    {
+      "name": "checkpoint hash covers complete exported content",
+      "status": "passed"
+    },
+    {
+      "name": "repeat reads are byte-equivalent",
+      "status": "passed"
+    },
+    {
+      "name": "export explicitly stopped and unreviewed",
+      "status": "passed"
+    },
+    {
+      "name": "unknown stage refused",
+      "status": "passed"
+    },
+    {
+      "name": "unknown run refused",
+      "status": "passed"
+    },
+    {
+      "name": "cross-run storage RPC refused",
+      "status": "passed"
+    },
+    {
+      "name": "active stage refused",
+      "status": "passed"
+    },
+    {
+      "name": "wrong stored stage refused",
+      "status": "passed"
+    },
+    {
+      "name": "non-stopped legacy run refused before RPC",
+      "status": "passed"
+    },
+    {
+      "name": "checkpoint is GET only",
+      "status": "passed"
+    },
+    {
+      "name": "checkpoint is not publicly reachable",
+      "status": "passed"
+    },
+    {
+      "name": "storage snapshot unchanged by exports",
+      "status": "passed"
+    },
+    {
+      "name": "run ledger and call reservations unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "published pointer unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "export creates no draft version",
+      "status": "passed"
+    },
+    {
+      "name": "archive is immutable and idempotent",
+      "status": "passed"
+    },
+    {
+      "name": "stage archive preferred to legacy RPC",
+      "status": "passed"
+    },
+    {
+      "name": "archive read does not touch stopped session",
+      "status": "passed"
+    },
+    {
+      "name": "failed enrichment does not relabel parent draft",
+      "status": "passed"
+    },
+    {
+      "name": "absent output stays explicit unsubmitted/no draft",
+      "status": "passed"
+    },
+    {
+      "name": "tampered archive fails closed without session fallback",
+      "status": "passed"
+    },
+    {
+      "name": "stopped report remains readable without opening Pi",
+      "status": "passed"
+    },
+    {
+      "name": "repeat terminate remains safe",
+      "status": "passed"
+    },
+    {
+      "name": "report and terminate do not restore Pi",
+      "status": "passed"
+    },
+    {
+      "name": "non-terminated lifecycle still restores Pi normally",
+      "status": "passed",
+      "detail": [
+        {
+          "hook": "restore"
+        },
+        {
+          "hook": "mountModels"
+        }
+      ]
+    },
+    {
+      "name": "no outbound request or model call",
+      "status": "passed",
+      "detail": []
+    }
+  ],
+  "export": {
+    "runId": "public-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "stage": "synthesis",
+    "characters": 42506,
+    "claims": 19,
+    "contentHash": "b29307a3bfe1c50545403888ab0827ddf14dc13e8054e94b03b944bbab0d7556",
+    "sourceContentHash": "6752f928b9446e18e7e4e00be8f1619d6e6254a1fa507b0c244ebaaa5fb40d62"
+  },
+  "limitations": [
+    "Production stopped-run export remains for post-deployment read-only verification",
+    "Local instrumentation observes PiHost restore/mount/start/recover entry, not external provider invoices"
+  ]
+}
