@@ -24,6 +24,6 @@
 - 不可达的旧无单位契约 impact、弃用的 generic 结果及其独有 facts 不导出，历史 work 仍保留这些记录。
 - 无匹配估值模型时 eventChange、referenceQuote、modelVersion 仍为 null。
 
-单位 helper／periodic 复用契约另做只读复核：通用计算按冻结 index 的 value、unit 与 material 重放，不靠标签或 assumption 补单位，正确旧结果仅补确定性 receipt。另发现专用 impact 的 `sourceValues` 仍可能混用缓存 fact.value 与冻结 index.unit：本地负向探针把缓存 3661 改成 16400 后可获得 82m 结果。这不是生产报告已出错的证据，已转交负责该文件的代理处理；本节点没有跨范围修改。
+单位 helper／periodic 复用契约另做只读复核：通用计算按冻结 index 的 value、unit 与 material 重放，不靠标签或 assumption 补单位，正确旧结果仅补确定性 receipt。复核当时还发现专用 impact 的 `sourceValues` 可能混用缓存 fact.value 与冻结 index.unit：本地负向探针把缓存 3661 改成 16400 后可获得 82m 结果。这不是生产报告已出错的证据。后续已由单位节点修复为同时使用冻结 value/unit；同一探针重跑 accepted=false，54项合成及58项固定原材旅程通过，见[单位节点](filing-generic-units.md)。本依赖递归节点没有跨范围修改该实现。
 
 本节点未验真实报告、人审、浏览器呈现或生产发布；这些不能用本地合成结果替代。

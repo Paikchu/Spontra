@@ -177,7 +177,7 @@ export type SecFilingSummary = {
   /** Who wrote the summary: "filing" is the document's own statement; older model summaries keep "deepseek"; "error" marks a failed run. */
   source: "claude" | "deepseek" | "filing" | "error" | "external";
   generatedBy?: "pi" | "operator";
-  generation?: {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:string;effort:string;runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null}};
+  generation?: {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:string;effort:string;runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null};reviewerCorrection?:{sourceOperatorRunId:string;failedStateHash:string;semanticReceiptHash:string;correctionsHash:string;reviewCallsInherited:number}};
   generatedAt: string;
   error?: string;
 };

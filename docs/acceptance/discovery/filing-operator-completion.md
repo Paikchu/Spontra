@@ -4,7 +4,7 @@
 
 执行脚本：[filing-operator-completion-acceptance.mjs](../../../scripts/filing-operator-completion-acceptance.mjs)。机器可读结果：[filing-operator-completion.json](results/filing-operator-completion.json)。结果中的 `at`、`checks`、`transports` 与 `screenshots` 为本轮实际证据。
 
-2026-11-17 03:50 UTC 最终运行正常退出（exit 0）：99 项全部通过，61 次合成 provider HTTP，48 张真实 Chromium 截图，真实模型调用和生产访问均为 0。成功路径本身为 8 次独立复核和 18 张截图；其余请求/截图用于负向与并发旅程。
+2026-11-17 04:33 UTC 最终运行正常退出（exit 0）：171 项全部通过，107 次合成 provider HTTP，66 张真实 Chromium 截图，真实模型调用和生产访问均为 0。包含原完成路径的 99 项检查及新增的复核意见修正旅程。原成功路径为 8 次独立复核和 18 张截图；修正成功路径新增 3 次复核和 18 张截图，其余用于负向与并发旅程。
 
 ## 实际执行链
 
@@ -35,6 +35,26 @@
 5. 实际在途响应跨 lease 过期、冷重启、显式停止、同版本下公开哈希改变均受完成围栏约束。全套失败后，旧公开版本与原 140/40 账本仍保持。
 6. 最后仅在隔离数据库内由 `synthetic-independent-human-local-only` 明确审核并调用正常 promote。真实公开财报及 artifact 读函数返回同一完整版本；摘要为 `source=external`、`generatedBy=operator`，带精确 plan、checkpoint、Sol 作者信息。该模拟审核不是用户对 CRWV 的签核。
 
+## 采纳服务器复核意见：原 7 次 + 新 3 次
+
+窄入口为 `POST /api/admin/reports/TICKER/ACCESSION/shadow/OPERATORID/apply-reviewer-corrections`。必须有 UUID 幂等键，正文上限 8 KiB，只接受 `expectedPlanHash`、`expectedFailedStateHash`、`expectedSemanticReceiptHash`、`expectedPublicVersion` 和 `expectedPublicHash`。其中语义回执哈希为 `sha256(JSON.stringify(source.stages.semantic.receipt))`，保留原属性顺序；它不是原始模型回执文件的哈希，也不使用规范化排序。
+
+本轮先用真实阶段产生六次通过的内容复核与一次失败的完整语义复核。该语义复核仅对 summary 中一句纯文本给出精确 quote 和 plain-text replacement。服务器实际执行 `apply_fixes`，结果必须恰为该处唯一替换；不接客户端 HTML、新计划、引文、状态、作者或额度，不重新进行研究、计算或启动作者模型。原失败 ledger、plan、state 和 failure 对象逐字节保留。
+
+其余五块通过 `reconstructedLegacy-v1` 重建原始完整模型请求。验收逐块核对 `reusedFrom` 的来源 run/phase、真实 before/after state 引用、原成功回执哈希、完整 `inputHash`、`blockHash`，并以 SQL 查到同一时点、阶段、模型、推理配置且 `outcome=ok` 的实际 `ai_usage` 行。新请求中的 HTML、标题、来源文本、已通过句子或建立的事实发生变化时，不允许凭旧 passed 标志复用。
+
+成功路径实际只发送三次新增 HTTP：summary 内容复核、包含全部六块与完整材料的语义复核、所有三视口的严格视觉复核。其余五块没有新增内容模型请求，新的 validated shadow 保存了原计划与 reviewer-correction 来源信息。GET 明确返回 `reviewCalls=3`、`reviewCallsInherited=7`、`callsReserved=10`、`maxCalls=12`；原失败任务仍是 7 次，未被改成成功。
+
+新增负向旅程已实际执行：
+
+- 身份哈希或公开版本错误、额外 HTML/plan/quote 等八类字段、过大正文、非语义失败、没有精确 quote 的语义失败均拒绝。
+- 篡改原成功用量行的模型、改变未修正块 HTML、改变来源证据文本，都在新模型调用和正式认领前拒绝；故障注入后恢复原记录。所有这些拒绝均为零新增 provider HTTP。
+- 同时提交相同请求只形成一个认领和一个确定性任务；精确重放零新增请求，不同 UUID、改变身份或对修正版本再修正均拒绝。
+- 修正任务继承原 7 次，只能再占 5 次。用真实 `judge` SDK 消耗剩余额度后，合计 12 次即阻断下一语义 HTTP，不允许重置为新的 12 次。
+- 修正任务在实际 changed-block HTTP 在途时冷重启、lease 失效或显式停止，迟到成功不能验证，也不会自动重发。作者自审与自动公开均被阻止。
+
+结果 JSON 的 `reviewerCorrection` 单独记录原 7、新 3、累计 10 及五块复用证据。修正版本保持待人工审核影子状态；文中最后的独立模拟 promote 是对原完成路径的隔离验收，不代表用户批准这份修正版或任何真实报告。
+
 ## 运行和解释结果
 
 ```bash
@@ -56,3 +76,29 @@ node scripts/filing-operator-completion-acceptance.mjs
 ## 代码兼容回归
 
 最终实现还通过 `npm run check`（全部类型检查与两站构建）、`npm run analysis:typecheck`、定向 ESLint、Workers dry-run 及 `git diff --check`。全仓 lint 仍为此前的 9 errors / 5 warnings，本次文件无新增问题。原续作真实 Miniflare 旅程 104 项、原公开证据旅程 18 项、原影响发布旅程 31 项、原单位与硬门槛旅程 26 项均通过；这些回归不调用真实模型。两份旧发布旅程只为既有 QA 边界替身补充新增的 `VIEWPORTS` export，仍明确使用合成渲染结果，不作为 operator 严格渲染证明。
+
+## 保存的真实 CRWV 输入离线复演
+
+[真实保存输入预检](results/filing-reviewer-correction-real-input-preflight.json) 使用原失败 `4a90d356…` 状态、全部内容阶段前后原字节状态、原七条 `ai_usage` 以及固定 Q3/Q2 完整 index/Markdown，在隔离本地环境调用生产 `previewFilingReviewerCorrections`。实际原生 `apply_fixes` 只替换 summary 的唯一审阅原句；五个未变块的完整 request/body、来源、established、模型/有效 effort 与历史输入重建相同，`reuseContent` 全部通过。研究事实、来源、计算保持原样；只清除修订副本中的旧语义回执以强制重审。耗时约 2.4 秒，网络、模型、应用数据库及对象写入均为 0。
+
+旧 v1 回执未记录原 HTTP body 的哈希。`reconstructedLegacy-v1` 是根据当时保存的输入和未变的 v1 请求构造逻辑所做的重建，不能声称当时已存 requestHash。原部署 `9830deae` 的审阅 prompt 与输入构造已独立核对未变；原使用账本证明 `deepseek-flash/high`，当前配置为 built-in route、无 tool/endpoint 覆盖，并且本轮没有改模型配置。缺少配置行不是历史 endpoint URL 或 updated_at 的证明；历史 route 本身没有保存回执，这一边界明确保留。若保留的 endpoint/tool 配置在原调用后被修改，或来源读取/搜索失败，服务器拒绝 legacy 复用。新的内容回执直接保存实际 `inputHash`，无需把历史缺失字段冒充当时证明。
+
+本项没有触发真实修订请求。仍需对修正后的 summary 真实审阅、全文 semantic 及全部规定视口的 provider visual review；旧失败 7 次预算和公开版本 6 均保留，由根任务按完整证据决定受控上线与执行。
+
+## 本轮真实纠偏的入场身份（尚未执行）
+
+原失败 run 为 `shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012`，保留 failed 状态和已消费 7/12。管理端窄路径为 `POST /api/admin/reports/CRWV/0001769628-26-000465/shadow/原失败runId/apply-reviewer-corrections`，要求新的 UUID `idempotency-key`，正文严格只接以下五项（8 KiB）：
+
+```json
+{
+  "expectedPlanHash": "3b9f0f1cecc946b89eb4a7a2049aff16429ecebee5633e0f6f05c5d23c57949b",
+  "expectedFailedStateHash": "4a90d3565fda8f1c577253bab378042e856437695cd01b9c6baf4e07f5bcff01",
+  "expectedSemanticReceiptHash": "d04cc6d42d69bbda14fed3a5b01a4e5f9eca3b16248a6522356bc3da44a7edc8",
+  "expectedPublicVersion": 6,
+  "expectedPublicHash": "74e07b8a521f5084c84b920ef82bf442ad993c945e4d9e35d9499098cb0a0179"
+}
+```
+
+新 runId 为 `shadow-CRWV-0001769628-26-000465-operator-fix-${UUID}`，使用同一 `FILING_OPERATOR_COMPLETION_WORKFLOW:runId` / `TASK_RUNS` 执行器；新记录 `reviewCalls` 只计新增请求，`reviewCallsInherited=7`，GET 的累计 `callsReserved`/`totalReviewCalls` 为二者之和，原记录保持 7。唯一纠偏 claim 是 `filing-operator:原失败runId:reviewer-correction`；相同 UUID/正文精确重放返回同一记录，不能重派发，第二 UUID、另一正文、纠偏再纠偏均拒绝。正文不接受新 quote、replacement、HTML、任意计划或成功回执。
+
+正式入场前仍须回读原 failed7、公开 v6/hash 和新代码部署结果；本文件中的身份值不是线上请求或通过证明。成功只产生待独立人工审阅的 validated shadow，不自动 promote。

@@ -35,7 +35,8 @@ import type { ShadowContextExtension } from "./shadow-context.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string; checkpointHash?: string };
-export type FilingOperatorAuthor = {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:"gpt-6.1-sol";effort:"max";runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null}};
+export type FilingReviewerCorrection={sourceOperatorRunId:string;failedStateHash:string;semanticReceiptHash:string;correctionsHash:string;reviewCallsInherited:number};
+export type FilingOperatorAuthor = {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:"gpt-6.1-sol";effort:"max";runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null};reviewerCorrection?:FilingReviewerCorrection};
 export type FilingSpec = { operatorCompletion?:FilingOperatorAuthor; shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
@@ -67,7 +68,7 @@ export function filingSummary(filing: SecFiling, report: { headline: string; tex
 
 const openState = (spec: FilingSpec): ComposerState => openComposer({ kind: "filing-report", ticker: spec.ticker, subject: spec.filing.accessionNumber, title: `${spec.ticker} ${spec.filing.form} ${spec.filing.reportDate || spec.filing.filingDate}`, lang: "en" });
 
-function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null, resumed: FilingState | null, priorSnapshots: MaterialSnapshot[],operator?:{onShadow:NonNullable<ComposerSetup<FilingState>["onShadow"]>}): Recipe<FilingSpec, boolean, FilingState> & {operatorStages?:ReturnType<typeof composerHarness<FilingState>>["stages"]} {
+function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null, resumed: FilingState | null, priorSnapshots: MaterialSnapshot[],operator?:{onShadow:NonNullable<ComposerSetup<FilingState>["onShadow"]>}): Recipe<FilingSpec, boolean, FilingState> & {operatorStages?:ReturnType<typeof composerHarness<FilingState>>["stages"];operatorContentInput?:ReturnType<typeof composerHarness<FilingState>>["contentInput"]} {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;
@@ -154,7 +155,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   const compose = harness?.tools??composerTools(setup);
   const list = [...periodic.tools, ...publicContext.tools, ...own, ...web, ...compose];
   return {
-    ...(harness?{operatorStages:harness.stages}:{}),
+    ...(harness?{operatorStages:harness.stages,operatorContentInput:harness.contentInput}:{}),
     id: `filing.${spec.profile}.material.v1`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: 90_000,
@@ -239,5 +240,5 @@ export async function filingOperatorHarness(env:AnalysisEnv,spec:FilingSpec,stat
   const snapshot=await readMaterialSnapshot(env,spec.material),refs=[...new Map((state.periodic?.materials??[]).map(ref=>[`${ref.accession}:${ref.version}`,ref])).values()];
   const prior=await Promise.all(refs.filter(ref=>ref.accession!==snapshot.ref.accession||ref.version!==snapshot.ref.version).map(ref=>readMaterialSnapshot(env,ref)));
   const recipe=filingRecipe(env,spec,profileById(spec.profile),snapshot,null,state,prior,{onShadow});
-  return {recipe,stages:recipe.operatorStages!,state:recipe.open(spec)};
+  return {recipe,stages:recipe.operatorStages!,contentInput:recipe.operatorContentInput!,state:recipe.open(spec)};
 }

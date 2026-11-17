@@ -8,7 +8,7 @@ import type { FindingData } from "../../../../shared/analysis-runtime/findings.t
 import type { AnalysisEnv } from "../operations.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { blockText, conservativeBlock, safeLayoutBlock, sentencesOf, toDocument, type ComposerState, type LadderStep, type TrackedIssue, sameIssue } from "./document.ts";
-import { arbitrate, reviewBlock, type SourceReader } from "./review.ts";
+import { arbitrate, blockReviewInputHashes, buildBlockReviewInput, passedAfterBlockReview, reviewBlock, type BlockReviewInput, type ReviewContext, type SourceReader } from "./review.ts";
 import { reviewRendering, VIEWPORTS, visualPasses, type QaResult } from "./qa.ts";
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
 import { artifactId, previewToken, publishStatements, readArtifactVersion, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
@@ -86,6 +86,31 @@ export type ComposerPhaseReceipt = {
   shots?: number;
   visualReviewed?: boolean;
   published?: { version: number; hash: string };
+  /** Newly captured actual request identity; absent from historical receipts predating the request builder. */
+  inputHash?: string;
+  blockHash?: string;
+  requestPolicy?: BlockReviewInput["requestPolicy"];
+  reusedFrom?: ComposerContentReuseSource;
+};
+export type ComposerContentReuseUsage = { runId: string; stage: string; model: string; reasoning: string; at: string; outcome: "ok" };
+export type ComposerContentReuseSource = {
+  reconstruction: "reconstructedLegacy-v1";
+  sourceRunId: string;
+  sourcePhase: string;
+  beforeStateRef: { key: string; hash: string };
+  afterStateRef?: { key: string; hash: string };
+  receiptHash: string;
+  inputHash: string;
+  blockHash: string;
+  requestPolicy: BlockReviewInput["requestPolicy"];
+  usage: ComposerContentReuseUsage;
+};
+/** Only the operator server constructs this from immutable before/after states and a verified ai_usage row. */
+export type ComposerContentReuseProof = Omit<ComposerContentReuseSource, "inputHash" | "blockHash" | "requestPolicy"> & {
+  receipt: ComposerPhaseReceipt;
+  input: BlockReviewInput;
+  passedBefore: string[];
+  passedAfter: string[];
 };
 export type ComposerPhaseResult = { observation: string; error?: boolean; receipt?: ComposerPhaseReceipt };
 /** Server-only receipts survive the same packState/R2 checkpoint as the research evidence. */
@@ -102,7 +127,7 @@ export type ComposerOperatorValidation = {
 };
 export type OperatorComposerState = ComposerState & { operatorValidation?: ComposerOperatorValidation };
 type Result = ComposerPhaseResult;
-type ContentSettlement = { notes: string[]; reviews: Array<{ block: string; issues: TrackedIssue[] | null }> };
+type ContentSettlement = { notes: string[]; reviews: Array<{ block: string; issues: TrackedIssue[] | null; input?: BlockReviewInput }> };
 
 const operatorState = (state: ComposerState) => state as OperatorComposerState;
 
@@ -256,6 +281,27 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
     return ok(`Published version ${saved.version}.${degraded.length ? ` Settled by the harness: ${degraded.join(", ")}.` : ""}`);
   }
 
+  /** Shared verbatim by the real reviewer and historical-input reconstruction. */
+  function contentContexts(state: S): (b: ArtifactBlock) => ReviewContext {
+    const c = state.composer;
+    // What the other blocks already hold, checked by code at their write: a block that restates it needs no second proof.
+    const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
+      claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
+    return b => ({
+      ...(setup.operatorValidation ? { requireComplete: true } : {}),
+      passed: new Set(c.passed?.[b.id] ?? []),
+      established: c.blocks.filter(x => x.id !== b.id).flatMap(x => claims.get(x.id) ?? []),
+      ...(setup.find ? { find: (terms: string[]) => setup.find!(terms, state) } : {}),
+    });
+  }
+
+  /** Does not send a model request; the supplied state's exact readers and review context are used. */
+  async function contentInput(state: S, blockId: string): Promise<BlockReviewInput | null> {
+    const b = block(state, blockId);
+    if (!b) throw new Error(`No block "${blockId}".`);
+    return buildBlockReviewInput(setup.env, b, id => setup.read(id, state), { ...contentContexts(state)(b), strictEvidence: true });
+  }
+
   /** Reviews the blocks written since their last review and moves each open block up its ladder; true when content is settled. */
   async function settleContent(state: S, force: boolean, onlyBlock?: string): Promise<ContentSettlement> {
     const c = state.composer;
@@ -270,16 +316,8 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
     if (drafts.length) rounds.content += 1;
     for (const b of drafts) reviews[b.id] = (reviews[b.id] ?? 0) + 1;
     const last = (b: ArtifactBlock) => force || (reviews[b.id] ?? 0) >= CONTENT_ROUNDS || rounds.content >= CONTENT_ROUNDS_ALL;
-    // What the other blocks already hold, checked by code at their write: a block that restates it needs no second proof.
-    const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
-      claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
-    const context = (b: ArtifactBlock) => ({
-      ...(setup.operatorValidation?{requireComplete:true}:{}),
-      passed: new Set(passed[b.id] ?? []),
-      established: c.blocks.filter(x => x.id !== b.id).flatMap(x => claims.get(x.id) ?? []),
-      ...(setup.find ? { find: (terms: string[]) => setup.find!(terms, state) } : {}),
-    });
-    const reviewed = await pool(drafts, 8, b => reviewBlock(setup.env, b, reader, ledger(state), context(b)).catch(() => null));
+    const context = contentContexts(state), inputs = new Map<string, BlockReviewInput>();
+    const reviewed = await pool(drafts, 8, b => reviewBlock(setup.env, b, reader, ledger(state), { ...context(b), ...(setup.operatorValidation ? { onInput: (input: BlockReviewInput) => { inputs.set(b.id, input); } } : {}) }).catch(() => null));
     drafts.forEach((b, i) => {
       if (reviewed[i] === null && (setup.settlement === "agent" || onlyBlock !== undefined)) {
         unavailable.push(`Block "${b.id}": the evidence review was unavailable. Retry finish to complete its review.`);
@@ -290,9 +328,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
       const issues = reviewed[i] ?? [];
       // The sentences this review judged and did not fault stand from now on; a fault without a quote faults the whole block.
       if (reviewed[i] && issues.every(x => x.quote)) {
-        const fold = (s: string) => s.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, " ").trim();
-        const faulted = issues.map(x => fold(x.quote!));
-        passed[b.id] = [...new Set([...passed[b.id] ?? [], ...openIn(b).filter(s => !faulted.some(q => s.key.includes(q.slice(0, 80)) || q.includes(s.key))).map(s => s.key)])];
+        passed[b.id] = passedAfterBlockReview(b, passed[b.id] ?? [], issues);
       }
       const major = issues.filter(x => x.severity !== "minor");
       const minor = issues.filter(x => x.severity === "minor");
@@ -326,7 +362,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
       log(c, b.id, "content", step.level, issues.map(i => i.problem).join(" | "));
       notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.replacement ? ` Correction: ${/^delete\.?$/i.test(i.replacement) ? "remove the sentence" : i.replacement}` : i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
     }
-    return { notes: notes.length || unavailable.length ? [...notes, ...unavailable, ...advice] : [], reviews: drafts.map((b, i) => ({ block: b.id, issues: reviewed[i]! })) };
+    return { notes: notes.length || unavailable.length ? [...notes, ...unavailable, ...advice] : [], reviews: drafts.map((b, i) => ({ block: b.id, issues: reviewed[i]!, ...(inputs.has(b.id) ? { input: inputs.get(b.id)! } : {}) })) };
   }
 
   async function settleRendering(state: S, force: boolean): Promise<string[]> {
@@ -480,6 +516,8 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
       c.passed = {}; c.reviews = {}; c.rounds = { content: 0, render: 0 };
       c.open = {}; c.ladder = {}; c.hidden = []; c.published = null; c.phase = "content"; c.settledBy = "agent";
       delete c.changes;
+      const research = state as S & { periodic?: { semanticAuditReceipt?: unknown } };
+      if (research.periodic) delete research.periodic.semanticAuditReceipt;
       const prepare = receiptOf({ digest }, "prepare", true, `Prepared ${c.blocks.length} blocks for independent operator validation.`);
       operatorState(c).operatorValidation = { schema: "composer-operator-validation.v1", digest, runId: setup.ledger.runId ?? null, blockIds: c.blocks.map(b => b.id), prepare, content: {} };
       return phaseResult(prepare);
@@ -495,16 +533,67 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
         state.composer.phase = "content";
         const result = await settleContent(state, false, blockId);
         const issues = result.reviews.flatMap(review => review.issues ?? []);
+        const input = result.reviews[0]?.input;
         const unchanged = validation.digest === await operatorDigest(state);
         const success = unchanged && result.reviews.length === 1 && result.reviews[0]!.issues !== null && b.state === "passed" && !result.notes.length;
         const observation = !unchanged ? "Content validation changed the research inputs. Run prepare again before continuing."
           : success ? `Evidence review completed for "${blockId}".${issues.length ? ` ${issues.length} minor point(s) recorded.` : ""}`
             : `Evidence review did not pass for "${blockId}":\n${result.notes.join("\n\n") || "No complete independent block review was returned."}`;
-        validation.content[blockId] = receiptOf(validation, "content", success, observation, { blockId, issues, ...(result.reviews.some(review => review.issues === null) ? { unavailable: "The independent block evidence review was unavailable." } : {}) });
+        validation.content[blockId] = receiptOf(validation, "content", success, observation, { blockId, issues,
+          ...(input ? { inputHash: input.inputHash, blockHash: input.blockHash, requestPolicy: input.requestPolicy } : {}),
+          ...(result.reviews.some(review => review.issues === null) ? { unavailable: "The independent block evidence review was unavailable." } : {}) });
       } catch (error) {
         validation.content[blockId] = receiptOf(validation, "content", false, `Evidence review failed for "${blockId}": ${errorText(error)}`, { blockId, unavailable: errorText(error) });
       }
       return phaseResult(validation.content[blockId]!);
+    },
+    async reuseContent(state: S, blockId: string, proof: ComposerContentReuseProof): Promise<ComposerPhaseResult> {
+      const validation = await currentValidation(state);
+      if (typeof validation === "string") return fail(validation);
+      const b = block(state, blockId);
+      if (!b) return fail(`No block "${blockId}".`);
+      try {
+        const hash = (value: string) => /^[a-f0-9]{64}$/.test(value);
+        const original = proof.receipt;
+        if (proof.reconstruction !== "reconstructedLegacy-v1" || !proof.sourceRunId || proof.sourcePhase !== `content:${blockId}`
+          || !proof.beforeStateRef.key || !hash(proof.beforeStateRef.hash) || (proof.afterStateRef && (!proof.afterStateRef.key || !hash(proof.afterStateRef.hash)))
+          || original.stage !== "content" || original.success !== true || original.blockId !== blockId || original.unavailable || original.reusedFrom
+          || original.issues.some(issue => issue.kind !== "content" || issue.severity !== "minor")
+          || !hash(proof.receiptHash) || await sha256(JSON.stringify(original)) !== proof.receiptHash) return fail(`Historical content proof for "${blockId}" is not an original successful source-bound review.`);
+        const oldHashes = await blockReviewInputHashes(proof.input);
+        if (proof.input.inputHash !== oldHashes.inputHash || proof.input.requestHash !== oldHashes.inputHash || proof.input.blockHash !== oldHashes.blockHash
+          || (original.inputHash && original.inputHash !== oldHashes.inputHash) || (original.blockHash && original.blockHash !== oldHashes.blockHash)
+          || (original.requestPolicy && original.requestPolicy !== proof.input.requestPolicy)) return fail(`The reconstructed historical input for "${blockId}" does not match its declared request or block hash.`);
+        const usage = proof.usage;
+        if (usage.outcome !== "ok" || usage.runId !== proof.sourceRunId || usage.stage !== `artifact-review-${blockId}` || usage.stage !== proof.input.stage
+          || usage.model !== proof.input.model || usage.reasoning !== proof.input.effort || !Number.isFinite(Date.parse(usage.at))
+          || !Number.isFinite(Date.parse(original.at)) || Date.parse(usage.at) > Date.parse(original.at)) return fail(`The successful historical model usage for "${blockId}" does not match the reconstructed request.`);
+        const passedBefore = state.composer.passed?.[blockId] ?? [];
+        if (JSON.stringify(passedBefore) !== JSON.stringify(proof.passedBefore)) return fail(`The accepted sentences before "${blockId}" differ from the original before-state.`);
+        const input = await contentInput(state, blockId);
+        if (!input || input.inputHash !== oldHashes.inputHash || input.blockHash !== oldHashes.blockHash) return fail(`The actual current review request or complete HTML/title/sources for "${blockId}" differs from the successful historical review.`);
+        const passedAfter = passedAfterBlockReview(b, passedBefore, original.issues);
+        if (JSON.stringify(passedAfter) !== JSON.stringify(proof.passedAfter)) return fail(`The accepted sentences after "${blockId}" cannot be reproduced from the original successful review.`);
+        if (validation.digest !== await operatorDigest(state)) return fail("Reconstructing the review input changed the research state. Run prepare again.");
+        if (sameReceipt(validation, validation.content[blockId], "content")) return phaseResult(validation.content[blockId]!);
+        delete validation.semantic; delete validation.render; delete validation.shadow;
+        state.composer.phase = "content";
+        (state.composer.passed ??= {})[blockId] = passedAfter;
+        b.state = "passed";
+        delete state.composer.open[blockId];
+        const reusedFrom: ComposerContentReuseSource = {
+          reconstruction: proof.reconstruction, sourceRunId: proof.sourceRunId, sourcePhase: proof.sourcePhase,
+          beforeStateRef: { ...proof.beforeStateRef }, ...(proof.afterStateRef ? { afterStateRef: { ...proof.afterStateRef } } : {}),
+          receiptHash: proof.receiptHash, inputHash: input.inputHash, blockHash: input.blockHash, requestPolicy: input.requestPolicy, usage: { ...usage },
+        };
+        log(state.composer, blockId, "content", 0, `historical review reused: ${proof.sourceRunId}/${proof.sourcePhase}, request ${input.inputHash}`);
+        validation.content[blockId] = receiptOf(validation, "content", true, `Reused the verified successful historical evidence review for "${blockId}"; the actual request and complete block are unchanged. No new model request was sent.`, {
+          blockId, issues: original.issues.map(issue => ({ ...issue })), inputHash: input.inputHash, blockHash: input.blockHash, requestPolicy: input.requestPolicy, reusedFrom,
+        });
+        return phaseResult(validation.content[blockId]!);
+      } catch (error) {
+        return fail(`Historical content reuse failed for "${blockId}": ${errorText(error)}`);
+      }
     },
     async semantic(state: S): Promise<ComposerPhaseResult> {
       const validation = await currentValidation(state);
@@ -724,7 +813,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
     }, 6 * 60_000),
     tool<S>("finish", "Finish the document: the harness reviews every block against its sources, renders the report in the real page and reviews its design, then publishes or returns the problems to fix.", {}, [], (_a, state) => finish(state), 14 * 60_000),
   ];
-  return { tools, stages };
+  return { tools, stages, contentInput };
 }
 
 /** Producers that allow harness settlement can publish when their session ends without finishing. */

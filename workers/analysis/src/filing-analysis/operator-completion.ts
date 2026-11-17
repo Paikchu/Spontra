@@ -16,6 +16,10 @@ import { filingOperatorHarness, type FilingSpec, type FilingState } from "./reci
 import { saveFilingImpact } from "./impact-publication.ts";
 import { PERIODIC_BLOCKS } from "./periodic.ts";
 import type { ComposerPhaseResult } from "../artifact/compose.ts";
+import type { ComposerPhaseReceipt, OperatorComposerState } from "../artifact/compose.ts";
+import { runTool } from "../tools/registry.ts";
+import { z } from "zod";
+import { DEEPSEEK_BASE_URL } from "../operations.ts";
 
 export const OPERATOR_REVIEW_REQUESTS=12;
 export const OPERATOR_PHASE_LEASE_MS=10*60_000;
@@ -23,7 +27,8 @@ export const operatorKey=(runId:string)=>`filing-operator:${runId}`;
 const lineageClaim=(runId:string)=>`${shadowKey(runId)}:operator-completion`;
 type StateRef={key:string;hash:string};
 type Phase={name:string;status:"started"|"done"|"failed"|"unknown";leaseToken:string;expiresAt:number;beforeStateRef:StateRef;afterStateRef?:StateRef;receipt?:unknown;error?:string};
-export type FilingOperatorRun={runId:string;sourceRunId:string;rootRunId:string;checkpointHash:string;planHash:string;requestId:string;checkpointKey:string;planKey:string;spec:FilingSpec;baseVersion:number|null;baseHash:string|null;status:"claimed"|"running"|"failed"|"unknown"|"validated";reviewCalls:number;maxReviewCalls:12;createdAt:string;phase?:Phase;stages:Record<string,Phase>;stateRef?:StateRef;validatedKey?:string;version?:number;hash?:string;error?:string};
+type ReviewerCorrection={sourceOperatorRunId:string;sourceRecordRef:StateRef;failedStateRef:StateRef;semanticReceiptHash:string;correctionsHash:string;changedBlocks:string[]};
+export type FilingOperatorRun={runId:string;sourceRunId:string;rootRunId:string;checkpointHash:string;planHash:string;requestId:string;checkpointKey:string;planKey:string;spec:FilingSpec;baseVersion:number|null;baseHash:string|null;status:"claimed"|"running"|"failed"|"unknown"|"validated";reviewCalls:number;reviewCallsInherited?:number;correction?:ReviewerCorrection;maxReviewCalls:12;createdAt:string;phase?:Phase;stages:Record<string,Phase>;stateRef?:StateRef;validatedKey?:string;version?:number;hash?:string;error?:string};
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store"}});
 const db=(env:AnalysisEnv)=>{if(!env.DB)throw new Error("Operator storage unavailable");return env.DB;};
 async function readRun(env:AnalysisEnv,id:string):Promise<FilingOperatorRun|null>{const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(id)).first<{payload:string}>();return row?JSON.parse(row.payload):null;}
@@ -87,6 +92,119 @@ export async function handleFilingOperatorCompletion(request:Request,env:Analysi
   }catch(error){return reply({error:error instanceof Error?error.message:String(error)},409);}
 }
 
+const reviewerCorrectionSchema=z.object({expectedPlanHash:z.string().regex(/^[a-f0-9]{64}$/),expectedFailedStateHash:z.string().regex(/^[a-f0-9]{64}$/),expectedSemanticReceiptHash:z.string().regex(/^[a-f0-9]{64}$/),expectedPublicVersion:z.number().int().positive().nullable(),expectedPublicHash:z.string().regex(/^[a-f0-9]{64}$/).nullable()}).strict();
+const correctionClaim=(runId:string)=>`${operatorKey(runId)}:reviewer-correction`;
+const phaseReceipt=(phase:Phase|undefined)=>phase?.receipt as ComposerPhaseReceipt|undefined;
+
+async function correctionSource(env:AnalysisEnv,run:FilingOperatorRun){
+  const ref=run.correction!.sourceRecordRef,body=await(await env.SEC_FILINGS.get(ref.key))?.text();
+  if(!body||await sha256(body)!==ref.hash)throw new Error("The immutable failed operator record changed");
+  const source=JSON.parse(body) as FilingOperatorRun,current=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(source.runId)).first<{payload:string}>();
+  if(!current||await sha256(current.payload)!==ref.hash)throw new Error("The original failed operator ledger changed");
+  return source;
+}
+
+async function applyReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState){
+  const source=await correctionSource(env,run),receipt=phaseReceipt(source.stages.semantic)!;
+  if(await sha256(JSON.stringify(receipt))!==run.correction!.semanticReceiptHash||await sha256(stableOperatorValue(receipt.issues.map(({block,key,quote,replacement})=>({block,key,quote,replacement}))))!==run.correction!.correctionsHash)throw new Error("The admitted reviewer corrections changed");
+  const harness=await filingOperatorHarness(env,run.spec,state,async()=>{throw new Error("Applying corrections cannot validate a shadow");});
+  const researchBefore=packState({...state,composer:null}),before=Object.fromEntries(state.composer.blocks.map(block=>[block.id,stableOperatorValue({id:block.id,title:block.title,html:block.html,sources:block.sources})]));
+  const transcript=[];
+  for(const id of run.correction!.changedBlocks){
+    const issues=state.composer.open[id]??[],selected=receipt.issues.filter(issue=>issue.block===id);
+    const original=state.composer.blocks.find(block=>block.id===id)!,issue=selected[0]!;
+    if(selected.length!==1||!issue.quote||!issue.replacement||original.html.split(issue.quote).length!==2)throw new Error("The single reviewer quote must appear exactly once as plain HTML text");
+    const expectedHtml=original.html.replace(issue.quote,()=>issue.replacement!.trim().replace(/&/g,"&amp;"));
+    const numbers=selected.map(expected=>issues.findIndex(issue=>stableOperatorValue(issue)===stableOperatorValue(expected))+1);
+    if(numbers.some(number=>number<1))throw new Error("Actual saved open issues do not match the failed semantic receipt");
+    const beforeHash=await sha256(packState(state)),input={id,numbers};
+    const outcome=await runTool(harness.recipe.tools(state),{...harness.recipe.policy,allow:["apply_fixes"]},{name:"apply_fixes",input},{state,signal:AbortSignal.timeout(60_000),recipe:harness.recipe.id,stage:(_name,work)=>work()});
+    transcript.push({name:"apply_fixes",input,outcome,beforeHash,afterHash:await sha256(packState(state))});
+    if(outcome.error||outcome.asked)throw new Error(`The real apply_fixes tool rejected the reviewer replacement: ${outcome.observation}`);
+    if(state.composer.blocks.find(block=>block.id===id)?.html!==expectedHtml)throw new Error("The real apply_fixes result differs from the one exact reviewer replacement");
+  }
+  const changed=state.composer.blocks.filter(block=>before[block.id]!==stableOperatorValue({id:block.id,title:block.title,html:block.html,sources:block.sources})).map(block=>block.id);
+  if(stableOperatorValue(changed.sort())!==stableOperatorValue([...run.correction!.changedBlocks].sort())||packState({...state,composer:null})!==researchBefore)throw new Error("Reviewer corrections must change only their named report blocks, never research or computations");
+  return {observation:`Applied ${receipt.issues.length} actual reviewer replacement(s) without research or calculations.`,transcript};
+}
+
+async function prepareReviewerCorrection(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState,harness:Awaited<ReturnType<typeof filingOperatorHarness>>){
+  const prepared=await harness.stages.prepare(state);if(prepared.error)return prepared;
+  const source=await correctionSource(env,run),reused=[];
+  for(const id of PERIODIC_BLOCKS.filter(id=>!run.correction!.changedBlocks.includes(id))){
+    const phase=source.stages[`content:${id}`],receipt=phaseReceipt(phase);
+    if(phase?.status!=="done"||!receipt?.success||!phase.afterStateRef||receipt.stage!=="content"||receipt.blockId!==id)throw new Error("The original block has no completed real content proof");
+    const before=await readState(env,phase.beforeStateRef),after=await readState(env,phase.afterStateRef),input=await harness.contentInput(before,id),current=await harness.contentInput(state,id);
+    if(!input||!current||input.inputHash!==current.inputHash||input.blockHash!==current.blockHash)throw new Error(`Unchanged block ${id} no longer has the exact original review input`);
+    const rows=await db(env).prepare("SELECT at,model,reasoning,outcome FROM ai_usage WHERE run_id=? AND stage=? AND outcome='ok' AND at>=? AND at<=? ORDER BY at").bind(source.runId,`artifact-review-${id}`,new Date(phase.expiresAt-OPERATOR_PHASE_LEASE_MS).toISOString(),receipt.at).all<{at:string;model:string;reasoning:string|null;outcome:"ok"}>();
+    if(rows.results.length!==1||rows.results[0]!.model!==input.model||rows.results[0]!.reasoning!==input.reasoning)throw new Error(`Original successful provider usage for ${id} does not match the reconstructed request`);
+    if(!receipt.inputHash){
+      // Old v1 receipts did not store a wire-request hash. Do not infer unchanged historical configuration
+      // from a matching current alias when its retained endpoint or tool settings were subsequently edited.
+      const settings=await db(env).prepare("SELECT updated_at FROM ai_tool_settings WHERE tool='artifact-review'").first<{updated_at:string}>(),endpoint=await db(env).prepare("SELECT base_url,thinking_level,updated_at FROM ai_endpoints WHERE name=?").bind(input.model).first<{base_url:string;thinking_level:string;updated_at:string}>();
+      const changed=(at:string)=>!Number.isFinite(Date.parse(at))||Date.parse(at)>Date.parse(rows.results[0]!.at);
+      if(settings&&changed(settings.updated_at)||endpoint&&(changed(endpoint.updated_at)||endpoint.base_url!==input.endpoint.url||endpoint.thinking_level!==input.endpoint.thinkingLevel)||!endpoint&&(input.endpoint.url!==DEEPSEEK_BASE_URL||input.endpoint.thinkingLevel!==null))throw new Error(`Legacy configuration for ${id} cannot be reconstructed as unchanged`);
+    }
+    const proof={sourceRunId:source.runId,sourcePhase:`content:${id}`,beforeStateRef:phase.beforeStateRef,afterStateRef:phase.afterStateRef,receiptHash:await sha256(JSON.stringify(receipt)),receipt,input,passedBefore:before.composer.passed?.[id]??[],passedAfter:after.composer.passed?.[id]??[],usage:{...rows.results[0]!,reasoning:rows.results[0]!.reasoning!,runId:source.runId,stage:`artifact-review-${id}`},reconstruction:"reconstructedLegacy-v1" as const};
+    const result=await harness.stages.reuseContent(state,id,proof);if(result.error)throw new Error(result.observation);
+    reused.push({id,receipt:result.receipt});
+  }
+  const observation=`${prepared.observation} Reused ${reused.length} unchanged exact provider inputs.`;
+  return {...prepared,observation,receipt:{...prepared.receipt!,observation,reusedContent:reused},reused};
+}
+
+/** The admission rehearsal and execution use the same real tool and input-proof path; this does not call a model. */
+export async function previewFilingReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState){
+  const applied=await applyReviewerCorrections(env,run,state),harness=await filingOperatorHarness(env,run.spec,state,async()=>{throw new Error("Correction preparation cannot validate a shadow");});
+  const prepared=await prepareReviewerCorrection(env,run,state,harness);if(prepared.error)throw new Error(prepared.observation);
+  return {applied,prepared};
+}
+
+/** One reviewer's own supported correction, never an arbitrary replacement plan or a reopened author budget. */
+export async function handleFilingReviewerCorrections(request:Request,env:AnalysisEnv,shadow:ShadowRun):Promise<Response>{
+  if(request.method!=="POST")return reply({error:"Method not allowed"},405);
+  const requestId=request.headers.get("idempotency-key")??"";
+  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(requestId))return reply({error:"A UUID idempotency-key is required"},400);
+  try{
+    const body=await request.text();if(new TextEncoder().encode(body).byteLength>8192)return reply({error:"Reviewer correction identity exceeds 8 KiB"},413);
+    const input=reviewerCorrectionSchema.parse(JSON.parse(body)),inputHash=await sha256(stableOperatorValue(input));
+    const prior=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(correctionClaim(shadow.runId)).first<{payload:string}>();
+    const replay=async(payload:string)=>{const old=JSON.parse(payload);if(old.requestId!==requestId||old.inputHash!==inputHash)throw new Error("This operator already has its single reviewer correction");return reply({...old,replay:true,dispatchRetried:false,operation:await readRun(env,old.runId)},202);};
+    if(prior)return await replay(prior.payload);
+    const row=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(operatorKey(shadow.runId)).first<{payload:string}>(),source=row?JSON.parse(row.payload) as FilingOperatorRun:null;
+    if(!source||source.runId!==shadow.runId||stableOperatorValue(source.spec)!==stableOperatorValue(shadow.spec)||!source.spec.operatorCompletion||source.correction||source.spec.operatorCompletion.reviewerCorrection||source.status!=="failed"||source.phase?.name!=="semantic"||source.phase.status!=="failed"||source.validatedKey||source.version||source.hash)throw new Error("Only the original operator's completed failed semantic phase can receive its single correction");
+    const semantic=source.stages.semantic,receipt=phaseReceipt(semantic);
+    if(!semantic||semantic.status!=="failed"||!receipt||receipt.stage!=="semantic"||receipt.success||receipt.unavailable||!receipt.issues.length||!semantic.afterStateRef||stableOperatorValue(source.stateRef)!==stableOperatorValue(semantic.afterStateRef)||source.planHash!==input.expectedPlanHash||source.stateRef?.hash!==input.expectedFailedStateHash||await sha256(JSON.stringify(receipt))!==input.expectedSemanticReceiptHash)throw new Error("The exact completed failed semantic receipt, state and original plan are required");
+    const issues=receipt.issues;
+    if(issues.some(issue=>issue.kind!=="content"||issue.origin!=="semantic"||issue.severity!=="major"||!PERIODIC_BLOCKS.includes(issue.block as typeof PERIODIC_BLOCKS[number])||!issue.quote||!issue.replacement?.trim()||/[<>]/.test(issue.replacement)||/^delete\.?$/i.test(issue.replacement.trim())))throw new Error("Every material semantic issue must have an unambiguous plain-text reviewer replacement");
+    if(!Number.isSafeInteger(source.reviewCalls)||source.reviewCalls<PERIODIC_BLOCKS.length+1||source.reviewCalls>OPERATOR_REVIEW_REQUESTS-3||source.reviewCallsInherited||PERIODIC_BLOCKS.some(id=>source.stages[`content:${id}`]?.status!=="done"||!phaseReceipt(source.stages[`content:${id}`])?.success))throw new Error("Completed original content proofs and at least three remaining review requests are required");
+    const failure=await(await env.SEC_FILINGS.get(`research-shadow/${source.runId}/failed.json`))?.text();
+    if(!failure||JSON.parse(failure).status!=="failed")throw new Error("A completed failure receipt is required; stopped or interrupted work is not correctable");
+    await assertBase(env,source);if(source.baseVersion!==input.expectedPublicVersion||source.baseHash!==input.expectedPublicHash)throw new Error("Exact unchanged public version and hash required");
+    const state=await readState(env,source.stateRef),validation=(state.composer as OperatorComposerState).operatorValidation;
+    if(!validation||validation.runId!==source.runId||JSON.stringify(validation.semantic)!==JSON.stringify(receipt))throw new Error("Failed state does not hold the actual semantic review receipt");
+    await assertFrozenResearch(env,source,state);
+    const correctionsHash=await sha256(stableOperatorValue(issues.map(({block,key,quote,replacement})=>({block,key,quote,replacement})))),changedBlocks=[...new Set(issues.map(issue=>issue.block))];
+    if(changedBlocks.length!==1||issues.length!==1)throw new Error("This bounded reviewer correction applies exactly one reviewer's plain-text replacement in one report block");
+    const runId=`shadow-${shadow.ticker}-${shadow.accession}-operator-fix-${requestId}`,now=new Date().toISOString(),sourceRecordHash=await sha256(row!.payload),sourceRecordRef={key:`filing-operator/${runId}/correction-source/${sourceRecordHash}.json`,hash:sourceRecordHash};
+    await putImmutable(env,sourceRecordRef.key,row!.payload);
+    const spec:FilingSpec={...source.spec,sessionId:runId,jobId:runId,jobVersion:"operator.reviewer-correction.v1",operatorCompletion:{...source.spec.operatorCompletion,reviewerCorrection:{sourceOperatorRunId:source.runId,failedStateHash:source.stateRef.hash,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,reviewCallsInherited:source.reviewCalls}}};
+    const run:FilingOperatorRun={...source,runId,requestId,spec,status:"claimed",reviewCalls:0,reviewCallsInherited:source.reviewCalls,createdAt:now,stages:{},correction:{sourceOperatorRunId:source.runId,sourceRecordRef,failedStateRef:source.stateRef,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,changedBlocks}};
+    delete run.phase;delete run.stateRef;delete run.validatedKey;delete run.version;delete run.hash;delete run.error;
+    // No provider is called by this real tool/preparation rehearsal. Reject incompatible proofs before claiming or spending.
+    const preview=unpackState<FilingState>(packState(state));await previewFilingReviewerCorrections(env,run,preview);
+    const claim={runId,sourceOperatorRunId:source.runId,requestId,inputHash,planHash:source.planHash,failedStateHash:source.stateRef.hash,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,reviewCallsInherited:source.reviewCalls,maxReviewCalls:12,createdAt:now,publicReportUnchanged:true};
+    const newShadow:ShadowRun={runId,ticker:shadow.ticker,accession:shadow.accession,createdAt:now,baseVersion:source.baseVersion,callsReserved:0,maxCalls:12,spec},artifact=artifactId("filing-report",shadow.ticker,shadow.accession);
+    try{await db(env).batch([
+      db(env).prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,CASE WHEN EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) AND COALESCE((SELECT published_version FROM analysis_artifacts WHERE artifact_id=?),-1)=? AND COALESCE((SELECT v.hash FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id=v.artifact_id AND a.published_version=v.version WHERE a.artifact_id=?),'')=? THEN ? ELSE NULL END,?)`).bind(correctionClaim(source.runId),operatorKey(source.runId),row!.payload,artifact,source.baseVersion??-1,artifact,source.baseHash??"",JSON.stringify(claim),now),
+      db(env).prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)").bind(operatorKey(runId),JSON.stringify(run),now),
+      db(env).prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)").bind(shadowKey(runId),JSON.stringify(newShadow),now),
+    ]);}catch(error){const existing=await db(env).prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(correctionClaim(source.runId)).first<{payload:string}>();if(existing)return await replay(existing.payload);throw error;}
+    try{const runner=(withRuns(env) as AnalysisEnv&{FILING_OPERATOR_COMPLETION_WORKFLOW?:{create(input:{id:string;params:{runId:string}}):Promise<unknown>}}).FILING_OPERATOR_COMPLETION_WORKFLOW;if(!runner)throw new Error("Operator task runner unavailable");await runner.create({id:runId,params:{runId}});}catch(error){await failOperation(env,runId,"unknown",`Correction dispatch outcome uncertain; no automatic redispatch: ${String(error)}`);}
+    return reply({...claim,status:(await readRun(env,runId))?.status,replay:false},202);
+  }catch(error){return reply({error:error instanceof Error?error.message:String(error)},409);}
+}
+
 async function failOperation(env:AnalysisEnv,id:string,status:"failed"|"unknown",reason:string){
   const saved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status',?,'$.error',?,'$.phase.status',?,'$.phase.expiresAt',0),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status')!='validated'").bind(status,reason,status,new Date().toISOString(),operatorKey(id)).run();
   if(saved.meta.changes)await env.SEC_FILINGS.put(`research-shadow/${id}/failed.json`,JSON.stringify({status:"failed",reason,at:new Date().toISOString(),operator:true}));
@@ -94,7 +212,7 @@ async function failOperation(env:AnalysisEnv,id:string,status:"failed"|"unknown"
 
 /** Atomic before-send reservation shared by every independent provider/SDK retry. */
 export async function reserveFilingOperatorReview(env:AnalysisEnv,id:string,leaseToken:string){
-  const reserved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.reviewCalls',json_extract(payload,'$.reviewCalls')+1) WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND (json_extract(payload,'$.phase.name') LIKE 'content:%' OR json_extract(payload,'$.phase.name') IN ('semantic','render')) AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND json_extract(payload,'$.reviewCalls')<12 RETURNING cache_key").bind(operatorKey(id),leaseToken,Date.now()).first();
+  const reserved=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.reviewCalls',json_extract(payload,'$.reviewCalls')+1) WHERE cache_key=? AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.phase.status')='started' AND (json_extract(payload,'$.phase.name') LIKE 'content:%' OR json_extract(payload,'$.phase.name') IN ('semantic','render')) AND json_extract(payload,'$.phase.leaseToken')=? AND json_extract(payload,'$.phase.expiresAt')>? AND json_extract(payload,'$.reviewCalls')+COALESCE(json_extract(payload,'$.reviewCallsInherited'),0)<12 RETURNING cache_key").bind(operatorKey(id),leaseToken,Date.now()).first();
   if(!reserved)throw new Error("Operator independent-review allowance or lease exhausted");
 }
 
@@ -102,7 +220,7 @@ export async function readFilingOperatorStatus(env:AnalysisEnv,shadow:ShadowRun)
   const run=await readRun(env,shadow.runId);if(!run)return {runId:shadow.runId,status:"unavailable"};
   const expired=run.status==="running"&&run.phase?.status==="started"&&run.phase.expiresAt<=Date.now();
   const current=await publicBase(env,shadow.ticker,shadow.accession);
-  return {...run,status:expired?"unknown":run.status,leaseExpired:!!expired,published:false,humanReviewRequired:true,authorUsage:{status:"unavailable",tokens:null,cost:null},reviewBudgetScope:"All independent provider HTTP sends including SDK retries and visual review; author session usage is unavailable",publicReportUnchanged:current.version===run.baseVersion&&current.hash===run.baseHash};
+  return {...run,totalReviewCalls:run.reviewCalls+(run.reviewCallsInherited??0),status:expired?"unknown":run.status,leaseExpired:!!expired,published:false,humanReviewRequired:true,authorUsage:{status:"unavailable",tokens:null,cost:null},reviewBudgetScope:"All independent provider HTTP sends including SDK retries and visual review, plus inherited failed requests when corrected; author session usage is unavailable",publicReportUnchanged:current.version===run.baseVersion&&current.hash===run.baseHash};
 }
 export async function stopFilingOperator(env:AnalysisEnv,shadow:ShadowRun){await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status','failed','$.error','Stopped by administrator','$.phase.status','failed','$.phase.expiresAt',0) WHERE cache_key=?").bind(operatorKey(shadow.runId)).run();await env.SEC_FILINGS.put(`research-shadow/${shadow.runId}/failed.json`,JSON.stringify({status:"stopped",reason:"Stopped by administrator",at:new Date().toISOString()}));return{runId:shadow.runId,status:"stopped"};}
 
@@ -113,15 +231,15 @@ export async function executeFilingOperatorCompletion(params:{runId:string},cont
     let run=await readRun(env,id);if(run?.status==="validated")return{runId:id,status:run.status,version:run.version,hash:run.hash,reviewCalls:run.reviewCalls,replay:true,publicReportUnchanged:true,humanReviewRequired:true};if(!run||!["claimed","running"].includes(run.status))throw new NonRetryableError("Operator operation is not active");
     const sourceText=await(await env.SEC_FILINGS.get(run.checkpointKey))?.text(),planText=await(await env.SEC_FILINGS.get(run.planKey))?.text();
     if(!sourceText||await sha256(sourceText)!==run.checkpointHash||!planText||await sha256(planText)!==run.planHash)throw new NonRetryableError("Operator frozen inputs changed");
-    const plan=filingOperatorPlanSchema.parse(JSON.parse(planText)),source=JSON.parse(sourceText);state=unpackState<FilingState>(source.state);
+    const plan=filingOperatorPlanSchema.parse(JSON.parse(planText)),source=JSON.parse(sourceText);state=run.correction?await readState(env,run.correction.failedStateRef):unpackState<FilingState>(source.state);
     let stateRef=await writeState(env,id,state);
-    const phases=["tools","prepare",...PERIODIC_BLOCKS.map(block=>`content:${block}`),"semantic","render","shadow"];
+    const phases=[run.correction?"corrections":"tools","prepare",...PERIODIC_BLOCKS.map(block=>`content:${block}`),"semantic","render","shadow"];
     for(const name of phases){
       const output=await step.do(`operator:${name}`,{retries:{limit:0,delay:0},timeout:"11 minutes"},async()=>{
         const current=await readRun(env,id);if(!current||!["claimed","running"].includes(current.status))throw new NonRetryableError("Operator operation is not active");
         const completed=current.stages[name];if(completed?.status==="done"&&completed.afterStateRef)return completed;
         if(current.phase?.status==="started"){await failOperation(env,id,"unknown","A phase was interrupted; billable work is never automatically replayed");throw new NonRetryableError("Interrupted operator phase; inspect its receipts");}
-        await assertBase(env,current);await assertFrozenResearch(env,current,state);
+        await assertBase(env,current);await assertFrozenResearch(env,current,state);if(current.correction)await correctionSource(env,current);
         const phase:Phase={name,status:"started",leaseToken:crypto.randomUUID(),expiresAt:Date.now()+OPERATOR_PHASE_LEASE_MS,beforeStateRef:stateRef};
         const started=await db(env).prepare("UPDATE sec_cache SET payload=json_set(payload,'$.status','running','$.phase',json(?)),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.status') IN ('claimed','running') AND COALESCE(json_extract(payload,'$.phase.status'),'')!='started'").bind(JSON.stringify(phase),new Date().toISOString(),operatorKey(id)).run();
         if(!started.meta.changes)throw new NonRetryableError("Operator phase claim conflicted");
@@ -135,10 +253,14 @@ export async function executeFilingOperatorCompletion(params:{runId:string},cont
           pending={spec:current.spec,...published,validatedAt:new Date().toISOString(),researchUses:work.researchUses??[],work:{material:current.spec.material,periodic:work.periodic,web:work.web,read:work.read??[]},operator:{...current.spec.operatorCompletion,reviewModels:{content:modelFor(env,"artifact-review"),semantic:env.OPENAI_REVIEW_MODEL??null,visual:env.OPENAI_REVIEW_MODEL??null}}};
         });
         let result:ComposerPhaseResult;
-        if(name==="tools"){
+        if(name==="corrections"){
+          const applied=await applyReviewerCorrections(reviewEnv,current,state);
+          for(const entry of applied.transcript){await live();const body=JSON.stringify(entry);await putImmutable(env,`filing-operator/${id}/corrections/${await sha256(body)}.json`,body);}
+          result={observation:applied.observation};
+        }else if(name==="tools"){
           const applied=await executeFilingOperatorPlan(reviewEnv,current.spec,state,plan,async()=>{throw new Error("Tools cannot validate a shadow");},async entry=>{await live();const body=JSON.stringify(entry);await putImmutable(env,`filing-operator/${id}/tools/${entry.sequence}-${await sha256(body)}.json`,body);});
           result={observation:`Executed ${applied.toolCalls} real tool calls.`};
-        }else if(name==="prepare")result=await harness.stages.prepare(state);
+        }else if(name==="prepare")result=current.correction?await prepareReviewerCorrection(reviewEnv,current,state,harness):await harness.stages.prepare(state);
         else if(name.startsWith("content:"))result=await harness.stages.content(state,name.slice(8));
         else if(name==="semantic")result=await harness.stages.semantic(state);
         else if(name==="render")result=await harness.stages.render(state);

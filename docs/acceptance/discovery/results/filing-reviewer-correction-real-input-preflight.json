@@ -1,0 +1,163 @@
+{
+  "at": "2026-11-17T04:38:00.271Z",
+  "scope": "Offline real saved CRWV states and complete pinned Q3/Q2 material mirrors through the production native apply_fixes + prepare + reuseContent path; no production access or provider call",
+  "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+  "sourcePlanHash": "3b9f0f1cecc946b89eb4a7a2049aff16429ecebee5633e0f6f05c5d23c57949b",
+  "failedStateHash": "4a90d3565fda8f1c577253bab378042e856437695cd01b9c6baf4e07f5bcff01",
+  "semanticReceiptHash": "d04cc6d42d69bbda14fed3a5b01a4e5f9eca3b16248a6522356bc3da44a7edc8",
+  "changedBlocks": [
+    "summary"
+  ],
+  "unchangedResearchAndComputations": true,
+  "realToolObservation": "Applied 1 actual reviewer replacement(s) without research or calculations.",
+  "reused": [
+    {
+      "id": "highlights",
+      "reconstruction": "reconstructedLegacy-v1",
+      "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+      "sourcePhase": "content:highlights",
+      "beforeStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/ca5914c126d8742ddf6d7ff52be963d7103a252b49355b76759ed7e28e4c8520.json",
+        "hash": "ca5914c126d8742ddf6d7ff52be963d7103a252b49355b76759ed7e28e4c8520"
+      },
+      "afterStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/6393fe10e163875bed8b31c67f1dbf4b170ded6f2b8129a5947139c44ac3e9d9.json",
+        "hash": "6393fe10e163875bed8b31c67f1dbf4b170ded6f2b8129a5947139c44ac3e9d9"
+      },
+      "receiptHash": "8a1776c085fbe46687cebbefe0f14cb2b487d193c356d7fb35ed6340df7eed45",
+      "inputHash": "e95fb6b04a47a23f9940adc42d1f8cdd2a8e157efcd5789a1807c476521a4ede",
+      "blockHash": "dd04df21354c0fb741a1f0d4db825f1a485b26782417dac6d07ab397c1b48727",
+      "requestPolicy": "artifact-block-review-request.v1",
+      "usage": {
+        "at": "2026-11-17T04:04:36.952Z",
+        "model": "deepseek-flash",
+        "reasoning": "high",
+        "outcome": "ok",
+        "runId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+        "stage": "artifact-review-highlights"
+      },
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "risks",
+      "reconstruction": "reconstructedLegacy-v1",
+      "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+      "sourcePhase": "content:risks",
+      "beforeStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/6393fe10e163875bed8b31c67f1dbf4b170ded6f2b8129a5947139c44ac3e9d9.json",
+        "hash": "6393fe10e163875bed8b31c67f1dbf4b170ded6f2b8129a5947139c44ac3e9d9"
+      },
+      "afterStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/4dee5d368612d86cde06e44eeffe65ee8a3e78c47e879ec635dd569a2044c3a4.json",
+        "hash": "4dee5d368612d86cde06e44eeffe65ee8a3e78c47e879ec635dd569a2044c3a4"
+      },
+      "receiptHash": "7a80e03aad7569ec6bbcb926acee92dfefbaf5f6da6bc32cd33c09649b41d82c",
+      "inputHash": "0187ca42129d8e48db12e03d6ccd55aa3c7ca81f0baa255f72c9d4f409b85a69",
+      "blockHash": "d6b1b01af79e320a8492b186b00571014438239e33736e8425fef0354cf4e323",
+      "requestPolicy": "artifact-block-review-request.v1",
+      "usage": {
+        "at": "2026-11-17T04:08:37.368Z",
+        "model": "deepseek-flash",
+        "reasoning": "high",
+        "outcome": "ok",
+        "runId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+        "stage": "artifact-review-risks"
+      },
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "overlooked",
+      "reconstruction": "reconstructedLegacy-v1",
+      "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+      "sourcePhase": "content:overlooked",
+      "beforeStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/4dee5d368612d86cde06e44eeffe65ee8a3e78c47e879ec635dd569a2044c3a4.json",
+        "hash": "4dee5d368612d86cde06e44eeffe65ee8a3e78c47e879ec635dd569a2044c3a4"
+      },
+      "afterStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/e508998af245261381d5058743ed5409f7c25061f21ba0ee4dd452f0df533bd0.json",
+        "hash": "e508998af245261381d5058743ed5409f7c25061f21ba0ee4dd452f0df533bd0"
+      },
+      "receiptHash": "e52b69c26845b4d80ff09b7ea18b092b127baea4efea968a39793c6a7b8c8f3f",
+      "inputHash": "94f17d3d1ed2499c4726d230ed8c3fb2a684ab91fe9c0a399865a81ea292bf63",
+      "blockHash": "b7290aa9022ddebd03cc7a132e6bb130c1828c8ba50be67957df020b106936da",
+      "requestPolicy": "artifact-block-review-request.v1",
+      "usage": {
+        "at": "2026-11-17T04:09:19.627Z",
+        "model": "deepseek-flash",
+        "reasoning": "high",
+        "outcome": "ok",
+        "runId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+        "stage": "artifact-review-overlooked"
+      },
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "versus-prior",
+      "reconstruction": "reconstructedLegacy-v1",
+      "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+      "sourcePhase": "content:versus-prior",
+      "beforeStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/e508998af245261381d5058743ed5409f7c25061f21ba0ee4dd452f0df533bd0.json",
+        "hash": "e508998af245261381d5058743ed5409f7c25061f21ba0ee4dd452f0df533bd0"
+      },
+      "afterStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/d6eda3e75ef7016d10c3e3c0ee741f6651f07aeaee901b82fb78990a82091fb1.json",
+        "hash": "d6eda3e75ef7016d10c3e3c0ee741f6651f07aeaee901b82fb78990a82091fb1"
+      },
+      "receiptHash": "e14bbbe0099a7c8e20b872f1e4b03d23d8ec69fd8f8639368307ddbc90206e65",
+      "inputHash": "56ad58c2fa518cb0308c17d44af3632c4ca92ba764823f5466215507b9ba3bf9",
+      "blockHash": "a5b120105d6d62045b68d9f923b9f745786c4a01e8693795b479d785bcf71807",
+      "requestPolicy": "artifact-block-review-request.v1",
+      "usage": {
+        "at": "2026-11-17T04:10:01.185Z",
+        "model": "deepseek-flash",
+        "reasoning": "high",
+        "outcome": "ok",
+        "runId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+        "stage": "artifact-review-versus-prior"
+      },
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    },
+    {
+      "id": "what-to-watch",
+      "reconstruction": "reconstructedLegacy-v1",
+      "sourceRunId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+      "sourcePhase": "content:what-to-watch",
+      "beforeStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/d6eda3e75ef7016d10c3e3c0ee741f6651f07aeaee901b82fb78990a82091fb1.json",
+        "hash": "d6eda3e75ef7016d10c3e3c0ee741f6651f07aeaee901b82fb78990a82091fb1"
+      },
+      "afterStateRef": {
+        "key": "filing-operator/shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012/states/3f7152b4ce1483dd751d5805171d196778ee3d8ab940bbb29a18a405d933f9cc.json",
+        "hash": "3f7152b4ce1483dd751d5805171d196778ee3d8ab940bbb29a18a405d933f9cc"
+      },
+      "receiptHash": "3b10fb04bb2e6bd329f2e8bc25d20a229e61674a3257c04110332ed55c29696a",
+      "inputHash": "67a93cac4bb4e1386b46ed47879369232cf0fc381a8d87081b95f24b38e45259",
+      "blockHash": "9a186309f0a2e5cbf6205cd087d26249cfa98a2af79ec1d8e1053ba0a4a9a0ca",
+      "requestPolicy": "artifact-block-review-request.v1",
+      "usage": {
+        "at": "2026-11-17T04:10:45.418Z",
+        "model": "deepseek-flash",
+        "reasoning": "high",
+        "outcome": "ok",
+        "runId": "shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012",
+        "stage": "artifact-review-what-to-watch"
+      },
+      "newDigest": "070be446a3047f6f6f905638462436b6d9674fbf3ba4b3cc987ea217e5a9aaf3"
+    }
+  ],
+  "sourceReviewCalls": 7,
+  "requestsSpent": 0,
+  "networkCalls": 0,
+  "modelCalls": 0,
+  "applicationDatabaseWrites": 0,
+  "bucketWrites": 0,
+  "durationMs": 2428,
+  "limitations": [
+    "Original v1 receipts did not store request hashes; reconstructedLegacy-v1 is explicitly historical reconstruction, not a contemporaneously stored HTTP-body hash.",
+    "Original route URL has no historical receipt. Current built-in configuration is empty endpoint/tool overrides with unchanged source prompt and actual model/effort usage; absent configuration rows are not historical updated_at evidence.",
+    "New summary content, complete semantic audit and strict provider visual review remain unexecuted for this real correction.",
+    "Local metadata is reconstructed from read-only status projection; original R2 state bodies and source material mirrors are actual saved bytes."
+  ]
+}

@@ -14,7 +14,7 @@ import { artifactId, previewToken, publishStatements, readArtifactVersion, saveW
 import { filingMemoryStatements } from "./memory-source.ts";
 import { sha256 } from "../sha256.ts";
 import { handleShadowRecovery, shadowKey as key, type ShadowRun } from "./shadow-resume.ts";
-import { handleFilingOperatorCompletion, readFilingOperatorStatus, stopFilingOperator } from "./operator-completion.ts";
+import { handleFilingOperatorCompletion, handleFilingReviewerCorrections, readFilingOperatorStatus, stopFilingOperator } from "./operator-completion.ts";
 import { stableOperatorValue } from "./operator-plan.ts";
 
 type ValidatedShadow = { spec: FilingSpec; version: number; hash: string; text: string; degraded: string[]; validatedAt: string; researchUses: ResearchUse[]; work: FilingWork; operator?:FilingOperatorAuthor };
@@ -60,6 +60,7 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
   const run = (await repository.getCache<ShadowRun>(key(runId)))?.payload;
   if (!run || run.runId !== runId || run.ticker !== ticker || run.accession !== accession) return reply({ error: "Shadow run not found" }, 404);
   if(action==="operator-complete")return handleFilingOperatorCompletion(request,env,run);
+  if(action==="apply-reviewer-corrections")return handleFilingReviewerCorrections(request,env,run);
   const operator=run.spec.operatorCompletion?await readFilingOperatorStatus(env,run):null;
   if(operator&&action==="stop"&&request.method==="POST")return reply(await stopFilingOperator(env,run));
   if(operator&&(action==="resume"||action==="checkpoint"))return reply({error:"External operator operations do not open or resume Pi sessions; inspect their stored phase receipts"},409);
@@ -86,7 +87,7 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
     const artifact = await readArtifactVersion(env, artifactId("filing-report", ticker, accession), validated.version);
     const token = await previewToken(env, "filing-report", ticker, accession, validated.version);
     const current = await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId("filing-report", ticker, accession)).first<{published_version:number|null}>();
-    return reply({ runId, status: current?.published_version === validated.version ? "published" : "validated_shadow", version: validated.version, hash: validated.hash, baseVersion: run.baseVersion, validatedAt: validated.validatedAt, callsReserved: operator&&"reviewCalls"in operator?operator.reviewCalls:run.callsReserved, maxCalls: run.maxCalls, ...(operator?{generation:run.spec.operatorCompletion,independentReview:validated.operator,reviewBudgetScope:"reviewBudgetScope"in operator?operator.reviewBudgetScope:null,stages:"stages"in operator?operator.stages:null}:{}), previewToken: token, artifact, investmentChains: validated.work.periodic?.investmentChains ?? [], computations: validated.work.periodic?.impactComputations ?? {}, researchUses: validated.researchUses, publicResearch: validated.spec.publicResearch, publicReportUnchanged: operator&&"publicReportUnchanged"in operator?operator.publicReportUnchanged:(current?.published_version ?? null) === run.baseVersion });
+    return reply({ runId, status: current?.published_version === validated.version ? "published" : "validated_shadow", version: validated.version, hash: validated.hash, baseVersion: run.baseVersion, validatedAt: validated.validatedAt, callsReserved: operator&&"totalReviewCalls"in operator?operator.totalReviewCalls:run.callsReserved, maxCalls: run.maxCalls, ...(operator?{generation:run.spec.operatorCompletion,independentReview:validated.operator,reviewCalls:"reviewCalls"in operator?operator.reviewCalls:null,reviewCallsInherited:"reviewCallsInherited"in operator?operator.reviewCallsInherited??0:0,reviewBudgetScope:"reviewBudgetScope"in operator?operator.reviewBudgetScope:null,stages:"stages"in operator?operator.stages:null}:{}), previewToken: token, artifact, investmentChains: validated.work.periodic?.investmentChains ?? [], computations: validated.work.periodic?.impactComputations ?? {}, researchUses: validated.researchUses, publicResearch: validated.spec.publicResearch, publicReportUnchanged: operator&&"publicReportUnchanged"in operator?operator.publicReportUnchanged:(current?.published_version ?? null) === run.baseVersion });
   }
   if (action !== "promote" || request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
   if (!validated) return reply({ error: "No validated shadow to review" }, 409);
