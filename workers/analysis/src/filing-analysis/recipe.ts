@@ -20,7 +20,7 @@ import { materialBlockId, readFilingMarkdown, searchFilingMarkdown, sourceText }
 import { FILING_SYSTEM, profileById, type FilingProfile, type ProfileId } from "./profiles.ts";
 import { recordRunSummary, recordRunTurn, updateFiling } from "./store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
-import { composerGuide, composerTools, type ComposerSetup } from "../artifact/compose.ts";
+import { composerGuide, composerTools, composerHarness, type ComposerSetup } from "../artifact/compose.ts";
 import { PERIODIC_BLOCKS, periodicTools, type PeriodicState } from "./periodic.ts";
 import { PERIODIC_EVIDENCE, PERIODIC_SYSTEM } from "./prompts.ts";
 import { blockText, openComposer, registerSource, sentencesOf, type ComposerState } from "../artifact/document.ts";
@@ -35,10 +35,11 @@ import type { ShadowContextExtension } from "./shadow-context.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string; checkpointHash?: string };
-export type FilingSpec = { shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
+export type FilingOperatorAuthor = {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:"gpt-6.1-sol";effort:"max";runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null}};
+export type FilingSpec = { operatorCompletion?:FilingOperatorAuthor; shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
-type FilingState = WebToolState & ResearchContextState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
+export type FilingState = WebToolState & ResearchContextState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
 
 export async function readFilingCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string, material: MaterialRef, expectedHash?: string): Promise<FilingState> {
   const object = await env.SEC_FILINGS.get(key);
@@ -59,14 +60,14 @@ function job(spec: FilingSpec, status: "complete" | "failed", at: string, errorD
 }
 
 /** The report as the filings list and the readers before artifacts store it: the summary block's title and the document's text. */
-export function filingSummary(filing: SecFiling, report: { headline: string; text: string; category?: string }, at: string): SecFilingSummary {
+export function filingSummary(filing: SecFiling, report: { headline: string; text: string; category?: string;operatorCompletion?:FilingOperatorAuthor }, at: string): SecFilingSummary {
   return { ticker: filing.ticker, form: filing.form, filingDate: filing.filingDate, accessionNumber: filing.accessionNumber, headline: report.headline, bullets: [], analystView: "", report: report.text,
-    ...(report.category ? { eventCategory: report.category as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: "deepseek", generatedBy: "pi", generatedAt: at };
+    ...(report.category ? { eventCategory: report.category as SecFilingSummary["eventCategory"] } : {}), version: SEC_SUMMARY_VERSION, source: report.operatorCompletion?"external":"deepseek", generatedBy: report.operatorCompletion?"operator":"pi", ...(report.operatorCompletion?{generation:report.operatorCompletion}:{}), generatedAt: at };
 }
 
 const openState = (spec: FilingSpec): ComposerState => openComposer({ kind: "filing-report", ticker: spec.ticker, subject: spec.filing.accessionNumber, title: `${spec.ticker} ${spec.filing.form} ${spec.filing.reportDate || spec.filing.filingDate}`, lang: "en" });
 
-function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null, resumed: FilingState | null): Recipe<FilingSpec, boolean, FilingState> {
+function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile, snapshot: MaterialSnapshot, base: { document: ArtifactDocument; work: FilingWork | null } | null, resumed: FilingState | null, priorSnapshots: MaterialSnapshot[],operator?:{onShadow:NonNullable<ComposerSetup<FilingState>["onShadow"]>}): Recipe<FilingSpec, boolean, FilingState> & {operatorStages?:ReturnType<typeof composerHarness<FilingState>>["stages"]} {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
   const { ticker, filing } = spec;
@@ -92,7 +93,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     return [...matches.values()];
   };
   const publicContext = publicResearchTools<FilingState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
-  const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, runId: spec.sessionId });
+  const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, priorSnapshots, runId: spec.sessionId });
   const summarise = (state: FilingState, status: "published" | "failed") => recordRunSummary(db, {
     runId: spec.sessionId, ticker, accession, profile: profile.id, status, settledBy: state.composer.settledBy ?? null,
     reviewRounds: state.composer.rounds?.content ?? 0, renderRounds: state.composer.rounds?.render ?? 0, sectionsRead: state.read ?? [],
@@ -106,7 +107,9 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   ];
   const setup: ComposerSetup<FilingState> = {
     publicationMode: spec.shadow ? "shadow" : undefined,
+    ...(operator?{operatorValidation:true}:{}),
     onShadow: async (state, published) => {
+      if(operator)return operator.onShadow(state,published);
       await saveFilingImpact(env, { spec, version: published.version, hash: published.hash, work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } });
       await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/validated.json`, JSON.stringify({ spec, ...published, validatedAt: new Date().toISOString(), researchUses: state.researchUses ?? [], work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } }));
     },
@@ -116,7 +119,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     find: terms => find(terms),
     resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS } : {}), precheck: periodic.precheck,
     hardPrecheck: state => publicContext.precheck(state) ?? periodic.impactPrecheck(state) ?? (state.periodic?.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
-    audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"] }, state),
+    audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"], publicResearch: spec.publicResearch }, state),
     read: async (id, state) => {
       const publicSource = publicContext.read(id);
       if (publicSource) return publicSource;
@@ -147,9 +150,11 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       await summarise(state, "published");
     },
   };
-  const compose = composerTools(setup);
+  const harness=operator?composerHarness(setup):null;
+  const compose = harness?.tools??composerTools(setup);
   const list = [...periodic.tools, ...publicContext.tools, ...own, ...web, ...compose];
   return {
+    ...(harness?{operatorStages:harness.stages}:{}),
     id: `filing.${spec.profile}.material.v1`,
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: 90_000,
@@ -158,7 +163,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     system: () => profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}`,
     open: () => {
       if (resumed) {
-        if (spec.shadow && spec.shadowContextExtension) {
+        if (spec.shadow && spec.shadowContextExtension&&!spec.operatorCompletion) {
           resumed.publicResearchRead = false;
           delete resumed.composer.researchContext;
         }
@@ -199,6 +204,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
 
 /** Rebuilds the session from its spec, on start and after an eviction. */
 export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<PiLoaded> {
+  if(spec.operatorCompletion)throw new Error("External operator plans execute through the deterministic task, never a Pi author session");
   env = await shadowResumeEnvironment(env, spec);
   if (!spec.shadow && await isPilotMaterial(env, spec.ticker, spec.filing.accessionNumber)) throw new Error("Material reserved for explicit shadow review; normal analysis blocked");
   const baseProfile = profileById(spec.profile);
@@ -209,8 +215,10 @@ export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<
   const resumed = spec.mode === "resume" ? await readFilingCheckpoint(env, spec.checkpoint, snapshot.ref, spec.checkpointHash) : null;
   const work = document ? await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) : null;
   const base = document && work?.material?.version === spec.material.version ? { document, work } : null;
+  const priorRefs = [...new Map([...(resumed?.periodic?.materials ?? []), ...(base?.work?.periodic?.materials ?? [])].map(ref => [`${ref.accession}:${ref.version}`, ref])).values()];
+  const priorSnapshots = await Promise.all(priorRefs.filter(ref => ref.accession !== snapshot.ref.accession || ref.version !== snapshot.ref.version).map(ref => readMaterialSnapshot(env, ref)));
   return {
-    recipe: filingRecipe(env, spec, profile, snapshot, base, resumed), input: spec, effort: spec.shadow ? spec.shadowEffort ?? profile.reasoning : profile.reasoning, model: spec.shadow ? spec.shadowModel ?? modelFor(env, "filing") : modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
+    recipe: filingRecipe(env, spec, profile, snapshot, base, resumed, priorSnapshots), input: spec, effort: spec.shadow ? spec.shadowEffort ?? profile.reasoning : profile.reasoning, model: spec.shadow ? spec.shadowModel ?? modelFor(env, "filing") : modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
     ...(spec.shadow ? { strictBudget: true as const, reserve: async () => {
       if (env.MODEL_REQUEST_GATE) {
         try { await env.MODEL_REQUEST_GATE(); return true; } catch { return false; }
@@ -223,4 +231,13 @@ export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<
     hydrate: (state: FilingState) => { state.composer ??= openState(spec); state.web ??= {}; },
     record: entry => { void recordRunTurn(env.DB!, spec.sessionId, entry); },
   };
+}
+
+/** Same filing tools and composer, without opening an author model or its exhausted continuation gate. */
+export async function filingOperatorHarness(env:AnalysisEnv,spec:FilingSpec,state:FilingState,onShadow:NonNullable<ComposerSetup<FilingState>["onShadow"]>){
+  if(!spec.shadow||!spec.operatorCompletion)throw new Error("An admitted external shadow plan is required");
+  const snapshot=await readMaterialSnapshot(env,spec.material),refs=[...new Map((state.periodic?.materials??[]).map(ref=>[`${ref.accession}:${ref.version}`,ref])).values()];
+  const prior=await Promise.all(refs.filter(ref=>ref.accession!==snapshot.ref.accession||ref.version!==snapshot.ref.version).map(ref=>readMaterialSnapshot(env,ref)));
+  const recipe=filingRecipe(env,spec,profileById(spec.profile),snapshot,null,state,prior,{onShadow});
+  return {recipe,stages:recipe.operatorStages!,state:recipe.open(spec)};
 }

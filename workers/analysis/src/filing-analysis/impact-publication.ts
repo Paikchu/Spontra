@@ -6,6 +6,7 @@ import type { MaterialSnapshot } from "../../../../shared/analysis-contract/fili
 import type { FilingFactRow } from "../../../../shared/analysis-contract/filing-content.ts";
 import { materialSnapshotKey } from "../filing-material/store.ts";
 import { sha256 } from "../sha256.ts";
+import { frozenPublicResearchSource, isPublicResearchSourceId } from "../company-research/context-tools.ts";
 
 const pointerKey = (id: string, version: number, hash: string) => `filing-impact:${id}:v${version}:${hash}`;
 type Pointer = { resultId: string; key: string };
@@ -27,7 +28,10 @@ export async function saveFilingImpact(env: ArtifactStoreEnv, input: { spec: Fil
   const doc = stored.document;
   if (doc.kind !== "filing-report" || doc.ticker !== spec.ticker || doc.subject !== spec.filing.accessionNumber || doc.version !== version || stored.hash !== hash || await sha256(`${stored.html}\n${stored.css}`) !== hash) throw new Error("Filing impact source edition mismatch");
   const refs = new Set(p.investmentChains.flatMap(chain => [...chain.sourceIds, ...chain.computationRefs]));
-  const visit = (ref: string) => { for (const source of p.impactComputations?.[ref]?.provenance?.inputs ?? []) if (!refs.has(source.sourceId)) { refs.add(source.sourceId); visit(source.sourceId); } };
+  const visit = (ref: string) => {
+    const inputs = [...Object.keys(p.computed[ref]?.inputs ?? {}), ...(p.impactComputations?.[ref]?.provenance?.inputs ?? []).map(input => input.sourceId)];
+    for (const input of inputs) if (!refs.has(input)) { refs.add(input); visit(input); }
+  };
   for (const ref of refs) visit(ref);
   const unitIssue = impactUnitIssue(p.impactComputations, refs);
   if (unitIssue) throw new Error(unitIssue);
@@ -46,7 +50,9 @@ export async function saveFilingImpact(env: ArtifactStoreEnv, input: { spec: Fil
   const sources = [...refs].map(ref => {
     const source = doc.sources.find(source => source.id === ref);
     const fact = p.facts[ref], original = frozenFacts.get(ref);
-    return { id: ref, title: source?.title ?? original?.label ?? p.computed[ref]?.label ?? ref, url: source?.url ?? original?.sourceUrl ?? null, kind: source?.kind ?? "data" as const, text: p.texts[ref] ?? fact?.text ?? work.web[ref] ?? "", ...(original ? { value: original.value, unit: original.unit, shown: original.shown, periodStart: original.periodStart, periodEnd: original.periodEnd } : fact ? { value: fact.value, ...(fact.unit ? { unit: fact.unit } : {}) } : {}) };
+    const publicSource = isPublicResearchSourceId(ref) ? frozenPublicResearchSource(spec.publicResearch, ref, { source, researchContext: doc.researchContext }) : null;
+    if (isPublicResearchSourceId(ref) && !publicSource) throw new Error(`Filing impact public source ${ref} does not match its frozen research ordinal and version`);
+    return { id: ref, title: source?.title ?? original?.label ?? p.computed[ref]?.label ?? ref, url: source?.url ?? original?.sourceUrl ?? null, kind: source?.kind ?? "data" as const, text: publicSource?.text ?? p.texts[ref] ?? fact?.text ?? work.web[ref] ?? "", ...(original ? { value: original.value, unit: original.unit, shown: original.shown, periodStart: original.periodStart, periodEnd: original.periodEnd } : fact ? { value: fact.value, ...(fact.unit ? { unit: fact.unit } : {}) } : {}) };
   });
   const body: Omit<FilingImpactPublication, "resultId"> = {
     schemaVersion: "filing-impact.v1", artifact: { id, ticker: spec.ticker, accession: spec.filing.accessionNumber, version, hash },

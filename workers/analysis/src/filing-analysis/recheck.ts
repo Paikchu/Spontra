@@ -3,7 +3,7 @@ import { readPublishedDocument, readWorkState, recordCheck } from "../artifact/s
 import { readMaterialSnapshot } from "../filing-material/index.ts";
 import { sourceText } from "../filing-material/read.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { evaluate, namesIn } from "./facts.ts";
+import { evaluate, namesIn, replayComputed } from "./facts.ts";
 import type { FilingWork } from "./recipe.ts";
 
 export type RecheckItem = { block: string; kind: "figure" | "quote"; ref: string; shown: string; status: "holds" | "differs" | "unreadable"; reason?: string };
@@ -18,11 +18,16 @@ export async function recheckFiling(env: AnalysisEnv, ticker: string, accession:
   const refs = [work?.material, ...(work?.periodic?.materials ?? [])].filter((ref): ref is NonNullable<typeof ref> => !!ref);
   const snapshots = await Promise.all([...new Map(refs.map(ref => [`${ref.accession}:${ref.version}`, ref])).values()].map(ref => readMaterialSnapshot(env, ref)));
   const facts = new Map(snapshots.flatMap(material => material.facts.map(f => [f.factId, f.value] as const)));
+  const typedFacts = new Map(snapshots.flatMap(material => material.facts.map(f => [f.factId, { value: f.value, unit: f.unit, kind: "fact" as const, material: material.ref }] as const)));
   const recompute = (id: string, seen = new Set<string>()): number | undefined => {
     if (facts.has(id)) return facts.get(id);
     if (seen.has(id)) return undefined;
     const computed = work?.periodic?.computed[id];
     if (!computed) return undefined;
+    if (computed.provenance?.unitContract === "generic-compute-units.v1") {
+      try { return replayComputed(id, work!.periodic!.computed, name => typedFacts.get(name) ?? null).value; }
+      catch { return undefined; }
+    }
     const inputs: Record<string, number> = {};
     for (const name of namesIn(computed.formula)) { const value = recompute(name, new Set([...seen, id])); if (value === undefined) return undefined; inputs[name] = value; }
     return evaluate(computed.formula, inputs);

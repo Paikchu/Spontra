@@ -39,15 +39,28 @@ const MAX_IMAGES = 24;
 export type QaResult = {
   issues: TrackedIssue[];
   scores: Record<string, number> | null;
-  /** The review could not run (no browser, or the page never drew); the caller settles with the safe layout. */
+  /** The review could not complete; ordinary composition may settle its layout, strict validation must fail. */
   unavailable: string | null;
   shots: number;
   /** The blocks the design review saw, by width. */
   covered?: Record<string, string[]>;
   /** Widths that could not be looked at while others could: the page's fault or the browser's, not a block's. */
   errors?: string[];
+  /** Actual browser geometry, kept independently from screenshots selected for the visual provider. */
+  measured?: Record<string, string[]>;
+  metrics?: Record<string, Measured>;
+  /** True only after a configured visual provider returned a complete review. */
+  visualReviewed?: boolean;
 };
 type Measured = { stageWidth: number; blocks: Array<{ id: string; x: number; y: number; width: number; height: number }>; problems: Array<{ block: string; severity: "blocker" | "major" | "minor"; kind: "render" | "interaction"; problem: string }> };
+export type RenderingReviewOptions = {
+  visual?: boolean;
+  expectedHash?: string;
+  /** The operator must inspect every block at every viewport, with no page or viewport errors. */
+  strict?: boolean;
+  /** A missing, disabled or unavailable visual provider cannot stand in for a completed visual review. */
+  requireVisual?: boolean;
+};
 
 const LOAD_MS = 45_000;
 const qaErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -210,9 +223,9 @@ export const visualPasses = (scores: Record<string, number> | null) => !!scores 
 
 /**
  * One review of a draft. `url` opens it in the real stage; `blocks` are the ids the review may name. The design review
- * is skipped, not failed, when the OpenAI judge is not configured; the result says so through `scores: null`.
+ * is skipped when its provider is not configured unless strict/requireVisual requests a completed visual review.
  */
-export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }, options: { visual?: boolean; expectedHash?: string } = {}): Promise<QaResult> {
+export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker }, url: string, blocks: readonly string[], ledger: { ticker: string; runId?: string }, options: RenderingReviewOptions = {}): Promise<QaResult> {
   if (!env.BROWSER) return { issues: [], scores: null, unavailable: "no browser binding", shots: 0 };
   const errors: string[] = [];
   let browser: Browser;
@@ -221,11 +234,14 @@ export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker 
   try {
     for (const viewport of VIEWPORTS) {
       // The stage reloads its frame when the company's data moves under it; a width that lost its frame is tried once more.
-      for (let attempt = 0; attempt < 2; attempt++) {
+      // Strict completion records the first failure instead of spending another attempt that cannot clear it.
+      const attempts = options.strict ? 1 : 2;
+      for (let attempt = 0; attempt < attempts; attempt++) {
         try { passes.push(await renderPass(browser, url, viewport, errors, options.expectedHash)); break; }
         catch (error) {
-          if (attempt === 0) { await new Promise(resolve => setTimeout(resolve, 2500)); continue; }
-          errors.push(`${viewport.name}: ${qaErrorMessage(error)}`.slice(0, 300));
+          if (options.strict) errors.push(`${viewport.name}, attempt ${attempt + 1}: ${qaErrorMessage(error)}`.slice(0, 300));
+          if (attempt + 1 < attempts) { await new Promise(resolve => setTimeout(resolve, 2500)); continue; }
+          if (!options.strict) errors.push(`${viewport.name}: ${qaErrorMessage(error)}`.slice(0, 300));
         }
       }
     }
@@ -245,23 +261,43 @@ export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker 
   let scores: Record<string, number> | null = null;
   // First parts before second parts, so every width shows every block before the limit is reached.
   const images = passes.flatMap((p, order) => p.shots.map(s => ({ ...s, viewport: p.viewport.name, order }))).sort((a, b) => a.part - b.part || a.order - b.order).slice(0, MAX_IMAGES);
+  const covered = Object.fromEntries(passes.map(p => [p.viewport.name, [...new Set(images.filter(s => s.viewport === p.viewport.name).map(s => s.block))]]));
+  const metrics = Object.fromEntries(passes.map(p => [p.viewport.name, p.measured]));
+  const measured = Object.fromEntries(passes.map(p => [p.viewport.name, p.measured.blocks.filter(b => [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width > 0 && b.height > 0).map(b => b.id)]));
+  const requireVisual = options.strict || options.requireVisual;
+  if (options.strict) for (const viewport of VIEWPORTS) {
+    if (!metrics[viewport.name] || !Number.isFinite(metrics[viewport.name]!.stageWidth) || metrics[viewport.name]!.stageWidth <= 0) errors.push(`${viewport.name}: no valid browser measurements`);
+    for (const id of blocks) {
+      if (!measured[viewport.name]?.includes(id)) errors.push(`${viewport.name}: block "${id}" has no valid browser geometry`);
+      if (!covered[viewport.name]?.includes(id)) errors.push(`${viewport.name}: block "${id}" was not captured for the visual reviewer`);
+    }
+  }
+  const coverage = { shots: images.length, covered, measured, metrics };
+  if (options.strict && errors.length) return { issues, scores, unavailable: errors.join("; ").slice(0, 2000), ...coverage, visualReviewed: false, errors };
+  let visualReviewed = false, visualUnavailable: string | null = null;
+  if (requireVisual && (options.visual === false || !judgeConfigured(env) || !images.length)) visualUnavailable = options.visual === false ? "the required visual review is disabled" : !judgeConfigured(env) ? "the required visual provider is not configured" : "no screenshots reached the required visual review";
   if (options.visual !== false && judgeConfigured(env) && images.length) {
     const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {
         stage: "artifact-visual", system: VISUAL_SYSTEM, schema: VISUAL_SCHEMA, effort: "medium", images: images.map(s => s.image),
+        ...(options.strict ? { maxRetries: 0 } : {}),
         text: JSON.stringify({ blockMap: map, measuredProblems: issues.slice(0, 20).map(i => ({ block: i.block, problem: i.problem })) }),
         ledger: { kind: "artifact-visual", ticker: ledger.ticker, ...(ledger.runId ? { runId: ledger.runId } : {}) },
       });
       scores = verdict.scores;
-      for (const v of verdict.issues.slice(0, 16)) {
+      if (requireVisual && (!scores || Object.keys(WEIGHTS).some(key => !Number.isFinite(scores![key]) || scores![key]! < 0 || scores![key]! > 10))) throw new JudgeUnavailable("the required visual review returned incomplete or invalid design scores");
+      for (const v of options.strict ? verdict.issues : verdict.issues.slice(0, 16)) {
         const block = known.has(v.block) ? v.block : null;
+        if (options.strict && (!block || !VIEWPORTS.some(viewport => viewport.name === v.viewport))) throw new JudgeUnavailable("the required visual review named an unknown block or viewport");
         if (!block) continue;
         issues.push({ block, kind: "visual", severity: v.severity, problem: v.problem, suggestion: v.suggestion, viewport: v.viewport, key: issueKey(block, `visual ${v.problem}`) });
       }
+      visualReviewed = true;
     } catch (error) {
       if (!(error instanceof JudgeUnavailable)) throw error;
+      if (requireVisual) visualUnavailable = `the required visual review was unavailable: ${qaErrorMessage(error)}`;
     }
   }
-  return { issues, scores, unavailable: null, shots: images.length, covered: Object.fromEntries(passes.map(p => [p.viewport.name, [...new Set(images.filter(s => s.viewport === p.viewport.name).map(s => s.block))]])), ...(errors.length ? { errors } : {}) };
+  return { issues, scores, unavailable: visualUnavailable, ...coverage, visualReviewed, ...(errors.length ? { errors } : {}) };
 }

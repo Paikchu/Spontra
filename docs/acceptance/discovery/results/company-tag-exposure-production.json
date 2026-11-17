@@ -1,0 +1,221 @@
+{
+  "commit": "c75981458593124b903b06a431076a72547bfb44",
+  "deployments": [
+    {
+      "name": "spontra-analysis",
+      "build": [
+        {
+          "id": "e5f41c20-cd80-4b50-8228-5acb9b3255c6",
+          "status": "stopped",
+          "outcome": "success",
+          "commit": "c75981458593124b903b06a431076a72547bfb44",
+          "source": "push_event"
+        }
+      ],
+      "version": "1181e0a8-fadd-4607-982c-d7f7d1f1f51f",
+      "deployedAt": "2026-11-17T03:11:47.817294Z",
+      "deploymentId": "2aa1e0bc-91a6-4c2e-aafa-d5aa7ab89a0b"
+    },
+    {
+      "name": "spontra-business-map",
+      "build": [
+        {
+          "id": "87067e49-da28-4474-80da-31606ed7e4d9",
+          "status": "stopped",
+          "outcome": "success",
+          "commit": "c75981458593124b903b06a431076a72547bfb44",
+          "source": "push_event"
+        }
+      ],
+      "version": "c818ed0d-03ae-4cf2-83d2-8d59491c6b99",
+      "deployedAt": "2026-11-17T03:12:13.209792Z",
+      "deploymentId": "5ade2411-24a0-4dcb-8718-d3ce918f0e5f"
+    },
+    {
+      "name": "spontra-admin",
+      "version": "4e7fe78b-624c-4382-87f5-a40090bb3289",
+      "deployedAt": "2026-11-17T03:11:56.350102Z",
+      "deploymentId": "fcf836b8-857e-4912-8555-760398cdec20"
+    }
+  ],
+  "counts": [
+    [
+      {
+        "tagCount": 12
+      }
+    ],
+    [
+      {
+        "versionCount": 2,
+        "relationshipCount": 1
+      }
+    ],
+    [
+      {
+        "cache_key": "research-shadow:shadow-CRWV-0001769628-26-000465-ba1bd0e7-9568-471a-88c8-719aa8567235",
+        "callsReserved": 140,
+        "maxCalls": 140
+      },
+      {
+        "cache_key": "research-shadow:shadow-CRWV-0001769628-26-000465-cf45e286-1c61-4bc7-8534-302fb92716d2",
+        "callsReserved": 40,
+        "maxCalls": 40
+      }
+    ]
+  ],
+  "checkedAt": "2026-11-17T03:16:58.551135+00:00",
+  "production": true,
+  "realModelCalls": 0,
+  "generatedNBIS": false,
+  "remoteMainConfirmed": "c75981458593124b903b06a431076a72547bfb44",
+  "validation": {
+    "isolatedExactPatchFullCheck": "passed",
+    "analysisTypes": "passed",
+    "tagJourneyChecks": 54,
+    "analysisDryRun": "passed",
+    "lintErrors": 9,
+    "lintWarnings": 5,
+    "changedLintFindings": 0,
+    "initialJourneyFailure": "isolated checkout lacked ignored generated PDF source; ran existing analysis:prepare, then all54 passed"
+  },
+  "binding": {
+    "exposureId": "crwv-ai-cloud-business",
+    "baseVersion": "a4c25679111f23340fc7b18fc6f77a3703ab467369f27e6f17b99c2868bfd119",
+    "newVersion": "1ae9a306d3a2f40596685442d2956e312625b4c99ed153de9d92c80b39f5551a",
+    "tagId": "t148322cda647d919adb8193c",
+    "fingerprint": "dfba1017990e141dd4dbc0fc312fb6d2d58f9177d77afd5b2cf8fe0a1a9e7a69",
+    "sourceCount": 3,
+    "weight": null,
+    "createdTag": false,
+    "createdRelationship": false,
+    "preservedOldImmutableVersion": true
+  },
+  "context": {
+    "currentMappingVersions": [
+      "crwv-ai-cloud-business:1ae9a306d3a2f40596685442d2956e312625b4c99ed153de9d92c80b39f5551a"
+    ],
+    "historicalAsOf": "2026-11-17T02:21:44.721Z",
+    "historicalMappingVersions": [
+      "crwv-ai-cloud-business:a4c25679111f23340fc7b18fc6f77a3703ab467369f27e6f17b99c2868bfd119"
+    ],
+    "bothHaveMacroAndIndustry": true,
+    "gaps": []
+  },
+  "failedShadowCheckpointUnchanged": true,
+  "checkpointHash": "81033bf9ff85da0bd3dfba3e6154083f7bdda60b6580789844957a4b5e6710ba",
+  "browser": {
+    "url": "https://spontra-business-map.max-zhangyuchen.workers.dev/companies/CRWV?report=0001769628-26-000465&lang=en",
+    "artifactHash": "74e07b8a521f5084c84b920ef82bf442ad993c945e4d9e35d9499098cb0a0179",
+    "viewports": [
+      {
+        "viewport": [
+          1440,
+          900
+        ],
+        "checks": {
+          "correctArtifactHash": true,
+          "noFrameHorizontalOverflow": true,
+          "noPageHorizontalOverflow": true,
+          "reachesEndByWheel": true,
+          "railFixed": true,
+          "returnsToTopByWheel": true,
+          "noRuntimeErrors": true
+        },
+        "error": null,
+        "errors": []
+      },
+      {
+        "viewport": [
+          768,
+          1024
+        ],
+        "checks": {
+          "correctArtifactHash": true,
+          "noFrameHorizontalOverflow": true,
+          "noPageHorizontalOverflow": true,
+          "reachesEndByWheel": true,
+          "railFixed": null,
+          "returnsToTopByWheel": true,
+          "noRuntimeErrors": true
+        },
+        "error": null,
+        "errors": []
+      },
+      {
+        "viewport": [
+          390,
+          844
+        ],
+        "checks": {
+          "correctArtifactHash": true,
+          "noFrameHorizontalOverflow": true,
+          "noPageHorizontalOverflow": true,
+          "reachesEndByWheel": true,
+          "railFixed": null,
+          "returnsToTopByWheel": true,
+          "noRuntimeErrors": true
+        },
+        "error": null,
+        "errors": []
+      }
+    ]
+  },
+  "limits": [
+    "Production negative tag revocation tests were not performed; covered in local54-item journey.",
+    "Mobile sidebar is collapsed, fixed position is not measured as a desktop rail.",
+    "Browser/curl ignore managed proxy TLS errors; TLS certificate validation is not claimed.",
+    "This release does not validate or publish the new CRWV report."
+  ],
+  "industryBrowserRegression": {
+    "version": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d",
+    "checkedAt": "2026-11-17T03:17:42.786Z",
+    "viewports": [
+      {
+        "viewport": [
+          1440,
+          900
+        ],
+        "checks": {
+          "homeHasIndustryAndFullReadCue": true,
+          "full27ClaimsAnd19Sources": true,
+          "limitedCoverageVisible": true,
+          "summaryAndVersionInitiallyCollapsed": true,
+          "bodyStartsInViewport": true,
+          "wheelReachesEnd": true,
+          "railFixed": true,
+          "wheelReturnsToTop": true,
+          "sourceJumpOpensEvidence": true,
+          "reloadRetainsExactVersion": true,
+          "noHorizontalOverflow": true,
+          "noRuntimeErrors": true,
+          "industryIndexHasPublishedVersion": true
+        },
+        "error": null,
+        "errors": []
+      },
+      {
+        "viewport": [
+          390,
+          844
+        ],
+        "checks": {
+          "homeHasIndustryAndFullReadCue": true,
+          "full27ClaimsAnd19Sources": true,
+          "limitedCoverageVisible": true,
+          "summaryAndVersionInitiallyCollapsed": true,
+          "bodyStartsInViewport": true,
+          "wheelReachesEnd": true,
+          "railFixed": true,
+          "wheelReturnsToTop": true,
+          "sourceJumpOpensEvidence": true,
+          "reloadRetainsExactVersion": true,
+          "noHorizontalOverflow": true,
+          "noRuntimeErrors": true,
+          "industryIndexHasPublishedVersion": true
+        },
+        "error": null,
+        "errors": []
+      }
+    ]
+  }
+}

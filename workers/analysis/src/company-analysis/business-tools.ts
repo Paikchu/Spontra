@@ -58,7 +58,7 @@ export function createBusinessResearchTools(input: {
         FROM sec_filing_summaries s
         JOIN sec_filing_periods m ON m.filing_id = s.accession_number AND m.role = 'primary'
         JOIN sec_periods p ON p.period_id = m.period_id AND p.ticker = s.ticker
-        WHERE s.ticker = ? AND p.end_date <= ? AND json_extract(s.payload, '$.generatedBy') = 'pi' AND length(json_extract(s.payload, '$.report')) > 0
+        WHERE s.ticker = ? AND p.end_date <= ? AND json_extract(s.payload, '$.generatedBy') IN ('pi','operator') AND length(json_extract(s.payload, '$.report')) > 0
         ORDER BY p.end_date DESC, s.generated_at DESC LIMIT 16
       `).bind(input.ticker, input.reportDate).all<AvailableSecReport>();
       const rows = await input.database.prepare(`

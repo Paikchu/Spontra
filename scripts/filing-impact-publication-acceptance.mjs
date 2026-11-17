@@ -12,7 +12,7 @@ registerHooks({ resolve(specifier, context, next) {
 }, load(url, context, next) {
   if (url === "local:cloudflare-workers") return { format: "module", source: "export class DurableObject {} export class WorkerEntrypoint {} export class WorkflowEntrypoint {}", shortCircuit: true };
   // Rendering is independently exercised by Chromium; this synthetic pass fixture closes the producer's rendering boundary.
-  if (url.endsWith("/artifact/qa.ts")) return { format: "module", source: "export const visualPasses=()=>true; export const reviewRendering=async()=>({scores:null,issues:[],shots:[],covered:{},errors:[]});", shortCircuit: true };
+  if (url.endsWith("/artifact/qa.ts")) return { format: "module", source: "export const VIEWPORTS=[]; export const visualPasses=()=>true; export const reviewRendering=async()=>({scores:null,issues:[],shots:[],covered:{},errors:[]});", shortCircuit: true };
   if (/\.(css|txt|html)(\?raw)?$/.test(url)) return { format: "module", source: `export default ${JSON.stringify(readFileSync(new URL(url), "utf8"))}`, shortCircuit: true };
   return next(url, context);
 } });

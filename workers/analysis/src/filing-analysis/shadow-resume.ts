@@ -30,7 +30,7 @@ const uuidSchema = z.string().uuid();
 const resumeStateSchema = z.object({ composer: z.object({ artifact: z.object({ kind: z.literal("filing-report"), ticker: z.string(), subject: z.string() }).passthrough(), blocks: z.array(z.unknown()), phase: z.enum(["compose", "content", "render"]), published: z.null() }).passthrough() }).passthrough();
 
 /** This GET path never writes an archive, reads report(), opens Pi, or collects fresh material. */
-async function endedCheckpoint(env: AnalysisEnv, run: ShadowRun) {
+export async function endedCheckpoint(env: AnalysisEnv, run: ShadowRun) {
   if (!Number.isSafeInteger(run.callsReserved) || !Number.isSafeInteger(run.maxCalls) || run.callsReserved < 0 || run.callsReserved > run.maxCalls) throw new Error("Invalid parent shadow budget ledger");
   if (run.spec.shadow !== true || run.spec.sessionId !== run.runId || run.spec.jobId !== run.runId || run.spec.ticker !== run.ticker || run.spec.filing.ticker !== run.ticker || run.spec.material.ticker !== run.ticker || run.spec.filing.accessionNumber !== run.accession || run.spec.material.accession !== run.accession) throw new Error("Admitted shadow identity mismatch");
   if (await env.SEC_FILINGS.get(`research-shadow/${run.runId}/validated.json`)) throw new Error("A validated shadow cannot be resumed");
@@ -92,6 +92,7 @@ export async function handleShadowRecovery(request: Request, env: AnalysisEnv, r
   try { raw = await request.json(); } catch { return reply({ error: "Invalid continuation JSON" }, 400); }
   const options = optionsSchema.safeParse(raw);
   if (!options.success) return reply({ error: "Continuation requires the exact expectedCheckpointHash, a non-empty reason and an optional boolean includePublishedIndustry" }, 400);
+  if(run.spec.operatorCompletion||await repository.getCache(`${shadowKey(run.runId)}:operator-completion`))return reply({error:"An external operator operation cannot start or bypass another continuation"},409);
   if (run.parentRunId || run.spec.mode === "resume") return reply({ error: "A continuation child cannot be resumed again" }, 409);
   const existing = (await repository.getCache<ResumeReceipt>(claimKey(run.runId)))?.payload;
   if (existing) return replay(existing, requestId.data, options.data);
@@ -119,7 +120,7 @@ export async function handleShadowRecovery(request: Request, env: AnalysisEnv, r
   try {
     // The parent-specific primary key claims the sole child. A competing request aborts the entire D1 batch.
     const claimed = await env.DB!.batch([
-      env.DB!.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?)").bind(claimKey(run.runId), JSON.stringify(receipt), now, shadowKey(run.runId), JSON.stringify(run)),
+      env.DB!.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND payload=?) AND NOT EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=?)").bind(claimKey(run.runId), JSON.stringify(receipt), now, shadowKey(run.runId), JSON.stringify(run), `${shadowKey(run.runId)}:operator-completion`),
       env.DB!.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload,'$.requestId')=?)").bind(shadowKey(runId), JSON.stringify(child), now, claimKey(run.runId), requestId.data),
     ]);
     if (!claimed[0]!.meta.changes) return reply({ error: "The parent shadow metadata changed before the continuation claim" }, 409);

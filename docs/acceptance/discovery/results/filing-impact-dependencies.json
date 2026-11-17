@@ -1,0 +1,90 @@
+{
+  "at": "2026-11-17T03:31:46.284Z",
+  "scope": "Actual local filingLoader/read/compute/record/finish/onShadow and immutable sidecar, synthetic typed material only; cached complete synthetic semantic verdict and render boundary fixture",
+  "modelCalls": 0,
+  "networkCalls": 0,
+  "productionWrites": 0,
+  "checks": [
+    {
+      "name": "actual producer computes nested mixed-scale dependency in base dollars",
+      "status": "pass"
+    },
+    {
+      "name": "semantic request includes all reachable computations and original typed fact after JSON restore",
+      "status": "pass"
+    },
+    {
+      "name": "semantic request excludes abandoned arithmetic and old no-contract impact",
+      "status": "pass"
+    },
+    {
+      "name": "actual finish rejects missing nested dependency before semantic or sidecar publication",
+      "status": "pass",
+      "detail": "Not published: Recompute c2: c1 has no typed original source in the pinned materials"
+    },
+    {
+      "name": "actual finish rejects tampered nested value before semantic or sidecar publication",
+      "status": "pass",
+      "detail": "Not published: Recompute c1: saved 82 USDmillions differs from typed source replay 878.64 USDmillions; the stored calculation is unchanged"
+    },
+    {
+      "name": "actual finish rejects cyclic nested dependency before semantic or sidecar publication",
+      "status": "pass",
+      "detail": "Not published: Recompute c3: cyclic calculation dependency"
+    },
+    {
+      "name": "actual loader finish creates validated shadow using cached synthetic complete receipt",
+      "status": "pass",
+      "detail": "Validated shadow version 2; public report unchanged."
+    },
+    {
+      "name": "sidecar exports every transitive generic computation",
+      "status": "pass",
+      "detail": {
+        "expected": [
+          "c1",
+          "c2",
+          "c3"
+        ],
+        "actual": [
+          "c3",
+          "c2",
+          "c1"
+        ]
+      }
+    },
+    {
+      "name": "sidecar includes original source value units period and URL",
+      "status": "pass"
+    },
+    {
+      "name": "sidecar raw input and base-normalized intermediate receipt remain restorable",
+      "status": "pass"
+    },
+    {
+      "name": "unreachable arithmetic impact and their unrelated facts are not exported",
+      "status": "pass"
+    },
+    {
+      "name": "shadow retains abandoned history without endorsing it",
+      "status": "pass"
+    },
+    {
+      "name": "JSON-restored exact work replays byte-stable immutable sidecar",
+      "status": "pass"
+    },
+    {
+      "name": "nested financial arithmetic does not invent event price or a target",
+      "status": "pass"
+    },
+    {
+      "name": "no network model or production operations",
+      "status": "pass"
+    }
+  ],
+  "notCovered": [
+    "No real model or human semantic/financial review",
+    "No production report generation or publication",
+    "No browser rendering; this journey checks the persisted data contract"
+  ]
+}

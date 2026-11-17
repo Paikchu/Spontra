@@ -1,0 +1,310 @@
+{
+  "at": "2026-11-17T03:37:00.627Z",
+  "scope": "Actual filing tools, chain/chart, finish and full semantic-request construction; real local Miniflare D1/R2 published recheck and pinned-history resume; synthetic sources plus optional previously saved local original fact projections",
+  "checks": [
+    {
+      "name": "Q3 3661 million times24% produces878640000 base USD",
+      "status": "passed",
+      "detail": 878640000
+    },
+    {
+      "name": "Q3 3661 million times30% produces1098300000 base USD",
+      "status": "passed",
+      "detail": 1098300000
+    },
+    {
+      "name": "explicit output USDmillions produces878.64",
+      "status": "passed",
+      "detail": 878.64
+    },
+    {
+      "name": "receipt retains raw/effective units and immutable material identity",
+      "status": "passed"
+    },
+    {
+      "name": "percent source24 is normalized once as decimal ratio",
+      "status": "passed"
+    },
+    {
+      "name": "revenue ratio and conventional outer times100 percent agree without double conversion",
+      "status": "passed",
+      "detail": {
+        "ratio": 0.7075559701492538,
+        "percent": 70.75559701492537
+      }
+    },
+    {
+      "name": "an existing percent fact retains24 percent",
+      "status": "passed"
+    },
+    {
+      "name": "arbitrary scalar times100 cannot masquerade as percent formatting",
+      "status": "passed"
+    },
+    {
+      "name": "money times100 cannot masquerade as a percentage",
+      "status": "passed"
+    },
+    {
+      "name": "intermediate percent formatting is rejected as ambiguous",
+      "status": "passed"
+    },
+    {
+      "name": "compatible mixed monetary scales add in base units",
+      "status": "passed"
+    },
+    {
+      "name": "incompatible currencies cannot be added or divided into a ratio",
+      "status": "passed"
+    },
+    {
+      "name": "money plus shares is rejected",
+      "status": "passed"
+    },
+    {
+      "name": "unknown units cannot be repaired by an assumption or a label",
+      "status": "passed"
+    },
+    {
+      "name": "numeric literals do not establish a monetary unit",
+      "status": "passed"
+    },
+    {
+      "name": "million shares become individual shares",
+      "status": "passed"
+    },
+    {
+      "name": "compatible currency-per-share dimension is calculated",
+      "status": "passed"
+    },
+    {
+      "name": "scaled computed dependency is normalized before successor arithmetic",
+      "status": "passed"
+    },
+    {
+      "name": "chart normalizes declared millions and base dollar result to same base unit",
+      "status": "passed"
+    },
+    {
+      "name": "typed receipt survives JSON/session state restoration",
+      "status": "passed"
+    },
+    {
+      "name": "restored provenance tampering cannot be laundered through a new calculation",
+      "status": "passed"
+    },
+    {
+      "name": "JSON-restored cached fact cannot mix16400 with frozen million units in impact",
+      "status": "passed",
+      "detail": "Not accepted: debts.0.principal=16400000000 USD does not match a registered figure with compatible units. Source figures: [{\"value\":3661,\"unit\":\"USDmillions\"}]. Convert the typed source scale (e.g. 16400 USD millions = 16400000000 USD; 50bp = 0.005 ratio), or read a typed source and justify a genuine sensitivity assumption."
+    },
+    {
+      "name": "restored impact accepts only frozen value and unit pair",
+      "status": "passed",
+      "detail": "{\"id\":\"impact1\",\"calculatorVersion\":\"impact.calc.v1\",\"status\":\"calculated\",\"quantificationBasis\":\"sensitivity_only\",\"currency\":\"USD\",\"values\":{\"pretaxInterestChange\":18305000},\"formulas\":{\"pretaxInterestChange\":\"Σ(repricing principal × rate change × actual repricing years); fixed-rate existing coupons unchanged\"},\"missingInputs\":[],\"limitations\":[\"Sensitivity only: one or more inputs are assumed or derived from a sensitivity. Do not present this calculation as an observed event effect.\",\"Rate change is an assumption unless supported by a reset/refinancing contract. No EPS or share-price effect without tax, shares and a valuation model.\"],\"provenance\":{\"unitContract\":\"impact-base-units.v1\",\"calculation\":{\"kind\":\"interest\",\"currency\":\"USD\",\"debts\":[{\"principal\":3661000000,\"rateType\":\"floating\",\"rateChange\":0.005,\"repricingYears\":1}]},\"inputs\":[{\"path\":\"debts.0.principal\",\"sourceId\":\"f00000000000001\",\"basis\":\"fact\",\"rationale\":\"Use the frozen source value and scale\",\"unit\":\"USD\"},{\"path\":\"debts.0.rateChange\",\"sourceId\":\"source-block\",\"basis\":\"assumption\",\"rationale\":\"Synthetic static rate shock only\",\"unit\":\"ratio\"},{\"path\":\"debts.0.repricingYears\",\"sourceId\":\"source-block\",\"basis\":\"assumption\",\"rationale\":\"Synthetic static period only\",\"unit\":\"years\"}]}}"
+    },
+    {
+      "name": "frozen source validation does not silently rewrite restored cache",
+      "status": "passed"
+    },
+    {
+      "name": "actual old c1 ratio times literal3661 cannot become USD by its label",
+      "status": "passed"
+    },
+    {
+      "name": "actual old c2 same source-unit defect is rejected",
+      "status": "passed"
+    },
+    {
+      "name": "legacy million-scaled source with wrong USD output is rejected",
+      "status": "passed"
+    },
+    {
+      "name": "zero-valued successor cannot conceal invalid dependency",
+      "status": "passed"
+    },
+    {
+      "name": "correct legacy result is replayed without model or rereading source text",
+      "status": "passed"
+    },
+    {
+      "name": "legacy revalidation adds only a receipt and preserves prior values formula inputs and unit",
+      "status": "passed"
+    },
+    {
+      "name": "failed legacy calculations remain byte-identical",
+      "status": "passed"
+    },
+    {
+      "name": "bad legacy computed cannot enter a structured investment chain",
+      "status": "passed"
+    },
+    {
+      "name": "assumption declaration cannot launder bad c through specialized impact calculator",
+      "status": "passed"
+    },
+    {
+      "name": "chart refuses bad legacy result",
+      "status": "passed"
+    },
+    {
+      "name": "HTML data-ref participates even when block sources omit computation",
+      "status": "passed"
+    },
+    {
+      "name": "used chart lineage cannot bypass saved calculation replay",
+      "status": "passed"
+    },
+    {
+      "name": "active chain checks all transitive computed dependencies",
+      "status": "passed"
+    },
+    {
+      "name": "unused invalid computations remain preserved without blocking a valid active result",
+      "status": "passed"
+    },
+    {
+      "name": "mathematically replayable USD cannot silently support million-dollar HTML",
+      "status": "passed"
+    },
+    {
+      "name": "base-dollar computation requires matching value attribute or explicit conversion unit",
+      "status": "passed"
+    },
+    {
+      "name": "active HTML rejects explicit EUR display of a USD computation",
+      "status": "passed"
+    },
+    {
+      "name": "active HTML accepts monetary per-share display as USD/share",
+      "status": "passed"
+    },
+    {
+      "name": "active HTML preserves accounting parentheses for a negative amount",
+      "status": "passed"
+    },
+    {
+      "name": "same fact ID from conflicting material or unit cannot be silently overwritten",
+      "status": "passed"
+    },
+    {
+      "name": "actual filing finish rejects bad legacy c2 before any semantic model request",
+      "status": "passed"
+    },
+    {
+      "name": "finish rejection survives full session JSON restore",
+      "status": "passed"
+    },
+    {
+      "name": "real complete semantic request receives raw/effective provenance and original typed fact",
+      "status": "passed"
+    },
+    {
+      "name": "actual local D1/R2 recheck handles a new typed published calculation",
+      "status": "passed",
+      "detail": {
+        "version": 1,
+        "checked": 1,
+        "holds": 1,
+        "differs": 0,
+        "unreadable": 0,
+        "items": [
+          {
+            "block": "summary",
+            "kind": "figure",
+            "ref": "c1",
+            "shown": "$878.6m",
+            "status": "holds"
+          }
+        ]
+      }
+    },
+    {
+      "name": "typed recheck rejects saved provenance tampering",
+      "status": "passed",
+      "detail": {
+        "version": 1,
+        "checked": 1,
+        "holds": 0,
+        "differs": 0,
+        "unreadable": 1,
+        "items": [
+          {
+            "block": "summary",
+            "kind": "figure",
+            "ref": "c1",
+            "shown": "$878.6m",
+            "status": "unreadable",
+            "reason": "the source cannot be read back"
+          }
+        ]
+      }
+    },
+    {
+      "name": "old published no-contract recheck keeps its original numeric behavior",
+      "status": "passed"
+    },
+    {
+      "name": "real loader preloads only pinned historical index and revalidates correct legacy without model reread",
+      "status": "passed",
+      "detail": "Not published: Record a supported investment impact chain before publishing."
+    },
+    {
+      "name": "original resume checkpoint remains byte-identical after replay",
+      "status": "passed"
+    },
+    {
+      "name": "local recheck writes only audit receipts and leaves public version pointer intact",
+      "status": "passed"
+    },
+    {
+      "name": "actual original saved c1/c2 cannot establish dollars from ratio times bare3661",
+      "status": "passed"
+    },
+    {
+      "name": "actual fixed Q3 base-dollar revenue and ratio facts produce exact base outputs",
+      "status": "passed"
+    },
+    {
+      "name": "actual fixed Q3 and Q2 typed RPO facts produce28600000000USD without literals",
+      "status": "passed"
+    },
+    {
+      "name": "actual saved parent file remains byte-identical after cloned producer replay",
+      "status": "passed"
+    },
+    {
+      "name": "no model/network/production mutation or forbidden producer writes",
+      "status": "passed",
+      "detail": {
+        "networkCalls": 0,
+        "modelCalls": 0,
+        "forbiddenWrites": 0
+      }
+    }
+  ],
+  "pinnedEvidence": {
+    "parentCheckpointHash": "9b9b9bc4d83c018ad643f868227cc428077a4213608765386aad4ebc04a080ae",
+    "primary": {
+      "ticker": "CRWV",
+      "accession": "0001769628-26-000465",
+      "version": "4db95988822606ac9c7a94de4b8c1ac023db6c6ad4f6a156e93c65635059870a"
+    },
+    "prior": {
+      "ticker": "CRWV",
+      "accession": "0001769628-26-000366",
+      "version": "fea509d0b38917ba7bee1bfadd87041a9c59441d39deee1314ae62dfb28f68db"
+    },
+    "customerA": 878640000,
+    "customerB": 1098300000,
+    "rpoChange": 28600000000,
+    "scope": "Previously saved local immutable source metadata projections; cloned producer state only. No production read, report generation or full semantic sign-off."
+  },
+  "modelCalls": 0,
+  "networkCalls": 0,
+  "productionWrites": 0,
+  "notCovered": [
+    "No production calls, budget changes, company generation, publication or monetary spending",
+    "No independent real-model semantic verdict; arithmetic receipts do not establish financial period, economic meaning or approximate source precision"
+  ]
+}

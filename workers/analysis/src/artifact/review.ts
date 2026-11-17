@@ -19,6 +19,8 @@ Return JSON {"issues":[{"quote":"the exact words from the block that are wrong",
 
 /** What a review sees beyond the block's own sources (docs/filing-analysis-optimization.md §4.1). */
 export type ReviewContext = {
+  /** A staged operator review cannot interpret a malformed provider response as no issues. */
+  requireComplete?: boolean;
   /** Figures and quotations of the document's other blocks, each already checked against its source at the write. */
   established?: string[];
   /** The keys of the block's sentences an earlier review let stand; only the others are judged. */
@@ -72,6 +74,7 @@ export async function reviewBlock(env: AnalysisEnv, block: ArtifactBlock, read: 
   }
   const answer = await callWorkerSecModel(env, fetch, `artifact-review-${block.id}`, REVIEW_SYSTEM, { block: { id: block.id, title: block.title, sentences }, sources, established, found },
     modelFor(env, "artifact-review"), 5 * 60_000, { reasoning: reasoningFor(env, "artifact-review"), maxTokens: REVIEW_TOKENS, ...ledger, kind: "artifact-review" });
+  if(context.requireComplete&&(!Array.isArray(answer.issues)||answer.issues.some(raw=>!raw||typeof raw!=="object"||typeof(raw as Record<string,unknown>).problem!=="string"||!String((raw as Record<string,unknown>).problem).trim()||!["major","minor"].includes(String((raw as Record<string,unknown>).severity)))))throw new JudgeUnavailable("The independent block review did not return a complete issues result");
   const issues = Array.isArray(answer.issues) ? answer.issues : [];
   return issues.flatMap((raw): TrackedIssue[] => {
     const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};

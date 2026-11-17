@@ -42,7 +42,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "reports") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (route === "" || /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:runs\/[A-Za-z0-9_-]{1,160}|shadow\/[A-Za-z0-9_-]{1,160}(?:\/checkpoint)?)$/.test(route));
-    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck|shadow|shadow\/[A-Za-z0-9_-]{1,160}\/(?:promote|stop|resume))$/.test(route);
+    const write = request.method === "POST" && /^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:regenerate|revise|recheck|shadow|shadow\/[A-Za-z0-9_-]{1,160}\/(?:promote|stop|resume|operator-complete))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "financials") {
@@ -59,7 +59,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   // A stopped industry's externally completed draft retains the full, audited original source excerpts.
   const operatorCompletion = path[0] === "public-research" && /^reports\/[A-Za-z0-9._:-]{1,128}\/operator-complete$/.test(path.slice(1).join("/"));
   const reconciliation=path[0] === "library" && /^materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/reconcile-source$/.test(path.slice(1).join("/"));
-  const maxBody = operatorCompletion ? 262144 : revision || reconciliation ? 131072 : path[0] === "public-research" || (path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/"))) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
+  const filingOperator=path[0]==="reports"&&/^[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/shadow\/[A-Za-z0-9_-]{1,160}\/operator-complete$/.test(path.slice(1).join("/"));
+  const maxBody = operatorCompletion ? 262144 : revision || reconciliation || filingOperator ? 131072 : path[0] === "public-research" || (path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/"))) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > maxBody) return json({ error: "请求过大" }, 413);
   try {
     const binding = asServiceBinding(env.SPONTRA_ANALYSIS);

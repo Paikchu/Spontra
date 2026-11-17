@@ -1,5 +1,6 @@
 import { publicClaimUsable } from "../../../../shared/analysis-runtime/public-research.ts";
 import type { FrozenCompanyResearch, ResearchDependency } from "../../../../shared/analysis-contract/public-research.ts";
+import type { ArtifactResearchContext } from "../../../../shared/analysis-contract/artifact.ts";
 import { registerSource, type ComposerState } from "../artifact/document.ts";
 import { handTool } from "../pi/hand-tools.ts";
 import type { AnyTool } from "../tools/registry.ts";
@@ -8,13 +9,33 @@ export type ResearchUse = ResearchDependency & { decision: "adopted" | "rejected
 export type ResearchContextState = { composer: ComposerState; publicResearchRead?: boolean; publicClaimsRead?: string[]; researchUses?: ResearchUse[] };
 export const PUBLIC_RESEARCH_GUIDE = `Call read_public_research to inspect the frozen macro and industry context. It is a versioned background input, not a company fact. For every frozen report, read a relevant claim and record at least one adopted, rejected or not_applicable decision with a concrete company-specific reason using record_public_research_use; reading the index alone is insufficient. Record each claim you use with a company-specific exposure source and a financial variable. You do not have to adopt any claim or assess every claim in a report. Missing or stale coverage is a concrete gap, never permission to substitute the nearest industry. Do not infer weights without evidence. Do not apply the same underlying shock twice through macro and industry layers. Public facts and company disclosures can disagree: preserve that conflict. All public versions remain frozen for this task; later updates require a new result version.`;
 
+export const isPublicResearchSourceId = (id: string): boolean => /^public\d+c\d+$/.test(id);
+type PublicSourceBinding = { source?: { url: string | null } | null; researchContext?: Pick<ArtifactResearchContext, "reports"> };
+/** Reconstruct only the task's frozen ordinal/claim. A stored citation must still name that exact report version. */
+export function frozenPublicResearchSource(context: FrozenCompanyResearch | undefined, id: string, binding?: PublicSourceBinding): { title: string; text: string } | null {
+  const match = /^public([1-9]\d*)c([1-9]\d*)$/.exec(id);
+  if (!match) return null;
+  const reportIndex = Number(match[1]) - 1, claimIndex = Number(match[2]) - 1;
+  const report = context?.reports[reportIndex]?.report, claim = report?.claims[claimIndex];
+  if (!report || !claim) return null;
+  if (binding) {
+    const recorded = binding.researchContext?.reports[reportIndex];
+    if (!binding.source || recorded?.reportId !== report.reportId || recorded.version !== report.version) return null;
+    if (binding.source.url !== null) {
+      try {
+        const url = new URL(binding.source.url);
+        if (!url.pathname.endsWith(`/research/${encodeURIComponent(report.reportId)}`) || url.searchParams.get("version") !== report.version || url.hash !== `#claim-${encodeURIComponent(claim.id)}`) return null;
+      } catch { return null; }
+    }
+  }
+  return { title: `${report.title}: ${claim.title}`, text: JSON.stringify({ reportId: report.reportId, version: report.version, asOf: report.asOf, claim, sources: report.sources.filter(source => claim.sourceIds.includes(source.id)), observations: report.observations.filter(observation => claim.observationIds.includes(observation.id)) }) };
+}
+
 export function publicResearchTools<S extends ResearchContextState>(context: FrozenCompanyResearch | undefined, origin?: string): {
   tools: AnyTool<S>[]; read(id: string): { title: string; text: string } | null; precheck(state: S): string | null;
 } {
-  const textById = new Map<string, { title: string; text: string }>();
-  context?.reports.forEach(({ report }, i) => report.claims.forEach((claim, j) => textById.set(`public${i + 1}c${j + 1}`, { title: `${report.title}: ${claim.title}`, text: JSON.stringify({ reportId: report.reportId, version: report.version, asOf: report.asOf, claim, sources: report.sources.filter(source => claim.sourceIds.includes(source.id)), observations: report.observations.filter(observation => claim.observationIds.includes(observation.id)) }) })));
   return {
-    read: id => textById.get(id) ?? null,
+    read: id => frozenPublicResearchSource(context, id),
     precheck: state => {
       if (context && !state.publicResearchRead) return "Read the frozen public research and explicitly acknowledge its coverage gaps before publishing.";
       for (const [i, item] of (context?.reports ?? []).entries()) {

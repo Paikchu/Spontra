@@ -1,7 +1,8 @@
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
 import { impactResultValues, impactUnitIssue, isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
-import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
+import { arithmeticUnit, arithmeticValueInUnit, calculateTyped, computedDisplayIssue, type ArithmeticInput } from "../../../../shared/analysis-runtime/computed-units.ts";
+import { quoteInText, parseHtml, nodeText, type HtmlNode } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { ValueUnit } from "../../../../shared/analysis-runtime/findings.ts";
@@ -15,8 +16,9 @@ import { handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { registerSource, type ComposerState } from "../artifact/document.ts";
-import { computedText, evaluate, factLine, factSourceText, namesIn, type Computed, type StoredFact, type FactQuery } from "./facts.ts";
+import { computedText, factLine, factSourceText, namesIn, replayComputed, type Computed, type StoredFact, type FactQuery } from "./facts.ts";
 import { excerpts, transcripts } from "./research.ts";
+import { sha256 } from "../sha256.ts";
 
 export type Evidence = { id: string; section: string; ordinal: number; statement: string; quote: string; facts: string[]; origin: "session" };
 export type Lead = { id: string; source: "session"; priority: "high" | "normal"; question: string; why: string; refs: string[];
@@ -43,7 +45,7 @@ const str = (v: unknown) => typeof v === "string" ? v.trim() : typeof v === "num
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const strings = { type: "array", items: { type: "string" } };
 
-export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
+export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; priorSnapshots?: MaterialSnapshot[]; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
   tools: AnyTool<S>[]; resolve(id: string, state: S): Promise<boolean>;
   figure(id: string, state: S): Promise<number[] | null>;
   read(id: string, state: S): { title: string; text: string } | null;
@@ -54,13 +56,26 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   const accession = filing.accessionNumber;
   const p = (state: S) => state.periodic ??= openPeriodic();
   const snapshots = new Map<string, MaterialSnapshot>();
-  const indexedFacts = new Map<string, StoredFact & { form: string; filedAt: string }>();
+  const indexedFacts = new Map<string, StoredFact & { form: string; filedAt: string; material: MaterialRef; original: MaterialSnapshot["facts"][number] }>();
   const addSnapshot = (material: MaterialSnapshot) => {
     snapshots.set(material.ref.accession, material);
     const documentOf = new Map(material.blocks.map(block => [block.id, block.documentId]));
-    for (const fact of material.facts) indexedFacts.set(fact.factId, { ...fact, documentId: documentOf.get(fact.passageId) ?? "", form: material.filing.form, filedAt: material.filing.filedAt });
+    for (const fact of material.facts) {
+      const previous = indexedFacts.get(fact.factId);
+      if (previous) {
+        if (JSON.stringify(previous.material) !== JSON.stringify(material.ref) || JSON.stringify(previous.original) !== JSON.stringify(fact)) throw new Error(`Conflicting pinned fact ${fact.factId}: source material or typed metadata differs; cannot choose a unit by overwrite`);
+        continue;
+      }
+      indexedFacts.set(fact.factId, { ...fact, documentId: documentOf.get(fact.passageId) ?? "", form: material.filing.form, filedAt: material.filing.filedAt, material: material.ref, original: fact });
+    }
   };
+  for (const material of deps.priorSnapshots ?? []) addSnapshot(material);
   addSnapshot(snapshot);
+  const typedFact = (id: string): ArithmeticInput | null => {
+    const fact = indexedFacts.get(id);
+    return fact ? { value: fact.value, unit: fact.unit, kind: "fact", material: fact.material } : null;
+  };
+  const checkedComputed = (id: string, state: S) => replayComputed(id, p(state).computed, typedFact);
   const restore = async (state: S) => {
     for (const ref of p(state).materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
   };
@@ -103,7 +118,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   };
   const resolve = async (id: string, state: S): Promise<boolean> => {
     const s = p(state);
-    if (s.facts[id] !== undefined || s.texts[id] !== undefined || s.computed[id] !== undefined) return true;
+    if (s.computed[id] !== undefined) { checkedComputed(id, state); return true; }
+    if (s.facts[id] !== undefined || s.texts[id] !== undefined) return true;
     for (const ref of s.materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
     for (const material of snapshots.values()) {
       const found = await sourceText(deps.env, material, id);
@@ -118,7 +134,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   };
   const valueOf = async (name: string, state: S): Promise<number | undefined> => {
     const s = p(state);
-    if (s.computed[name]) return s.computed[name]!.value;
+    if (s.computed[name]) return checkedComputed(name, state).value;
     if (s.facts[name]) return s.facts[name]!.value;
     if (!await resolve(name, state)) return undefined;
     return p(state).facts[name]?.value;
@@ -131,16 +147,51 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     return null;
   };
   const leadLine = (l: Lead) => `${l.id} [${l.priority}, ${l.source}${l.verdict ? `, ${l.verdict}` : ", not closed"}] ${l.question}${l.finding ? ` → ${l.finding}` : ""}`;
+  const computationIssue = (state: S, refs: Iterable<string>) => {
+    const s = p(state), seen = new Set<string>();
+    const check = (id: string) => {
+      if (seen.has(id)) return; seen.add(id);
+      if (s.computed[id]) checkedComputed(id, state);
+      for (const input of s.impactComputations?.[id]?.provenance?.inputs ?? []) check(input.sourceId);
+    };
+    try { for (const id of refs) check(id); return null; }
+    catch (error) { return error instanceof Error ? error.message : String(error); }
+  };
+  const activeRefs = (state: S) => {
+    const refs = new Set((p(state).investmentChains ?? []).flatMap(chain => [...chain.computationRefs ?? [], ...chain.sourceIds ?? []]));
+    const charts = new Set<string>();
+    for (const block of state.composer.blocks) {
+      for (const id of block.sources) refs.add(id);
+      for (const match of block.html.matchAll(/data-(ref|source|chart)=["']([^"']+)["']/g)) (match[1] === "chart" ? charts : refs).add(match[2]!);
+    }
+    for (const chart of charts) for (const id of p(state).chartRefs?.[chart] ?? []) refs.add(id);
+    return refs;
+  };
   const impactPrecheck = (state: S) => {
     const s = p(state);
-    return impactUnitIssue(s.impactComputations, new Set([...(s.investmentChains ?? []).flatMap(chain => chain.computationRefs), ...state.composer.blocks.flatMap(block => block.sources), ...Object.values(s.chartRefs ?? {}).flat()]));
+    const refs = activeRefs(state);
+    const unitIssue = computationIssue(state, refs) ?? impactUnitIssue(s.impactComputations, refs);
+    if (unitIssue) return unitIssue;
+    const displayIssue = (nodes: HtmlNode[]): string | null => {
+      for (const node of nodes) if (node.type === "element") {
+        const attr = (name: string) => node.attrs.find(([key]) => key === name)?.[1] ?? null, ref = attr("data-ref");
+        if (node.tag === "data" && ref && s.computed[ref]) {
+          const issue = computedDisplayIssue(s.computed[ref]!, { value: attr("value"), unit: attr("data-unit"), text: nodeText(node.children) });
+          if (issue) return `${ref}: ${issue}`;
+        }
+        const childIssue = displayIssue(node.children); if (childIssue) return childIssue;
+      }
+      return null;
+    };
+    for (const block of state.composer.blocks) { const issue = displayIssue(parseHtml(block.html).nodes); if (issue) return issue; }
+    return null;
   };
   const impact = impactCalculationTool<S>({
-    sourceExists: (state, id) => !!state.composer.sources[id],
+    sourceExists: (state, id) => { if (p(state).computed[id]) checkedComputed(id, state); return !!state.composer.sources[id]; },
     sourceValues: (state, id) => {
-      const s = p(state), fact = s.facts[id], computed = s.computed[id], result = s.impactComputations?.[id];
-      const unit = fact?.unit ?? indexedFacts.get(id)?.unit;
-      return fact ? unit ? [{ value: fact.value, unit }] : null : computed ? [{ value: computed.value, unit: computed.unit }] : result ? impactResultValues(result) : null;
+      const s = p(state), fact = s.facts[id], computed = s.computed[id] ? checkedComputed(id, state) : null, result = s.impactComputations?.[id];
+      const pinned = indexedFacts.get(id);
+      return fact ? pinned ? [{ value: pinned.value, unit: pinned.unit }] : null : computed ? [{ value: computed.value, unit: computed.unit }] : result ? impactResultValues(result) : null;
     },
     sourceCalculation: (state, id) => p(state).impactComputations?.[id] ?? null,
     record: (state, result, inputs) => {
@@ -164,7 +215,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const status = str(args.quantificationStatus);
         if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(status)) return fail("Unknown quantification status.");
         if (computationRefs.some(id => !p(state).computed[id] && !p(state).impactComputations?.[id])) return fail("Calculations must reference this session's deterministic compute results.");
-        const unitIssue = impactUnitIssue(p(state).impactComputations, computationRefs);
+        const unitIssue = computationIssue(state, [...sourceIds, ...computationRefs]) ?? impactUnitIssue(p(state).impactComputations, computationRefs);
         if (unitIssue) return fail(unitIssue);
         if (status !== "not_quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id] && p(state).impactComputations?.[id]?.status !== "calculated")) return fail("Unavailable calculations cannot support quantified or sensitivity results; name the missing inputs.");
         if (status === "quantifiable" && computationRefs.some(id => isSensitivityCalculation(p(state).impactComputations?.[id]))) return fail("An assumed calculation is sensitivity only, not a quantified event result.");
@@ -248,22 +299,28 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value, unit: h.unit }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
         return ok(history.length ? history.map(h => `${h.factId} | ${factText(h)} | ${periodText(h)} | ${h.form} filed ${h.filedAt}`).join("\n") : "No earlier filing reports this line.");
       }),
-    handTool<S>({ name: "compute", description: "Work out a figure from facts and earlier results: a formula of fact ids (f…), result ids (c…) and numbers with + - * / and brackets, e.g. \"(f1a… - f2b…) / f2b… * 100\". Each fact retains its declared unit and scale; inspect that metadata and explicitly convert incompatible scales in the formula. A USD-millions fact is not already base dollars. The result gets an id a block can cite. unit says what the result is: percent, USD, ratio, x, shares, days.",
+    handTool<S>({ name: "compute", description: "Typed four-function arithmetic over pinned fact ids (f…), verified result ids (c…) and dimensionless numbers. Source USDmillions automatically becomes base USD; million shares become individual shares; percent/bps inputs become decimal ratios. Do not manually multiply a scaled source by one million again. unit chooses a compatible output representation: USD yields base dollars; USDmillions yields millions; shares yields individual shares. Unknown/mixed-incompatible dimensions or currencies are rejected. For percent output, a typed ratio or same-unit division with one outer *100 is recognized as explicit percent formatting and never multiplied by 100 twice; arbitrary scalar/amount *100 does not qualify. New results are appended and include raw/effective typed provenance. Saved legacy c results must pass full source-unit replay before reuse; labels or assumptions cannot repair their units.",
       input_schema: object({ label: { type: "string" }, formula: { type: "string" }, unit: { type: "string" } }, ["label", "formula", "unit"]) },
       async (args, state) => {
         const formula = str(args.formula), label = str(args.label).slice(0, 160);
         if (!formula || !label) return fail("compute needs a label and a formula.");
         let names: string[];
         try { names = namesIn(formula); } catch (error) { return fail(error instanceof Error ? error.message : String(error)); }
-        const inputs: Record<string, number> = {};
-        for (const name of names) { const v = await valueOf(name, state); if (v === undefined) return fail(`"${name}" is not a fact or a result of this session.`); inputs[name] = v; }
-        let value: number;
-        try { value = evaluate(formula, inputs); } catch (error) { return fail(error instanceof Error ? error.message : String(error)); }
+        const inputs: Record<string, ArithmeticInput> = {};
+        let result: ReturnType<typeof calculateTyped>;
+        try {
+          await restore(state);
+          for (const name of names) {
+            if (p(state).computed[name]) { const prior = checkedComputed(name, state); inputs[name] = { value: prior.value, unit: prior.unit, kind: "computed" }; }
+            else { if (!await resolve(name, state)) return fail(`"${name}" is not a fact or a result of this session.`); const fact = typedFact(name); if (!fact) return fail(`"${name}" has no typed original fact unit; labels and assumptions do not establish units.`); inputs[name] = fact; }
+          }
+          result = calculateTyped(formula, inputs, str(args.unit));
+        } catch (error) { return fail(error instanceof Error ? error.message : String(error)); }
         const s = p(state);
-        const id = `c${Object.keys(s.computed).length + 1}`;
-        s.computed[id] = { id, label, formula, inputs, value, unit: str(args.unit).slice(0, 20) || "number" };
+        const id = `c${Math.max(0, ...Object.keys(s.computed).map(key => /^c\d+$/.test(key) ? Number(key.slice(1)) : 0)) + 1}`;
+        s.computed[id] = { id, label, formula, inputs: result.inputs, value: result.value, unit: str(args.unit), provenance: result.provenance };
         registerSource(state.composer, id, { title: `Computed: ${label}`, url: null, kind: "data" });
-        return ok(`${id} = ${Number(value.toPrecision(8))} ${s.computed[id]!.unit} (${label}). Cite it as data-ref="${id}".`);
+        return ok(JSON.stringify(s.computed[id]));
       }),
     handTool<S>({ name: "chart_facts", description: "Draw a chart from this company's own filed figures. Each series is either factId, a tagged fact followed through the earlier filings (same line, same period length; up to `periods` of them, 8 by default), or points, a list of {period: \"YYYY-MM-DD\", ref} where ref is a fact id or a result of compute (a margin or growth rate per period). All series of one chart share a unit. type is bar (amounts) or line (rates, trends). On success place it in a block with <figure data-chart=\"id\"></figure>; the reply lists every point drawn, which you may quote as figures citing the same fact or result ids.",
       input_schema: object({ id: { type: "string" }, title: { type: "string" }, type: { type: "string", enum: ["bar", "line"] }, aspect: { type: "string", enum: ["wide", "square"] },
@@ -271,7 +328,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       async (args, state) => {
         const id = str(args.id), title = str(args.title).slice(0, 120);
         if (!ARTIFACT_BLOCK_ID.test(id) || !title) return fail("A chart needs an id (lowercase slug) and a title.");
-        const unitOf = (unit: string): ValueUnit | null => unit === "USD" ? "USD" : unit === "shares" ? "shares" : unit === "USD/shares" ? "per_share" : unit === "percent" ? "percent" : unit === "ratio" || unit === "x" ? "ratio" : null;
+        const unitOf = (unit: string): ValueUnit | null => { try { const typed = arithmeticUnit(unit); return unit === "percent" ? "percent" : typed.baseUnit === "USD" ? "USD" : typed.baseUnit === "shares" ? "shares" : typed.baseUnit === "USD/shares" ? "per_share" : typed.baseUnit === "ratio" ? "ratio" : null; } catch { return null; } };
+        const chartValue = (value: number, from: string, to: ValueUnit) => arithmeticValueInUnit({ value, unit: from }, to === "per_share" ? "USD/shares" : to);
         const s = p(state);
         const series: PointSeries[] = [], lines: string[] = [], refs: string[] = [];
         let months: number | null = null;
@@ -291,7 +349,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
             for (const h of history) {
               s.facts[h.factId] = { text: factSourceText(h), value: h.value, unit: h.unit };
               registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" });
-              points.push({ end: h.periodEnd!, value: h.value });
+              points.push({ end: h.periodEnd!, value: chartValue(h.value, h.unit, unit) });
               refs.push(h.factId);
               lines.push(`${label} | ${h.periodEnd} | ${factText(h)} | ${h.factId}`);
             }
@@ -308,7 +366,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
               if (!pointUnit) return fail(`${label}: ${ref} is in ${computed ? computed.unit : fact?.unit}, which a chart cannot draw; use USD, shares, percent, ratio or x.`);
               if (unit && unit !== pointUnit) return fail(`${label}: its points are in different units (${unit}, ${pointUnit}).`);
               unit = pointUnit;
-              points.push({ end, value });
+              points.push({ end, value: chartValue(value, computed ? computed.unit : fact!.unit, pointUnit) });
               refs.push(ref);
               lines.push(`${label} | ${end} | ${Number(value.toPrecision(6))} ${computed ? computed.unit : fact?.unit ?? ""} | ${ref}`);
             }
@@ -382,6 +440,19 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         }
         return ok(out.join("\n") || "Nothing to record.");
       }),
+    handTool<S>({name:"revise_evidence",description:"Correct one existing evidence note against the exact original note hash and pinned original quotation. Preserves the note id and never changes the archived parent checkpoint.",input_schema:object({id:{type:"string"},expectedOldHash:{type:"string"},section:{type:"string"},quote:{type:"string"},statement:{type:"string"},facts:strings},["id","expectedOldHash","section","quote","statement","facts"])},async(args,state)=>{
+      const s=p(state),id=str(args.id),at=s.evidence.findIndex(note=>note.id===id);
+      if(at<0)return fail("Existing evidence note required");
+      const stable=(value:unknown):string=>JSON.stringify(value,(_key,item)=>item&&typeof item==="object"&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
+      if(await sha256(stable(s.evidence[at]))!==str(args.expectedOldHash))return fail("Evidence note changed; exact original hash required");
+      const section=str(args.section),quote=str(args.quote),statement=str(args.statement),facts=list(args.facts).map(String);
+      const original=await sectionText(section);
+      if(!statement||statement.length>400||!quote||quote.length>600||!original||!quoteInText(quote,original))return fail("Evidence correction requires the exact pinned original quotation and a bounded statement");
+      for(const fact of facts)if(!FACT_ID.test(fact)||!await resolve(fact,state))return fail(`Unknown pinned evidence fact ${fact}`);
+      await resolve(section,state);
+      const entry:Evidence={...s.evidence[at]!,section,statement,quote,facts};s.evidence[at]=entry;
+      return ok(JSON.stringify(entry));
+    }),
     handTool<S>({ name: "read_evidence", description: "Read notes in full: by ids (E12, E40), or those whose statement holds a word. Each gives the statement, the section to cite, the exact words and the fact ids.", input_schema: object({ ids: strings, search: { type: "string" } }) },
       (args, state) => {
         const s = p(state);
@@ -393,10 +464,10 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
 
   return {
     tools, resolve,
-    figure: async (id, state) => { const s = p(state); return s.impactComputations?.[id] ? Object.values(s.impactComputations[id]!.values) : s.computed[id] ? [s.computed[id]!.value] : s.facts[id] ? [s.facts[id]!.value] : null; },
+    figure: async (id, state) => { const s = p(state); return s.impactComputations?.[id] ? Object.values(s.impactComputations[id]!.values) : s.computed[id] ? [checkedComputed(id, state).value] : s.facts[id] ? [s.facts[id]!.value] : null; },
     read: (id, state) => {
       const s = p(state);
-      if (s.computed[id]) return { title: `Computed: ${s.computed[id]!.label}`, text: computedText(s.computed[id]!) };
+      if (s.computed[id]) return { title: `Computed: ${s.computed[id]!.label}`, text: computedText(checkedComputed(id, state)) };
       if (s.facts[id]) return { title: state.composer.sources[id]?.title ?? id, text: s.facts[id]!.text };
       if (s.texts[id] !== undefined) return { title: state.composer.sources[id]?.title ?? id, text: s.texts[id]! };
       return null;

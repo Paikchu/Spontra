@@ -94,9 +94,10 @@ export type SecFilingSummary = {
   managerReview?: ManagerReview;
   repairRounds?: number;
   /** Who wrote the summary: "filing" is the document's own statement; older model summaries keep "deepseek"; "error" marks a failed run. */
-  source: "claude" | "deepseek" | "filing" | "error";
+  source: "claude" | "deepseek" | "filing" | "error" | "external";
   /** Written by the filing path's Pi session; such a summary carries the whole report and supersedes any earlier analysis. */
-  generatedBy?: "pi";
+  generatedBy?: "pi" | "operator";
+  generation?: import("../filing-analysis/recipe.ts").FilingOperatorAuthor;
   generatedAt: string;
   error?: string;
 };

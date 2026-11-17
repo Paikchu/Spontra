@@ -46,3 +46,11 @@ node scripts/company-tag-exposure-acceptance.mjs docs/acceptance/discovery/resul
 ## 发布边界
 
 本节点没有 commit/push/deploy 或生产 from-tag 调用。生产唯一 CRWV 关系的来源增强须由发布节点在当前子任务结束后，以其精确 baseVersion/tagId 追加版本，并回读新旧结果状态。当前运行子任务及父 context 仍维持原冻结版本，不能把本地合成通过说成生产绑定已完成。
+
+## 后续实际发布与读回（2026-11-17）
+
+上述本地节点已在提交 `c75981458593124b903b06a431076a72547bfb44` 单独发布，两条精确提交 CI 均成功。隔离检出运行完整 `npm run check`、Analysis 类型检查、54 项旅程与 Analysis dry-run 通过；全仓 lint 仍为 9 errors / 5 warnings，变更文件零 finding。隔离检出最初缺少被 git 忽略的 PDF 运行源，运行项目既有 `analysis:prepare` 后旅程通过，没有改变业务代码或放宽验收。
+
+真实生产 POST 为同一 `crwv-ai-cloud-business` 关系追加 `1ae9a306d3a2f40596685442d2956e312625b4c99ed153de9d92c80b39f5551a`，绑定原 `t148322cda647d919adb8193c` verified 标签及三段冻结财报来源。D1 回读仍是 **12 个标签、1 个关系、2 个历史版本**，weight=null。当前 context 使用新来源版本；以原子任务时点读取仍保留旧 a4 pin，并解析到相同 tag，宏观与行业固定版均可用。原 140/40 账本、失败状态及子检查点 `81033bf9…6710ba` 不变。
+
+真实 CRWV 旧公开 v6 在 1440/768/390 视口渲染、滚轮到底/返回、无横向溢出和页面运行错误均通过；桌面侧栏固定，移动侧栏收起未测固定位置。这是标签补丁与旧页面验收，不是新 CRWV 报告验收。精确部署版本、范围和限制见[生产证据](results/company-tag-exposure-production.json)。

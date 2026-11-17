@@ -23,7 +23,8 @@ export async function readItemAnalysisResponse(db: D1Database, rawTicker: string
   const repository = new D1SecRepository(db);
   const stored = options.hidden ? null : await repository.getCache<StoredItem>(itemAnalysisKey(ticker, id));
   const value = stored?.payload;
-  if (!value || value.schemaVersion !== "item-analysis.v1" || value.ticker !== ticker || value.finding?.lens?.type !== "document" || (await repository.getSummary(ticker, id))?.generatedBy === "pi") return { schemaVersion: "item-analysis-response.v1", status: "unavailable", analysis: null };
+  const generatedBy=(await repository.getSummary(ticker,id))?.generatedBy;
+  if (!value || value.schemaVersion !== "item-analysis.v1" || value.ticker !== ticker || value.finding?.lens?.type !== "document" || generatedBy === "pi"||generatedBy === "operator") return { schemaVersion: "item-analysis-response.v1", status: "unavailable", analysis: null };
   const { trace: _trace, ...analysis } = value;
   void _trace;
   return { schemaVersion: "item-analysis-response.v1", status: "ready", analysis };

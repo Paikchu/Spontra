@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
+import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
+import { frozenPublicResearchSource, isPublicResearchSourceId } from "../company-research/context-tools.ts";
 import { nodeText, parseHtml, type HtmlNode } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { blockText, issueKey, type ComposerState, type TrackedIssue } from "../artifact/document.ts";
 import { judge, JudgeUnavailable } from "../artifact/openai.ts";
@@ -45,7 +47,7 @@ export const SEMANTIC_AUDIT_SCHEMA = {
 };
 type AuditAnswer = z.infer<typeof answerSchema>;
 export type FilingAuditState = { composer: ComposerState; periodic?: PeriodicState; web?: Record<string, string> };
-type AuditDeps = { env: AnalysisEnv; snapshot: MaterialSnapshot; runId?: string; required?: readonly string[] };
+type AuditDeps = { env: AnalysisEnv; snapshot: MaterialSnapshot; runId?: string; required?: readonly string[]; publicResearch?: FrozenCompanyResearch };
 type SemanticComputation = { id: string; label: string; formula: string; inputs: Record<string, number>; inputRefs: string[]; usedBy: string[]; value?: number; unit?: string; impact: ImpactCalculation | null };
 
 export function filingReportSemantics(state: { composer: Pick<ComposerState, "blocks"> }) {
@@ -73,7 +75,7 @@ export function filingReportSemantics(state: { composer: Pick<ComposerState, "bl
 }
 
 /** Builds the same complete, pinned evidence request used by the publication gate. */
-export async function filingSemanticInput(deps: Pick<AuditDeps, "env" | "snapshot" | "required">, state: FilingAuditState) {
+export async function filingSemanticInput(deps: Pick<AuditDeps, "env" | "snapshot" | "required" | "publicResearch">, state: FilingAuditState) {
   const report = filingReportSemantics(state);
   const chainOwner = report.find(block => block.id === "summary") ?? report[0];
   const investmentChains = (state.periodic?.investmentChains ?? []).map(chain => ({ ...chain, usedBy: chainOwner ? [chainOwner.id] : [] }));
@@ -119,7 +121,9 @@ export async function filingSemanticInput(deps: Pick<AuditDeps, "env" | "snapsho
   const sources = [...reachable].sort().map(id => {
     const source = state.composer.sources[id] ?? null;
     const calculated = !!state.periodic?.computed[id] || !!state.periodic?.impactComputations?.[id];
-    const text = !materialSources.has(materialBlockId(id)) && !calculated ? state.web?.[id] ?? state.periodic?.texts[id] ?? null : null;
+    const publicSource = isPublicResearchSourceId(id) ? frozenPublicResearchSource(deps.publicResearch, id, { source, researchContext: state.composer.researchContext }) : null;
+    if (isPublicResearchSourceId(id) && !publicSource) throw new JudgeUnavailable(`The report's public source ${id} does not match its frozen research ordinal and version`);
+    const text = publicSource?.text ?? (!materialSources.has(materialBlockId(id)) && !calculated ? state.web?.[id] ?? state.periodic?.texts[id] ?? null : null);
     if (!materialSources.has(materialBlockId(id)) && !calculated && text === null) throw new JudgeUnavailable(`The report's source ${id} cannot be reconstructed from its frozen material`);
     return { id, source, text };
   });

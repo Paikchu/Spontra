@@ -1,0 +1,81 @@
+{
+  "at": "2026-11-17T03:04:59.439Z",
+  "scope": "Actual local filing tools, HTML/chain semantic request, finish and immutable sidecar; synthetic sources and cached semantic/render verdicts, no real financial approval",
+  "modelCalls": 0,
+  "networkCalls": 0,
+  "productionWrites": 0,
+  "checks": [
+    {
+      "name": "actual read/record tools register both frozen public sources without copying texts into state",
+      "status": "pass"
+    },
+    {
+      "name": "public1c1 HTML and chain carry exact frozen claim, original source and observation",
+      "status": "pass"
+    },
+    {
+      "name": "public2c1 HTML and chain carry exact frozen claim, original source and observation",
+      "status": "pass"
+    },
+    {
+      "name": "block.sources citation uses the same frozen bytes",
+      "status": "pass"
+    },
+    {
+      "name": "JSON state and frozen spec restore keeps identical semantic sources",
+      "status": "pass"
+    },
+    {
+      "name": "same-name cached or later text cannot replace frozen public evidence",
+      "status": "pass"
+    },
+    {
+      "name": "missing-frozen-context fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "unknown-source fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "unknown-claim fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "wrong-version fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "wrong-url-version fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "reordered-ordinal fails closed despite cached text",
+      "status": "pass"
+    },
+    {
+      "name": "actual finish consumes the complete frozen public evidence without a model call",
+      "status": "pass"
+    },
+    {
+      "name": "public1c1 sidecar stores exactly the independent audit's frozen source bytes",
+      "status": "pass"
+    },
+    {
+      "name": "public2c1 sidecar stores exactly the independent audit's frozen source bytes",
+      "status": "pass"
+    },
+    {
+      "name": "wrong spec version cannot alter a saved sidecar",
+      "status": "pass"
+    },
+    {
+      "name": "unknown public source cannot be published from cached text",
+      "status": "pass"
+    },
+    {
+      "name": "only material/artifact/sidecar paths were read, never live public reports",
+      "status": "pass"
+    }
+  ]
+}

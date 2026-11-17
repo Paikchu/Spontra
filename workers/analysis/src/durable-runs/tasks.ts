@@ -17,6 +17,7 @@ import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../finding
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
 import { executeBusinessClassificationWorkflow, type BusinessClassificationParams } from "../business-classification/index.ts";
 import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "../business-tags/workflow.ts";
+import { executeFilingOperatorCompletion } from "../filing-analysis/operator-completion.ts";
 import { executeTranslateWorkflow, type TranslateParams } from "../translation/translate.ts";
 import { trackRun, trackSleep, trackSteps } from "../ai-runs/tracking.ts";
 import { NonRetryableError, type RunStep, type StepConfig } from "./engine.ts";
@@ -65,6 +66,7 @@ const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name
 
 /** What each run kind executes; the bodies the Workflow classes had. */
 export const RUN_TASKS: Record<RunKind, Task> = {
+  async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step});},
   async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
     return runMaterialPilotChunk(env, step, params);
   },

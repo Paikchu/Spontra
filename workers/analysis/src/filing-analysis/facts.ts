@@ -1,5 +1,7 @@
 import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
 import type { FilingFactRow } from "../../../../shared/analysis-contract/filing-content.ts";
+import { arithmeticNames, calculateTyped, type ArithmeticInput, type ComputationProvenance } from "../../../../shared/analysis-runtime/computed-units.ts";
+export { arithmeticNames as namesIn, evaluateArithmetic as evaluate } from "../../../../shared/analysis-runtime/computed-units.ts";
 
 export type StoredFact = FilingFactRow & { documentId: string };
 export type FactQuery = { label?: string; anchor?: string; periodEnd?: string; months?: number };
@@ -10,53 +12,28 @@ export const factSourceText = (f: StoredFact) => `${f.label}: ${f.value} ${f.uni
 
 // --- Arithmetic --------------------------------------------------------------------------------------------------------
 
-export type Computed = { id: string; label: string; formula: string; inputs: Record<string, number>; value: number; unit: string };
+export type Computed = { id: string; label: string; formula: string; inputs: Record<string, number>; value: number; unit: string; provenance?: ComputationProvenance };
+const sameNumber = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= Number.EPSILON * 32 * Math.max(1, Math.abs(a), Math.abs(b));
 
-type Token = { kind: "number"; value: number } | { kind: "name"; value: string } | { kind: "op"; value: string };
-function tokens(formula: string): Token[] {
-  const out: Token[] = [];
-  const pattern = /\s*(?:(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*)|([-+*/()]))/y;
-  let at = 0;
-  while (at < formula.length) {
-    if (/^\s*$/.test(formula.slice(at))) break;
-    pattern.lastIndex = at;
-    const m = pattern.exec(formula);
-    if (!m) throw new Error(`cannot read the formula at "${formula.slice(at, at + 12)}"`);
-    out.push(m[1] !== undefined ? { kind: "number", value: Number(m[1]) } : m[2] !== undefined ? { kind: "name", value: m[2] } : { kind: "op", value: m[3]! });
-    at = pattern.lastIndex;
+/** Replay source units and every dependency. A legacy match receives only a receipt, never revised stored numbers. */
+export function replayComputed(id: string, computed: Record<string, Computed>, source: (id: string) => ArithmeticInput | null, seen = new Set<string>()): Computed {
+  if (seen.has(id)) throw new Error(`Recompute ${id}: cyclic calculation dependency`);
+  const saved = computed[id]; if (!saved) throw new Error(`Missing saved computation ${id}`);
+  const inputs: Record<string, ArithmeticInput> = {};
+  for (const name of arithmeticNames(saved.formula)) {
+    if (computed[name]) { const prior = replayComputed(name, computed, source, new Set([...seen, id])); inputs[name] = { value: prior.value, unit: prior.unit, kind: "computed" }; }
+    else { const fact = source(name); if (!fact) throw new Error(`Recompute ${id}: ${name} has no typed original source in the pinned materials`); inputs[name] = fact; }
   }
-  return out;
+  let replay: ReturnType<typeof calculateTyped>;
+  try { replay = calculateTyped(saved.formula, inputs, saved.unit); }
+  catch (error) { throw new Error(`Recompute ${id}: ${error instanceof Error ? error.message : String(error)}`); }
+  if (!sameNumber(saved.value, replay.value)) throw new Error(`Recompute ${id}: saved ${saved.value} ${saved.unit} differs from typed source replay ${replay.value} ${saved.unit}; the stored calculation is unchanged`);
+  const basis = saved.provenance?.inputValueBasis ?? "source_declared";
+  const expected = basis === "base" ? replay.inputs : Object.fromEntries(Object.entries(inputs).map(([name, input]) => [name, input.value]));
+  if (Object.keys(saved.inputs).length !== Object.keys(expected).length || Object.entries(expected).some(([name, value]) => !sameNumber(value, saved.inputs[name]!))) throw new Error(`Recompute ${id}: saved input numbers do not match their typed source/dependency lineage`);
+  const receipt: ComputationProvenance = { ...replay.provenance, mode: saved.provenance?.mode ?? "legacy_reverified", inputValueBasis: basis };
+  if (saved.provenance && JSON.stringify(saved.provenance) !== JSON.stringify(receipt)) throw new Error(`Recompute ${id}: saved unit provenance does not match deterministic source replay`);
+  saved.provenance ??= receipt;
+  return saved;
 }
-
-/** Evaluates + − × ÷ and brackets over numbers and named values; nothing else is a formula. */
-export function evaluate(formula: string, values: Record<string, number>): number {
-  const list = tokens(formula);
-  let at = 0;
-  const peek = () => list[at];
-  const primary = (): number => {
-    const t = list[at++];
-    if (!t) throw new Error("the formula ends early");
-    if (t.kind === "number") return t.value;
-    if (t.kind === "name") { const v = values[t.value]; if (v === undefined) throw new Error(`"${t.value}" is not a fact or result you have read`); return v; }
-    if (t.value === "(") { const v = sum(); if (list[at++]?.value !== ")") throw new Error("a bracket is not closed"); return v; }
-    if (t.value === "-") return -primary();
-    if (t.value === "+") return primary();
-    throw new Error(`"${t.value}" is out of place`);
-  };
-  const product = (): number => {
-    let v = primary();
-    for (let t = peek(); t?.kind === "op" && (t.value === "*" || t.value === "/"); t = peek()) { at++; const r = primary(); if (t.value === "/" && r === 0) throw new Error("division by zero"); v = t.value === "*" ? v * r : v / r; }
-    return v;
-  };
-  const sum = (): number => {
-    let v = product();
-    for (let t = peek(); t?.kind === "op" && (t.value === "+" || t.value === "-"); t = peek()) { at++; const r = product(); v = t.value === "+" ? v + r : v - r; }
-    return v;
-  };
-  const result = sum();
-  if (at < list.length) throw new Error(`"${String(list[at]!.value)}" is out of place`);
-  if (!Number.isFinite(result)) throw new Error("the result is not a number");
-  return result;
-}
-export const namesIn = (formula: string) => [...new Set(tokens(formula).flatMap(t => t.kind === "name" ? [t.value] : []))];
-export const computedText = (c: Computed) => `${c.label}: ${c.value} ${c.unit}. Computed as ${c.formula} from ${Object.entries(c.inputs).map(([k, v]) => `${k} = ${v}`).join(", ")}.`;
+export const computedText = (c: Computed) => `${c.label}: ${c.value} ${c.unit}. Computed as ${c.formula} from ${Object.entries(c.inputs).map(([k, v]) => `${k} = ${v}`).join(", ")}.${c.provenance ? ` Typed unit replay: ${JSON.stringify(c.provenance)}.` : ""}`;

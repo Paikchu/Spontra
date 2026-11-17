@@ -175,7 +175,9 @@ export type SecFilingSummary = {
   nodes?: SecNodeResult[];
   repairRounds?: number;
   /** Who wrote the summary: "filing" is the document's own statement; older model summaries keep "deepseek"; "error" marks a failed run. */
-  source: "claude" | "deepseek" | "filing" | "error";
+  source: "claude" | "deepseek" | "filing" | "error" | "external";
+  generatedBy?: "pi" | "operator";
+  generation?: {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:string;effort:string;runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null}};
   generatedAt: string;
   error?: string;
 };

@@ -8,14 +8,16 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { trackedTickersFor } from "../core.ts";
 import { profileFor } from "./profiles.ts";
 import { filingOpening } from "./start.ts";
-import { filingSummary, type FilingSpec, type FilingWork } from "./recipe.ts";
+import { filingSummary, type FilingSpec, type FilingWork, type FilingOperatorAuthor } from "./recipe.ts";
 import type { ResearchUse } from "../company-research/context-tools.ts";
 import { artifactId, previewToken, publishStatements, readArtifactVersion, saveWorkState } from "../artifact/store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
 import { sha256 } from "../sha256.ts";
 import { handleShadowRecovery, shadowKey as key, type ShadowRun } from "./shadow-resume.ts";
+import { handleFilingOperatorCompletion, readFilingOperatorStatus, stopFilingOperator } from "./operator-completion.ts";
+import { stableOperatorValue } from "./operator-plan.ts";
 
-type ValidatedShadow = { spec: FilingSpec; version: number; hash: string; text: string; degraded: string[]; validatedAt: string; researchUses: ResearchUse[]; work: FilingWork };
+type ValidatedShadow = { spec: FilingSpec; version: number; hash: string; text: string; degraded: string[]; validatedAt: string; researchUses: ResearchUse[]; work: FilingWork; operator?:FilingOperatorAuthor };
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 /** Called only after the report admin authenticates. Reads never launch research. */
@@ -57,14 +59,25 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
   }
   const run = (await repository.getCache<ShadowRun>(key(runId)))?.payload;
   if (!run || run.runId !== runId || run.ticker !== ticker || run.accession !== accession) return reply({ error: "Shadow run not found" }, 404);
+  if(action==="operator-complete")return handleFilingOperatorCompletion(request,env,run);
+  const operator=run.spec.operatorCompletion?await readFilingOperatorStatus(env,run):null;
+  if(operator&&action==="stop"&&request.method==="POST")return reply(await stopFilingOperator(env,run));
+  if(operator&&(action==="resume"||action==="checkpoint"))return reply({error:"External operator operations do not open or resume Pi sessions; inspect their stored phase receipts"},409);
+  if(operator&&!action&&request.method==="GET"&&operator.status!=="validated")return reply(operator);
+  if(operator&&action==="promote"&&operator.status!=="validated")return reply({error:"No fully validated operator shadow to review"},409);
   if (action === "checkpoint" || action === "resume") return handleShadowRecovery(request, env, run, action);
   if (action === "stop" && request.method === "POST") {
     await filingSessions(env)?.stop(runId);
     await env.SEC_FILINGS.put(`research-shadow/${runId}/failed.json`, JSON.stringify({ status: "stopped", reason: "Stopped by administrator", at: new Date().toISOString() }));
     return reply({ status: "stopped", runId });
   }
-  const object = await env.SEC_FILINGS.get(`research-shadow/${runId}/validated.json`);
-  const validated = object ? JSON.parse(await object.text()) as ValidatedShadow : null;
+  const validatedKey=operator&&"validatedKey"in operator&&typeof operator.validatedKey==="string"?operator.validatedKey:`research-shadow/${runId}/validated.json`;
+  const object = await env.SEC_FILINGS.get(validatedKey),bytes=object?await object.text():null;
+  const validated = bytes ? JSON.parse(bytes) as ValidatedShadow : null;
+  if(operator&&operator.status==="validated"){
+    const generation=run.spec.operatorCompletion!;
+    if(!validated||validatedKey!==`filing-operator/${runId}/validated/${await sha256(bytes!)}.json`||stableOperatorValue(validated.spec)!==stableOperatorValue(run.spec)||validated.operator?.sourceRunId!==generation.sourceRunId||validated.operator.checkpointHash!==generation.checkpointHash||validated.operator.planHash!==generation.planHash||stableOperatorValue(validated.operator.author)!==stableOperatorValue(generation.author)||!("version"in operator)||!("hash"in operator)||validated.version!==operator.version||validated.hash!==operator.hash)return reply({error:"Operator validation receipt does not match its frozen source, plan and author"},409);
+  }
   if (!action && request.method === "GET") {
     if (!validated) {
       const failure = await env.SEC_FILINGS.get(`research-shadow/${runId}/failed.json`);
@@ -73,13 +86,14 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
     const artifact = await readArtifactVersion(env, artifactId("filing-report", ticker, accession), validated.version);
     const token = await previewToken(env, "filing-report", ticker, accession, validated.version);
     const current = await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId("filing-report", ticker, accession)).first<{published_version:number|null}>();
-    return reply({ runId, status: current?.published_version === validated.version ? "published" : "validated_shadow", version: validated.version, hash: validated.hash, baseVersion: run.baseVersion, validatedAt: validated.validatedAt, callsReserved: run.callsReserved, maxCalls: run.maxCalls, previewToken: token, artifact, investmentChains: validated.work.periodic?.investmentChains ?? [], computations: validated.work.periodic?.impactComputations ?? {}, researchUses: validated.researchUses, publicResearch: validated.spec.publicResearch, publicReportUnchanged: (current?.published_version ?? null) === run.baseVersion });
+    return reply({ runId, status: current?.published_version === validated.version ? "published" : "validated_shadow", version: validated.version, hash: validated.hash, baseVersion: run.baseVersion, validatedAt: validated.validatedAt, callsReserved: operator&&"reviewCalls"in operator?operator.reviewCalls:run.callsReserved, maxCalls: run.maxCalls, ...(operator?{generation:run.spec.operatorCompletion,independentReview:validated.operator,reviewBudgetScope:"reviewBudgetScope"in operator?operator.reviewBudgetScope:null,stages:"stages"in operator?operator.stages:null}:{}), previewToken: token, artifact, investmentChains: validated.work.periodic?.investmentChains ?? [], computations: validated.work.periodic?.impactComputations ?? {}, researchUses: validated.researchUses, publicResearch: validated.spec.publicResearch, publicReportUnchanged: operator&&"publicReportUnchanged"in operator?operator.publicReportUnchanged:(current?.published_version ?? null) === run.baseVersion });
   }
   if (action !== "promote" || request.method !== "POST") return reply({ error: "Method not allowed" }, 405);
   if (!validated) return reply({ error: "No validated shadow to review" }, 409);
   const stopReceipt = await env.SEC_FILINGS.get(`research-shadow/${runId}/failed.json`);
   if (stopReceipt && (JSON.parse(await stopReceipt.text()) as { status?: string }).status === "stopped") return reply({ error: "This shadow run was stopped and cannot be promoted" }, 409);
   const body = await request.json() as { expectedHash?: string; reviewer?: string; reviewNotes?: string; approvedChainIds?: string[] };
+  if(run.spec.operatorCompletion&&body.reviewer?.trim()===run.spec.operatorCompletion.author.runId)return reply({error:"The external author cannot approve their own operator shadow"},400);
   const chains = validated.work.periodic?.investmentChains ?? [];
   if (body.expectedHash !== validated.hash || !body.reviewer?.trim() || !body.reviewNotes?.trim() || !chains.length || !Array.isArray(body.approvedChainIds) || chains.some(chain => !body.approvedChainIds!.includes(chain.id)) || body.approvedChainIds.some(id => !chains.some(chain => chain.id === id))) return reply({ error: "Review must name the exact hash, reviewer, notes and every supported investment chain" }, 400);
   const id = artifactId("filing-report", ticker, accession);
@@ -90,7 +104,7 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
   if ((current?.published_version ?? null) !== run.baseVersion) return reply({ error: "The public report changed after shadow start; review a new shadow" }, 409);
   const dependencies = await companyResearchDependencyStatements(env, { ticker, resultId: `${id}:v${validated.version}`, dependencies: validated.researchUses.filter(use => use.decision === "adopted"), mappingVersions: validated.spec.publicResearch?.mappingVersions ?? [] });
   const now = new Date().toISOString();
-  const summary = filingSummary(run.spec.filing, { headline: stored.document.blocks.find(block => block.id === "summary")?.title ?? stored.document.title, text: validated.text }, now);
+  const summary = filingSummary(run.spec.filing, { headline: stored.document.blocks.find(block => block.id === "summary")?.title ?? stored.document.title, text: validated.text,...(run.spec.operatorCompletion?{operatorCompletion:run.spec.operatorCompletion}:{}) }, now);
   const material = await readMaterialSnapshot(env, run.spec.material);
   const memory = run.spec.profile === "periodic" ? await filingMemoryStatements(env, { filing: run.spec.filing, summary, sessionId: runId, readSectionIds: validated.work.read, material }) : [];
   // A deliberate uniqueness guard aborts the whole D1 batch if another publisher won after the read above.

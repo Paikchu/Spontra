@@ -9,10 +9,12 @@ import type { AnalysisEnv } from "../operations.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { blockText, conservativeBlock, safeLayoutBlock, sentencesOf, toDocument, type ComposerState, type LadderStep, type TrackedIssue, sameIssue } from "./document.ts";
 import { arbitrate, reviewBlock, type SourceReader } from "./review.ts";
-import { reviewRendering, visualPasses } from "./qa.ts";
+import { reviewRendering, VIEWPORTS, visualPasses, type QaResult } from "./qa.ts";
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
-import { previewToken, publishStatements, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
+import { artifactId, previewToken, publishStatements, readArtifactVersion, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
 import { judge, JudgeUnavailable } from "./openai.ts";
+import { packState } from "../pi/state.ts";
+import { sha256 } from "../sha256.ts";
 
 /**
  * The composing tools every analysis shares (docs/analysis-html-artifact.md §5) and the harness behind `finish`: the
@@ -32,6 +34,8 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   settlement?: ComposerSettlement;
   /** Shadow runs pass every check but save drafts without changing public pointers or downstream jobs. */
   publicationMode?: "shadow";
+  /** Server-driven validation uses separate durable phases; never supplied by the composing model. */
+  operatorValidation?: boolean;
   onShadow?(state: S, result: { version: number; hash: string; text: string; degraded: string[] }): Promise<void>;
   /** The producer's research tools, named in the instruction to find more material. */
   research: string[];
@@ -64,7 +68,54 @@ const CONTENT_ROUNDS_ALL = 6;
 
 const ok = (observation: string) => ({ observation });
 const fail = (observation: string) => ({ observation, error: true });
-type Result = { observation: string; error?: boolean };
+export type ComposerPhaseReceipt = {
+  stage: "prepare" | "content" | "semantic" | "render" | "shadow";
+  digest: string;
+  success: boolean;
+  at: string;
+  observation: string;
+  issues: TrackedIssue[];
+  blockId?: string;
+  unavailable?: string;
+  draft?: { version: number; hash: string };
+  scores?: QaResult["scores"];
+  covered?: QaResult["covered"];
+  measured?: QaResult["measured"];
+  metrics?: QaResult["metrics"];
+  errors?: string[];
+  shots?: number;
+  visualReviewed?: boolean;
+  published?: { version: number; hash: string };
+};
+export type ComposerPhaseResult = { observation: string; error?: boolean; receipt?: ComposerPhaseReceipt };
+/** Server-only receipts survive the same packState/R2 checkpoint as the research evidence. */
+export type ComposerOperatorValidation = {
+  schema: "composer-operator-validation.v1";
+  digest: string;
+  runId: string | null;
+  blockIds: string[];
+  prepare: ComposerPhaseReceipt;
+  content: Record<string, ComposerPhaseReceipt>;
+  semantic?: ComposerPhaseReceipt;
+  render?: ComposerPhaseReceipt;
+  shadow?: ComposerPhaseReceipt;
+};
+export type OperatorComposerState = ComposerState & { operatorValidation?: ComposerOperatorValidation };
+type Result = ComposerPhaseResult;
+type ContentSettlement = { notes: string[]; reviews: Array<{ block: string; issues: TrackedIssue[] | null }> };
+
+const operatorState = (state: ComposerState) => state as OperatorComposerState;
+
+/** Review outputs are excluded; every business input, including frozen context and computed chains, is bound. */
+async function operatorDigest<S extends { composer: ComposerState }>(state: S): Promise<string> {
+  const input = JSON.parse(packState(state)) as { composer: Record<string, unknown>; periodic?: Record<string, unknown> };
+  for (const key of ["operatorValidation", "open", "ladder", "hidden", "phase", "turns", "published", "rounds", "passed", "reviews", "changes", "settledBy", "log"]) delete input.composer[key];
+  for (const block of input.composer.blocks as Array<Record<string, unknown>>) delete block.state;
+  if (input.periodic) delete input.periodic.semanticAuditReceipt;
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
+  return sha256(JSON.stringify(canonical(input)));
+}
 
 function tool<S>(name: string, description: string, properties: Record<string, unknown>, required: string[], run: (args: Record<string, unknown>, state: S) => Promise<Result> | Result, timeoutMs = 60_000): AnyTool<S> {
   return {
@@ -104,6 +155,10 @@ const RENDER_STEP = (level: number) => [
 ][Math.min(level, 3)]!;
 
 export function composerTools<S extends { composer: ComposerState }>(setup: ComposerSetup<S>): AnyTool<S>[] {
+  return composerHarness(setup).tools;
+}
+
+export function composerHarness<S extends { composer: ComposerState }>(setup: ComposerSetup<S>) {
   const requiredOf = (state: S) => [...new Set([...ARTIFACT_REQUIRED_BLOCKS[state.composer.artifact.kind], ...setup.required?.(state) ?? []])];
   const block = (state: S, id: string) => state.composer.blocks.find(b => b.id === id);
   const ledger = (state: S) => ({ ticker: state.composer.artifact.ticker, kind: "artifact-review", ...(setup.ledger.runId ? { runId: setup.ledger.runId } : {}) });
@@ -138,7 +193,29 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     return `${origin}/companies/${encodeURIComponent(c.artifact.ticker)}?${setup.previewQuery}&artifact-preview=${encodeURIComponent(token)}`;
   }
 
-  async function publish(state: S): Promise<Result> {
+  function orderBlocks(state: S) {
+    const c = state.composer, declared = [...setup.required?.(state) ?? []];
+    if (!declared.length) return;
+    let rank = -1;
+    const ranks = new Map(c.blocks.map(b => { const at = declared.indexOf(b.id); if (at >= 0) rank = at; return [b.id, at >= 0 ? at : rank] as const; }));
+    c.blocks = c.blocks.map((b, i) => ({ b, i })).sort((x, y) => ranks.get(x.b.id)! - ranks.get(y.b.id)! || x.i - y.i).map(x => x.b);
+  }
+
+  const documentCss = (state: S) => compileArtifactCss(state.composer.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => state.composer.sources[ref]?.url ?? null, sourceLabel: ref => state.composer.sources[ref]?.title, charts: new Set(Object.keys(state.composer.charts)) }).classes));
+  const saveDraft = async (state: S) => saveVersion(setup.env, toDocument(state.composer, 0), await documentCss(state), "draft", setup.ledger.runId ?? null);
+
+  async function auditDocument(state: S): Promise<TrackedIssue[]> {
+    if (!setup.audit) return [];
+    const issues = await setup.audit(state), c = state.composer;
+    for (const id of Object.keys(c.open)) {
+      c.open[id] = c.open[id]!.filter(issue => issue.origin !== "semantic");
+      if (!c.open[id]!.length) delete c.open[id];
+    }
+    for (const issue of issues) (c.open[issue.block] ??= []).push(issue);
+    return issues;
+  }
+
+  async function publish(state: S, reviewedDraft?: { version: number; hash: string }): Promise<Result> {
     const invariant = setup.hardPrecheck?.(state);
     if (invariant) return fail(`Not published: ${invariant}`);
     const c = state.composer;
@@ -146,15 +223,20 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout");
       if (degraded.length) return fail(`Rewrite the degraded blocks before publishing: ${degraded.map(b => b.id).join(", ")}.`);
     }
-    const classes = c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).classes);
-    const css = await compileArtifactCss(classes);
-    const doc = toDocument(c, 0);
+    const css = await documentCss(state);
+    const doc = toDocument(c, reviewedDraft?.version ?? 0);
+    if (reviewedDraft) {
+      if (operatorState(c).operatorValidation?.digest !== await operatorDigest(state)) return fail("Not published: the final invariant check changed the research inputs. Run prepare again.");
+      const stored = await readArtifactVersion(setup.env, artifactId(c.artifact.kind, c.artifact.ticker, c.artifact.subject), reviewedDraft.version);
+      if (!stored || stored.hash !== reviewedDraft.hash || stored.css !== css || JSON.stringify(stored.document) !== JSON.stringify(doc) || await sha256(`${stored.html}\n${stored.css}`) !== reviewedDraft.hash) return fail("Not published: the saved draft no longer matches the exact document and charts that passed rendering.");
+    }
     // What this version changes against the published one, by block: the note a reader of versions starts from (§4.6).
     const prior = await readPublishedDocument(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject).catch(() => null);
     const before = new Map((prior?.blocks ?? []).map(b => [b.id, b.html]));
     c.changes = { from: prior?.version ?? null, added: c.blocks.filter(b => !before.has(b.id)).map(b => b.id), changed: c.blocks.filter(b => before.has(b.id) && before.get(b.id) !== b.html).map(b => b.id),
       removed: [...before.keys()].filter(id => !c.blocks.some(b => b.id === id)), unchanged: c.blocks.filter(b => before.get(b.id) === b.html).map(b => b.id) };
-    const saved = await saveVersion(setup.env, doc, css, setup.publicationMode === "shadow" ? "draft" : "published", setup.ledger.runId ?? null);
+    // An operator reuses the immutable draft the browser actually checked, including its versioned HTML hash.
+    const saved = reviewedDraft ?? await saveVersion(setup.env, doc, css, setup.publicationMode === "shadow" ? "draft" : "published", setup.ledger.runId ?? null);
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, saved.version, "changes", 0, c.changes);
     const degraded = c.blocks.filter(b => b.state === "conservative" || b.state === "safe-layout").map(b => b.id);
     const at = new Date().toISOString();
@@ -175,16 +257,16 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
   }
 
   /** Reviews the blocks written since their last review and moves each open block up its ladder; true when content is settled. */
-  async function settleContent(state: S, force: boolean): Promise<string[]> {
+  async function settleContent(state: S, force: boolean, onlyBlock?: string): Promise<ContentSettlement> {
     const c = state.composer;
-    const written = c.blocks.filter(b => b.state === "draft");
+    const written = c.blocks.filter(b => b.state === "draft" && (onlyBlock === undefined || b.id === onlyBlock));
     const advice: string[] = [], unavailable: string[] = [];
     const reader: SourceReader = id => setup.read(id, state);
     const rounds = c.rounds ??= { content: 0, render: 0 };
     const passed = c.passed ??= {}, reviews = c.reviews ??= {};
     const openIn = (b: ArtifactBlock) => { const kept = new Set(passed[b.id] ?? []); return sentencesOf(blockText(b.html)).filter(s => !kept.has(s.key)); };
     // A block whose every sentence an earlier review let stand needs no second one: its words were only moved or laid out again.
-    const drafts = written.filter(b => { if (openIn(b).length) return true; b.state = "passed"; delete c.open[b.id]; return false; });
+    const drafts = written.filter(b => { if (onlyBlock !== undefined || openIn(b).length) return true; b.state = "passed"; delete c.open[b.id]; return false; });
     if (drafts.length) rounds.content += 1;
     for (const b of drafts) reviews[b.id] = (reviews[b.id] ?? 0) + 1;
     const last = (b: ArtifactBlock) => force || (reviews[b.id] ?? 0) >= CONTENT_ROUNDS || rounds.content >= CONTENT_ROUNDS_ALL;
@@ -192,13 +274,14 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     const claims = new Map(c.blocks.map(b => [b.id, checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).claims.map(claim =>
       claim.kind === "figure" ? `[${b.id}] ${claim.shown || claim.value} (value ${claim.value}, source ${claim.ref})` : `[${b.id}] "${claim.text.slice(0, 300)}" (source ${claim.source})`)]));
     const context = (b: ArtifactBlock) => ({
+      ...(setup.operatorValidation?{requireComplete:true}:{}),
       passed: new Set(passed[b.id] ?? []),
       established: c.blocks.filter(x => x.id !== b.id).flatMap(x => claims.get(x.id) ?? []),
       ...(setup.find ? { find: (terms: string[]) => setup.find!(terms, state) } : {}),
     });
     const reviewed = await pool(drafts, 8, b => reviewBlock(setup.env, b, reader, ledger(state), context(b)).catch(() => null));
     drafts.forEach((b, i) => {
-      if (reviewed[i] === null && setup.settlement === "agent") {
+      if (reviewed[i] === null && (setup.settlement === "agent" || onlyBlock !== undefined)) {
         unavailable.push(`Block "${b.id}": the evidence review was unavailable. Retry finish to complete its review.`);
         return;
       }
@@ -220,10 +303,11 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, 0, "content", c.log.length, drafts.map((b, i) => ({ block: b.id, issues: reviewed[i] })));
     const notes: string[] = [];
     for (const b of c.blocks) {
+      if (onlyBlock !== undefined && b.id !== onlyBlock) continue;
       const issues = (c.open[b.id] ?? []).filter(i => i.kind === "content" && i.origin !== "semantic");
       if (!issues.length) continue;
       const step = climb(c, `content:${b.id}`, issues);
-      if (setup.settlement !== "agent" && (last(b) || step.level >= 5)) {
+      if (onlyBlock === undefined && setup.settlement !== "agent" && (last(b) || step.level >= 5)) {
         const { empty, ...settled } = conservativeBlock(b, issues);
         delete c.open[b.id];
         c.hidden = c.hidden.filter(h => h !== b.id);
@@ -242,14 +326,14 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
       log(c, b.id, "content", step.level, issues.map(i => i.problem).join(" | "));
       notes.push(`Block "${b.id}" (step ${step.level}): ${CONTENT_STEP(step.level, setup.research)}\n${issues.map((i, n) => `  ${n + 1}. ${i.quote ? `"${i.quote}" — ` : ""}${i.problem}${i.replacement ? ` Correction: ${/^delete\.?$/i.test(i.replacement) ? "remove the sentence" : i.replacement}` : i.suggestion ? ` Suggestion: ${i.suggestion}` : ""}`).join("\n")}`);
     }
-    return notes.length || unavailable.length ? [...notes, ...unavailable, ...advice] : [];
+    return { notes: notes.length || unavailable.length ? [...notes, ...unavailable, ...advice] : [], reviews: drafts.map((b, i) => ({ block: b.id, issues: reviewed[i]! })) };
   }
 
   async function settleRendering(state: S, force: boolean): Promise<string[]> {
     const c = state.composer;
     for (let pass = 0; pass < 3; pass++) {
       (c.rounds ??= { content: 0, render: 0 }).render += 1;
-      const draft = await saveVersion(setup.env, toDocument(c, 0), await compileArtifactCss(c.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: ref => c.sources[ref]?.url ?? null, sourceLabel: ref => c.sources[ref]?.title, charts: new Set(Object.keys(c.charts)) }).classes)), "draft", setup.ledger.runId ?? null);
+      const draft = await saveDraft(state);
       let qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger);
       // A rendering that could not be looked at is asked for once more before the blocks give up their layout for it.
       if (qa.unavailable) { await new Promise(resolve => setTimeout(resolve, 5000)); qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), c.blocks.map(b => b.id), setup.ledger); }
@@ -297,6 +381,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
 
   async function finish(state: S): Promise<Result> {
     const c = state.composer;
+    if (setup.operatorValidation) return fail("Operator validation uses the server-driven prepare, content, semantic, render and shadow stages; finish cannot bypass them.");
     if (c.phase === "published") return ok("Already published.");
     const invariant = setup.hardPrecheck?.(state);
     if (invariant) return fail(`Not published: ${invariant}`);
@@ -308,22 +393,12 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     for (const id of missing) { const { empty: _, ...placeholder } = conservativeBlock({ id, title: id, sources: [], html: `<h2>${id}</h2>`, state: "draft" }, [{ block: id, kind: "content", severity: "major", problem: "This section was not written within the session's budget.", key: id }]); void _; c.blocks.push(placeholder); }
     // A recipe that names its sections names their order too: the blocks are read in that order however they were
     // written, and a block the recipe does not name stays behind the one it followed.
-    const declared = [...setup.required?.(state) ?? []];
-    if (declared.length) {
-      let rank = -1;
-      const ranks = new Map(c.blocks.map(b => { const at = declared.indexOf(b.id); if (at >= 0) rank = at; return [b.id, at >= 0 ? at : rank] as const; }));
-      c.blocks = c.blocks.map((b, i) => ({ b, i })).sort((x, y) => ranks.get(x.b.id)! - ranks.get(y.b.id)! || x.i - y.i).map(x => x.b);
-    }
+    orderBlocks(state);
     c.phase = "content";
-    const content = await settleContent(state, lowBudget(state));
+    const { notes: content } = await settleContent(state, lowBudget(state));
     if (content.length) return fail(`Not published yet. The evidence review found problems. ${reviewInstructions(setup.settlement ?? "harness")}\n\n${content.join("\n\n")}\n\nCall apply_fixes with no arguments to accept every correction at once, change what it could not apply with edit_block, then call finish again.`);
     if (setup.audit) {
-      const issues = await setup.audit(state);
-      for (const id of Object.keys(c.open)) {
-        c.open[id] = c.open[id]!.filter(issue => issue.origin !== "semantic");
-        if (!c.open[id]!.length) delete c.open[id];
-      }
-      for (const issue of issues) (c.open[issue.block] ??= []).push(issue);
+      const issues = await auditDocument(state);
       if (issues.length) return fail(`Not published yet. The independent filing audit found problems:\n\n${issues.map(issue => `Block "${issue.block}": ${issue.quote ? `"${issue.quote}". ` : ""}${issue.problem}${issue.replacement ? ` Correction: ${issue.replacement}` : issue.suggestion ? ` Suggestion: ${issue.suggestion}` : ""}`).join("\n\n")}\n\nUse view_issue and the normal research and editing tools to correct the report, then call finish again.`);
     }
     c.phase = "render";
@@ -359,7 +434,151 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     return ok(`Saved "${id}" (${written.html.length} chars).${sameWords ? " The words are unchanged, so the evidence review is not repeated." : ""}`);
   }
 
-  return [
+  const phaseResult = (receipt: ComposerPhaseReceipt): ComposerPhaseResult => ({ observation: receipt.observation, ...(!receipt.success ? { error: true } : {}), receipt });
+  const receiptOf = (validation: Pick<ComposerOperatorValidation, "digest">, stage: ComposerPhaseReceipt["stage"], success: boolean, observation: string, detail: Partial<ComposerPhaseReceipt> = {}): ComposerPhaseReceipt => ({ ...detail, stage, digest: validation.digest, success, at: new Date().toISOString(), observation, issues: detail.issues ?? [] });
+  const sameReceipt = (validation: ComposerOperatorValidation, receipt: ComposerPhaseReceipt | undefined, stage: ComposerPhaseReceipt["stage"]) => receipt?.stage === stage && receipt.success && receipt.digest === validation.digest;
+  const contentComplete = (validation: ComposerOperatorValidation, state: S) => validation.blockIds.every(id => sameReceipt(validation, validation.content[id], "content") && validation.content[id]!.blockId === id && block(state, id)?.state === "passed");
+  const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+
+  async function currentValidation(state: S): Promise<ComposerOperatorValidation | string> {
+    if (!setup.operatorValidation) return "Operator validation is not enabled for this composer.";
+    const validation = operatorState(state.composer).operatorValidation;
+    if (!validation || validation.schema !== "composer-operator-validation.v1" || validation.runId !== (setup.ledger.runId ?? null) || !sameReceipt(validation, validation.prepare, "prepare")) return "Run prepare before this operator stage.";
+    if (validation.digest !== await operatorDigest(state) || JSON.stringify(validation.blockIds) !== JSON.stringify(state.composer.blocks.map(b => b.id))) return "The report, evidence or research state changed after prepare. Run prepare again; prior phase receipts cannot validate different inputs.";
+    return validation;
+  }
+
+  function renderingProblems(qa: Pick<QaResult, "unavailable" | "scores" | "visualReviewed" | "issues" | "errors" | "covered" | "measured" | "metrics">, ids: string[]): string[] {
+    const problems: string[] = [];
+    if (qa.unavailable) problems.push(qa.unavailable);
+    if (!qa.visualReviewed || !visualPasses(qa.scores)) problems.push("A successful visual review meeting every design score threshold is required.");
+    if (qa.errors?.length) problems.push(...qa.errors);
+    for (const viewport of VIEWPORTS) {
+      const measured = qa.metrics?.[viewport.name];
+      if (!measured || !Number.isFinite(measured.stageWidth) || measured.stageWidth <= 0 || ids.some(id => !qa.measured?.[viewport.name]?.includes(id) || !qa.covered?.[viewport.name]?.includes(id))) problems.push(`${viewport.name}: every block must have browser measurements and screenshots actually sent to the visual reviewer.`);
+    }
+    problems.push(...qa.issues.filter(issue => issue.severity !== "minor" || issue.kind === "interaction").map(issue => `Block "${issue.block}" [${issue.kind}${issue.viewport ? `, ${issue.viewport}` : ""}]: ${issue.problem}`));
+    return [...new Set(problems)];
+  }
+
+  const stages = {
+    async prepare(state: S): Promise<ComposerPhaseResult> {
+      if (!setup.operatorValidation) return fail("Operator validation is not enabled for this composer.");
+      const c = state.composer;
+      const missing = requiredOf(state).filter(id => !block(state, id));
+      if (missing.length) return fail(`Write the required blocks first: ${missing.join(", ")}.`);
+      const invariant = setup.hardPrecheck?.(state);
+      if (invariant) return fail(`Not prepared: ${invariant}`);
+      const unmet = setup.precheck?.(state);
+      if (unmet) return fail(`Not prepared: ${unmet}`);
+      orderBlocks(state);
+      const digest = await operatorDigest(state), prior = operatorState(c).operatorValidation;
+      if (prior?.schema === "composer-operator-validation.v1" && prior.digest === digest && prior.runId === (setup.ledger.runId ?? null) && sameReceipt(prior, prior.prepare, "prepare")) return phaseResult(prior.prepare);
+      // An inherited passed flag or old receipt is not an operator review. Only the server resets it; material,
+      // computations, source bindings, frozen research context and the historical edit log remain untouched.
+      c.blocks.forEach(b => { b.state = "draft"; });
+      c.passed = {}; c.reviews = {}; c.rounds = { content: 0, render: 0 };
+      c.open = {}; c.ladder = {}; c.hidden = []; c.published = null; c.phase = "content"; c.settledBy = "agent";
+      delete c.changes;
+      const prepare = receiptOf({ digest }, "prepare", true, `Prepared ${c.blocks.length} blocks for independent operator validation.`);
+      operatorState(c).operatorValidation = { schema: "composer-operator-validation.v1", digest, runId: setup.ledger.runId ?? null, blockIds: c.blocks.map(b => b.id), prepare, content: {} };
+      return phaseResult(prepare);
+    },
+    async content(state: S, blockId: string): Promise<ComposerPhaseResult> {
+      const validation = await currentValidation(state);
+      if (typeof validation === "string") return fail(validation);
+      const b = block(state, blockId);
+      if (!b) return fail(`No block "${blockId}".`);
+      if (sameReceipt(validation, validation.content[blockId], "content")) return phaseResult(validation.content[blockId]!);
+      delete validation.semantic; delete validation.render; delete validation.shadow;
+      try {
+        state.composer.phase = "content";
+        const result = await settleContent(state, false, blockId);
+        const issues = result.reviews.flatMap(review => review.issues ?? []);
+        const unchanged = validation.digest === await operatorDigest(state);
+        const success = unchanged && result.reviews.length === 1 && result.reviews[0]!.issues !== null && b.state === "passed" && !result.notes.length;
+        const observation = !unchanged ? "Content validation changed the research inputs. Run prepare again before continuing."
+          : success ? `Evidence review completed for "${blockId}".${issues.length ? ` ${issues.length} minor point(s) recorded.` : ""}`
+            : `Evidence review did not pass for "${blockId}":\n${result.notes.join("\n\n") || "No complete independent block review was returned."}`;
+        validation.content[blockId] = receiptOf(validation, "content", success, observation, { blockId, issues, ...(result.reviews.some(review => review.issues === null) ? { unavailable: "The independent block evidence review was unavailable." } : {}) });
+      } catch (error) {
+        validation.content[blockId] = receiptOf(validation, "content", false, `Evidence review failed for "${blockId}": ${errorText(error)}`, { blockId, unavailable: errorText(error) });
+      }
+      return phaseResult(validation.content[blockId]!);
+    },
+    async semantic(state: S): Promise<ComposerPhaseResult> {
+      const validation = await currentValidation(state);
+      if (typeof validation === "string") return fail(validation);
+      if (!contentComplete(validation, state)) return fail("Complete a successful independent content stage for every prepared block before the full-document audit.");
+      if (sameReceipt(validation, validation.semantic, "semantic")) return phaseResult(validation.semantic!);
+      delete validation.render; delete validation.shadow;
+      try {
+        if (!setup.audit) throw new Error("A full-document independent audit is not configured.");
+        const issues = await auditDocument(state);
+        const unchanged = validation.digest === await operatorDigest(state);
+        const success = unchanged && !issues.length;
+        validation.semantic = receiptOf(validation, "semantic", success, !unchanged ? "The independent audit changed the research inputs. Run prepare again."
+          : success ? "The full-document independent audit passed for these exact research inputs."
+            : `The full-document independent audit found problems:\n${issues.map(issue => `Block "${issue.block}": ${issue.problem}`).join("\n")}`, { issues });
+      } catch (error) {
+        validation.semantic = receiptOf(validation, "semantic", false, `The full-document independent audit failed: ${errorText(error)}`, { unavailable: errorText(error) });
+      }
+      return phaseResult(validation.semantic!);
+    },
+    async render(state: S): Promise<ComposerPhaseResult> {
+      const validation = await currentValidation(state);
+      if (typeof validation === "string") return fail(validation);
+      if (!contentComplete(validation, state) || !sameReceipt(validation, validation.semantic, "semantic")) return fail("Complete every content stage and the full-document independent audit before rendering.");
+      if (sameReceipt(validation, validation.render, "render")) return phaseResult(validation.render!);
+      delete validation.shadow;
+      const c = state.composer;
+      try {
+        c.phase = "render";
+        (c.rounds ??= { content: 0, render: 0 }).render += 1;
+        const draft = await saveDraft(state);
+        const qa = await reviewRendering(setup.env, await renderUrl(state, draft.version), validation.blockIds, setup.ledger, { strict: true, requireVisual: true, expectedHash: draft.hash });
+        await recordCheck(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, draft.version, "render", c.rounds.render, { operator: true, digest: validation.digest, ...qa });
+        const problems = renderingProblems(qa, validation.blockIds);
+        if (validation.digest !== await operatorDigest(state)) problems.push("The report or research inputs changed during rendering. Run prepare again.");
+        for (const id of Object.keys(c.open)) {
+          c.open[id] = c.open[id]!.filter(issue => issue.kind === "content");
+          if (!c.open[id]!.length) delete c.open[id];
+        }
+        for (const issue of qa.issues) {
+          if (issue.severity !== "minor" || issue.kind === "interaction") (c.open[issue.block] ??= []).push(issue);
+          else log(c, issue.block, "render", 0, `minor advice: ${issue.problem}`);
+        }
+        validation.render = receiptOf(validation, "render", !problems.length, problems.length ? `The rendered report did not pass:\n${problems.join("\n")}` : "Browser measurements and independent visual review passed at every required viewport.", {
+          draft: { version: draft.version, hash: draft.hash }, scores: qa.scores, covered: qa.covered, measured: qa.measured, metrics: qa.metrics,
+          errors: qa.errors ?? [], shots: qa.shots, visualReviewed: qa.visualReviewed, issues: qa.issues, ...(qa.unavailable ? { unavailable: qa.unavailable } : {}),
+        });
+      } catch (error) {
+        validation.render = receiptOf(validation, "render", false, `Rendering validation failed: ${errorText(error)}`, { unavailable: errorText(error) });
+      }
+      return phaseResult(validation.render!);
+    },
+    async shadow(state: S): Promise<ComposerPhaseResult> {
+      if (setup.publicationMode !== "shadow") return fail("The operator shadow stage requires publicationMode=shadow; public publication is not permitted.");
+      const validation = await currentValidation(state);
+      if (typeof validation === "string") return fail(validation);
+      const rendered = validation.render;
+      if (!contentComplete(validation, state) || !sameReceipt(validation, validation.semantic, "semantic") || !sameReceipt(validation, rendered, "render") || !rendered?.draft
+        || renderingProblems({ ...rendered, scores: rendered.scores ?? null, issues: rendered.issues, unavailable: rendered.unavailable ?? null }, validation.blockIds).length) return fail("A shadow requires successful content, full-document audit and strict rendering receipts for these exact inputs.");
+      const invariant = setup.hardPrecheck?.(state);
+      if (invariant) return fail(`Not published: ${invariant}`);
+      if (validation.digest !== await operatorDigest(state)) return fail("Not published: the final invariant check changed the research inputs. Run prepare again.");
+      if (sameReceipt(validation, validation.shadow, "shadow") && state.composer.published?.version === rendered.draft.version && state.composer.published.hash === rendered.draft.hash) return phaseResult(validation.shadow!);
+      try {
+        const result = await publish(state, rendered.draft);
+        validation.shadow = receiptOf(validation, "shadow", !result.error, result.observation, { ...(state.composer.published ? { published: { ...state.composer.published } } : {}) });
+      } catch (error) {
+        validation.shadow = receiptOf(validation, "shadow", false, `Shadow validation failed: ${errorText(error)}`, { unavailable: errorText(error) });
+      }
+      return phaseResult(validation.shadow!);
+    },
+  };
+
+  const tools: AnyTool<S>[] = [
     tool<S>("outline", "List the document's blocks: id, title, state, length and open problems, and the required blocks still missing.", {}, [], (_a, state) => {
       const c = state.composer;
       const rows = c.blocks.map(b => `- ${b.id} "${b.title}" [${b.state}] ${b.html.length} chars${c.open[b.id]?.length ? `, ${c.open[b.id]!.length} open problem(s)` : ""}`);
@@ -505,6 +724,7 @@ export function composerTools<S extends { composer: ComposerState }>(setup: Comp
     }, 6 * 60_000),
     tool<S>("finish", "Finish the document: the harness reviews every block against its sources, renders the report in the real page and reviews its design, then publishes or returns the problems to fix.", {}, [], (_a, state) => finish(state), 14 * 60_000),
   ];
+  return { tools, stages };
 }
 
 /** Producers that allow harness settlement can publish when their session ends without finishing. */
