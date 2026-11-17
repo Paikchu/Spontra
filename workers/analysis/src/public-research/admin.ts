@@ -9,7 +9,7 @@ import { listEndpoints } from "../pi/endpoints.ts";
 import { sha256 } from "../sha256.ts";
 import { withRuns } from "../durable-runs/binding.ts";
 import { publicResearchRunSchema, freezePublicResearchInput, type PublicResearchRunSpec } from "./generation.ts";
-import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publishPublicResearch, withdrawPublicResearch, restorePublicResearch, listPublicResearch, invalidatePublicResearchEvent, revisePublicResearchDraft } from "./store.ts";
+import { readPublicResearch, readPublicResearchDraft, reviewPublicResearch, publishPublicResearch, withdrawPublicResearch, restorePublicResearch, listPublicResearch, invalidatePublicResearchEvent, revisePublicResearchDraft, completeStoppedIndustryDraft } from "./store.ts";
 import { publicResearchCheckpoint, publicResearchStageSchema, readPublicResearchCheckpoint } from "./checkpoint.ts";
 import type { StoredPiSession } from "../pi/host.ts";
 
@@ -99,7 +99,7 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       return json({...row,params:JSON.parse(row.params_json),params_json:undefined,humanReviewRequired:JSON.parse(row.params_json).type!=="macro",usage:usage.results,machineReview:review?JSON.parse(await review.text()):null,draft,runner:await (await binding(env)?.get(row.run_id))?.report()});
     }
     if(path==="/admin/public-research/reports"&&request.method==="GET")return json(await listPublicResearch(env));
-    const report=/^\/admin\/public-research\/reports\/([a-zA-Z0-9._:-]+)(?:\/(review|publish|withdraw|restore|invalidate|revise))?$/.exec(path);
+    const report=/^\/admin\/public-research\/reports\/([a-zA-Z0-9._:-]+)(?:\/(review|publish|withdraw|restore|invalidate|revise|operator-complete))?$/.exec(path);
     if(!report)return json({error:"Not found"},404);
     const id=report[1]!,action=report[2];
     if(!action&&request.method==="GET"){
@@ -107,6 +107,10 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
       return json(version?{draft:await readPublicResearchDraft(env,id,version),published:await readPublicResearch(env,id,{version})}:await readPublicResearch(env,id));
     }
     if(request.method!=="POST")return json({error:"Method not allowed"},405);
+    if(action==="operator-complete"){
+      const completion=z.object({sourceRunId:z.string().regex(/^public-[a-f0-9]{40}$/),checkpointHash:z.string().regex(/^[a-f0-9]{64}$/),failedRunId:z.string().regex(/^public-[a-f0-9]{40}$/),draft:publicResearchDraftSchema,reason:z.string().trim().min(1).max(8000),operator:z.string().trim().min(1).max(200),sourceChecks:z.array(z.object({sourceId:z.string().min(1),notes:z.string().trim().min(1).max(4000)}))}).strict().parse(await request.json());
+      return json(await completeStoppedIndustryDraft(env,id,completion));
+    }
     if(action==="revise"){
       const revision=z.object({baseVersion:z.string().regex(/^[a-f0-9]{64}$/),draft:publicResearchDraftSchema,reason:z.string().trim().min(1).max(8000),operator:z.string().trim().min(1).max(200),sourceChecks:z.array(z.object({sourceId:z.string().min(1),notes:z.string().trim().min(1).max(4000)}))}).strict().parse(await request.json());
       return json(await revisePublicResearchDraft(env,id,revision));

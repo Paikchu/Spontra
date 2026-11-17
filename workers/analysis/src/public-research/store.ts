@@ -2,6 +2,10 @@ import type { PublicResearchDraft, PublicReportVersion, PublicReportSummary, Pub
 import { publicResearchDraftSchema } from "../../../../shared/analysis-runtime/public-research-schema.ts";
 import { validatePublicResearch, validatePublicResearchDraft, publicReportSummary, researchFreshness, publicClaimUsable } from "../../../../shared/analysis-runtime/public-research.ts";
 import { sha256 } from "../sha256.ts";
+import type { AnalysisEnv } from "../operations.ts";
+import type { PublicResearchRunSpec } from "./generation.ts";
+import { withRuns } from "../durable-runs/binding.ts";
+import { readStoppedPublicResearchCheckpoint, savePublicResearchCheckpoint } from "./checkpoint.ts";
 
 export type PublicResearchEnv = { DB?: D1Database; SEC_FILINGS: { get(key: string): Promise<{ text(): Promise<string> } | null>; put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> } };
 type VersionRow = { report_id: string; version: string; r2_key: string; state: string; as_of: string; generated_at: string; published_at: string | null; supersedes: string | null; review_json: string | null; summary_json: string; freshness?: ResearchFreshness };
@@ -71,6 +75,61 @@ export async function revisePublicResearchDraft(env:PublicResearchEnv,reportId:s
   const receipt={reportId,baseVersion:input.baseVersion,version,operator:input.operator,reason:input.reason,sourceChecks:input.sourceChecks,revisedAt:new Date().toISOString(),state:"draft",humanReviewRequired:draft.type!=="macro"};
   await saveDraftWithAudit(env,draft,[db.prepare("INSERT INTO public_research_revisions(report_id,base_version,version,request_hash,receipt_json) VALUES(?,?,?,?,?) ON CONFLICT(report_id,base_version) DO UPDATE SET request_hash=CASE WHEN request_hash=excluded.request_hash THEN request_hash ELSE NULL END").bind(reportId,input.baseVersion,version,requestHash,JSON.stringify(receipt))]);
   const saved=await db.prepare("SELECT receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.baseVersion).first<{receipt_json:string}>();
+  return JSON.parse(saved!.receipt_json);
+}
+
+/** External completion preserves the stopped/failed runs and creates only a separately authored, unreviewed industry draft. */
+export async function completeStoppedIndustryDraft(env:AnalysisEnv,reportId:string,input:{sourceRunId:string;checkpointHash:string;failedRunId:string;draft:PublicResearchDraft;reason:string;operator:string;sourceChecks:Array<{sourceId:string;notes:string}>}){
+  const db=database(env),at=new Date().toISOString(),draft=validatePublicResearchDraft(input.draft,at);
+  if(draft.reportId!==reportId||draft.type!=="industry")throw new Error("Operator completion accepts only the same industry report");
+  if(!input.operator.trim()||!input.reason.trim())throw new Error("Operator identity and completion reason required");
+  if(input.sourceChecks.length!==draft.sources.length||draft.sources.some(source=>input.sourceChecks.filter(check=>check.sourceId===source.id&&check.notes.trim()).length!==1))throw new Error("Operator source audit must cover every completed draft source exactly once");
+  if(!/^operator-[A-Za-z0-9._:-]+$/.test(draft.authorRunId)||!/^operator-completion\.[A-Za-z0-9._:-]+$/.test(draft.promptVersion))throw new Error("External author and operator-completion prompt provenance required");
+  const version=await sha256(stable(draft)),requestHash=await sha256(stable({...input,draft:version,sourceChecks:[...input.sourceChecks].sort((a,b)=>a.sourceId.localeCompare(b.sourceId))}));
+  const prior=await db.prepare("SELECT request_hash,receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.checkpointHash).first<{request_hash:string;receipt_json:string}>();
+  if(prior){if(prior.request_hash!==requestHash)throw new Error("Checkpoint already completed; revise the exact returned version for further changes");return JSON.parse(prior.receipt_json);}
+  type CompletionRun={run_id:string;report_id:string;input_fingerprint:string;state:string;params_json:string;result_version:string|null};
+  const source=await db.prepare("SELECT * FROM public_research_runs WHERE run_id=?").bind(input.sourceRunId).first<CompletionRun>();
+  const failed=await db.prepare("SELECT * FROM public_research_runs WHERE run_id=?").bind(input.failedRunId).first<CompletionRun>();
+  if(!source||source.report_id!==reportId||source.state!=="stopped"||source.result_version)throw new Error("Completion requires the exact stopped source run without a final version");
+  if(!failed||failed.report_id!==reportId||!["failed","review_failed"].includes(failed.state)||failed.result_version)throw new Error("Completion requires a failed enrichment without a final version");
+  const original=JSON.parse(source.params_json) as PublicResearchRunSpec,attempt=JSON.parse(failed.params_json) as PublicResearchRunSpec;
+  for(const [row,spec] of [[source,original],[failed,attempt]] as const){
+    if(spec.runId!==row.run_id||spec.reportId!==reportId||spec.inputFingerprint!==row.input_fingerprint||spec.type!=="industry")throw new Error("Industry run admission identity mismatch");
+    if(stable(draft.scope)!==stable(spec.scope)||draft.language!==spec.language)throw new Error("Completion must preserve industry scope and language");
+    if(Date.parse(draft.asOf)<Date.parse(spec.asOf))throw new Error("Completion cannot backdate the admitted research cutoff");
+  }
+  if(original.enrichment||attempt.enrichment?.sourceRunId!==input.sourceRunId||!("checkpointHash" in attempt.enrichment)||attempt.enrichment.checkpointHash!==input.checkpointHash||attempt.enrichmentBase?.checkpointHash!==input.checkpointHash)throw new Error("Failed enrichment does not match the original synthesis checkpoint");
+  if(draft.inputFingerprint===source.input_fingerprint||draft.inputFingerprint===failed.input_fingerprint||draft.authorRunId===input.sourceRunId||draft.authorRunId===input.failedRunId)throw new Error("Completion requires an independent author and input fingerprint");
+  if(await db.prepare("SELECT 1 FROM public_research_runs WHERE report_id=? AND state IN ('queued','running')").bind(reportId).first())throw new Error("Research for this report is still active");
+  if(await db.prepare("SELECT 1 FROM public_research_versions WHERE report_id=? AND input_fingerprint=?").bind(reportId,failed.input_fingerprint).first())throw new Error("Failed enrichment already has a saved draft");
+  if(await db.prepare("SELECT 1 FROM public_research_versions WHERE report_id=? AND (version=? OR input_fingerprint=?)").bind(reportId,version,draft.inputFingerprint).first())throw new Error("Completion identity already exists; its review state cannot be reused");
+  const runner=(withRuns(env) as AnalysisEnv & {PUBLIC_RESEARCH_WORKFLOW?:Parameters<typeof readStoppedPublicResearchCheckpoint>[3]}).PUBLIC_RESEARCH_WORKFLOW;
+  if(!runner)throw new Error("Stopped research storage unavailable");
+  const archived=await readStoppedPublicResearchCheckpoint(env,{runId:source.run_id,reportId,inputFingerprint:source.input_fingerprint},"synthesis",runner);
+  if(!archived||archived.contentHash!==input.checkpointHash||!archived.checkpoint.stageSubmitted||!archived.checkpoint.draft)throw new Error("Exact complete submitted synthesis checkpoint required");
+  const base=archived.checkpoint.draft;
+  if(base.type!=="industry"||stable(base.scope)!==stable(draft.scope)||base.language!==draft.language||archived.checkpoint.asOf!==original.asOf||archived.checkpoint.runStartedAt!==original.startedAt)throw new Error("Stopped synthesis scope or time identity mismatch");
+  if(!draft.dependencies.length||new Set(draft.dependencies.map(dep=>stable({reportId:dep.reportId,version:dep.version,claimId:dep.claimId}))).size!==draft.dependencies.length)throw new Error("Completion requires distinct frozen macro dependencies");
+  for(const dependency of draft.dependencies){
+    if(!attempt.dependencies.some(dep=>dep.reportId===dependency.reportId&&dep.version===dependency.version&&dep.claimId===dependency.claimId))throw new Error("Completion dependency was not frozen in the failed enrichment");
+    const read=await readPublicResearch(env,dependency.reportId,{version:dependency.version,asOf:draft.asOf}),current=await readPublicResearch(env,dependency.reportId,{version:dependency.version});
+    if(!read.report||read.report.type!=="macro"||!publicClaimUsable(read.report,dependency.claimId)||!current.report||!publicClaimUsable(current.report,dependency.claimId)||Date.parse(read.report.publishedAt)>Date.parse(draft.asOf)||Date.parse(read.report.asOf)>Date.parse(draft.asOf))throw new Error("Exact published and valid macro dependency required");
+  }
+  const checkpoint=archived.key?{key:archived.key}:await savePublicResearchCheckpoint(env,archived.checkpoint);
+  const receipt={reportId,baseVersion:input.checkpointHash,version,sourceKind:"stopped-industry-operator-completion",sourceRunId:input.sourceRunId,failedRunId:input.failedRunId,checkpointHash:input.checkpointHash,checkpointKey:checkpoint.key,originalInputFingerprint:source.input_fingerprint,failedInputFingerprint:failed.input_fingerprint,authorRunId:draft.authorRunId,modelVersion:draft.modelVersion,promptVersion:draft.promptVersion,operator:input.operator,reason:input.reason,sourceChecks:input.sourceChecks,completedAt:at,state:"draft",humanReviewRequired:true,externalAssistedCompletion:true};
+  // The immutable R2 body precedes one D1 transaction for the audit and draft index; a rejected transaction cannot expose it.
+  // Recheck run/identity races in the transaction. Exact concurrent replays keep the first receipt and existing review state.
+  const audit=db.prepare(`INSERT INTO public_research_revisions(report_id,base_version,version,request_hash,receipt_json) VALUES(?,?,?,CASE WHEN
+    EXISTS(SELECT 1 FROM public_research_revisions WHERE report_id=? AND base_version=? AND request_hash=? AND version=?) OR (
+      EXISTS(SELECT 1 FROM public_research_runs WHERE run_id=? AND report_id=? AND state='stopped' AND result_version IS NULL AND params_json=?) AND
+      EXISTS(SELECT 1 FROM public_research_runs WHERE run_id=? AND report_id=? AND state=? AND result_version IS NULL AND params_json=?) AND
+      NOT EXISTS(SELECT 1 FROM public_research_runs WHERE report_id=? AND state IN ('queued','running')) AND
+      NOT EXISTS(SELECT 1 FROM public_research_versions WHERE report_id=? AND (version=? OR input_fingerprint IN (?,?)))
+    ) THEN ? ELSE NULL END,?) ON CONFLICT(report_id,base_version) DO UPDATE SET request_hash=CASE WHEN request_hash=excluded.request_hash THEN request_hash ELSE NULL END`)
+    .bind(reportId,input.checkpointHash,version,reportId,input.checkpointHash,requestHash,version,source.run_id,reportId,source.params_json,failed.run_id,reportId,failed.state,failed.params_json,reportId,reportId,version,draft.inputFingerprint,failed.input_fingerprint,requestHash,JSON.stringify(receipt));
+  await saveDraftWithAudit(env,draft,[audit]);
+  const saved=await db.prepare("SELECT receipt_json FROM public_research_revisions WHERE report_id=? AND base_version=?").bind(reportId,input.checkpointHash).first<{receipt_json:string}>();
   return JSON.parse(saved!.receipt_json);
 }
 

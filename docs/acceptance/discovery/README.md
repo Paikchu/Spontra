@@ -136,3 +136,9 @@ CRWV真实影子已以唯一幂等ID启动：shadow-CRWV-0001769628-26-000465-ba
 同一影子任务的 turn83 将 16400 USD millions 按 16400 USD 输入，得到 82 USD，却在链条中描述为 82 million/year。此前语义输入未包含 impactComputations 和 investmentChains；不能仅修改可见 HTML 就让下游使用错误结构。现改为按事实原单位校验基础货币/股数/比例，保存输入与单位凭据；旧无凭据计算必须重算，最终预算回合的 hardPrecheck 仍阻止发布。独立语义政策 v3 审查完整结构链及所有引用计算，尤其区分可取消与实际取消/退款、内部人二级出售与公司增发，以及利率披露敏感性与未来净成本。
 
 本地实际工具→filingLoader→finish 旅程 26 项及既有计算旅程 23 项通过，均无生产写入或模型调用；全仓/Analysis 类型检查、架构边界、改动文件 lint 与 Analysis dry-run 通过。全仓 lint 仍为已溯源的 10 errors / 5 warnings。可运行 `node --experimental-strip-types --no-warnings scripts/filing-impact-unit-acceptance.mjs` 与 `node --experimental-strip-types --no-warnings scripts/price-impact-acceptance.ts`。此处只证明技术门槛，不代表真实影子内容已通过，也不代表人工批准。
+
+## 行业外部作者草稿保存（本地代码节点，2026-11-17）
+
+新增受限 `operator-complete` POST，只将精确 stopped/terminated synthesis 与同父 hash 的失败增量衔接为独立外部作者、未审阅的行业草稿，不重启原任务，也不发布。真实行业作者交接稿含 27 条结论、19 份来源，首轮 compact JSON 为 134,731 字节（移除无关段落后的最终稿为 120,795 字节）；为保留完整支持证据，仅此接口采用 256 KiB（262,144 字节），常规 revise/reconcile-source 保持 128 KiB。
+
+[68 项本地 Cloudflare 操作旅程](results/industry-operator-completion.json) 通过：完整大于 128 KiB、小于 256 KiB 来源经真实 admin→proxy→AdminGateway→handler→D1/R2 保存读回；超限及其他路径原上限拒绝；同 payload 并发幂等、冲突不覆盖、review 后重放不改审核、D1 batch 失败无孤立数据库版本；旧 run、预留调用、runner storage、父 checkpoint 与公开指针不变，零外部请求。详情、复跑命令及 R2/D1 事务边界见 [节点说明](industry-operator-completion.md)。本节点未提交、部署、写生产或代替用户审阅；真实成稿质量及后续发布另行记录。

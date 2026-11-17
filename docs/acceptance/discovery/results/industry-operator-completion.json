@@ -1,0 +1,566 @@
+{
+  "at": "2026-11-17T01:14:55.482Z",
+  "scope": "Synthetic local Cloudflare runtime: real admin site handler/proxy, service-bound AdminGateway, authenticated analysis handler, TaskRunner storage-only stopped session, D1 and R2",
+  "checks": [
+    {
+      "name": "valid published macro fixture",
+      "status": "passed",
+      "detail": {
+        "reportId": "synthetic-macro",
+        "version": "60e22d012e430f71ce67f9bdff7c57888d3f836ad6f84e51332d59a809efd397"
+      }
+    },
+    {
+      "name": "existing stable industry fixture",
+      "status": "passed",
+      "detail": "a1feb620eb81faa64847d27d36d686284658b07fd9f2855b96f5923e2e7409c2"
+    },
+    {
+      "name": "direct handler requires authentication",
+      "status": "passed"
+    },
+    {
+      "name": "proxy rejects missing origin",
+      "status": "passed"
+    },
+    {
+      "name": "proxy rejects wrong origin",
+      "status": "passed"
+    },
+    {
+      "name": "proxy exposes POST only",
+      "status": "passed"
+    },
+    {
+      "name": "proxy rejects extra path segment",
+      "status": "passed"
+    },
+    {
+      "name": "operator completion rejects bodies above 256 KiB",
+      "status": "passed"
+    },
+    {
+      "name": "ordinary revision retains the 128 KiB limit",
+      "status": "passed"
+    },
+    {
+      "name": "source reconciliation retains the 128 KiB limit",
+      "status": "passed"
+    },
+    {
+      "name": "ordinary revision still admits bodies between 64 and 128 KiB to schema validation",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "[\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"baseVersion\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"draft\"\n    ],\n    \"message\": \"Invalid input: expected object, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"reason\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"operator\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sourceChecks\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"padding\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"padding\\\"\"\n  }\n]"
+        }
+      }
+    },
+    {
+      "name": "source reconciliation still admits bodies between 64 and 128 KiB to schema validation",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "body": {
+          "error": "[\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"approvalId\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"requestId\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"failedAttemptId\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sourceFilename\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"sourceSha256\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"failedExtractionSha256\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"rawTranscriptionKey\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"rawReviewKey\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"candidateJson\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"candidateSha256\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"companionSha256\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"review\"\n    ],\n    \"message\": \"Invalid input: expected object, received undefined\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"padding\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"padding\\\"\"\n  }\n]"
+        }
+      }
+    },
+    {
+      "name": "macro type refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Operator completion accepts only the same industry report"
+        }
+      }
+    },
+    {
+      "name": "scope change refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion must preserve industry scope and language"
+        }
+      }
+    },
+    {
+      "name": "language change refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion must preserve industry scope and language"
+        }
+      }
+    },
+    {
+      "name": "missing source audit refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Operator source audit must cover every completed draft source exactly once"
+        }
+      }
+    },
+    {
+      "name": "duplicate source audit refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Operator source audit must cover every completed draft source exactly once"
+        }
+      }
+    },
+    {
+      "name": "unknown source audit refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Operator source audit must cover every completed draft source exactly once"
+        }
+      }
+    },
+    {
+      "name": "unknown source in claim refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Public research rejected: unknown source in claim-1"
+        }
+      }
+    },
+    {
+      "name": "invalid schema refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "[\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"public-research.v1\"\n    ],\n    \"path\": [\n      \"draft\",\n      \"schemaVersion\"\n    ],\n    \"message\": \"Invalid input: expected \\\"public-research.v1\\\"\"\n  }\n]"
+        }
+      }
+    },
+    {
+      "name": "invalid hash syntax refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^[a-f0-9]{64}$/\",\n    \"path\": [\n      \"draft\",\n      \"inputFingerprint\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^[a-f0-9]{64}$/\"\n  }\n]"
+        }
+      }
+    },
+    {
+      "name": "invalid timestamp refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "[\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"datetime\",\n    \"pattern\": \"/^(?:(?:\\\\d\\\\d[2468][048]|\\\\d\\\\d[13579][26]|\\\\d\\\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\\\d|30)|(?:02)-(?:0[1-9]|1\\\\d|2[0-8])))T(?:(?:[01]\\\\d|2[0-3]):[0-5]\\\\d:[0-5]\\\\d(?:\\\\.\\\\d+)?(?:Z|([+-](?:[01]\\\\d|2[0-3]):[0-5]\\\\d)))$/\",\n    \"path\": [\n      \"draft\",\n      \"asOf\"\n    ],\n    \"message\": \"Invalid ISO datetime\"\n  }\n]"
+        }
+      }
+    },
+    {
+      "name": "future source refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Public research rejected: future source source-1"
+        }
+      }
+    },
+    {
+      "name": "future report refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Public research rejected: future report"
+        }
+      }
+    },
+    {
+      "name": "backdated cutoff refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion cannot backdate the admitted research cutoff"
+        }
+      }
+    },
+    {
+      "name": "missing macro dependency refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion requires distinct frozen macro dependencies"
+        }
+      }
+    },
+    {
+      "name": "unfrozen dependency version refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion dependency was not frozen in the failed enrichment"
+        }
+      }
+    },
+    {
+      "name": "duplicate macro dependency refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion requires distinct frozen macro dependencies"
+        }
+      }
+    },
+    {
+      "name": "recipe author spoof refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "External author and operator-completion prompt provenance required"
+        }
+      }
+    },
+    {
+      "name": "recipe prompt spoof refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "External author and operator-completion prompt provenance required"
+        }
+      }
+    },
+    {
+      "name": "missing completion prompt version refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "External author and operator-completion prompt provenance required"
+        }
+      }
+    },
+    {
+      "name": "parent fingerprint reuse refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion requires an independent author and input fingerprint"
+        }
+      }
+    },
+    {
+      "name": "checkpoint mismatch refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Failed enrichment does not match the original synthesis checkpoint"
+        }
+      }
+    },
+    {
+      "name": "wrong parent refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Completion requires the exact stopped source run without a final version"
+        }
+      }
+    },
+    {
+      "name": "running parent refused",
+      "status": "passed"
+    },
+    {
+      "name": "active enrichment refused",
+      "status": "passed"
+    },
+    {
+      "name": "failed run with final version refused",
+      "status": "passed"
+    },
+    {
+      "name": "failed enrichment base hash mismatch refused",
+      "status": "passed"
+    },
+    {
+      "name": "failed enrichment saved draft refused despite null result",
+      "status": "passed"
+    },
+    {
+      "name": "active Pi session refused despite stopped ledger",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Research still has active sessions; storage export refused"
+        }
+      }
+    },
+    {
+      "name": "nonterminated runner refused despite archived checkpoint and stopped ledger",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Legacy storage export requires a terminated research runner"
+        }
+      }
+    },
+    {
+      "name": "invalidated macro claim refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Exact published and valid macro dependency required"
+        }
+      }
+    },
+    {
+      "name": "macro published after the cutoff refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Exact published and valid macro dependency required"
+        }
+      }
+    },
+    {
+      "name": "withdrawn macro dependency refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Exact published and valid macro dependency required"
+        }
+      }
+    },
+    {
+      "name": "source snapshot hash mismatch refused",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "Source snapshot hash mismatch: source-1"
+        }
+      }
+    },
+    {
+      "name": "rejections create no new version or audit",
+      "status": "passed"
+    },
+    {
+      "name": "full-source payload exceeds 128 KiB and fits the operator-only 256 KiB limit",
+      "status": "passed",
+      "detail": {
+        "payloadBytes": 151967
+      }
+    },
+    {
+      "name": "draft index failure returns an explicit error",
+      "status": "passed",
+      "detail": {
+        "status": 400,
+        "body": {
+          "error": "D1_ERROR: Synthetic draft index failure: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)"
+        }
+      }
+    },
+    {
+      "name": "failed D1 batch rolls back audit and all draft indexes",
+      "status": "passed"
+    },
+    {
+      "name": "failed index may leave only an unreferenced immutable R2 body",
+      "status": "passed"
+    },
+    {
+      "name": "failed transaction body remains unreadable through the report API",
+      "status": "passed"
+    },
+    {
+      "name": "concurrent identical completions share the exact first receipt",
+      "status": "passed",
+      "detail": [
+        {
+          "status": 200,
+          "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14",
+          "completedAt": "2026-11-17T01:14:55.184Z"
+        },
+        {
+          "status": 200,
+          "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14",
+          "completedAt": "2026-11-17T01:14:55.184Z"
+        }
+      ]
+    },
+    {
+      "name": "real admin proxy reaches service-bound authenticated handler",
+      "status": "passed",
+      "detail": {
+        "status": 200,
+        "body": {
+          "reportId": "synthetic-industry",
+          "baseVersion": "96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16",
+          "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14",
+          "sourceKind": "stopped-industry-operator-completion",
+          "sourceRunId": "public-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "failedRunId": "public-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "checkpointHash": "96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16",
+          "checkpointKey": "public-research/runs/public-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/checkpoints/synthesis/96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16.json",
+          "originalInputFingerprint": "53a4171ad1dc7bf7a47f24bed8e28c093e21427046c2b169951b83cda2ebf21e",
+          "failedInputFingerprint": "39eb39d296a94ef88d222d8f041be8585cbd02f5e5a48e62f70bfcee88ad2cb3",
+          "authorRunId": "operator-sol-industry-fixture",
+          "modelVersion": "gpt-6.1-sol",
+          "promptVersion": "operator-completion.discovery.v1",
+          "operator": "synthetic-operator",
+          "reason": "Preserve failed run; externally complete its stopped industry evidence",
+          "sourceChecks": [
+            {
+              "sourceId": "source-1",
+              "notes": "Synthetic complete original excerpt and content hash inspected"
+            }
+          ],
+          "completedAt": "2026-11-17T01:14:55.184Z",
+          "state": "draft",
+          "humanReviewRequired": true,
+          "externalAssistedCompletion": true
+        }
+      }
+    },
+    {
+      "name": "completion is explicitly draft with human review still required",
+      "status": "passed"
+    },
+    {
+      "name": "audit binds original checkpoint and failed run",
+      "status": "passed"
+    },
+    {
+      "name": "new version has no reused review or publication",
+      "status": "passed"
+    },
+    {
+      "name": "saved draft body preserves full source and external author",
+      "status": "passed"
+    },
+    {
+      "name": "unreviewed completion cannot publish",
+      "status": "passed"
+    },
+    {
+      "name": "exact replay is byte-equivalent",
+      "status": "passed"
+    },
+    {
+      "name": "concurrent replay and different completion retain one winner",
+      "status": "passed",
+      "detail": [
+        {
+          "status": 200,
+          "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14"
+        },
+        {
+          "status": 400,
+          "error": "Checkpoint already completed; revise the exact returned version for further changes"
+        }
+      ]
+    },
+    {
+      "name": "existing human review route works for independent author",
+      "status": "passed",
+      "detail": {
+        "status": 200,
+        "body": {
+          "reviewed": true,
+          "reportId": "synthetic-industry",
+          "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14",
+          "mode": "human"
+        }
+      }
+    },
+    {
+      "name": "replay never resets existing review",
+      "status": "passed"
+    },
+    {
+      "name": "original run ledger and reservations unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "stopped runner storage unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "published pointers unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "original checkpoint remains byte-identical",
+      "status": "passed"
+    },
+    {
+      "name": "one draft and one audit only",
+      "status": "passed"
+    },
+    {
+      "name": "no outbound request or model call",
+      "status": "passed",
+      "detail": []
+    }
+  ],
+  "receipt": {
+    "reportId": "synthetic-industry",
+    "baseVersion": "96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16",
+    "version": "6932340e34bcfebc629d776c4a30622a9f7410fa7c21fcc6e49dfb77bf812f14",
+    "sourceKind": "stopped-industry-operator-completion",
+    "sourceRunId": "public-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "failedRunId": "public-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "checkpointHash": "96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16",
+    "checkpointKey": "public-research/runs/public-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/checkpoints/synthesis/96311170df3a2ffd442d0f1d4c3b359d9723acb5633a318b29bff04c2a63cc16.json",
+    "originalInputFingerprint": "53a4171ad1dc7bf7a47f24bed8e28c093e21427046c2b169951b83cda2ebf21e",
+    "failedInputFingerprint": "39eb39d296a94ef88d222d8f041be8585cbd02f5e5a48e62f70bfcee88ad2cb3",
+    "authorRunId": "operator-sol-industry-fixture",
+    "modelVersion": "gpt-6.1-sol",
+    "promptVersion": "operator-completion.discovery.v1",
+    "operator": "synthetic-operator",
+    "reason": "Preserve failed run; externally complete its stopped industry evidence",
+    "sourceChecks": [
+      {
+        "sourceId": "source-1",
+        "notes": "Synthetic complete original excerpt and content hash inspected"
+      }
+    ],
+    "completedAt": "2026-11-17T01:14:55.184Z",
+    "state": "draft",
+    "humanReviewRequired": true,
+    "externalAssistedCompletion": true
+  },
+  "limitations": [
+    "No production writes, model generation or user approval performed",
+    "Cloudflare Access is not configured in this isolated local runtime",
+    "R2 and D1 cannot share a transaction; immutable body first, draft index and audit atomically committed in D1; rejected transaction may leave an unreferenced complete object"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "commit": "4cded4933dcef5b68688f079124db32b5abc2cc4",
+  "remoteMainConfirmed": true,
+  "ci": {
+    "analysis": {
+      "build": "d21134c3-d690-440e-96a0-0ba10b1d8081",
+      "outcome": "success"
+    },
+    "business": {
+      "build": "4277c852-9271-480a-8ad8-d5a1fc33daeb",
+      "outcome": "success"
+    }
+  },
+  "deployments": {
+    "analysis": "3fea3728-67d5-420e-b804-785369ce0b19",
+    "admin": "4da14959-99bf-42c7-8047-64765e23d9b3",
+    "businessSite": "aa87e8d6-0aa8-4215-ba30-ab110a13ec0e"
+  },
+  "checkedAt": "2026-11-17T01:01:28.050Z",
+  "url": "https://spontra-business-map.max-zhangyuchen.workers.dev/companies/CRWV?report=0001769628-26-000465&lang=en",
+  "publishedArtifactHash": "74e07b8a521f5084c84b920ef82bf442ad993c945e4d9e35d9499098cb0a0179",
+  "viewports": [
+    {
+      "viewport": [
+        1440,
+        900
+      ],
+      "statusCode": 200,
+      "checks": {
+        "correctArtifactHash": true,
+        "noFrameHorizontalOverflow": true,
+        "noPageHorizontalOverflow": true,
+        "reachesEndByWheel": true,
+        "railFixed": true,
+        "returnsToTopByWheel": true,
+        "noRuntimeErrors": true
+      },
+      "errors": [],
+      "requestFailures": [],
+      "error": null
+    },
+    {
+      "viewport": [
+        768,
+        1024
+      ],
+      "statusCode": 200,
+      "checks": {
+        "correctArtifactHash": true,
+        "noFrameHorizontalOverflow": true,
+        "noPageHorizontalOverflow": true,
+        "reachesEndByWheel": true,
+        "railFixed": null,
+        "returnsToTopByWheel": true,
+        "noRuntimeErrors": true
+      },
+      "errors": [],
+      "requestFailures": [],
+      "error": null
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "statusCode": 200,
+      "checks": {
+        "correctArtifactHash": true,
+        "noFrameHorizontalOverflow": true,
+        "noPageHorizontalOverflow": true,
+        "reachesEndByWheel": true,
+        "railFixed": null,
+        "returnsToTopByWheel": true,
+        "noRuntimeErrors": true
+      },
+      "errors": [],
+      "requestFailures": [],
+      "error": null
+    }
+  ],
+  "limitation": "Existing public v6 render only; failed new shadow has no artifact and is not validated. TLS certificate ignored only for managed proxy browser check."
+}
