@@ -53,7 +53,6 @@ import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
-import { ValuationAdjustmentControl } from "./ValuationAdjustment";
 import { ValuationPanel } from "./ValuationPanel";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { usePreview, usePublishedArtifactRead } from "./artifact-reads";
@@ -666,7 +665,6 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const lensUp = !!stageOverride || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
-      {valuation && <ValuationAdjustmentControl valuation={valuation} />}
       {/* The businesses, open from the start: the company's revenue and change, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
@@ -710,7 +708,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
         focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
-        articles={findings?.articles} pendingResearch={findings?.pendingResearch} onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
+        articles={findings?.articles} onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>
         <dl>

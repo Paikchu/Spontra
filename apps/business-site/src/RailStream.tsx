@@ -33,7 +33,7 @@ const m = messages({
   tabReports: "Reports", tabManagement: "Management",
   findings: "Company research",
   moreFindings: (n: number) => `${n} more`,
-  fewerFindings: "Show fewer", updatingResearch: (period: string) => `New research for ${period} is pending. Showing the previous published conclusions.`,
+  fewerFindings: "Show fewer",
 }, {
   title: "要点、财报与事件",
   report: "财报",
@@ -47,7 +47,7 @@ const m = messages({
   tabReports: "财报", tabManagement: "管理层动态",
   findings: "公司专题",
   moreFindings: (n: number) => `另外 ${n} 条`,
-  fewerFindings: "收起", updatingResearch: (period: string) => `${period} 的新研究尚未完成，当前显示此前已发布的结论。`,
+  fewerFindings: "收起",
 });
 
 /** Older rows join this many at a time. */
@@ -69,12 +69,11 @@ export type QuarterSource = Parameters<typeof quarterHeading>[1];
  * management or both, and the filings about one fiscal quarter are framed together.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
-export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, pendingResearch, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
+export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
   articles?: Record<string, PublishedFindingArticle>;
-  pendingResearch?: { periodEnd: string; generatedAt: string };
   /** The period the findings were written about. */
   findingsPeriodEnd: string | null;
   /** Pass or fail of each finding's scored watch, by finding id, once its period reported. */
@@ -144,7 +143,6 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, p
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const renderRow = (r: NoiseRow) => <NoiseBlock key={r.id} row={r} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />;
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
-    {pendingResearch && <p className="event-empty" role="status">{m.updatingResearch(pendingResearch.periodEnd)}</p>}
     {unmatched.length > 0 && <div className="guidance" role="group" aria-label={m.findings}>
       <div className="guidance-head">
         <h3>{m.findings}</h3>
