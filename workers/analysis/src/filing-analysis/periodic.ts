@@ -227,7 +227,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         return ok(JSON.stringify(chain));
       }),
     handTool<S>({ name: "read_filing_markdown", description: "Read fixed prepared filing materials. view readable returns verbatim paragraph/image text with exact duplicate aliases, the original document directory and CSV table references; follow nextCursor and read needed CSV/facts with their existing tools. It omits technical code bodies explicitly, never summarizes, and does not claim the entire raw filing was read. view raw (the default) preserves the complete original Markdown and raw anchors/cursors. accession selects a prepared earlier filing.",
-      input_schema: object({ accession: { type: "string" }, view: { type: "string", enum: ["raw", "readable"] }, anchor: { type: "string" }, cursor: { type: "string" }, maxChars: { type: "number" } }) },
+      input_schema: object({ accession: { type: "string" }, view: { type: "string", enum: ["raw", "readable"], description: "raw is the default. Keep the same view when continuing its cursor." }, anchor: { type: "string", description: "Readable source id, or an original material-section anchor with view raw." }, cursor: { type: "string", description: "Copy nextCursor from the same view. Numeric byte cursors belong to raw; readable cursors include the material version." }, maxChars: { type: "number" } }) },
       async (args, state) => {
         const view = str(args.view) || "raw";
         if (view !== "raw" && view !== "readable") return fail("view must be raw or readable.");
@@ -244,7 +244,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const page = await readFilingMarkdown(deps.env, material, { ...(str(args.anchor) ? { anchor: str(args.anchor) } : {}), ...(str(args.cursor) ? { cursor: str(args.cursor) } : {}), ...(Number(args.maxChars) > 0 ? { maxChars: Math.min(48_000, Number(args.maxChars)) } : {}) });
         for (const id of page.blockIds) await resolve(id, state);
         if (material.ref.accession === accession) p(state).markdownRead = true;
-        return ok(`${JSON.stringify({ material: page.ref, nextCursor: page.nextCursor, sources: page.blockIds })}\n\n${page.text}`);
+        return ok(`${JSON.stringify({ material: page.ref, view: "raw", nextCursor: page.nextCursor, sources: page.blockIds })}\n\n${page.text}`);
       }),
     handTool<S>({ name: "find_filing_tables", description: "Find the filing's standalone CSV tables by title or description. Each result names a tableId, contents, periods and source. Read the needed tables with read_filing_table.",
       input_schema: object({ accession: { type: "string" }, name: { type: "string" }, description: { type: "string" }, cursor: { type: "string" } }) },
