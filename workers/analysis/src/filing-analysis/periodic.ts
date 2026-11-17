@@ -10,7 +10,8 @@ import { chartHeight, compilePoints, type PointSeries } from "../../../../shared
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
 import { readMaterialSnapshot, getFilingMaterial, listFilingMaterials, requestFilingMaterial } from "../filing-material/index.ts";
-import { readFilingMarkdown, findFilingTables, readFilingTable, searchFilingMarkdown, sourceText, filingMaterialMeta } from "../filing-material/read.ts";
+import { readFilingMarkdown, findFilingTables, readFilingTable, searchFilingMarkdown, sourceText, filingMaterialMeta, withPreparedMaterialReadCache } from "../filing-material/read.ts";
+import { readFilingReadable } from "../filing-material/readable.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 import { handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { SecFiling } from "../sec/sec.ts";
@@ -116,13 +117,13 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     if (!p(state).materials.some(r => r.accession === found.ref.accession && r.version === found.ref.version)) p(state).materials.push(found.ref);
     return found;
   };
-  const resolve = async (id: string, state: S): Promise<boolean> => {
+  const resolve = async (id: string, state: S, readEnv = deps.env): Promise<boolean> => {
     const s = p(state);
     if (s.computed[id] !== undefined) { checkedComputed(id, state); return true; }
     if (s.facts[id] !== undefined || s.texts[id] !== undefined) return true;
     for (const ref of s.materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
     for (const material of snapshots.values()) {
-      const found = await sourceText(deps.env, material, id);
+      const found = await sourceText(readEnv, material, id);
       if (!found) continue;
       s.texts[id] = found.text;
       if (found.exact !== undefined) s.facts[id] = { text: found.text, value: found.exact, unit: indexedFacts.get(id)?.unit };
@@ -225,10 +226,21 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         p(state).investmentChains = [...(p(state).investmentChains ?? []).filter(c => c.id !== chain.id), chain];
         return ok(JSON.stringify(chain));
       }),
-    handTool<S>({ name: "read_filing_markdown", description: "Read the complete preprocessed filing and all its exhibits at the session's fixed material version. Use an anchor or continue with nextCursor. Each returned block is a source id. accession reads a prepared earlier filing; no accession reads this filing.",
-      input_schema: object({ accession: { type: "string" }, anchor: { type: "string" }, cursor: { type: "string" }, maxChars: { type: "number" } }) },
+    handTool<S>({ name: "read_filing_markdown", description: "Read fixed prepared filing materials. view readable returns verbatim paragraph/image text with exact duplicate aliases, the original document directory and CSV table references; follow nextCursor and read needed CSV/facts with their existing tools. It omits technical code bodies explicitly, never summarizes, and does not claim the entire raw filing was read. view raw (the default) preserves the complete original Markdown and raw anchors/cursors. accession selects a prepared earlier filing.",
+      input_schema: object({ accession: { type: "string" }, view: { type: "string", enum: ["raw", "readable"] }, anchor: { type: "string" }, cursor: { type: "string" }, maxChars: { type: "number" } }) },
       async (args, state) => {
+        const view = str(args.view) || "raw";
+        if (view !== "raw" && view !== "readable") return fail("view must be raw or readable.");
         const material = await pick(str(args.accession), state);
+        if (view === "readable") {
+          const readEnv = withPreparedMaterialReadCache(deps.env, [material]);
+          const page = await readFilingReadable(readEnv, material, { ...(str(args.anchor) ? { anchor: str(args.anchor) } : {}), ...(str(args.cursor) ? { cursor: str(args.cursor) } : {}), ...(args.maxChars !== undefined ? { maxChars: Number(args.maxChars) } : {}) });
+          for (const entry of page.entries) if (entry.kind === "paragraph" || entry.kind === "image") {
+            await resolve(entry.sourceId, state, readEnv);
+          }
+          if (material.ref.accession === accession && page.coverage.pageTextSources > 0) p(state).markdownRead = true;
+          return ok(JSON.stringify(page));
+        }
         const page = await readFilingMarkdown(deps.env, material, { ...(str(args.anchor) ? { anchor: str(args.anchor) } : {}), ...(str(args.cursor) ? { cursor: str(args.cursor) } : {}), ...(Number(args.maxChars) > 0 ? { maxChars: Math.min(48_000, Number(args.maxChars)) } : {}) });
         for (const id of page.blockIds) await resolve(id, state);
         if (material.ref.accession === accession) p(state).markdownRead = true;
@@ -277,8 +289,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         }
         return ok(JSON.stringify({ matches, nextCursor: null }));
       }),
-    handTool<S>({ name: "filing_history", description: "List prepared earlier filing materials and their immutable versions for comparisons. Read one with read_filing_markdown and its accession.", input_schema: object({}) },
-      async (_args, state) => { await history(state); return ok(JSON.stringify([...snapshots.values()].filter(m => m.ref.accession !== accession).map(m => ({ material: m.ref, form: m.filing.form, filedAt: m.filing.filedAt, reportDate: m.filing.reportDate, toc: m.toc })))); }),
+    handTool<S>({ name: "filing_history", description: "List prepared earlier filing identities, dates and immutable versions for comparisons. No original text or full table of contents is included. Read the relevant earlier filing with read_filing_markdown, view readable and its accession; view raw retains its original directory.", input_schema: object({}) },
+      async (_args, state) => { await history(state); return ok(JSON.stringify([...snapshots.values()].filter(m => m.ref.accession !== accession).map(m => ({ material: m.ref, form: m.filing.form, filedAt: m.filing.filedAt, reportDate: m.filing.reportDate, readWith: { tool: "read_filing_markdown", view: "readable", accession: m.ref.accession } })))); }),
     handTool<S>({ name: "query_facts", description: "Find figures of this filing by what they are: words of the row label or XBRL concept, a period end (YYYY-MM-DD), the months a flow covers (3, 9, 12; 0 for a balance), or a Markdown block anchor. Each line gives the fact id, label, value, period and how the filing prints it.",
       input_schema: object({ label: { type: "string" }, periodEnd: { type: "string" }, months: { type: "number" }, anchor: { type: "string" }, cursor: { type: "string" } }) },
       async (args) => {

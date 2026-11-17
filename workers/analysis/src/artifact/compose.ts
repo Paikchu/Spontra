@@ -13,7 +13,7 @@ import { reviewRendering, VIEWPORTS, visualPasses, type QaResult } from "./qa.ts
 import { compileArtifactCss, unknownClasses } from "./theme.ts";
 import { artifactId, previewToken, publishStatements, readArtifactVersion, readPublishedDocument, recordCheck, saveVersion } from "./store.ts";
 import { judge, JudgeUnavailable } from "./openai.ts";
-import { packState } from "../pi/state.ts";
+import { packState, unpackState } from "../pi/state.ts";
 import { sha256 } from "../sha256.ts";
 
 /**
@@ -57,6 +57,8 @@ export type ComposerSetup<S extends { composer: ComposerState }> = {
   figure?(id: string, state: S): Promise<number[] | null>;
   /** The blocks this producer's document must hold beyond the kind's own, checked at finish. */
   required?(state: S): readonly string[];
+  /** A new periodic document is submitted whole; revisions keep the normal focused editing tools. */
+  completeInitialSubmission?: boolean;
   /** Finds passages in the producer's material for names and figures a block uses that its cited sources do not hold, for the review. */
   find?(terms: string[], state: S): Promise<Array<{ id: string; title: string; text: string }>>;
 };
@@ -684,14 +686,24 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
       if (state.composer.hidden.includes(b.id)) return ok(`Block "${b.id}" ("${b.title}") is being rewritten from scratch; its earlier wording is withdrawn.`);
       return ok(b.html);
     }),
-    tool<S>("write_blocks", "Create or replace blocks, several at once: each with its id (lowercase slug) and inner HTML, and optionally the block id it goes after. Each is checked against the component rules, the theme's classes and the sources before it is saved; the reply lists every problem, block by block. To change part of a block that exists, use edit_block instead.", {
+    tool<S>("write_blocks", `${setup.completeInitialSubmission ? "Submit the complete new report in one call after its sources, facts, computations and research context are ready. Include every required section exactly once; the initial report is saved only if every section passes. For an existing report, " : "Create or replace blocks, several at once: "}each block has its id (lowercase slug) and inner HTML, and optionally the block id it goes after. Each is checked against the component rules, the theme's classes and the sources before it is saved; the reply lists every problem, block by block. To change part of a block that exists, use edit_block instead.`, {
       blocks: { type: "array", items: { type: "object", properties: { id: { type: "string" }, html: { type: "string" }, after: { type: "string", description: "Place a new block after this block id; omit to keep its place or append." } }, required: ["id", "html"] } },
     }, ["blocks"], async (a, state) => {
       const list = Array.isArray(parsed(a.blocks)) ? parsed(a.blocks) as Array<Record<string, unknown>> : [];
       if (!list.length) return fail("write_blocks needs blocks: [{id, html}].");
+      const complete = setup.completeInitialSubmission && !state.composer.blocks.length;
+      if (complete) {
+        const ids = list.map(item => str(item?.id).trim());
+        const missing = requiredOf(state).filter(id => !ids.includes(id));
+        if (ids.some(id => !ARTIFACT_BLOCK_ID.test(id)) || new Set(ids).size !== ids.length || missing.length) return fail(`Submit the complete report with unique valid section ids in one write_blocks call.${missing.length ? ` Required sections missing: ${missing.join(", ")}.` : ""} No sections were saved.`);
+      }
+      const target = complete ? unpackState<S>(packState(state)) : state;
       const out: Result[] = [];
-      for (const item of list) out.push(await save(state, str(item?.id).trim(), str(item?.html), str(item?.after), "write_blocks"));
-      return { observation: out.map(r => r.observation).join("\n"), ...(out.every(r => r.error) ? { error: true } : {}) };
+      for (const item of list) out.push(await save(target, str(item?.id).trim(), str(item?.html), str(item?.after), "write_blocks"));
+      const failed = out.some(r => r.error);
+      if (complete && failed) return fail(`No sections were saved. Correct the named sections and submit the complete report together.\n${out.filter(r => r.error).map(r => r.observation).join("\n")}`);
+      if (complete) Object.assign(state, target);
+      return { observation: out.map(r => r.observation).join("\n"), ...(failed ? { error: true } : {}) };
     }, 3 * 60_000),
     tool<S>("edit_block", "Change parts of one block and keep the rest: each edit replaces a piece of the block's HTML (old, copied exactly from read_block, long enough to occur once) with new HTML. The sentences you do not touch keep the review they passed. Send several edits at once.", {
       id: { type: "string" }, edits: { type: "array", items: { type: "object", properties: { old: { type: "string" }, new: { type: "string" } }, required: ["old", "new"] } },

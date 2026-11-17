@@ -118,7 +118,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     research: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript"],
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
-    resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS } : {}), precheck: periodic.precheck,
+    resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS, completeInitialSubmission: !operator } : {}), precheck: periodic.precheck,
     hardPrecheck: state => publicContext.precheck(state) ?? periodic.impactPrecheck(state) ?? (state.periodic?.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
     audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"], publicResearch: spec.publicResearch }, state),
     read: async (id, state) => {
@@ -187,8 +187,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     onTurn: (s, turn) => { s.composer.turns = turn; },
     settled: s => s.composer.phase === "published",
     settle: s => s.composer.phase === "published",
-    nudge: periodic ? "Continue: work the leads, record what you confirm, write the blocks, then call finish." : "Continue reading and writing blocks, then call finish.",
-    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && s.composer.turns >= 45 ? " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && s.composer.turns >= 70 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
+    nudge: profile.id === "periodic" ? "Continue the same research: finish the sources, facts, computations and context, then submit the complete report in one write_blocks call and call finish. If the report exists, make only the needed focused corrections." : "Continue reading and writing blocks, then call finish.",
+    budgetLine: (s, left) => `${defaultBudgetLine(left)}${periodic && s.composer.phase !== "published" ? periodic.standing(s) : ""}${s.composer.phase === "published" ? "" : !s.composer.blocks.length && s.composer.turns >= 45 ? profile.id === "periodic" ? " Submit the complete report in one write_blocks call now, then call finish; leave turns for focused corrections." : " Write the blocks now with write_blocks: the review at finish and its fixes need the turns that are left." : s.composer.blocks.length && s.composer.turns >= 70 ? " Call finish now: its review may ask for fixes, and they need turns." : ""}`,
     afterRun: async (s) => {
       if (spec.shadow) {
         if (s.composer.phase !== "published") await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/failed.json`, JSON.stringify({ status: "failed", reason: "Session ended without a validated shadow", at: new Date().toISOString() }));

@@ -14,11 +14,19 @@ import type { FilingMode, FilingSpec } from "./recipe.ts";
 import { dueFilings, registerFilings, updateFiling, type FilingRow } from "./store.ts";
 
 export function filingOpening(filing: SecFiling, material: MaterialSnapshot, mode: NonNullable<FilingMode["mode"]>): string {
+  const periodic = profileFor(filing.form)?.id === "periodic";
+  const readable = { tool: "read_filing_markdown", view: "readable" };
   return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form,
     filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
-    material: material.ref, coverage: material.coverage, toc: material.toc,
+    material: material.ref,
+    coverage: periodic ? { expectedDocuments: material.coverage.expectedDocuments, archivedDocuments: material.coverage.archivedDocuments,
+      sourceBlocks: material.coverage.sourceBlocks, retainedBlocks: material.coverage.retainedBlocks,
+      tableCells: material.coverage.tableCells, checkedCells: material.coverage.checkedCells,
+      duplicateRecords: material.coverage.duplicates.length, excludedBlocks: material.coverage.excluded.length,
+      issues: material.coverage.issues, details: "Read the document inventory in the readable view; the complete original preparation and source directory remain in the raw Markdown." } : material.coverage,
+    toc: periodic ? { readWith: readable, original: { tool: "read_filing_markdown", view: "raw" } } : material.toc,
     tables: { count: material.tables.length, lookup: "Use find_filing_tables with a table name or content description, then read the returned tableId with read_filing_table." },
-    first: mode === "resume" ? "Continue the saved report and research state in this new session. Call outline, actually read the pinned Markdown and relevant CSV tables, verify the existing computations, then call finish. Resolve the independent audit feedback and call finish again until all publication checks pass." : mode === "revise" ? "Call outline to inspect the published report, then read_filing_markdown for the fixed material version." : "Call read_filing_markdown, then find_filing_tables and read_filing_table for the relevant CSV data.",
+    first: mode === "resume" ? "Continue the saved report and research state in this new session. Call outline, actually read the pinned Markdown with view readable and relevant CSV tables, verify the existing computations, then call finish. Resolve the independent audit feedback and call finish again until all publication checks pass." : mode === "revise" ? "Call outline to inspect the published report, then read_filing_markdown with view readable for the fixed material version." : "Call read_filing_markdown with view readable, then find_filing_tables and read_filing_table for the relevant CSV data. Prepare the evidence before submitting the complete report together.",
     ...(mode === "revise" ? { published: "Revise the existing report against this material version. Re-read every source that supports a changed block." } : {}) });
 }
 
