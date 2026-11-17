@@ -4,7 +4,7 @@
 
 执行脚本：[filing-operator-completion-acceptance.mjs](../../../scripts/filing-operator-completion-acceptance.mjs)。机器可读结果：[filing-operator-completion.json](results/filing-operator-completion.json)。结果中的 `at`、`checks`、`transports` 与 `screenshots` 为本轮实际证据。
 
-2026-11-17 04:33 UTC 最终运行正常退出（exit 0）：171 项全部通过，107 次合成 provider HTTP，66 张真实 Chromium 截图，真实模型调用和生产访问均为 0。包含原完成路径的 99 项检查及新增的复核意见修正旅程。原成功路径为 8 次独立复核和 18 张截图；修正成功路径新增 3 次复核和 18 张截图，其余用于负向与并发旅程。
+2026-11-17 04:33 UTC 完整历史基线运行正常退出（exit 0）：171 项全部通过，107 次合成 provider HTTP，66 张真实 Chromium 截图，真实模型调用和生产访问均为 0。包含原完成路径的 99 项检查及复核意见修正旅程，原结果 JSON 逐字节保留；其中旧的同步坏证明拒绝行为已由下述异步验收替代，不代表本轮重新执行全部 171 项。原成功路径为 8 次独立复核和 18 张截图；修正成功路径新增 3 次复核和 18 张截图，其余用于负向与并发旅程。
 
 ## 实际执行链
 
@@ -41,6 +41,8 @@
 
 本轮先用真实阶段产生六次通过的内容复核与一次失败的完整语义复核。该语义复核仅对 summary 中一句纯文本给出精确 quote 和 plain-text replacement。服务器实际执行 `apply_fixes`，结果必须恰为该处唯一替换；不接客户端 HTML、新计划、引文、状态、作者或额度，不重新进行研究、计算或启动作者模型。原失败 ledger、plan、state 和 failure 对象逐字节保留。
 
+HTTP 入场只校验轻量身份、原失败回执元数据、原始 ledger/public CAS 并认领一次，返回 202。大状态读取、状态内语义回执匹配、冻结研究校验、原生修正和五块完整证据重建由同一 TaskRunner 的非付费 `corrections/prepare` 阶段执行，全部早于第一笔新增模型请求。确定性不匹配保存为 `failed`，新请求数为 0；技术中断或 lease/fence 失败仍保留 `unknown`。没有调高管理代理 30 秒超时，也没有删除校验。
+
 其余五块通过 `reconstructedLegacy-v1` 重建原始完整模型请求。验收逐块核对 `reusedFrom` 的来源 run/phase、真实 before/after state 引用、原成功回执哈希、完整 `inputHash`、`blockHash`，并以 SQL 查到同一时点、阶段、模型、推理配置且 `outcome=ok` 的实际 `ai_usage` 行。新请求中的 HTML、标题、来源文本、已通过句子或建立的事实发生变化时，不允许凭旧 passed 标志复用。
 
 成功路径实际只发送三次新增 HTTP：summary 内容复核、包含全部六块与完整材料的语义复核、所有三视口的严格视觉复核。其余五块没有新增内容模型请求，新的 validated shadow 保存了原计划与 reviewer-correction 来源信息。GET 明确返回 `reviewCalls=3`、`reviewCallsInherited=7`、`callsReserved=10`、`maxCalls=12`；原失败任务仍是 7 次，未被改成成功。
@@ -48,12 +50,24 @@
 新增负向旅程已实际执行：
 
 - 身份哈希或公开版本错误、额外 HTML/plan/quote 等八类字段、过大正文、非语义失败、没有精确 quote 的语义失败均拒绝。
-- 篡改原成功用量行的模型、改变未修正块 HTML、改变来源证据文本，都在新模型调用和正式认领前拒绝；故障注入后恢复原记录。所有这些拒绝均为零新增 provider HTTP。
+- 篡改原成功用量行的模型、改变未修正块 HTML、改变来源证据文本，HTTP 先返回 202 单次认领，再由 durable 非付费阶段保存 `failed / reviewCalls=0 / reviewCallsInherited=7`；不会暴露 preview 或进入新增模型调用。故障注入后恢复原记录。
 - 同时提交相同请求只形成一个认领和一个确定性任务；精确重放零新增请求，不同 UUID、改变身份或对修正版本再修正均拒绝。
 - 修正任务继承原 7 次，只能再占 5 次。用真实 `judge` SDK 消耗剩余额度后，合计 12 次即阻断下一语义 HTTP，不允许重置为新的 12 次。
 - 修正任务在实际 changed-block HTTP 在途时冷重启、lease 失效或显式停止，迟到成功不能验证，也不会自动重发。作者自审与自动公开均被阻止。
 
 结果 JSON 的 `reviewerCorrection` 单独记录原 7、新 3、累计 10 及五块复用证据。修正版本保持待人工审核影子状态；文中最后的独立模拟 promote 是对原完成路径的隔离验收，不代表用户批准这份修正版或任何真实报告。
+
+## 异步认领与慢 R2 的独立验收
+
+最新窄旅程结果单独保存在 [filing-reviewer-correction-async-admission.json](results/filing-reviewer-correction-async-admission.json)，不覆盖历史 171 项基线。它只重验本次变化的异步坏证明、慢 R2、继承额度和中断边界；未重复浏览器质量与全部宽旅程。
+
+2026-11-17 05:01 UTC 最终窄旅程 exit 0：47/47 项通过，64 次全合成 provider HTTP，真实模型及生产访问均为 0。实际 R2 返回持有 31501 ms（2026-11-17T05:00:59.610Z 至 2026-11-17T05:01:31.111Z），真实代理 202 耗时 577 ms，精确重放 41 ms；代理仍为 30000 ms。终态 prepare failed、新 0、继承 7、单派发、公开 v6/原哈希均已实际断言。此前 46 项临时结果由这次包含公开指针断言的 47 项结果替代。
+
+fixture 在 default handler、实际 `AdminGateway` 基类 fetch 与 TaskRunner 三个入口包装 R2 传输。目标 `SEC_FILINGS.get` 先实际读取并确认对象存在，再控制其返回延迟超过 30 秒，因此同步预演若仍留在 API 内会触及原代理超时；没有伪造一个直接返回 202 的处理器。请求仍经过真实同源代理、命名 AdminGateway、认领 CAS 与确定性任务。释放延迟后，坏用量证明在非付费 prepare 阶段保存 `failed / new0 / inherited7`；显式读取公开指针确认 version 6 和原哈希未变。延迟期间精确重放仍只派发一次。
+
+```bash
+SPONTRA_ASYNC_PROOF_ONLY=1 node scripts/filing-operator-completion-acceptance.mjs
+```
 
 ## 运行和解释结果
 
@@ -85,7 +99,7 @@ node scripts/filing-operator-completion-acceptance.mjs
 
 本项没有触发真实修订请求。仍需对修正后的 summary 真实审阅、全文 semantic 及全部规定视口的 provider visual review；旧失败 7 次预算和公开版本 6 均保留，由根任务按完整证据决定受控上线与执行。
 
-## 本轮真实纠偏的入场身份（尚未执行）
+## 本轮真实纠偏的入场身份与未认领尝试
 
 原失败 run 为 `shadow-CRWV-0001769628-26-000465-operator-fa63bc5c-783b-40fc-99ed-557f8bed6012`，保留 failed 状态和已消费 7/12。管理端窄路径为 `POST /api/admin/reports/CRWV/0001769628-26-000465/shadow/原失败runId/apply-reviewer-corrections`，要求新的 UUID `idempotency-key`，正文严格只接以下五项（8 KiB）：
 
@@ -102,3 +116,5 @@ node scripts/filing-operator-completion-acceptance.mjs
 新 runId 为 `shadow-CRWV-0001769628-26-000465-operator-fix-${UUID}`，使用同一 `FILING_OPERATOR_COMPLETION_WORKFLOW:runId` / `TASK_RUNS` 执行器；新记录 `reviewCalls` 只计新增请求，`reviewCallsInherited=7`，GET 的累计 `callsReserved`/`totalReviewCalls` 为二者之和，原记录保持 7。唯一纠偏 claim 是 `filing-operator:原失败runId:reviewer-correction`；相同 UUID/正文精确重放返回同一记录，不能重派发，第二 UUID、另一正文、纠偏再纠偏均拒绝。正文不接受新 quote、replacement、HTML、任意计划或成功回执。
 
 正式入场前仍须回读原 failed7、公开 v6/hash 和新代码部署结果；本文件中的身份值不是线上请求或通过证明。成功只产生待独立人工审阅的 validated shadow，不自动 promote。
+
+一次真实生产请求曾在同步重建阶段触及管理代理 30 秒上限：trace `3119b540d3282ad78d313c88c2a63bff`，管理端请求 `61efed756704c4646b6dcdf4f75801c0` 返回 503，`wallTimeMs=30000 / cpuTimeMs=2`；同 trace 的 analysis 请求 `def5b5cd638423449934bde20a7b9671` 为 `canceled`，`wallTimeMs=29429 / cpuTimeMs=745`。日志摘要为 `/tmp/spontra-crwv-real-shadow/reviewer-correction-503-log-summary.json`。根任务另行确认该次没有写入 claim、没有新增 provider 请求，原 failed7 与公开 v6 保持；503 不能描述成模型分析失败或新影子报告完成。

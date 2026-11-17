@@ -49,6 +49,7 @@ const parents = runs.map((run, i) => ({ ...run, runId: run.parentRunId, callsRes
 const fixture = { at, ticker, accession, state, runs, parents };
 const checks = [], outbound = [], blockedOutbound = [], browserTelemetry = [], screenshots = [];
 let transportMode = "pass", mf, chrome, chromeEndpoint, transportRelease, transportHeld;
+let slowR2Key = null, slowR2Release, slowR2EnteredResolve, slowR2EnteredAt = null, slowR2Evidence = null;
 const check = (name, ok, detail) => { if (!ok) throw new Error(`${name}: ${JSON.stringify(detail)}`); checks.push({ name, status: "passed", ...(detail === undefined ? {} : { detail }) }); console.log(`PASS ${name}`); };
 
 // The only browser substitute is its Cloudflare connection endpoint; every CDP command goes to real Chromium.
@@ -125,9 +126,12 @@ import{D1SecRepository}from ${JSON.stringify(resolve(root, "workers/analysis/src
 import{getPublicFiling}from ${JSON.stringify(resolve(root, "workers/analysis/src/sec/public-api.ts"))};
 import{judge}from ${JSON.stringify(resolve(root, "workers/analysis/src/artifact/openai.ts"))};
 import{reserveFilingOperatorReview}from ${JSON.stringify(resolve(root, "workers/analysis/src/filing-analysis/operator-completion.ts"))};
-export{AdminGateway}from ${JSON.stringify(resolve(root, "workers/analysis/src/index.ts"))};
+import{AdminGateway as RealAdminGateway}from ${JSON.stringify(resolve(root, "workers/analysis/src/index.ts"))};
+// Only R2 transport latency is injected. The real get completes before its response is deliberately held.
+const delayedR2=env=>({...env,SEC_FILINGS:new Proxy(env.SEC_FILINGS,{get(bucket,name){if(name==='get')return async(...args)=>{const object=await bucket.get(...args);await env.R2_READ_GATE.fetch('https://fixture-r2-gate.invalid/after-read',{method:'POST',body:JSON.stringify({key:args[0],found:!!object})});return object;};const value=Reflect.get(bucket,name);return typeof value==='function'?value.bind(bucket):value;}})});
+export class AdminGateway extends RealAdminGateway{constructor(ctx,env){super(ctx,delayedR2(env));}}
 export class CompletionRunner extends TaskRunner{
-  constructor(ctx,env){const sql=ctx.storage.sql,f=JSON.parse(env.FIXTURE),own=ctx.id.name?.replace(/^FILING:/,''),source=[...f.runs,...f.parents].find(run=>run.runId===own);
+  constructor(ctx,env){env=delayedR2(env);const sql=ctx.storage.sql,f=JSON.parse(env.FIXTURE),own=ctx.id.name?.replace(/^FILING:/,''),source=[...f.runs,...f.parents].find(run=>run.runId===own);
     sql.exec("CREATE TABLE IF NOT EXISTS fixture_dispatches(kind TEXT,operation_id TEXT)");
     if(source){sql.exec("CREATE TABLE IF NOT EXISTS pi_bindings(conversation TEXT PRIMARY KEY,session TEXT NOT NULL,operation_id TEXT NOT NULL,kind TEXT NOT NULL,spec TEXT NOT NULL,state TEXT NOT NULL,started_at INTEGER NOT NULL,turns INTEGER NOT NULL DEFAULT 0,quiet INTEGER NOT NULL DEFAULT 0,last_round INTEGER NOT NULL DEFAULT 0,capped INTEGER NOT NULL DEFAULT 0,finished INTEGER NOT NULL DEFAULT 0,asked TEXT,round TEXT,active INTEGER NOT NULL DEFAULT 1,spent INTEGER NOT NULL DEFAULT 0,startup TEXT,reserved_at INTEGER)");sql.exec("INSERT OR IGNORE INTO pi_bindings VALUES('synthetic-source','synthetic-session',?,'filing',?,?,0,40,0,0,1,0,NULL,NULL,0,1234,NULL,NULL)",source.runId+':shadow',JSON.stringify(source.spec),packState(f.state));}
     super(ctx,env);
@@ -138,7 +142,7 @@ export class CompletionRunner extends TaskRunner{
   fixtureMutateSource(columns){for(const[key,value]of Object.entries(columns)){if(!['active','capped','finished','startup','spec'].includes(key))throw Error('Fixture column not allowed');this.ctx.storage.sql.exec('UPDATE pi_bindings SET '+key+'=?',value);}return true;}
   fixtureEvict(){this.ctx.abort('Synthetic local cold restart');}
 }
-export default{async fetch(request,env){const url=new URL(request.url),f=JSON.parse(env.FIXTURE),id=url.searchParams.get('id'),stub=()=>env.TASK_RUNS.get(env.TASK_RUNS.idFromName((url.searchParams.get('kind')||'FILING')+':'+id));
+export default{async fetch(request,rawEnv){const env=delayedR2(rawEnv),url=new URL(request.url),f=JSON.parse(env.FIXTURE),id=url.searchParams.get('id'),stub=()=>env.TASK_RUNS.get(env.TASK_RUNS.idFromName((url.searchParams.get('kind')||'FILING')+':'+id));
  if(url.pathname==='/fixture/auth')return Response.json({token:await createAdminSession(env.REPORT_ADMIN_PASSWORD)});
  if(url.pathname==='/fixture/snapshot')return Response.json(await stub().fixtureSnapshot());
  if(url.pathname==='/fixture/advance'){await stub().advance();return Response.json(await stub().fixtureSnapshot());}
@@ -237,6 +241,14 @@ async function rejectReviewerCorrection(name, runId, input, options = {}) {
   check(name, [400, 409, 413].includes(answer.status) && outbound.length === before, { status: answer.status, error: answer.body.error, newProviderHttp: outbound.length - before });
   return answer;
 }
+async function failDeferredCorrection(name, source, input, operation) {
+  const before = outbound.length, oldLedger = await rawRow(`filing-operator:${source.runId}`);
+  const admission = await sendCorrection(source.runId, operation, input, { proxy: true });
+  check(name + " is claimed through the real proxy before heavy validation", admission.status === 202, admission);
+  const failed = await drive(admission.body.runId), view = await request(reportPath(admission.body.runId), { headers: { authorization: "Bearer " + token } });
+  check(name + " fails the durable non-billable phase before any provider HTTP", failed.status === "failed" && failed.reviewCalls === 0 && failed.reviewCallsInherited === 7 && !failed.validatedKey && outbound.length === before && view.body.status === "failed" && !view.body.previewToken && !view.body.artifact && JSON.stringify(await rawRow(`filing-operator:${source.runId}`)) === JSON.stringify(oldLedger), { status: failed.status, phase: failed.phase?.name, error: failed.error, newCalls: failed.reviewCalls, inherited: failed.reviewCallsInherited, providerHttp: outbound.length - before });
+  return failed;
+}
 async function withMutatedFailedState(runId, edit, work) {
   const original = await rawRow(`filing-operator:${runId}`), row = JSON.parse(original.payload);
   const state = JSON.parse(await (await bucket.get(row.stateRef.key)).text()); edit(state);
@@ -261,6 +273,79 @@ async function startHeldReviewerCorrection(n, correctionNumber) {
   return { source, runId: answer.body.runId, row, lease: row.phase.leaseToken, progress };
 }
 
+async function runSlowR2AdmissionJourney() {
+  const source = await startSemanticFailure(31), sourceLedger = await rawRow(`filing-operator:${source.runId}`);
+  const usage = await db.prepare("SELECT * FROM ai_usage WHERE run_id=? AND stage='artifact-review-highlights' AND outcome='ok' LIMIT 1").bind(source.runId).first();
+  await db.prepare("UPDATE ai_usage SET model='incompatible-synthetic-model' WHERE id=?").bind(usage.id).run();
+  let timer;
+  const seen = new Promise((resolve, reject) => { slowR2EnteredResolve = resolve; timer = setTimeout(() => reject(Error("The delayed real R2 failed-state read never began")), 45000); });
+  slowR2Key = source.row.stateRef.key; slowR2EnteredAt = null;
+  const httpBefore = outbound.length, startedAt = Date.now();
+  try {
+    const admission = await sendCorrection(source.runId, 331, source.input, { proxy: true }), proxyElapsedMs = Date.now() - startedAt;
+    check("slow R2 evidence cannot make real proxy admission cross its unchanged thirty-second timeout", admission.status === 202 && proxyElapsedMs < 30000, { status: admission.status, proxyElapsedMs, proxyTimeoutMs: 30000 });
+    const progress = drive(admission.body.runId).then(value => ({ value }), error => ({ error: String(error) }));
+    const read = await seen; clearTimeout(timer);
+    check("durable correction waits on an actual completed R2 get response before any model HTTP", read.found && read.key === source.row.stateRef.key && (await opRow(admission.body.runId)).reviewCalls === 0 && outbound.length === httpBefore, { key: read.key, found: read.found, enteredAt: read.enteredAt, providerHttp: outbound.length - httpBefore });
+    const replayStart = Date.now(), replay = await sendCorrection(source.runId, 331, source.input, { proxy: true }), replayElapsedMs = Date.now() - replayStart;
+    const runner = (await request(runnerPath(admission.body.runId))).body;
+    check("exact replay during the delayed read returns quickly without a second dispatch", replay.status === 202 && replay.body.replay && replay.body.dispatchRetried === false && replayElapsedMs < 30000 && runner.dispatches.length === 1 && outbound.length === httpBefore, { replayElapsedMs, dispatches: runner.dispatches.length });
+    await pause(Math.max(0, 31500 - (Date.now() - read.enteredAt)));
+    const releasedAt = Date.now(), heldMs = releasedAt - read.enteredAt;
+    slowR2Key = null; slowR2Release(); await progress;
+    const failed = await drive(admission.body.runId, { limit: 1000 }), publicPointer = await db.prepare("SELECT published_version,published_hash FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first();
+    check("more than thirty seconds of R2 latency ends in a non-billable proof failure with the old seven and public six intact", heldMs >= 31500 && failed.status === "failed" && failed.reviewCalls === 0 && failed.reviewCallsInherited === 7 && !failed.validatedKey && outbound.length === httpBefore && publicPointer.published_version === 6 && publicPointer.published_hash === publicBaseline.hash && JSON.stringify(await rawRow(`filing-operator:${source.runId}`)) === JSON.stringify(sourceLedger), { heldMs, proxyElapsedMs, replayElapsedMs, status: failed.status, phase: failed.phase?.name, newCalls: failed.reviewCalls, inherited: failed.reviewCallsInherited, publicPointer });
+    slowR2Evidence = { runId: admission.body.runId, sourceRunId: source.runId, failedStateKey: read.key, actualR2ObjectFound: read.found, enteredAt: new Date(read.enteredAt).toISOString(), releasedAt: new Date(releasedAt).toISOString(), heldMs, proxyElapsedMs, replayElapsedMs, unchangedProxyTimeoutMs: 30000, status: failed.status, phase: failed.phase?.name, originalCalls: 7, addedCalls: 0, dispatches: runner.dispatches.length, providerHttp: outbound.length - httpBefore, publicPointer };
+  } finally {
+    clearTimeout(timer); slowR2Key = null; slowR2EnteredResolve = undefined; slowR2Release?.();
+    await db.prepare("UPDATE ai_usage SET model=? WHERE id=?").bind(usage.model, usage.id).run();
+  }
+}
+
+async function runDeferredProofFailures() {
+  const mismatchedModel = await startSemanticFailure(28);
+  const usage = await db.prepare("SELECT * FROM ai_usage WHERE run_id=? AND stage='artifact-review-highlights' AND outcome='ok' LIMIT 1").bind(mismatchedModel.runId).first();
+  check("reusable original content has an actual successful model usage row", Boolean(usage?.id), { id: usage?.id, model: usage?.model, reasoning: usage?.reasoning });
+  await db.prepare("UPDATE ai_usage SET model='incompatible-synthetic-model' WHERE id=?").bind(usage.id).run();
+  try { await failDeferredCorrection("mismatched historical model usage", mismatchedModel, mismatchedModel.input, 328); }
+  finally { await db.prepare("UPDATE ai_usage SET model=? WHERE id=?").bind(usage.model, usage.id).run(); }
+  const changedHtml = await startSemanticFailure(29);
+  await withMutatedFailedState(changedHtml.runId, work => { work.composer.blocks.find(block => block.id === "highlights").html += "<p>Changed input outside the reviewer's summary correction.</p>"; }, changed => failDeferredCorrection("changed peer HTML fingerprint", changedHtml, changed, 329));
+  const changedEvidence = await startSemanticFailure(30);
+  await withMutatedFailedState(changedEvidence.runId, work => { work.periodic.texts["source-block"] += " New synthetic evidence outside the reviewed input."; }, changed => failDeferredCorrection("changed source evidence fingerprint", changedEvidence, changed, 330));
+  await runSlowR2AdmissionJourney();
+}
+
+async function runCorrectionInterruptionBoundaries() {
+  const capped = await startHeldReviewerCorrection(24, 324), originalCappedSource = await rawRow(`filing-operator:${capped.source.runId}`);
+  const cappedHttp = outbound.length - 1;
+  for (let n = 0; n < 4; n++) check(`inherited-seven correction shares remaining review slot ${n + 1}`, (await request(`/fixture/review-request?id=${capped.runId}&lease=${capped.lease}`)).status === 200);
+  const exhausted = await request(`/fixture/review-request?id=${capped.runId}&lease=${capped.lease}&retries=2`);
+  check("correction cannot spend more than the five slots remaining from the original twelve", exhausted.status === 503 && (await opRow(capped.runId)).reviewCalls === 5 && (await opRow(capped.runId)).reviewCallsInherited === 7 && outbound.length - cappedHttp === 5, { newCalls: (await opRow(capped.runId)).reviewCalls, inherited: 7, httpSent: outbound.length - cappedHttp });
+  transportRelease(); await capped.progress;
+  const cappedRow = await opRow(capped.runId);
+  check("correction with seven inherited plus five new requests fails before another semantic HTTP", cappedRow.status === "failed" && !cappedRow.validatedKey && cappedRow.reviewCallsInherited + cappedRow.reviewCalls === 12 && outbound.length - cappedHttp === 5 && JSON.stringify(await rawRow(`filing-operator:${capped.source.runId}`)) === JSON.stringify(originalCappedSource), { status: cappedRow.status, total: cappedRow.reviewCallsInherited + cappedRow.reviewCalls, phase: cappedRow.phase.name });
+
+  const crashed = await startHeldReviewerCorrection(25, 325), crashHttp = outbound.length;
+  await request(`/fixture/evict?id=${crashed.runId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`).catch(() => null);
+  transportRelease(); await crashed.progress;
+  await request(`/fixture/advance?id=${crashed.runId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`);
+  const crashedRow = await opRow(crashed.runId);
+  check("reviewer-correction cold restart leaves unknown without replaying the billed changed-block review", crashedRow.status === "unknown" && !crashedRow.validatedKey && crashedRow.reviewCallsInherited === 7 && crashedRow.reviewCalls === 1 && outbound.length === crashHttp, { status: crashedRow.status, inherited: crashedRow.reviewCallsInherited, newCalls: crashedRow.reviewCalls });
+
+  const expired = await startHeldReviewerCorrection(26, 326), expiredHttp = outbound.length;
+  await db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.phase.expiresAt',0) WHERE cache_key=?").bind(`filing-operator:${expired.runId}`).run();
+  transportRelease(); await expired.progress;
+  const expiredRow = await opRow(expired.runId);
+  check("late reviewer-correction success after expired lease cannot pass the completion fence", expiredRow.status === "unknown" && !expiredRow.validatedKey && !expiredRow.stages["content:summary"] && outbound.length === expiredHttp, { status: expiredRow.status, phase: expiredRow.phase.name });
+
+  const stopped = await startHeldReviewerCorrection(27, 327), stoppedHttp = outbound.length;
+  const stop = await request(reportPath(stopped.runId) + "/stop", { method: "POST", headers: { authorization: "Bearer " + token } });
+  transportRelease(); await stopped.progress;
+  const stoppedRow = await opRow(stopped.runId);
+  check("explicit stop fences an in-flight reviewer correction and preserves inherited budget", stop.status === 200 && stop.body.status === "stopped" && stoppedRow.status === "failed" && !stoppedRow.validatedKey && stoppedRow.reviewCallsInherited === 7 && stoppedRow.reviewCalls === 1 && outbound.length === stoppedHttp);
+}
+
 async function runReviewerCorrectionJourney() {
   const runId = operationId(103), source = await opRow(runId), input = await reviewerCorrectionInput(runId);
   const originalLedger = await rawRow(`filing-operator:${runId}`);
@@ -281,13 +366,7 @@ async function runReviewerCorrectionJourney() {
   const withoutQuote = await startSemanticFailure(23, "semantic-noquote");
   await rejectReviewerCorrection("semantic failure without a supported exact quote is not correctable", withoutQuote.runId, withoutQuote.input);
 
-  const usage = await db.prepare("SELECT * FROM ai_usage WHERE run_id=? AND stage='artifact-review-highlights' AND outcome='ok' LIMIT 1").bind(runId).first();
-  check("reusable original content has an actual successful model usage row", Boolean(usage?.id), { id: usage?.id, model: usage?.model, reasoning: usage?.reasoning });
-  await db.prepare("UPDATE ai_usage SET model='incompatible-synthetic-model' WHERE id=?").bind(usage.id).run();
-  try { await rejectReviewerCorrection("mismatched historical model usage forbids reuse before any new HTTP", runId, input); }
-  finally { await db.prepare("UPDATE ai_usage SET model=? WHERE id=?").bind(usage.model, usage.id).run(); }
-  await withMutatedFailedState(runId, work => { work.composer.blocks.find(block => block.id === "highlights").html += "<p>Changed input outside the reviewer's summary correction.</p>"; }, changed => rejectReviewerCorrection("changed peer HTML cannot reuse the historical full input fingerprint", runId, changed));
-  await withMutatedFailedState(runId, work => { work.periodic.texts["source-block"] += " New synthetic evidence outside the reviewed input."; }, changed => rejectReviewerCorrection("changed source evidence cannot reuse a historical successful review", runId, changed));
+  await runDeferredProofFailures();
   check("all rejected correction attempts preserve the exact failed source ledger", JSON.stringify(await rawRow(`filing-operator:${runId}`)) === JSON.stringify(originalLedger));
 
   transportMode = "reviewer-correction-pass";
@@ -323,33 +402,7 @@ async function runReviewerCorrectionJourney() {
   check("reviewer correction does not permit author self-approval or automatic publication", authorApproval.status === 400 && !await jsonRow(`research-shadow:${fixedId}:review`) && (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first()).published_version === 6);
   check("successful correction preserves the old failed-seven ledger plan state and failure bytes", JSON.stringify(await rawRow(`filing-operator:${runId}`)) === JSON.stringify(originalLedger) && await (await bucket.get(source.stateRef.key)).text() === originalState && await (await bucket.get(source.planKey)).text() === originalPlan && await (await bucket.get(`research-shadow/${runId}/failed.json`)).text() === originalFailure);
   transportMode = "pass";
-  const capped = await startHeldReviewerCorrection(24, 324), originalCappedSource = await rawRow(`filing-operator:${capped.source.runId}`);
-  const cappedHttp = outbound.length - 1;
-  for (let n = 0; n < 4; n++) check(`inherited-seven correction shares remaining review slot ${n + 1}`, (await request(`/fixture/review-request?id=${capped.runId}&lease=${capped.lease}`)).status === 200);
-  const exhausted = await request(`/fixture/review-request?id=${capped.runId}&lease=${capped.lease}&retries=2`);
-  check("correction cannot spend more than the five slots remaining from the original twelve", exhausted.status === 503 && (await opRow(capped.runId)).reviewCalls === 5 && (await opRow(capped.runId)).reviewCallsInherited === 7 && outbound.length - cappedHttp === 5, { newCalls: (await opRow(capped.runId)).reviewCalls, inherited: 7, httpSent: outbound.length - cappedHttp });
-  transportRelease(); await capped.progress;
-  const cappedRow = await opRow(capped.runId);
-  check("correction with seven inherited plus five new requests fails before another semantic HTTP", cappedRow.status === "failed" && !cappedRow.validatedKey && cappedRow.reviewCallsInherited + cappedRow.reviewCalls === 12 && outbound.length - cappedHttp === 5 && JSON.stringify(await rawRow(`filing-operator:${capped.source.runId}`)) === JSON.stringify(originalCappedSource), { status: cappedRow.status, total: cappedRow.reviewCallsInherited + cappedRow.reviewCalls, phase: cappedRow.phase.name });
-
-  const crashed = await startHeldReviewerCorrection(25, 325), crashHttp = outbound.length;
-  await request(`/fixture/evict?id=${crashed.runId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`).catch(() => null);
-  transportRelease(); await crashed.progress;
-  await request(`/fixture/advance?id=${crashed.runId}&kind=FILING_OPERATOR_COMPLETION_WORKFLOW`);
-  const crashedRow = await opRow(crashed.runId);
-  check("reviewer-correction cold restart leaves unknown without replaying the billed changed-block review", crashedRow.status === "unknown" && !crashedRow.validatedKey && crashedRow.reviewCallsInherited === 7 && crashedRow.reviewCalls === 1 && outbound.length === crashHttp, { status: crashedRow.status, inherited: crashedRow.reviewCallsInherited, newCalls: crashedRow.reviewCalls });
-
-  const expired = await startHeldReviewerCorrection(26, 326), expiredHttp = outbound.length;
-  await db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.phase.expiresAt',0) WHERE cache_key=?").bind(`filing-operator:${expired.runId}`).run();
-  transportRelease(); await expired.progress;
-  const expiredRow = await opRow(expired.runId);
-  check("late reviewer-correction success after expired lease cannot pass the completion fence", expiredRow.status === "unknown" && !expiredRow.validatedKey && !expiredRow.stages["content:summary"] && outbound.length === expiredHttp, { status: expiredRow.status, phase: expiredRow.phase.name });
-
-  const stopped = await startHeldReviewerCorrection(27, 327), stoppedHttp = outbound.length;
-  const stop = await request(reportPath(stopped.runId) + "/stop", { method: "POST", headers: { authorization: "Bearer " + token } });
-  transportRelease(); await stopped.progress;
-  const stoppedRow = await opRow(stopped.runId);
-  check("explicit stop fences an in-flight reviewer correction and preserves inherited budget", stop.status === 200 && stop.body.status === "stopped" && stoppedRow.status === "failed" && !stoppedRow.validatedKey && stoppedRow.reviewCallsInherited === 7 && stoppedRow.reviewCalls === 1 && outbound.length === stoppedHttp);
+  await runCorrectionInterruptionBoundaries();
   return { runId: fixedId, row: fixed, originalRunId: runId, originalCalls: 7, addedCalls: 3, totalCalls: 10, reused };
 }
 async function withChangedFailedState(runId, change, work) {
@@ -368,7 +421,7 @@ try {
   chrome = spawn(process.env.CHROMIUM_PATH || "/usr/bin/chromium", ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", `--user-data-dir=${resolve(scratch, "chrome")}`], { stdio: ["ignore", "ignore", "pipe"] });
   chromeEndpoint = await new Promise((resolve, reject) => { let stderr = ""; const timer = setTimeout(() => reject(Error("Local Chromium CDP startup timeout")), 20000); chrome.once("error", reject); chrome.stderr.on("data", bytes => { stderr += bytes; const found = /DevTools listening on (ws:\/\/[^\s]+)/.exec(stderr); if (found) { clearTimeout(timer); resolve(found[1]); } }); });
   await build({ entryPoints: [workerPath], outfile: bundlePath, bundle: true, format: "esm", platform: "node", target: "es2022", conditions: ["workerd", "worker", "browser"], external: ["cloudflare:*", "node:*"], banner: { js: "import {createRequire as localCreateRequire} from 'node:module'; const require=localCreateRequire('/local-worker.mjs');" }, loader: { ".css": "text", ".txt": "text" }, plugins: [{ name: "local-axe-text", setup(bundle) { bundle.onLoad({ filter: /\/axe\.min\.js$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "text" })); } }] });
-  mf = new Miniflare(convertV4MiniflareOptions({ name: "filing-operator-acceptance", modules: true, modulesRoot: scratch, scriptPath: bundlePath, compatibilityDate: "2026-08-26", compatibilityFlags: ["nodejs_compat"], durableObjects: { TASK_RUNS: { className: "CompletionRunner", useSQLite: true } }, serviceBindings: { SPONTRA_ANALYSIS: { name: "filing-operator-acceptance", entrypoint: "AdminGateway" }, BROWSER: { external: { address: browserAddress } } }, d1Databases: { DB: "filing-operator-acceptance" }, r2Buckets: ["SEC_FILINGS"], bindings: { FIXTURE: JSON.stringify(fixture), REPORT_ADMIN_PASSWORD: "synthetic-local-only", DEEPSEEK_API_KEY: "synthetic-local-only", OPENAI_API_KEY: "synthetic-local-only", OPENAI_REVIEW_MODEL: "gpt-6.1-sol", BUSINESS_SITE_ORIGIN: pageOrigin }, outboundService: modelTransport }));
+  mf = new Miniflare(convertV4MiniflareOptions({ name: "filing-operator-acceptance", modules: true, modulesRoot: scratch, scriptPath: bundlePath, compatibilityDate: "2026-08-26", compatibilityFlags: ["nodejs_compat"], durableObjects: { TASK_RUNS: { className: "CompletionRunner", useSQLite: true } }, serviceBindings: { SPONTRA_ANALYSIS: { name: "filing-operator-acceptance", entrypoint: "AdminGateway" }, BROWSER: { external: { address: browserAddress } }, R2_READ_GATE: async incoming => { const read = await incoming.json(); if (slowR2Key && read.key === slowR2Key) { slowR2EnteredAt ??= Date.now(); slowR2EnteredResolve?.({ ...read, enteredAt: slowR2EnteredAt }); await new Promise(resolve => { slowR2Release = resolve; }); } return Response.json({ allowed: true }); } }, d1Databases: { DB: "filing-operator-acceptance" }, r2Buckets: ["SEC_FILINGS"], bindings: { FIXTURE: JSON.stringify(fixture), REPORT_ADMIN_PASSWORD: "synthetic-local-only", DEEPSEEK_API_KEY: "synthetic-local-only", OPENAI_API_KEY: "synthetic-local-only", OPENAI_REVIEW_MODEL: "gpt-6.1-sol", BUSINESS_SITE_ORIGIN: pageOrigin }, outboundService: modelTransport }));
   request = async (path, options = {}) => { const response = await mf.dispatchFetch("http://localhost" + path, options), body = await response.text(); try { return { status: response.status, body: JSON.parse(body) }; } catch { return { status: response.status, body }; } };
   ({ DB: db, SEC_FILINGS: bucket } = await mf.getBindings());
   for (const file of ["0001_normal_doctor_strange.sql", "0002_flat_blockbuster.sql", "0003_neat_toro.sql", "0004_silky_may_parker.sql", "0005_fresh_bloodaxe.sql", "0019_pipeline_events.sql", "0049_analysis_artifacts.sql", "0023_ai_usage.sql", "0032_ai_tool_settings.sql", "0060_public_research.sql"]) for (const statement of (await readFile(resolve(root, "workers/analysis/migrations", file), "utf8")).replace(/--[^\n]*/g, "").split(";").map(value => value.trim()).filter(Boolean)) await db.prepare(statement).run();
@@ -382,6 +435,19 @@ try {
   token = (await request("/fixture/auth")).body.token;
   publicBaseline = (await request("/fixture/public")).body;
   check("fixture has an immutable sixth public version", publicBaseline.version === 6 && /^[a-f0-9]{64}$/.test(publicBaseline.hash), publicBaseline);
+  if (process.env.SPONTRA_ASYNC_PROOF_ONLY === "1") {
+    await runDeferredProofFailures();
+    await runCorrectionInterruptionBoundaries();
+    const finalPointer = await db.prepare("SELECT published_version,published_hash FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first();
+    check("all asynchronous proof budget and interruption failures preserve the exact public version and hash", finalPointer.published_version === 6 && finalPointer.published_hash === publicBaseline.hash, finalPointer);
+    check("narrow async proof journey contacts no production or other outbound endpoint", blockedOutbound.length === 0, blockedOutbound);
+    const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-correction-async-admission.json");
+    const baselineFile = resolve(root, "docs/acceptance/discovery/results/filing-operator-completion.json");
+    const previousBytes = await readFile(baselineFile, "utf8"), previous = JSON.parse(previousBytes);
+    const results = { at: new Date().toISOString(), scope: "async-proof-admission-and-budget-interruption-only", environment: "Real proxy, named AdminGateway, named TaskRunner, actual tools and actual local R2 get with controlled latency", synthetic: { material: true, providerResponses: true, parentCheckpoints: true, userSignoff: false }, actualModelCalls: 0, productionAccess: false, slowR2Admission: slowR2Evidence, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots: [], scratch, baselineAcceptance: { file: "filing-operator-completion.json", at: previous.at, sha256: sha(previousBytes), checks: previous.checks.length }, notVerified: ["Real provider investment/visual judgement", "Production request/deployment", "Full wide journey repeated on this run"] };
+    await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
+    console.log(JSON.stringify({ resultFile, scope: results.scope, checks: checks.length, syntheticProviderHttpCalls: outbound.length, actualModelCalls: 0, slowR2Admission: slowR2Evidence }));
+  } else {
   const plan = await planFor(1), originals = await Promise.all([rawRow(`research-shadow:${sourceId(1)}`), rawRow(`research-shadow:${parents[0].runId}`), bucket.get(`research-shadow/${sourceId(1)}/failed.json`).then(object => object.text())]);
   check("unauthenticated direct mutation is refused", (await request(reportPath(sourceId(1)) + "/operator-complete", { method: "POST", body: "{}" })).status === 401);
   check("proxy requires same-origin mutation", (await send(1, 101, plan, { proxy: true, headers: { origin: "https://other.invalid" } })).status === 403);
@@ -543,12 +609,13 @@ try {
   check("explicit local human review receipt persists separately from operator validation", review?.reviewer === "synthetic-independent-human-local-only" && review.hash === success.hash && review.approvedChainIds.includes("chain-1"), review);
   check("no production or other outbound endpoint was contacted", blockedOutbound.length === 0, blockedOutbound);
   check("actual browser screenshots were sent to the visual provider transport", screenshots.length >= 18 && outbound.find(row => row.mode === "pass" && row.stage === "visual")?.images >= 18 && browserTelemetry.some(row => row.path.startsWith("/v1/sessions")), { captured: screenshots.length, reviewedImages: outbound.find(row => row.mode === "pass" && row.stage === "visual")?.images });
-  const results = { at: new Date().toISOString(), environment: "Isolated local Miniflare D1/R2/SQLite TaskRunner, actual ArtifactFrame and actual Chromium through the real qa.ts CDP protocol", synthetic: { material: true, providerResponses: true, browserProtocol: false, parentCheckpoints: true, userSignoff: false }, actualModelCalls: 0, productionAccess: false, reviewerCorrection: { runId: reviewerCorrection.runId, originalRunId: reviewerCorrection.originalRunId, originalCalls: reviewerCorrection.originalCalls, addedCalls: reviewerCorrection.addedCalls, totalCalls: reviewerCorrection.totalCalls, reused: reviewerCorrection.reused }, scratch, screenshots, checks, transports: outbound.map(({ input, ...rest }) => rest), browserTelemetry, notVerified: ["Real author generation quality", "Real independent model semantic and visual judgement quality", "Production deployment", "Real human investment review and production promotion", "Full production React business-page shell; local shell renders the actual ArtifactFrame component"] };
+  const results = { at: new Date().toISOString(), environment: "Isolated local Miniflare D1/R2/SQLite TaskRunner, actual ArtifactFrame and actual Chromium through the real qa.ts CDP protocol", synthetic: { material: true, providerResponses: true, browserProtocol: false, parentCheckpoints: true, userSignoff: false }, actualModelCalls: 0, productionAccess: false, slowR2Admission: slowR2Evidence, reviewerCorrection: { runId: reviewerCorrection.runId, originalRunId: reviewerCorrection.originalRunId, originalCalls: reviewerCorrection.originalCalls, addedCalls: reviewerCorrection.addedCalls, totalCalls: reviewerCorrection.totalCalls, reused: reviewerCorrection.reused }, scratch, screenshots, checks, transports: outbound.map(({ input, ...rest }) => rest), browserTelemetry, notVerified: ["Real author generation quality", "Real independent model semantic and visual judgement quality", "Production deployment", "Real human investment review and production promotion", "Full production React business-page shell; local shell renders the actual ArtifactFrame component"] };
   const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-operator-completion.json");
   await mkdir(resolve(root, "docs/acceptance/discovery/results"), { recursive: true }); await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
   console.log(JSON.stringify({ resultFile, checks: checks.length, syntheticProviderHttpCalls: outbound.length, actualModelCalls: 0, screenshots: screenshots.length, scratch }));
+  }
 } finally {
-  transportRelease?.();
+  transportRelease?.(); slowR2Release?.();
   if (mf) await mf.dispose();
   for (const socket of sockets) socket.terminate(); socketServer.close(); browserServer.closeAllConnections(); pageServer.closeAllConnections();
   await Promise.all([new Promise(resolve => browserServer.close(resolve)), new Promise(resolve => pageServer.close(resolve))]);

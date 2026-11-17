@@ -107,6 +107,8 @@ async function correctionSource(env:AnalysisEnv,run:FilingOperatorRun){
 async function applyReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState){
   const source=await correctionSource(env,run),receipt=phaseReceipt(source.stages.semantic)!;
   if(await sha256(JSON.stringify(receipt))!==run.correction!.semanticReceiptHash||await sha256(stableOperatorValue(receipt.issues.map(({block,key,quote,replacement})=>({block,key,quote,replacement}))))!==run.correction!.correctionsHash)throw new Error("The admitted reviewer corrections changed");
+  const validation=(state.composer as OperatorComposerState).operatorValidation;
+  if(stableOperatorValue(source.stateRef)!==stableOperatorValue(run.correction!.failedStateRef)||!validation||validation.runId!==source.runId||JSON.stringify(validation.semantic)!==JSON.stringify(receipt))throw new Error("Failed state does not hold the actual admitted semantic review receipt");
   const harness=await filingOperatorHarness(env,run.spec,state,async()=>{throw new Error("Applying corrections cannot validate a shadow");});
   const researchBefore=packState({...state,composer:null}),before=Object.fromEntries(state.composer.blocks.map(block=>[block.id,stableOperatorValue({id:block.id,title:block.title,html:block.html,sources:block.sources})]));
   const transcript=[];
@@ -153,7 +155,7 @@ async function prepareReviewerCorrection(env:AnalysisEnv,run:FilingOperatorRun,s
   return {...prepared,observation,receipt:{...prepared.receipt!,observation,reusedContent:reused},reused};
 }
 
-/** The admission rehearsal and execution use the same real tool and input-proof path; this does not call a model. */
+/** Offline rehearsal of the durable non-billable tool/proof phases; HTTP admission never calls this heavy path. */
 export async function previewFilingReviewerCorrections(env:AnalysisEnv,run:FilingOperatorRun,state:FilingState){
   const applied=await applyReviewerCorrections(env,run,state),harness=await filingOperatorHarness(env,run.spec,state,async()=>{throw new Error("Correction preparation cannot validate a shadow");});
   const prepared=await prepareReviewerCorrection(env,run,state,harness);if(prepared.error)throw new Error(prepared.observation);
@@ -181,9 +183,6 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
     const failure=await(await env.SEC_FILINGS.get(`research-shadow/${source.runId}/failed.json`))?.text();
     if(!failure||JSON.parse(failure).status!=="failed")throw new Error("A completed failure receipt is required; stopped or interrupted work is not correctable");
     await assertBase(env,source);if(source.baseVersion!==input.expectedPublicVersion||source.baseHash!==input.expectedPublicHash)throw new Error("Exact unchanged public version and hash required");
-    const state=await readState(env,source.stateRef),validation=(state.composer as OperatorComposerState).operatorValidation;
-    if(!validation||validation.runId!==source.runId||JSON.stringify(validation.semantic)!==JSON.stringify(receipt))throw new Error("Failed state does not hold the actual semantic review receipt");
-    await assertFrozenResearch(env,source,state);
     const correctionsHash=await sha256(stableOperatorValue(issues.map(({block,key,quote,replacement})=>({block,key,quote,replacement})))),changedBlocks=[...new Set(issues.map(issue=>issue.block))];
     if(changedBlocks.length!==1||issues.length!==1)throw new Error("This bounded reviewer correction applies exactly one reviewer's plain-text replacement in one report block");
     const runId=`shadow-${shadow.ticker}-${shadow.accession}-operator-fix-${requestId}`,now=new Date().toISOString(),sourceRecordHash=await sha256(row!.payload),sourceRecordRef={key:`filing-operator/${runId}/correction-source/${sourceRecordHash}.json`,hash:sourceRecordHash};
@@ -191,8 +190,8 @@ export async function handleFilingReviewerCorrections(request:Request,env:Analys
     const spec:FilingSpec={...source.spec,sessionId:runId,jobId:runId,jobVersion:"operator.reviewer-correction.v1",operatorCompletion:{...source.spec.operatorCompletion,reviewerCorrection:{sourceOperatorRunId:source.runId,failedStateHash:source.stateRef.hash,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,reviewCallsInherited:source.reviewCalls}}};
     const run:FilingOperatorRun={...source,runId,requestId,spec,status:"claimed",reviewCalls:0,reviewCallsInherited:source.reviewCalls,createdAt:now,stages:{},correction:{sourceOperatorRunId:source.runId,sourceRecordRef,failedStateRef:source.stateRef,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,changedBlocks}};
     delete run.phase;delete run.stateRef;delete run.validatedKey;delete run.version;delete run.hash;delete run.error;
-    // No provider is called by this real tool/preparation rehearsal. Reject incompatible proofs before claiming or spending.
-    const preview=unpackState<FilingState>(packState(state));await previewFilingReviewerCorrections(env,run,preview);
+    // Large pinned states and full evidence proofs belong to the durable non-billable phases below.
+    // The HTTP admission binds their exact identities and claims once without rereading them synchronously.
     const claim={runId,sourceOperatorRunId:source.runId,requestId,inputHash,planHash:source.planHash,failedStateHash:source.stateRef.hash,semanticReceiptHash:input.expectedSemanticReceiptHash,correctionsHash,reviewCallsInherited:source.reviewCalls,maxReviewCalls:12,createdAt:now,publicReportUnchanged:true};
     const newShadow:ShadowRun={runId,ticker:shadow.ticker,accession:shadow.accession,createdAt:now,baseVersion:source.baseVersion,callsReserved:0,maxCalls:12,spec},artifact=artifactId("filing-report",shadow.ticker,shadow.accession);
     try{await db(env).batch([
@@ -254,13 +253,18 @@ export async function executeFilingOperatorCompletion(params:{runId:string},cont
         });
         let result:ComposerPhaseResult;
         if(name==="corrections"){
-          const applied=await applyReviewerCorrections(reviewEnv,current,state);
-          for(const entry of applied.transcript){await live();const body=JSON.stringify(entry);await putImmutable(env,`filing-operator/${id}/corrections/${await sha256(body)}.json`,body);}
-          result={observation:applied.observation};
+          try{
+            const applied=await applyReviewerCorrections(reviewEnv,current,state);
+            for(const entry of applied.transcript){await live();const body=JSON.stringify(entry);await putImmutable(env,`filing-operator/${id}/corrections/${await sha256(body)}.json`,body);}
+            result={observation:applied.observation};
+          }catch(error){result={error:true,observation:`Reviewer correction validation failed before any model request: ${error instanceof Error?error.message:String(error)}`};}
         }else if(name==="tools"){
           const applied=await executeFilingOperatorPlan(reviewEnv,current.spec,state,plan,async()=>{throw new Error("Tools cannot validate a shadow");},async entry=>{await live();const body=JSON.stringify(entry);await putImmutable(env,`filing-operator/${id}/tools/${entry.sequence}-${await sha256(body)}.json`,body);});
           result={observation:`Executed ${applied.toolCalls} real tool calls.`};
-        }else if(name==="prepare")result=current.correction?await prepareReviewerCorrection(reviewEnv,current,state,harness):await harness.stages.prepare(state);
+        }else if(name==="prepare"){
+          if(current.correction){try{result=await prepareReviewerCorrection(reviewEnv,current,state,harness);}catch(error){result={error:true,observation:`Historical review proof failed before any model request: ${error instanceof Error?error.message:String(error)}`};}}
+          else result=await harness.stages.prepare(state);
+        }
         else if(name.startsWith("content:"))result=await harness.stages.content(state,name.slice(8));
         else if(name==="semantic")result=await harness.stages.semantic(state);
         else if(name==="render")result=await harness.stages.render(state);

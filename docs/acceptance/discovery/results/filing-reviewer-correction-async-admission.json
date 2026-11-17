@@ -1,0 +1,1287 @@
+{
+  "at": "2026-11-17T05:01:37.322Z",
+  "scope": "async-proof-admission-and-budget-interruption-only",
+  "environment": "Real proxy, named AdminGateway, named TaskRunner, actual tools and actual local R2 get with controlled latency",
+  "synthetic": {
+    "material": true,
+    "providerResponses": true,
+    "parentCheckpoints": true,
+    "userSignoff": false
+  },
+  "actualModelCalls": 0,
+  "productionAccess": false,
+  "slowR2Admission": {
+    "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000331",
+    "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000131",
+    "failedStateKey": "filing-operator/shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000131/states/bdf2468c4e6b9bed1d4f9d25f31cc931de4db44e3c017087192f4c673e70708c.json",
+    "actualR2ObjectFound": true,
+    "enteredAt": "2026-11-17T05:00:59.610Z",
+    "releasedAt": "2026-11-17T05:01:31.111Z",
+    "heldMs": 31501,
+    "proxyElapsedMs": 577,
+    "replayElapsedMs": 41,
+    "unchangedProxyTimeoutMs": 30000,
+    "status": "failed",
+    "phase": "prepare",
+    "originalCalls": 7,
+    "addedCalls": 0,
+    "dispatches": 1,
+    "providerHttp": 0,
+    "publicPointer": {
+      "published_version": 6,
+      "published_hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f"
+    }
+  },
+  "checks": [
+    {
+      "name": "fixture has an immutable sixth public version",
+      "status": "passed",
+      "detail": {
+        "version": 6,
+        "hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f",
+        "html": "<article data-artifact=\"filing-report\" data-ticker=\"SYNTHETIC\" data-subject=\"0000000001-26-000001\" data-version=\"6\" lang=\"en\"><section data-block=\"summary\" data-state=\"passed\" data-sources=\"\"><h2>Stable public fixture</h2><p>Synthetic existing public content.</p></section></article>"
+      }
+    },
+    {
+      "name": "reviewer correction source 28 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000128",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000028",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001028",
+          "requestId": "00000000-0000-4000-8000-000000000128",
+          "checkpointHash": "1c717b42e01b40e70bb21d6a6053f38a3ce37a56963c198a88609fe1c1deb621",
+          "planHash": "1c6922706af10932756da63b76fec4102ac795bc41d6ba9a907f413b00028a84",
+          "createdAt": "2026-11-17T05:00:53.953Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000028",
+            "checkpointHash": "1c717b42e01b40e70bb21d6a6053f38a3ce37a56963c198a88609fe1c1deb621",
+            "planHash": "1c6922706af10932756da63b76fec4102ac795bc41d6ba9a907f413b00028a84",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-28",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 28 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "reusable original content has an actual successful model usage row",
+      "status": "passed",
+      "detail": {
+        "id": 2,
+        "model": "deepseek-flash",
+        "reasoning": "high"
+      }
+    },
+    {
+      "name": "mismatched historical model usage is claimed through the real proxy before heavy validation",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000328",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000128",
+          "requestId": "00000000-0000-4000-8000-000000000328",
+          "inputHash": "da4fdf8cb2faebd14b2e92f04d517514d484f2029b0a6353beceea722c5b015b",
+          "planHash": "1c6922706af10932756da63b76fec4102ac795bc41d6ba9a907f413b00028a84",
+          "failedStateHash": "39668fab52479b1c9a08a1550d0bdfd07f5afaff42117190ed9645c6486d86d1",
+          "semanticReceiptHash": "2ba85c2a32f570edcd73cb53c08273cd6b386fa1947084a2a9a74533268b8331",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:00:54.763Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "mismatched historical model usage fails the durable non-billable phase before any provider HTTP",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "prepare",
+        "error": "Historical review proof failed before any model request: Original successful provider usage for highlights does not match the reconstructed request",
+        "newCalls": 0,
+        "inherited": 7,
+        "providerHttp": 0
+      }
+    },
+    {
+      "name": "reviewer correction source 29 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000129",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000029",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001029",
+          "requestId": "00000000-0000-4000-8000-000000000129",
+          "checkpointHash": "b7ef975850612c7c7071fd743cf9e011380783c3429ffd2db91ddccde74533ab",
+          "planHash": "b6b7d8ff682f4fdeffcf99db7816ff92a7ec043403b47172ec7ed2cc7c7c08cb",
+          "createdAt": "2026-11-17T05:00:55.044Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000029",
+            "checkpointHash": "b7ef975850612c7c7071fd743cf9e011380783c3429ffd2db91ddccde74533ab",
+            "planHash": "b6b7d8ff682f4fdeffcf99db7816ff92a7ec043403b47172ec7ed2cc7c7c08cb",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-29",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 29 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "changed peer HTML fingerprint is claimed through the real proxy before heavy validation",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000329",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000129",
+          "requestId": "00000000-0000-4000-8000-000000000329",
+          "inputHash": "f343b7bb8ef2dece739a04a316dbd4567a52ee9a81cab022a494c5177f1a7231",
+          "planHash": "b6b7d8ff682f4fdeffcf99db7816ff92a7ec043403b47172ec7ed2cc7c7c08cb",
+          "failedStateHash": "063c0e6588d18f0e573053c00adb1b6999b3f080573cd70c87b4fa8cf30aed1e",
+          "semanticReceiptHash": "dda31f4f4917aac230506d18cb430a4e325bdab6130862fc113e58e06b9ff4c3",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:00:55.735Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "changed peer HTML fingerprint fails the durable non-billable phase before any provider HTTP",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "prepare",
+        "error": "Historical review proof failed before any model request: Unchanged block highlights no longer has the exact original review input",
+        "newCalls": 0,
+        "inherited": 7,
+        "providerHttp": 0
+      }
+    },
+    {
+      "name": "reviewer correction source 30 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000130",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000030",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001030",
+          "requestId": "00000000-0000-4000-8000-000000000130",
+          "checkpointHash": "0e6b5d3b7ce7d859aa93e499838626352b73f6c7549218d822f1bf7585a1e3de",
+          "planHash": "db1810addd9e7014a216da17e7bd05dd1b52a942baccbe8affd232231356874e",
+          "createdAt": "2026-11-17T05:00:55.995Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000030",
+            "checkpointHash": "0e6b5d3b7ce7d859aa93e499838626352b73f6c7549218d822f1bf7585a1e3de",
+            "planHash": "db1810addd9e7014a216da17e7bd05dd1b52a942baccbe8affd232231356874e",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-30",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 30 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "changed source evidence fingerprint is claimed through the real proxy before heavy validation",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000330",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000130",
+          "requestId": "00000000-0000-4000-8000-000000000330",
+          "inputHash": "976a7177b6aabc5eae98a60b179865ad731396c0f11f5d0f4c3cc0858b4599ec",
+          "planHash": "db1810addd9e7014a216da17e7bd05dd1b52a942baccbe8affd232231356874e",
+          "failedStateHash": "f77c8f58f65affebaac5cf59486798123e14d097c503fc413377c6b2296a787f",
+          "semanticReceiptHash": "08e18a34b7f612d4b5166c760b9c4aca505cf986d9ddd82e649697a4d647053e",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:00:57.021Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "changed source evidence fingerprint fails the durable non-billable phase before any provider HTTP",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "prepare",
+        "error": "Historical review proof failed before any model request: Unchanged block highlights no longer has the exact original review input",
+        "newCalls": 0,
+        "inherited": 7,
+        "providerHttp": 0
+      }
+    },
+    {
+      "name": "reviewer correction source 31 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000131",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000031",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001031",
+          "requestId": "00000000-0000-4000-8000-000000000131",
+          "checkpointHash": "77fb81084e6fc0e83d829e92e5f89f631373f05a90ddd4b4e44118c3804561a4",
+          "planHash": "282688523cde4cbb1d5938f3646b63cdaf4dd33658229a3017e1ef3e1bd48322",
+          "createdAt": "2026-11-17T05:00:57.409Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000031",
+            "checkpointHash": "77fb81084e6fc0e83d829e92e5f89f631373f05a90ddd4b4e44118c3804561a4",
+            "planHash": "282688523cde4cbb1d5938f3646b63cdaf4dd33658229a3017e1ef3e1bd48322",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-31",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 31 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "slow R2 evidence cannot make real proxy admission cross its unchanged thirty-second timeout",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "proxyElapsedMs": 577,
+        "proxyTimeoutMs": 30000
+      }
+    },
+    {
+      "name": "durable correction waits on an actual completed R2 get response before any model HTTP",
+      "status": "passed",
+      "detail": {
+        "key": "filing-operator/shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000131/states/bdf2468c4e6b9bed1d4f9d25f31cc931de4db44e3c017087192f4c673e70708c.json",
+        "found": true,
+        "enteredAt": 1794891659610,
+        "providerHttp": 0
+      }
+    },
+    {
+      "name": "exact replay during the delayed read returns quickly without a second dispatch",
+      "status": "passed",
+      "detail": {
+        "replayElapsedMs": 41,
+        "dispatches": 1
+      }
+    },
+    {
+      "name": "more than thirty seconds of R2 latency ends in a non-billable proof failure with the old seven and public six intact",
+      "status": "passed",
+      "detail": {
+        "heldMs": 31501,
+        "proxyElapsedMs": 577,
+        "replayElapsedMs": 41,
+        "status": "failed",
+        "phase": "prepare",
+        "newCalls": 0,
+        "inherited": 7,
+        "publicPointer": {
+          "published_version": 6,
+          "published_hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f"
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 24 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000124",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000024",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001024",
+          "requestId": "00000000-0000-4000-8000-000000000124",
+          "checkpointHash": "5d7320748fb7863c38543ec4f2b07e1606190089afc358f59500238c9683f391",
+          "planHash": "67d45a687950c66ba87454183534d18444927305b2ae129639a6151621b7066a",
+          "createdAt": "2026-11-17T05:01:31.363Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000024",
+            "checkpointHash": "5d7320748fb7863c38543ec4f2b07e1606190089afc358f59500238c9683f391",
+            "planHash": "67d45a687950c66ba87454183534d18444927305b2ae129639a6151621b7066a",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-24",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 24 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "bounded reviewer correction 24 is admitted without a new author plan",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000324",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000124",
+          "requestId": "00000000-0000-4000-8000-000000000324",
+          "inputHash": "06fa6f45c5b16e9367eaa7b5a22caaf4f97b48b27106b15fd62f2e60cf80a572",
+          "planHash": "67d45a687950c66ba87454183534d18444927305b2ae129639a6151621b7066a",
+          "failedStateHash": "b83ceb95b2c2e99d91facc6856bae0ede293bd6a32f3c396bf4c49c2f88f3cee",
+          "semanticReceiptHash": "590226b08d59ea7eb81837b6bd7d08b569c64fdb327f364e1a003e4df171696e",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:01:31.934Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction 24 marks its changed-block phase before sending",
+      "status": "passed",
+      "detail": {
+        "phase": "content:summary",
+        "calls": 1,
+        "inherited": 7
+      }
+    },
+    {
+      "name": "inherited-seven correction shares remaining review slot 1",
+      "status": "passed"
+    },
+    {
+      "name": "inherited-seven correction shares remaining review slot 2",
+      "status": "passed"
+    },
+    {
+      "name": "inherited-seven correction shares remaining review slot 3",
+      "status": "passed"
+    },
+    {
+      "name": "inherited-seven correction shares remaining review slot 4",
+      "status": "passed"
+    },
+    {
+      "name": "correction cannot spend more than the five slots remaining from the original twelve",
+      "status": "passed",
+      "detail": {
+        "newCalls": 5,
+        "inherited": 7,
+        "httpSent": 5
+      }
+    },
+    {
+      "name": "correction with seven inherited plus five new requests fails before another semantic HTTP",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "total": 12,
+        "phase": "semantic"
+      }
+    },
+    {
+      "name": "reviewer correction source 25 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000125",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000025",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001025",
+          "requestId": "00000000-0000-4000-8000-000000000125",
+          "checkpointHash": "6a80560be522e1c31a41afbb988ff9c31e795c1cb5274a5ada55274b7c4aa15d",
+          "planHash": "a8b0f9ae798d30968d7037ada47382f7fb56da383fac92dc95b43f4a7f586636",
+          "createdAt": "2026-11-17T05:01:34.552Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000025",
+            "checkpointHash": "6a80560be522e1c31a41afbb988ff9c31e795c1cb5274a5ada55274b7c4aa15d",
+            "planHash": "a8b0f9ae798d30968d7037ada47382f7fb56da383fac92dc95b43f4a7f586636",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-25",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 25 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "bounded reviewer correction 25 is admitted without a new author plan",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000325",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000125",
+          "requestId": "00000000-0000-4000-8000-000000000325",
+          "inputHash": "133f69d8c2378fb079eb678f4c05c28d96d61a5d775d44a69ee726f72c9f098f",
+          "planHash": "a8b0f9ae798d30968d7037ada47382f7fb56da383fac92dc95b43f4a7f586636",
+          "failedStateHash": "dad59d7769b076657c67a827dedca5a36770487fa4a0d971494e13f6de76d6c5",
+          "semanticReceiptHash": "725c6fd8b724b264dc1492508bd394ee958b8d5742e2d4711d59acb8973a9335",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:01:34.980Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction 25 marks its changed-block phase before sending",
+      "status": "passed",
+      "detail": {
+        "phase": "content:summary",
+        "calls": 1,
+        "inherited": 7
+      }
+    },
+    {
+      "name": "reviewer-correction cold restart leaves unknown without replaying the billed changed-block review",
+      "status": "passed",
+      "detail": {
+        "status": "unknown",
+        "inherited": 7,
+        "newCalls": 1
+      }
+    },
+    {
+      "name": "reviewer correction source 26 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000126",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000026",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001026",
+          "requestId": "00000000-0000-4000-8000-000000000126",
+          "checkpointHash": "424d77653c70ce78d50856438c82000272fca69bc4d8514c22080190c6c4dab2",
+          "planHash": "dfe2f3d319f137280997b7b687d861552b43ce11fef7413730d4002f5821e2c8",
+          "createdAt": "2026-11-17T05:01:35.417Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000026",
+            "checkpointHash": "424d77653c70ce78d50856438c82000272fca69bc4d8514c22080190c6c4dab2",
+            "planHash": "dfe2f3d319f137280997b7b687d861552b43ce11fef7413730d4002f5821e2c8",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-26",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 26 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "bounded reviewer correction 26 is admitted without a new author plan",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000326",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000126",
+          "requestId": "00000000-0000-4000-8000-000000000326",
+          "inputHash": "0dfe6e1e0ab9cc0459f10e823b9ae37dc7fd3a3c5c9c948cd08d243c79959521",
+          "planHash": "dfe2f3d319f137280997b7b687d861552b43ce11fef7413730d4002f5821e2c8",
+          "failedStateHash": "bd7be6f0f022e6e7b49addfc18c91496b95c6a237cf7997f38ef44ca472f372f",
+          "semanticReceiptHash": "ff782b9f522400f76429262413b39ab486f8b210fed069ce2153a91cde1554a3",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:01:35.896Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction 26 marks its changed-block phase before sending",
+      "status": "passed",
+      "detail": {
+        "phase": "content:summary",
+        "calls": 1,
+        "inherited": 7
+      }
+    },
+    {
+      "name": "late reviewer-correction success after expired lease cannot pass the completion fence",
+      "status": "passed",
+      "detail": {
+        "status": "unknown",
+        "phase": "content:summary"
+      }
+    },
+    {
+      "name": "reviewer correction source 27 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000127",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000027",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001027",
+          "requestId": "00000000-0000-4000-8000-000000000127",
+          "checkpointHash": "a7c056d4a8fe879bf0f825e0ba57f25d13c78078b7d5298eafb5cac15605d675",
+          "planHash": "adb2741e60e8cdab67e7c98a061892a6847d7ee37caac1f286729feaf9ec4289",
+          "createdAt": "2026-11-17T05:01:36.367Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000027",
+            "checkpointHash": "a7c056d4a8fe879bf0f825e0ba57f25d13c78078b7d5298eafb5cac15605d675",
+            "planHash": "adb2741e60e8cdab67e7c98a061892a6847d7ee37caac1f286729feaf9ec4289",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-27",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 27 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "bounded reviewer correction 27 is admitted without a new author plan",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000327",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000127",
+          "requestId": "00000000-0000-4000-8000-000000000327",
+          "inputHash": "e0c9d5fa1c33ad92d8e24f7a19c92fea57e0f850ba9e7d21842a6a14e785b8c9",
+          "planHash": "adb2741e60e8cdab67e7c98a061892a6847d7ee37caac1f286729feaf9ec4289",
+          "failedStateHash": "17e7cf62653eb69ff3ed727eba6d97a4fbba4d32eddb9894461b0fe1983005e8",
+          "semanticReceiptHash": "56273e7839c59b2f8afd513229124bcc369c2a2df29f171f61b4035f35fd0f00",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 7,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T05:01:36.971Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction 27 marks its changed-block phase before sending",
+      "status": "passed",
+      "detail": {
+        "phase": "content:summary",
+        "calls": 1,
+        "inherited": 7
+      }
+    },
+    {
+      "name": "explicit stop fences an in-flight reviewer correction and preserves inherited budget",
+      "status": "passed"
+    },
+    {
+      "name": "all asynchronous proof budget and interruption failures preserve the exact public version and hash",
+      "status": "passed",
+      "detail": {
+        "published_version": 6,
+        "published_hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f"
+      }
+    },
+    {
+      "name": "narrow async proof journey contacts no production or other outbound endpoint",
+      "status": "passed",
+      "detail": []
+    }
+  ],
+  "transports": [
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "hold-content",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "hold-content",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "hold-content",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "hold-content",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    }
+  ],
+  "screenshots": [],
+  "scratch": "/tmp/spontra-filing-operator-wAjj7F",
+  "baselineAcceptance": {
+    "file": "filing-operator-completion.json",
+    "at": "2026-11-17T04:33:11.512Z",
+    "sha256": "9902364edfc5b5482ec13bc168d1df3ab7c15fdc783cfd977d0cd64c6c43a180",
+    "checks": 171
+  },
+  "notVerified": [
+    "Real provider investment/visual judgement",
+    "Production request/deployment",
+    "Full wide journey repeated on this run"
+  ]
+}
