@@ -1,0 +1,345 @@
+{
+  "at": "2026-11-17T12:10:25.950Z",
+  "scope": "single-actual-content-reviewer-correction-with-shared-twelve-request-limit",
+  "environment": "Actual proxy, named AdminGateway, TaskRunner, source tools, composer stages and Chromium; provider transport only is synthetic",
+  "synthetic": {
+    "fixedMaterials": true,
+    "providerResponses": true,
+    "passedReceipts": false,
+    "userSignoff": false
+  },
+  "actualModelCalls": 0,
+  "productionAccess": false,
+  "contentCorrection": {
+    "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000115",
+    "correctedRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000415",
+    "inherited": 1,
+    "added": 11,
+    "total": 12
+  },
+  "checks": [
+    {
+      "name": "fixture has an immutable sixth public version",
+      "status": "passed",
+      "detail": {
+        "version": 6,
+        "hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f",
+        "html": "<article data-artifact=\"filing-report\" data-ticker=\"SYNTHETIC\" data-subject=\"0000000001-26-000001\" data-version=\"6\" lang=\"en\"><section data-block=\"summary\" data-state=\"passed\" data-sources=\"\"><h2>Stable public fixture</h2><p>Synthetic existing public content.</p></section></article>"
+      }
+    },
+    {
+      "name": "content source 15 has a completed actual one-request failure and no later audit",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "reviewCalls": 1,
+        "phase": "content:summary"
+      }
+    },
+    {
+      "name": "inherited-one budget request 1 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 2 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 3 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 4 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 5 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 6 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 7 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 8 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 9 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 10 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "inherited-one budget request 11 observes the shared twelve-send cap",
+      "status": "passed",
+      "detail": {
+        "status": 503
+      }
+    },
+    {
+      "name": "one inherited plus eleven actual new HTTP sends exhausts twelve without another content or later audit",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "own": 11,
+        "inherited": 1
+      }
+    },
+    {
+      "name": "budget exhaustion preserves the original failed-one ledger",
+      "status": "passed"
+    },
+    {
+      "name": "reviewer correction source 16 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000116",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000016",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001016",
+          "requestId": "00000000-0000-4000-8000-000000000116",
+          "checkpointHash": "aee71547c22d86e7e73e54b6d320c257e4c027ff56e9c05250a12aba248d451e",
+          "planHash": "f384dbfc2979345c49049548da936c31b652b0f8251eae559a9bca17be86d58f",
+          "createdAt": "2026-11-17T12:10:25.248Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000016",
+            "checkpointHash": "aee71547c22d86e7e73e54b6d320c257e4c027ff56e9c05250a12aba248d451e",
+            "planHash": "f384dbfc2979345c49049548da936c31b652b0f8251eae559a9bca17be86d58f",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-16",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 16 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "a hashless historical content input cannot be reused as the changed review prompt",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Reusing a prior content audit requires its actual original request hash; a changed prompt cannot be proven from a hashless legacy receipt",
+        "newProviderHttp": 0
+      }
+    }
+  ],
+  "transports": [
+    {
+      "stage": "content",
+      "mode": "content-correction-source",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "hold-content",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "gate",
+      "mode": "hold-content",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    }
+  ],
+  "screenshots": [],
+  "scratch": "/tmp/spontra-filing-operator-u52xBx",
+  "notVerified": [
+    "Real provider investment or visual quality",
+    "Production correction or deployment",
+    "Human approval"
+  ]
+}

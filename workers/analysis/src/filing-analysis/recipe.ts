@@ -35,7 +35,8 @@ import type { ShadowContextExtension } from "./shadow-context.ts";
 
 /** What the session is rebuilt from after an eviction. */
 export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string; checkpointHash?: string };
-export type FilingReviewerCorrection={sourceOperatorRunId:string;failedStateHash:string;semanticReceiptHash:string;correctionsHash:string;reviewCallsInherited:number};
+export type FilingReviewerCorrectionReview={sourcePhase?:"semantic";semanticReceiptHash:string}|{sourcePhase:`content:${typeof PERIODIC_BLOCKS[number]}`;contentReceiptHash:string};
+export type FilingReviewerCorrection={sourceOperatorRunId:string;failedStateHash:string;correctionsHash:string;reviewCallsInherited:number}&FilingReviewerCorrectionReview;
 export type FilingOperatorAuthor = {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:"gpt-6.1-sol";effort:"max";runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null};reviewerCorrection?:FilingReviewerCorrection};
 export type FilingSpec = { operatorCompletion?:FilingOperatorAuthor; shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */

@@ -118,3 +118,21 @@ node scripts/filing-operator-completion-acceptance.mjs
 正式入场前仍须回读原 failed7、公开 v6/hash 和新代码部署结果；本文件中的身份值不是线上请求或通过证明。成功只产生待独立人工审阅的 validated shadow，不自动 promote。
 
 一次真实生产请求曾在同步重建阶段触及管理代理 30 秒上限：trace `3119b540d3282ad78d313c88c2a63bff`，管理端请求 `61efed756704c4646b6dcdf4f75801c0` 返回 503，`wallTimeMs=30000 / cpuTimeMs=2`；同 trace 的 analysis 请求 `def5b5cd638423449934bde20a7b9671` 为 `canceled`，`wallTimeMs=29429 / cpuTimeMs=745`。日志摘要为 `/tmp/spontra-crwv-real-shadow/reviewer-correction-503-log-summary.json`。根任务另行确认该次没有写入 claim、没有新增 provider 请求，原 failed7 与公开 v6 保持；503 不能描述成模型分析失败或新影子报告完成。
+
+## 同一稿件的内容审阅定点纠错
+
+既有 `apply-reviewer-corrections` 还接受一个实际已完成、失败的 `content:块ID` 回执。请求仍只有固定身份，不接受新作者文本或新计划：沿用 `expectedPlanHash`、`expectedFailedStateHash`、公开版本与 hash，并以 `expectedContentBlockId`、`expectedContentReceiptHash` 替代旧 semantic 身份字段。两种身份互斥；旧 semantic 请求和 metadata 保持兼容。
+
+内容分支只允许原 run 的一个 major、一个块和一个唯一原句，应用审阅者实际给出的纯文本 replacement。原回执的 minor 意见、失败用量、源状态、计划和材料都保留；不得删句、插入 HTML、改计算、来源、研究采用理由或布局。原生 `apply_fixes` 的结果必须逐字等于这一个替换；metadata 明记 `sourcePhase=content:块ID` 与 `contentReceiptHash`，不把内容回执标为 semantic。完整大状态校验仍在 durable 非付费阶段，HTTP 不重新同步读取整套材料。
+
+原 tools 不重放。修正后以实际 `prepare` 重新绑定文本 digest；仅原先完成且完整实际请求、块、来源、模型参数都相同的内容审核才可复用。未执行的块没有通过凭据，必须真实审核。首个 summary 在 1/12 时失败的情形，复用数量为零：六章内容、全文 semantic 和严格三视口 visual 都要新执行，正常需再 8 次、累计 9/12。入场前须有足够剩余额度覆盖这些步骤；所有 SDK 重试共用原 12 次上限，旧 1 次不得重置。
+
+相同 UUID/身份只返回原 claim，不重派发；第二请求身份、递归纠偏、停止/中断状态、错回执或公开 base 变化均拒绝。源审阅 prompt 已改变时，旧成功输入 hash 不相同就不能复用；兼容旧 semantic 路径不等于豁免该证明。全文 semantic、严格视觉和独立人工 promote 仍为后续门槛。
+
+本轮分类 prompt 变更后，新纠偏入场要求每个待复用内容阶段保留其实际原始 `inputHash`。没有原 hash 的旧 legacy 回执不能再靠当前 prompt 重建来证明历史一致；此前保存的离线复演仅保留为当时版本的历史证据，不改写它。
+
+本地复验命令为 `SPONTRA_CONTENT_REVIEWER_CORRECTION_ACCEPTANCE=1 node scripts/filing-operator-completion-acceptance.mjs`，使用现有真实 proxy、AdminGateway、TaskRunner、原生工具和 Chromium；provider 返回明确为合成数据。结果另存 [内容纠偏旅程](results/filing-content-reviewer-correction.json)，不覆盖此前 semantic、预算、恢复和视觉证据。本段不是生产纠偏、真实模型结论或用户签核的证明。
+
+另加 `SPONTRA_CONTENT_CORRECTION_BUDGET_ONLY=1` 只执行无截图的预算与历史 hash 反向旅程，结果为 [预算证明](results/filing-content-reviewer-correction-budget.json)：实际 1 次继承加 11 次新 HTTP 后，下一次发送被拦截；缺少旧实际请求 hash 的 semantic 复用入场也被拒绝。
+
+最终主旅程 40/40、预算旅程 18/18 通过（均 exit 0）；共 55 次明确合成的 provider HTTP，54 张真实 Chromium 截图，真实模型与生产访问为 0。主旅程验证新内容纠偏累计 9/12、旧 semantic 在真实请求一致时累计 10/12；另测剩余额度不足、错身份、多 major、markup/缺失/删除 replacement、unknown/paused/stopped、公开 CAS、递归与重放，以及 semantic 或 visual 失败不能变成 validated shadow。历史 39 项和首轮预算结果另按 SHA 保存在 `/tmp`，本轮未重跑或覆盖旧 171/47/54/72/52 项证据。

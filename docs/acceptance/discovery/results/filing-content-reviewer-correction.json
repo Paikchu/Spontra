@@ -1,0 +1,1414 @@
+{
+  "at": "2026-11-17T12:10:51.191Z",
+  "scope": "single-actual-content-reviewer-correction-with-shared-twelve-request-limit",
+  "environment": "Actual proxy, named AdminGateway, TaskRunner, source tools, composer stages and Chromium; provider transport only is synthetic",
+  "synthetic": {
+    "fixedMaterials": true,
+    "providerResponses": true,
+    "passedReceipts": false,
+    "userSignoff": false
+  },
+  "actualModelCalls": 0,
+  "productionAccess": false,
+  "contentCorrection": {
+    "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000110",
+    "correctedRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000410",
+    "originalReviewCalls": 1,
+    "freshReviewCalls": 8,
+    "totalReviewCalls": 9,
+    "semanticCompatibility": {
+      "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000114",
+      "correctedRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000414",
+      "inherited": 7,
+      "fresh": 3
+    },
+    "finalState": {
+      "digest": "79dfab63a66f3dca34eb0be64e76f2301eada90511c9dff24a6c229cd80551f5",
+      "renderPassed": true
+    }
+  },
+  "checks": [
+    {
+      "name": "fixture has an immutable sixth public version",
+      "status": "passed",
+      "detail": {
+        "version": 6,
+        "hash": "94d14ec86778074c416873c50babf50f8e8f8aefab53c152f83d342b3374451f",
+        "html": "<article data-artifact=\"filing-report\" data-ticker=\"SYNTHETIC\" data-subject=\"0000000001-26-000001\" data-version=\"6\" lang=\"en\"><section data-block=\"summary\" data-state=\"passed\" data-sources=\"\"><h2>Stable public fixture</h2><p>Synthetic existing public content.</p></section></article>"
+      }
+    },
+    {
+      "name": "content source 10 has a completed actual one-request failure and no later audit",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "reviewCalls": 1,
+        "phase": "content:summary"
+      }
+    },
+    {
+      "name": "content correction binds expectedPlanHash",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The exact completed failed review receipt, state and original plan are required",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction binds expectedFailedStateHash",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The exact completed failed review receipt, state and original plan are required",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction binds expectedContentReceiptHash",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The exact completed failed review receipt, state and original plan are required",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction binds expectedPublicHash",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Exact unchanged public version and hash required",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction binds its exact failed block",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Only the original operator's completed failed content or semantic phase can receive its single correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction accepts no arbitrary HTML",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"html\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"html\\\"\"\n  }\n]",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content failure cannot use the legacy semantic identity",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Only the original operator's completed failed content or semantic phase can receive its single correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects multiple major issues",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "This bounded reviewer correction applies exactly one reviewer's plain-text replacement in one report block",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects markup reviewer replacement",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Every material issue must have an unambiguous plain-text reviewer replacement",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects missing reviewer replacement",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Every material issue must have an unambiguous plain-text reviewer replacement",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects deletion reviewer replacement",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Every material issue must have an unambiguous plain-text reviewer replacement",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects insufficient inherited budget",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The inherited review allowance must cover every fresh content audit, full semantic audit and strict rendering review",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects unknown operation",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Only the original operator's completed failed content or semantic phase can receive its single correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects paused operation",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Only the original operator's completed failed content or semantic phase can receive its single correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects unavailable rather than completed review",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The exact completed failed review receipt, state and original plan are required",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects missing actual request identity",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The failed content review must retain its actual request and block identity",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "stopped content operation cannot be corrected",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "A completed failure receipt is required; stopped or interrupted work is not correctable",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction requires current public CAS",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "The exact public base changed; this operator plan cannot be validated",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "exact failed content is admitted by the existing real proxy",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000410",
+          "sourceOperatorRunId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000110",
+          "requestId": "00000000-0000-4000-8000-000000000410",
+          "inputHash": "ce2f22f37664ebf5c7e2db73da7c78780ba17a8ed78e84dd6c401f103a447035",
+          "planHash": "55f0973914e4e38dea9d046d26fc6ba07cbe74fcfd1eb59c9868470c15adf3d0",
+          "failedStateHash": "c9236149f3631f52c013aae44b9c5870b8ae5d96dcebcdf4de26dfec382e004c",
+          "sourcePhase": "content:summary",
+          "contentReceiptHash": "d5cc1faf713b2c4db801225865915270bf05182f97dac56cfa4c68e4bd87a806",
+          "correctionsHash": "394d0efd065ae22bebc50d7d0f931f35fa1c3ae803daaa93211e806c107539e8",
+          "reviewCallsInherited": 1,
+          "maxReviewCalls": 12,
+          "createdAt": "2026-11-17T12:10:25.535Z",
+          "publicReportUnchanged": true,
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "content correction uses six fresh actual content audits followed by full semantic and visual",
+      "status": "passed",
+      "detail": [
+        {
+          "stage": "content",
+          "block": "summary"
+        },
+        {
+          "stage": "content",
+          "block": "highlights"
+        },
+        {
+          "stage": "content",
+          "block": "risks"
+        },
+        {
+          "stage": "content",
+          "block": "overlooked"
+        },
+        {
+          "stage": "content",
+          "block": "versus-prior"
+        },
+        {
+          "stage": "content",
+          "block": "what-to-watch"
+        },
+        {
+          "stage": "semantic",
+          "block": null
+        },
+        {
+          "stage": "visual",
+          "block": null
+        }
+      ]
+    },
+    {
+      "name": "five unreviewed blocks receive no invented reuse receipts",
+      "status": "passed"
+    },
+    {
+      "name": "correction changes only the one actual plain reviewer quote",
+      "status": "passed"
+    },
+    {
+      "name": "old major and minor receipt stays immutable with its spent request",
+      "status": "passed"
+    },
+    {
+      "name": "correction does not repeat original tools or claim a new author plan",
+      "status": "passed"
+    },
+    {
+      "name": "content correction has one task and zero author sessions",
+      "status": "passed",
+      "detail": [
+        {
+          "kind": "FILING_OPERATOR_COMPLETION_WORKFLOW",
+          "operation_id": "shadow-SYNTHETIC-0000000001-26-000001-operator-fix-00000000-0000-4000-8000-000000000410"
+        }
+      ]
+    },
+    {
+      "name": "content correction exact replay never redispatches or sends HTTP",
+      "status": "passed"
+    },
+    {
+      "name": "content correction rejects another UUID",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "This operator already has its single reviewer correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction rejects recursive child corrections",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Only the original operator's completed failed content or semantic phase can receive its single correction",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "content correction cannot self-approve or change the public report",
+      "status": "passed"
+    },
+    {
+      "name": "content source 11 has a completed actual one-request failure and no later audit",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "reviewCalls": 1,
+        "phase": "content:summary"
+      }
+    },
+    {
+      "name": "content correction cannot skip failed full semantic",
+      "status": "passed"
+    },
+    {
+      "name": "content source 12 has a completed actual one-request failure and no later audit",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "reviewCalls": 1,
+        "phase": "content:summary"
+      }
+    },
+    {
+      "name": "content correction cannot skip failed full render",
+      "status": "passed"
+    },
+    {
+      "name": "reviewer correction source 14 is admitted normally",
+      "status": "passed",
+      "detail": {
+        "status": 202,
+        "body": {
+          "runId": "shadow-SYNTHETIC-0000000001-26-000001-operator-00000000-0000-4000-8000-000000000114",
+          "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000014",
+          "rootRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000001014",
+          "requestId": "00000000-0000-4000-8000-000000000114",
+          "checkpointHash": "12fe2ece99c6268e833c5a14fef611851b256f2537d892edf13b4f9cf707dbd8",
+          "planHash": "b1343b8f15df0671536bff84510a1b53b204572cb1254bf5e237e78c99f906c4",
+          "createdAt": "2026-11-17T12:10:42.741Z",
+          "publicReportUnchanged": true,
+          "maxReviewCalls": 12,
+          "author": {
+            "sourceRunId": "shadow-SYNTHETIC-0000000001-26-000001-00000000-0000-4000-8000-000000000014",
+            "checkpointHash": "12fe2ece99c6268e833c5a14fef611851b256f2537d892edf13b4f9cf707dbd8",
+            "planHash": "b1343b8f15df0671536bff84510a1b53b204572cb1254bf5e237e78c99f906c4",
+            "author": {
+              "model": "gpt-6.1-sol",
+              "effort": "max",
+              "runId": "synthetic-external-sol-author-14",
+              "promptVersion": "synthetic-operator-completion.v1"
+            },
+            "authorUsage": {
+              "status": "unavailable",
+              "tokens": null,
+              "cost": null
+            }
+          },
+          "status": "claimed",
+          "replay": false
+        }
+      }
+    },
+    {
+      "name": "reviewer correction source 14 has six real content reviews and one failed semantic review",
+      "status": "passed",
+      "detail": {
+        "status": "failed",
+        "phase": "semantic",
+        "reviewCalls": 7
+      }
+    },
+    {
+      "name": "changed prompt cannot reuse a hashless original content receipt",
+      "status": "passed",
+      "detail": {
+        "status": 409,
+        "error": "Reusing a prior content audit requires its actual original request hash; a changed prompt cannot be proven from a hashless legacy receipt",
+        "newProviderHttp": 0
+      }
+    },
+    {
+      "name": "legacy semantic correction still reuses only its actual matching successful request inputs",
+      "status": "passed"
+    },
+    {
+      "name": "all content correction scenarios preserve the public base",
+      "status": "passed"
+    }
+  ],
+  "transports": [
+    {
+      "stage": "content",
+      "mode": "content-correction-source",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "visual",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 18
+    },
+    {
+      "stage": "content",
+      "mode": "content-correction-source",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "content-correction-source",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "visual-unavailable",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "visual-unavailable",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "visual",
+      "mode": "visual-unavailable",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 18
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "highlights",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "risks",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "overlooked",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "versus-prior",
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "semantic-fail",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "what-to-watch",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "semantic-fail",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "content",
+      "mode": "pass",
+      "model": "deepseek-flash",
+      "streaming": true,
+      "block": "summary",
+      "images": 0
+    },
+    {
+      "stage": "semantic",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 0
+    },
+    {
+      "stage": "visual",
+      "mode": "pass",
+      "model": "gpt-6.1-sol",
+      "streaming": false,
+      "block": null,
+      "images": 18
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-001.jpg",
+      "sha256": "811dda2eecb88ea57e4a7d60ea52b4c065d9489bd007fecc2225a5f281a2445a",
+      "bytes": 13976,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-002.jpg",
+      "sha256": "b3b8dfbfe79944ea869cce9b43b4973f147aa6b5784b0c467c86dd93c4e3d255",
+      "bytes": 24029,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-003.jpg",
+      "sha256": "83a8c4ea5effba00e7d5b5472e675383cfe2f4a9a8dc086b629ba3bb31a50c8e",
+      "bytes": 12624,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 108,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-004.jpg",
+      "sha256": "0122f6844869bcd3dba3e5c14f364a8bfd44e65754929037ffc765b36ca8ec02",
+      "bytes": 13018,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 301,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-005.jpg",
+      "sha256": "3c992d963d795d7110e19b1f0424840176740d51a225ebcb015cda94b9bd5b9d",
+      "bytes": 13010,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 494,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-006.jpg",
+      "sha256": "207deab3d8b5871d446af5930c4352b0623d2e3f83217e7adb4d49317ced95b5",
+      "bytes": 13304,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 687,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-007.jpg",
+      "sha256": "09dfb9a16f749e2190b433dd641bdb50b1f6465339607c1ae1198cddd69ea9a4",
+      "bytes": 8303,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 90,
+        "width": 688,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-008.jpg",
+      "sha256": "3fa450967f6989d0850fdb9e6b5b99d3cd4ea49316d8c5b8348afd14e07ccc4c",
+      "bytes": 14385,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 258,
+        "width": 688,
+        "height": 505,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-009.jpg",
+      "sha256": "6ee690c6ce757342f19f0353b7a4a2f19171286e5669dfab86cf99d0176669d2",
+      "bytes": 8228,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 791,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-010.jpg",
+      "sha256": "5e45b03ef34f3a01fefd88e80cdaa5e0318b4e89fbe568407e63538d0b1f26ca",
+      "bytes": 8995,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 984,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-011.jpg",
+      "sha256": "a2d787c00bcc0c3752ae6368f177d1d2d4ac87aa94dcbde51175b1452e43e882",
+      "bytes": 9153,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 1177,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-012.jpg",
+      "sha256": "2fb502544538e892985cb31810f9f0b6bb500a2ca84c4258c98f3896926688ad",
+      "bytes": 9342,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 1370,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-013.jpg",
+      "sha256": "cf514a1874935bf5af1b45b813a7fcca0abfd384fc600e00fbf60a05b39f6bf3",
+      "bytes": 14564,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-014.jpg",
+      "sha256": "abf28d1f6892b816ac553c7dc1e71a8d63c63b683562525f2424373750a4488b",
+      "bytes": 24997,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-015.jpg",
+      "sha256": "4340ec309903b1177d8c7a013931652fd7e127c24d177d589acdfe395dc0e7f3",
+      "bytes": 13185,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 8,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-016.jpg",
+      "sha256": "ca0f0ecb1ad6dba9e62672b908cd9908d8e7f2abad1eb398926885d0e5f52d5c",
+      "bytes": 13597,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 201,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-017.jpg",
+      "sha256": "95b2f24213b6b2fb755252b2bdf5abc5cc45f399cbb45ea1e1308efad5170942",
+      "bytes": 13628,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 394,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-018.jpg",
+      "sha256": "ba50f594d07052406b0f1f16eea4e8a54d649f51344c9d7f26a935eee603b02f",
+      "bytes": 13919,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 587,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-019.jpg",
+      "sha256": "d9bdeb1486ade03b7fe2fd69422475187fffcfcb483c926241ed0a33de93dd45",
+      "bytes": 13987,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-020.jpg",
+      "sha256": "74302efcca19f71db6b4af469ed1a66b6f12e0293ddc4c9f4b19dd57d7c84839",
+      "bytes": 24009,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-021.jpg",
+      "sha256": "53d132844bebec50c82cd6199c7d9ab6d4a5aa65e074bd3a6f68c773dd7ec675",
+      "bytes": 12617,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 108,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-022.jpg",
+      "sha256": "96655cbe4e0390c91a3507393a51428ec1fbc2bdea6ab733bde351cc85fba5fc",
+      "bytes": 12992,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 301,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-023.jpg",
+      "sha256": "f759870b3cc3d7be1745c8fa4ca92cb4534b2c4828b4db8646fc6e8f42a3e731",
+      "bytes": 13007,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 494,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-024.jpg",
+      "sha256": "adf3be9be742b7e2a2f76073c89b60c9bb10e73559b8d4a8fb714a60768ce914",
+      "bytes": 13291,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 455,
+        "y": 687,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-025.jpg",
+      "sha256": "f6aba74d5d06fbc4a4a6b012f9df6fddc699fb2d1c0a4877428eb67ebba8a046",
+      "bytes": 8290,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 90,
+        "width": 688,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-026.jpg",
+      "sha256": "68916b20679aa1588ec7ede76c3690af7ba41b6e179e9786d537cd89d83c0b7c",
+      "bytes": 14364,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 258,
+        "width": 688,
+        "height": 505,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-027.jpg",
+      "sha256": "5c4113e97b715e0af692eb9d3bc18d85c81241825bf86530bd7e2e7bb6d804fa",
+      "bytes": 8230,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 791,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-028.jpg",
+      "sha256": "375006e7cc8dfc03e9cbdae1a1873f4394a3b2c2cfb751bad95f940c23166b21",
+      "bytes": 8984,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 984,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-029.jpg",
+      "sha256": "2095fb5c1240810756487a2c6a23838b3d7fdb4d64fbfc7c62377aa26ffab2c5",
+      "bytes": 9151,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 1177,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-030.jpg",
+      "sha256": "9d53ea702250322a52611111e6879c473cb273f9008a421a935f9ab5e0beec80",
+      "bytes": 9342,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 266,
+        "y": 1370,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-031.jpg",
+      "sha256": "22bc6975a3ed9d89d0c3b29024bcab43fb87825e827131f6f5114c8907cc52f0",
+      "bytes": 14578,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-032.jpg",
+      "sha256": "a963c770176229107d9b12bab687a6d8d140a78d1182a4295203fe31c609cef2",
+      "bytes": 24993,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-033.jpg",
+      "sha256": "f60819686db406f1ff8effdcdb151a34dc2527a16fbcd9ef822ab3907130ec58",
+      "bytes": 1549,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 8,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-034.jpg",
+      "sha256": "c712e6cefbe6d3c3cd7d60ea327b42ee6c259ac472651b12454cfda52d8d4c9e",
+      "bytes": 13573,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 201,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-035.jpg",
+      "sha256": "8d572771cb1d993e41700f8b5ee0b6ad8531580e5002e60c215bbe0bbb730a2d",
+      "bytes": 13596,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 394,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-036.jpg",
+      "sha256": "9301954e12a6cf2b5580d0c67e1b48f2868c52b3434d1d9d30d37ee1c4889bcb",
+      "bytes": 13922,
+      "mode": "visual-unavailable",
+      "clip": {
+        "x": 375,
+        "y": 587,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-037.jpg",
+      "sha256": "3b1e4377c9bb31425c38b18990da4bb3a17b22332f9b98824c9034a30722c576",
+      "bytes": 13979,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-038.jpg",
+      "sha256": "4d0975f038b8ca0a0383e2dc8934ca01df186c5ab0d66eb14fdb9c0c3d2aada8",
+      "bytes": 3207,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-039.jpg",
+      "sha256": "3afdfe18d60afb1d2f174363da1fcf34cb5d553647dd9bb5bca5654b3811db8c",
+      "bytes": 12612,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 108,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-040.jpg",
+      "sha256": "e89568630287cc02293ff79341dd71863edc9a9bb2c1ae4112b3af15e820bf34",
+      "bytes": 12984,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 301,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-041.jpg",
+      "sha256": "547b6090c6e00e9be0e6e754b6c4a4ca9efba0d0eb12eb1e2aebe6aa47965cb7",
+      "bytes": 13001,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 494,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-042.jpg",
+      "sha256": "7a7254f0927c171d6a4a7f7cae6539626701988ddfce27af8d0fb6f416730ad6",
+      "bytes": 13292,
+      "mode": "pass",
+      "clip": {
+        "x": 455,
+        "y": 687,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-043.jpg",
+      "sha256": "9d5b4e0b43d8a577fa6a18cc9b3c0d660902537f3ae89ee80c06754c880ecb98",
+      "bytes": 8290,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 90,
+        "width": 688,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-044.jpg",
+      "sha256": "48996f248f6e432d88c624234cb62f6a11e4d87f570699ae312770b424dbd012",
+      "bytes": 14380,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 258,
+        "width": 688,
+        "height": 505,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-045.jpg",
+      "sha256": "8a30f4b6fd74b80cd306d069c0c2b941acd0b86ab1eb86aea3bacc55a220f231",
+      "bytes": 8226,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 791,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-046.jpg",
+      "sha256": "2298740517d5c0a7f4ad605674da026821a0993dfcc223df340fc32c4f861b08",
+      "bytes": 8990,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 984,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-047.jpg",
+      "sha256": "ce6fa138fc6daab7e14db7ddb2756c876d5b3e614caaef1ad6eedd2041ce443b",
+      "bytes": 9152,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 1177,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-048.jpg",
+      "sha256": "3285e934bbeda1e13c3a4b402e807994dd829a976058177f3fd64b29e8d0a0a1",
+      "bytes": 9342,
+      "mode": "pass",
+      "clip": {
+        "x": 266,
+        "y": 1370,
+        "width": 688,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-049.jpg",
+      "sha256": "38ec01afacaddf6afe1354312cda40ba31a776a0f0f815b5ce08be4e449054cb",
+      "bytes": 14577,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 140,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-050.jpg",
+      "sha256": "7d5834d5ae0d20231a52f3575f9c43bd344a90a37432c5e1a34adc8552301d5c",
+      "bytes": 24980,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 0,
+        "width": 756,
+        "height": 534,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-051.jpg",
+      "sha256": "5eac5f2c2fab5e91629f987ebde837dd68e5dd4067de72525980a15e94d603e0",
+      "bytes": 13190,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 8,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-052.jpg",
+      "sha256": "fe0aa2153495de3842e2dedcba829c616c4e96884f7411604ef8eb9de43074b7",
+      "bytes": 13566,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 201,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-053.jpg",
+      "sha256": "cafc7d38a099bc13c5fff1790f3db1edd5461aa0424df1eaab598d14f964b6ec",
+      "bytes": 13602,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 394,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    },
+    {
+      "file": "/tmp/spontra-filing-operator-Tjs9x6/screenshots/shot-054.jpg",
+      "sha256": "3328be58d8f5ddb8db760b698a7b6468d1e6ea6169c66a882a6c5d13fb5fb35c",
+      "bytes": 13903,
+      "mode": "pass",
+      "clip": {
+        "x": 375,
+        "y": 587,
+        "width": 756,
+        "height": 165,
+        "scale": 1
+      }
+    }
+  ],
+  "scratch": "/tmp/spontra-filing-operator-Tjs9x6",
+  "notVerified": [
+    "Real provider investment or visual quality",
+    "Production correction or deployment",
+    "Human approval"
+  ]
+}

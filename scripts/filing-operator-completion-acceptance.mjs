@@ -52,6 +52,7 @@ let transportMode = "pass", mf, chrome, chromeEndpoint, transportRelease, transp
 let slowR2Key = null, slowR2Release, slowR2EnteredResolve, slowR2EnteredAt = null, slowR2Evidence = null;
 const recoveryMode = process.env.SPONTRA_PREPARATION_RECOVERY_ACCEPTANCE === "1";
 const visualContractMode = process.env.SPONTRA_VISUAL_REVIEW_CONTRACT_ACCEPTANCE === "1";
+const contentCorrectionMode = process.env.SPONTRA_CONTENT_REVIEWER_CORRECTION_ACCEPTANCE === "1";
 const visualViewports = ["1440x900 light", "390x844 light", "1280x800 dark"];
 const visualScores = { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 };
 const visualContractCases = [
@@ -234,6 +235,16 @@ async function modelTransport(incoming) {
   if (stage === "gate") return completion(body, { ok: true });
   if (stage === "content" && transportMode === "malformed-content") return completion(body, {});
   if (stage === "content" && transportMode === "malformed-content-issue") return completion(body, { issues: [{}] });
+  if (stage === "content" && transportMode === "content-correction-source") return completion(body, { issues: [
+    { quote: reviewerQuote, problem: "Synthetic bounded content issue", replacement: reviewerReplacement, severity: "major" },
+    { quote: "Hedge netting remains unresolved.", problem: "not covered: synthetic author methodology advice", severity: "minor" },
+    { quote: "future net interest and a price target remain unestablished", problem: "not covered: synthetic research assumption advice", severity: "minor" },
+    { quote: "Synthetic static sensitivity is an illustration", problem: "not covered: synthetic investment test advice", severity: "minor" },
+  ] });
+  if (stage === "content" && transportMode === "content-correction-source") return completion(body, { issues: [
+    { quote: reviewerQuote, problem: "Synthetic single major with an actual plain reviewer correction", replacement: reviewerReplacement, severity: "major" },
+    ...["Hedge netting remains unresolved.", "future net interest and a price target remain unestablished", "Synthetic static sensitivity is an illustration"].map(quote => ({ quote, problem: "not covered: synthetic author-method advice only", suggestion: "Synthetic advisory point only", severity: "minor" })),
+  ] });
   if (stage === "content") return completion(body, { issues: transportMode === "content-fail" ? [{ quote: input.block.sentences[0].text, problem: "Synthetic injected unsupported claim", replacement: "DELETE", suggestion: "Synthetic injection only", severity: "major" }] : [] });
   if (stage === "visual") return completion(body, visualContractMode ? visualContractCases.find(item => item.name === transportMode).verdict : { scores: { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 }, issues: [] });
   const computations = input.computations.map(item => ({ id: item.id, status: "holds", problem: "Synthetic provider receipt: exact pinned arithmetic and stated static basis", sources: ["source-block"] }));
@@ -623,6 +634,99 @@ async function withChangedFailedState(runId, change, work) {
   finally { await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(original.payload, original.fetched_at, original.cache_key).run(); }
 }
 
+async function contentCorrectionInput(runId) {
+  const row = await opRow(runId);
+  return { expectedPlanHash: row.planHash, expectedFailedStateHash: row.stateRef.hash, expectedContentBlockId: "summary", expectedContentReceiptHash: sha(JSON.stringify(row.stages["content:summary"].receipt)), expectedPublicVersion: publicBaseline.version, expectedPublicHash: publicBaseline.hash };
+}
+async function contentFailure(n) {
+  transportMode = "content-correction-source";
+  const admitted = await send(n, 100 + n, await planFor(n), { proxy: true }), row = await drive(admitted.body.runId);
+  check(`content source ${n} has a completed actual one-request failure and no later audit`, admitted.status === 202 && row.status === "failed" && row.reviewCalls === 1 && row.phase.name === "content:summary" && row.stages["content:summary"].receipt.issues.filter(issue => issue.severity === "major").length === 1 && !row.stages.semantic && !row.stages.render, { status: row.status, reviewCalls: row.reviewCalls, phase: row.phase.name });
+  transportMode = "pass";
+  return { runId: admitted.body.runId, row, input: await contentCorrectionInput(admitted.body.runId) };
+}
+async function withContentLedger(source, edit, work) {
+  const original = await rawRow(`filing-operator:${source.runId}`), row = JSON.parse(original.payload);
+  edit(row); row.phase.receipt = clone(row.stages["content:summary"].receipt);
+  await db.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").bind(JSON.stringify(row), original.cache_key).run();
+  try { return await work(await contentCorrectionInput(source.runId)); }
+  finally { await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(original.payload, original.fetched_at, original.cache_key).run(); }
+}
+async function runContentCorrectionJourney() {
+  const source = await contentFailure(10), original = await rawRow(`filing-operator:${source.runId}`), originalState = await (await bucket.get(source.row.stateRef.key)).text(), originalFailure = await (await bucket.get(`research-shadow/${source.runId}/failed.json`)).text();
+  for (const key of ["expectedPlanHash", "expectedFailedStateHash", "expectedContentReceiptHash", "expectedPublicHash"]) await rejectReviewerCorrection(`content correction binds ${key}`, source.runId, { ...source.input, [key]: "f".repeat(64) }, { operation: 410 });
+  await rejectReviewerCorrection("content correction binds its exact failed block", source.runId, { ...source.input, expectedContentBlockId: "risks" }, { operation: 410 });
+  await rejectReviewerCorrection("content correction accepts no arbitrary HTML", source.runId, { ...source.input, html: "<p>Untrusted replacement</p>" }, { operation: 410 });
+  await rejectReviewerCorrection("content failure cannot use the legacy semantic identity", source.runId, { ...source.input, expectedContentBlockId: undefined, expectedContentReceiptHash: undefined, expectedSemanticReceiptHash: source.input.expectedContentReceiptHash }, { operation: 410 });
+  for (const [name, edit] of [
+    ["multiple major issues", row => row.stages["content:summary"].receipt.issues.push(clone(row.stages["content:summary"].receipt.issues[0]))],
+    ["markup reviewer replacement", row => { row.stages["content:summary"].receipt.issues[0].replacement = "<p>replacement</p>"; }],
+    ["missing reviewer replacement", row => { delete row.stages["content:summary"].receipt.issues[0].replacement; }],
+    ["deletion reviewer replacement", row => { row.stages["content:summary"].receipt.issues[0].replacement = "DELETE"; }],
+    ["insufficient inherited budget", row => { row.reviewCalls = 5; }],
+    ["unknown operation", row => { row.status = "unknown"; }],
+    ["paused operation", row => { row.status = "paused"; }],
+    ["unavailable rather than completed review", row => { row.stages["content:summary"].receipt.unavailable = "Synthetic unavailable"; }],
+    ["missing actual request identity", row => { delete row.stages["content:summary"].receipt.inputHash; }],
+  ]) await withContentLedger(source, edit, input => rejectReviewerCorrection(`content correction rejects ${name}`, source.runId, input, { operation: 410 }));
+  await bucket.put(`research-shadow/${source.runId}/failed.json`, JSON.stringify({ status: "stopped" }));
+  try { await rejectReviewerCorrection("stopped content operation cannot be corrected", source.runId, source.input, { operation: 410 }); } finally { await bucket.put(`research-shadow/${source.runId}/failed.json`, originalFailure); }
+  const artifactId = `filing-report:${ticker}:${accession}`;
+  await db.prepare("UPDATE analysis_artifacts SET published_version=5 WHERE artifact_id=?").bind(artifactId).run();
+  try { await rejectReviewerCorrection("content correction requires current public CAS", source.runId, source.input, { operation: 410 }); } finally { await db.prepare("UPDATE analysis_artifacts SET published_version=6 WHERE artifact_id=?").bind(artifactId).run(); }
+  const before = outbound.length, admission = await sendCorrection(source.runId, 410, source.input, { proxy: true });
+  check("exact failed content is admitted by the existing real proxy", admission.status === 202 && admission.body.sourcePhase === "content:summary" && admission.body.contentReceiptHash === source.input.expectedContentReceiptHash, admission);
+  const fixed = await drive(admission.body.runId), added = outbound.slice(before), work = JSON.parse(await (await bucket.get(fixed.stateRef.key)).text()), oldWork = JSON.parse(originalState), correctedWork = JSON.parse(await (await bucket.get(fixed.stages.corrections.afterStateRef.key)).text());
+  check("content correction uses six fresh actual content audits followed by full semantic and visual", fixed.status === "validated" && added.length === 8 && added.filter(call => call.stage === "content").length === 6 && added[6].stage === "semantic" && added[7].stage === "visual" && fixed.reviewCalls === 8 && fixed.reviewCallsInherited === 1 && fixed.reviewCalls + fixed.reviewCallsInherited === 9, added.map(call => ({ stage: call.stage, block: call.block })));
+  check("five unreviewed blocks receive no invented reuse receipts", fixed.stages.prepare.receipt.reusedContent.length === 0 && blockIds.every(id => fixed.stages[`content:${id}`].receipt.success && !fixed.stages[`content:${id}`].receipt.reusedFrom));
+  check("correction changes only the one actual plain reviewer quote", correctedWork.composer.blocks.find(block => block.id === "summary").html === oldWork.composer.blocks.find(block => block.id === "summary").html.replace(reviewerQuote, reviewerReplacement) && blockIds.filter(id => id !== "summary").every(id => JSON.stringify(correctedWork.composer.blocks.find(block => block.id === id)) === JSON.stringify(oldWork.composer.blocks.find(block => block.id === id))) && JSON.stringify({ ...correctedWork, composer: null }) === JSON.stringify({ ...oldWork, composer: null }));
+  check("old major and minor receipt stays immutable with its spent request", JSON.stringify(await rawRow(`filing-operator:${source.runId}`)) === JSON.stringify(original) && await (await bucket.get(source.row.stateRef.key)).text() === originalState && JSON.parse(original.payload).stages["content:summary"].receipt.issues.length === 4);
+  check("correction does not repeat original tools or claim a new author plan", !fixed.stages.tools && fixed.planHash === source.row.planHash && fixed.spec.operatorCompletion.reviewerCorrection.sourcePhase === "content:summary" && fixed.spec.operatorCompletion.reviewerCorrection.contentReceiptHash === source.input.expectedContentReceiptHash && !fixed.spec.operatorCompletion.reviewerCorrection.semanticReceiptHash);
+  const runner = (await request(runnerPath(fixed.runId))).body;
+  check("content correction has one task and zero author sessions", runner.dispatches.length === 1 && runner.sessions.length === 0, runner.dispatches);
+  const replayCalls = outbound.length, replay = await sendCorrection(source.runId, 410, source.input);
+  check("content correction exact replay never redispatches or sends HTTP", replay.status === 202 && replay.body.replay && replay.body.dispatchRetried === false && outbound.length === replayCalls && (await request(runnerPath(fixed.runId))).body.dispatches.length === 1);
+  await rejectReviewerCorrection("content correction rejects another UUID", source.runId, source.input, { operation: 411 });
+  await rejectReviewerCorrection("content correction rejects recursive child corrections", fixed.runId, source.input, { operation: 412 });
+  const self = await request(reportPath(fixed.runId) + "/promote", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ expectedHash: fixed.hash, reviewer: source.row.spec.operatorCompletion.author.runId, reviewNotes: "Synthetic forbidden self approval", approvedChainIds: ["chain-1"] }) });
+  check("content correction cannot self-approve or change the public report", self.status === 400 && (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId).first()).published_version === 6);
+  for (const [n, mode, expectedPhase] of [[11, "semantic-fail", "semantic"], [12, "visual-unavailable", "render"]]) {
+    const failedSource = await contentFailure(n); transportMode = mode;
+    const admitted = await sendCorrection(failedSource.runId, 400 + n, failedSource.input), rejected = await drive(admitted.body.runId);
+    check(`content correction cannot skip failed full ${expectedPhase}`, admitted.status === 202 && rejected.status === "failed" && rejected.phase.name === expectedPhase && !rejected.validatedKey && (expectedPhase === "semantic" ? !rejected.stages.render : !rejected.stages.shadow));
+  }
+  const semantic = await startSemanticFailure(14), originalSemantic = await rawRow(`filing-operator:${semantic.runId}`), hashless = JSON.parse(originalSemantic.payload);
+  delete hashless.stages["content:highlights"].receipt.inputHash;
+  await db.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").bind(JSON.stringify(hashless), originalSemantic.cache_key).run();
+  try { await rejectReviewerCorrection("changed prompt cannot reuse a hashless original content receipt", semantic.runId, semantic.input, { operation: 414 }); }
+  finally { await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(originalSemantic.payload, originalSemantic.fetched_at, originalSemantic.cache_key).run(); }
+  const beforeSemantic = outbound.length, legacyAdmission = await sendCorrection(semantic.runId, 414, semantic.input), legacy = await drive(legacyAdmission.body.runId);
+  check("legacy semantic correction still reuses only its actual matching successful request inputs", legacyAdmission.status === 202 && legacy.status === "validated" && legacy.reviewCalls === 3 && legacy.reviewCallsInherited === 7 && outbound.length - beforeSemantic === 3 && legacy.stages.prepare.receipt.reusedContent.length === 5 && legacy.spec.operatorCompletion.reviewerCorrection.semanticReceiptHash === semantic.input.expectedSemanticReceiptHash);
+  check("all content correction scenarios preserve the public base", (await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId).first()).published_version === 6 && blockedOutbound.length === 0);
+  return { sourceRunId: source.runId, correctedRunId: fixed.runId, originalReviewCalls: 1, freshReviewCalls: 8, totalReviewCalls: 9, semanticCompatibility: { sourceRunId: semantic.runId, correctedRunId: legacy.runId, inherited: 7, fresh: 3 }, finalState: { digest: work.composer.operatorValidation.digest, renderPassed: fixed.stages.render.receipt.success } };
+}
+async function runContentCorrectionBudget() {
+  const source = await contentFailure(15), old = await rawRow(`filing-operator:${source.runId}`), entered = new Promise(resolve => { transportHeld = resolve; });
+  transportMode = "hold-content";
+  const admission = await sendCorrection(source.runId, 415, source.input), progress = drive(admission.body.runId, { limit: 1000 });
+  await Promise.race([entered, progress.then(() => { throw Error("Content budget fixture ended before the actual held provider request"); })]);
+  const active = await opRow(admission.body.runId), before = outbound.length;
+  for (let i = 0; i < 11; i++) {
+    const answer = await request(`/fixture/review-request?id=${admission.body.runId}&lease=${active.phase.leaseToken}&retries=0`);
+    check(`inherited-one budget request ${i + 1} observes the shared twelve-send cap`, i < 10 ? answer.status === 200 : answer.status === 503, { status: answer.status });
+  }
+  transportMode = "pass"; transportRelease();
+  const failed = await progress;
+  check("one inherited plus eleven actual new HTTP sends exhausts twelve without another content or later audit", admission.status === 202 && failed.status === "failed" && failed.reviewCalls === 11 && failed.reviewCallsInherited === 1 && outbound.length - before === 10 && !failed.stages.semantic && !failed.stages.render && !failed.validatedKey, { status: failed.status, own: failed.reviewCalls, inherited: failed.reviewCallsInherited });
+  check("budget exhaustion preserves the original failed-one ledger", JSON.stringify(await rawRow(`filing-operator:${source.runId}`)) === JSON.stringify(old));
+  const semantic = await startSemanticFailure(16), originalSemantic = await rawRow(`filing-operator:${semantic.runId}`), hashless = JSON.parse(originalSemantic.payload);
+  delete hashless.stages["content:highlights"].receipt.inputHash;
+  await db.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").bind(JSON.stringify(hashless), originalSemantic.cache_key).run();
+  try { await rejectReviewerCorrection("a hashless historical content input cannot be reused as the changed review prompt", semantic.runId, semantic.input, { operation: 416 }); }
+  finally { await db.prepare("UPDATE sec_cache SET payload=?,fetched_at=? WHERE cache_key=?").bind(originalSemantic.payload, originalSemantic.fetched_at, originalSemantic.cache_key).run(); }
+  return { sourceRunId: source.runId, correctedRunId: failed.runId, inherited: 1, added: 11, total: 12 };
+}
+
 try {
   chrome = spawn(process.env.CHROMIUM_PATH || "/usr/bin/chromium", ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0", `--user-data-dir=${resolve(scratch, "chrome")}`], { stdio: ["ignore", "ignore", "pipe"] });
   chromeEndpoint = await new Promise((resolve, reject) => { let stderr = ""; const timer = setTimeout(() => reject(Error("Local Chromium CDP startup timeout")), 20000); chrome.once("error", reject); chrome.stderr.on("data", bytes => { stderr += bytes; const found = /DevTools listening on (ws:\/\/[^\s]+)/.exec(stderr); if (found) { clearTimeout(timer); resolve(found[1]); } }); });
@@ -654,7 +758,13 @@ try {
   token = (await request("/fixture/auth")).body.token;
   publicBaseline = (await request("/fixture/public")).body;
   check("fixture has an immutable sixth public version", publicBaseline.version === 6 && /^[a-f0-9]{64}$/.test(publicBaseline.hash), publicBaseline);
-  if (visualContractMode) {
+  if (contentCorrectionMode) {
+    const budgetOnly = process.env.SPONTRA_CONTENT_CORRECTION_BUDGET_ONLY === "1";
+    const contentCorrection = budgetOnly ? await runContentCorrectionBudget() : await runContentCorrectionJourney(), resultFile = resolve(root, budgetOnly ? "docs/acceptance/discovery/results/filing-content-reviewer-correction-budget.json" : "docs/acceptance/discovery/results/filing-content-reviewer-correction.json");
+    const results = { at: new Date().toISOString(), scope: "single-actual-content-reviewer-correction-with-shared-twelve-request-limit", environment: "Actual proxy, named AdminGateway, TaskRunner, source tools, composer stages and Chromium; provider transport only is synthetic", synthetic: { fixedMaterials: true, providerResponses: true, passedReceipts: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, contentCorrection, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, scratch, notVerified: ["Real provider investment or visual quality", "Production correction or deployment", "Human approval"] };
+    await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
+    console.log(JSON.stringify({ resultFile, checks: checks.length, syntheticProviderHttpCalls: outbound.length, screenshots: screenshots.length, actualModelCalls: 0 }));
+  } else if (visualContractMode) {
     const visualContract = await runVisualContractJourney();
     const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-visual-review-contract.json");
     const implementation = {};
