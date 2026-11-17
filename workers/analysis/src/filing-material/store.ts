@@ -37,7 +37,7 @@ export async function listFilingMaterials(env: Pick<AnalysisEnv, "DB">, ticker: 
   return rows.results.map(row => JSON.parse(row.payload));
 }
 
-export async function readMaterialSnapshot(env: Pick<AnalysisEnv, "SEC_FILINGS">, ref: MaterialRef): Promise<MaterialSnapshot> {
+export async function readMaterialSnapshot(env: { SEC_FILINGS: { get(key: string): Promise<{ text(): Promise<string> } | null> } }, ref: MaterialRef): Promise<MaterialSnapshot> {
   const object = await env.SEC_FILINGS.get(materialSnapshotKey(ref));
   if (!object) throw new Error(`MATERIAL_VERSION_MISSING:${ref.ticker}:${ref.accession}:${ref.version}`);
   const snapshot: MaterialSnapshot = JSON.parse(await object.text());

@@ -143,6 +143,12 @@ CRWV真实影子已以唯一幂等ID启动：shadow-CRWV-0001769628-26-000465-ba
 
 [68 项本地 Cloudflare 操作旅程](results/industry-operator-completion.json) 通过：完整大于 128 KiB、小于 256 KiB 来源经真实 admin→proxy→AdminGateway→handler→D1/R2 保存读回；超限及其他路径原上限拒绝；同 payload 并发幂等、冲突不覆盖、review 后重放不改审核、D1 batch 失败无孤立数据库版本；旧 run、预留调用、runner storage、父 checkpoint 与公开指针不变，零外部请求。详情、复跑命令及 R2/D1 事务边界见 [节点说明](industry-operator-completion.md)。本节点未提交、部署、写生产或代替用户审阅；真实成稿质量及后续发布另行记录。
 
+## 公司关系复用现有 verified tag（本地代码节点，2026-11-17）
+
+新增窄 from-tag 来源适配，不创建第二业务 tag 或第二关系；仅为同一 exposureId 追加绑定现有 verified tag 的版本，保留报告 industryId 和独立财务权重。freeze、采用、结果 mapping_versions 依赖读取共用当前 tag/原文校验；同分类、同财务含义的纯来源增强不使旧 a4 pin 失效，tag 撤销/删除/语义与原文变化不能靠旧 verified 副本绕过。显式 shadow continuation 保留原 pin 与报告顺序，不回写运行 state/spec。
+
+[54 项真实本地操作](results/company-tag-exposure.json)、37 项公共研究、27 项工具/36 次操作及 104 项 shadow 续跑回归通过，真实模型/付费调用和生产写入为零。详见 [单一来源方案、幂等及验收边界](company-tag-exposure.md)。实测全仓 lint 为 38e97415 已有 9 errors / 5 warnings（此前 FilingReport 的一个 finding 已由该基线移除），本节点改动零 finding；生产绑定、提交和发布由主节点另行执行。
+
 
 ## 行业真实内容发布（2026-11-17）
 

@@ -5,7 +5,13 @@ export type Observation = typeof observationSchema["_output"];
 export type ResearchClaim = typeof researchClaimSchema["_output"];
 export type ResearchDependency = typeof researchDependencySchema["_output"];
 export type PublicResearchDraft = typeof publicResearchDraftSchema["_output"];
-export type CompanyResearchExposure = typeof companyResearchExposureSchema["_output"];
+export type CompanyResearchExposure = typeof companyResearchExposureSchema["_output"] & {
+  /** Read-time projection of the existing tag; never an independently maintained classification. */
+  businessTag?: {
+    tagId: string; unitKey: string; sector: string; facet: string; label: string; labelZh: string; definition: string;
+    algorithmVersion: string; fingerprint: string; sources: SourceSnapshot[];
+  };
+};
 export type ResearchFreshness = "valid" | "updating" | "review_required" | "stale" | "unavailable";
 export type ResearchReview = {
   mode?: "human" | "automatic";

@@ -47,6 +47,11 @@ export const companyResearchExposureSchema = z.object({
   regions: z.array(text).min(1), validFrom: timestamp, validUntil: timestamp.nullable(),
   source: sourceSnapshotSchema, weight: z.number().min(0).max(1).nullable(),
   weightBasis: text.nullable(), status: z.enum(["verified", "disputed"]),
+  tagBinding: z.object({
+    tagId: z.string().regex(/^t[a-f0-9]{24}$/), fingerprint: text.regex(/^[a-f0-9]{64}$/),
+    algorithmVersion: text, baseVersion: id,
+    sources: z.array(z.object({ ref: z.object({ ticker: text, accession: text, version: text }), sourceId: text, contentHash: text.regex(/^[a-f0-9]{64}$/) })).min(1),
+  }).optional(),
 });
 export const researchReviewSchema = z.object({
   mode: z.enum(["human", "automatic"]).default("human"),

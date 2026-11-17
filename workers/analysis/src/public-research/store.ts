@@ -7,7 +7,7 @@ import type { PublicResearchRunSpec } from "./generation.ts";
 import { withRuns } from "../durable-runs/binding.ts";
 import { readStoppedPublicResearchCheckpoint, savePublicResearchCheckpoint } from "./checkpoint.ts";
 
-export type PublicResearchEnv = { DB?: D1Database; SEC_FILINGS: { get(key: string): Promise<{ text(): Promise<string> } | null>; put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> } };
+export type PublicResearchEnv = { DB?: D1Database; SEC_FILINGS: { get(key: string, options?: { range?: { offset: number; length: number } }): Promise<{ text(): Promise<string>; arrayBuffer?(): Promise<ArrayBuffer> } | null>; put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> } };
 type VersionRow = { report_id: string; version: string; r2_key: string; state: string; as_of: string; generated_at: string; published_at: string | null; supersedes: string | null; review_json: string | null; summary_json: string; freshness?: ResearchFreshness };
 const database = (env: PublicResearchEnv) => { if (!env.DB) throw new Error("Public research storage unavailable"); return env.DB; };
 const stable = (value: unknown): string => JSON.stringify(value, (_key, val) => val && typeof val === "object" && !Array.isArray(val) ? Object.fromEntries(Object.entries(val).sort(([a],[b]) => a.localeCompare(b))) : val);

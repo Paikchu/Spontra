@@ -1,0 +1,290 @@
+{
+  "at": "2026-11-17T02:55:21.960Z",
+  "scope": "Synthetic real local Cloudflare admin/proxy/AdminGateway/authenticated handler, prepared-material source readers, D1/R2, context freezing, adoption/status and shadow continuation; no model or production access",
+  "checks": [
+    {
+      "name": "legacy manual relationship still saves through the authenticated handler",
+      "status": "passed"
+    },
+    {
+      "name": "existing synthetic published macro available",
+      "status": "passed"
+    },
+    {
+      "name": "old context pins the exact legacy mapping and original macro",
+      "status": "passed"
+    },
+    {
+      "name": "legacy result starts valid",
+      "status": "passed"
+    },
+    {
+      "name": "direct from-tag requires authentication",
+      "status": "passed"
+    },
+    {
+      "name": "proxy enforces same origin",
+      "status": "passed"
+    },
+    {
+      "name": "proxy refuses GET and extra path",
+      "status": "passed"
+    },
+    {
+      "name": "from-tag rejects client status",
+      "status": "passed",
+      "detail": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"status\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"status\\\"\"\n  }\n]"
+    },
+    {
+      "name": "from-tag rejects client source",
+      "status": "passed",
+      "detail": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"source\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"source\\\"\"\n  }\n]"
+    },
+    {
+      "name": "from-tag rejects client classification",
+      "status": "passed",
+      "detail": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"classification\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"classification\\\"\"\n  }\n]"
+    },
+    {
+      "name": "from-tag rejects client weight",
+      "status": "passed",
+      "detail": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"weight\"\n    ],\n    \"path\": [],\n    \"message\": \"Unrecognized key: \\\"weight\\\"\"\n  }\n]"
+    },
+    {
+      "name": "wrong base rejected",
+      "status": "passed"
+    },
+    {
+      "name": "another company's tag rejected",
+      "status": "passed"
+    },
+    {
+      "name": "rejected tag cannot be bound",
+      "status": "passed"
+    },
+    {
+      "name": "all originals checked, including a non-primary passage",
+      "status": "passed"
+    },
+    {
+      "name": "missing frozen material rejected",
+      "status": "passed"
+    },
+    {
+      "name": "foreign source material rejected",
+      "status": "passed"
+    },
+    {
+      "name": "unknown original source rejected",
+      "status": "passed"
+    },
+    {
+      "name": "rejections create no relationship or tag copy",
+      "status": "passed"
+    },
+    {
+      "name": "real proxy to service-bound handler binds an existing tag",
+      "status": "passed",
+      "detail": [
+        {
+          "status": 200,
+          "version": "4dec529f5a37531dac2a55c95095edd31189537bdf0e057f463d48edde4334b5"
+        },
+        {
+          "status": 200,
+          "version": "4dec529f5a37531dac2a55c95095edd31189537bdf0e057f463d48edde4334b5"
+        }
+      ]
+    },
+    {
+      "name": "concurrent same base and tag semantics save the same immutable body",
+      "status": "passed"
+    },
+    {
+      "name": "one relationship, two auditable versions, no tag creation",
+      "status": "passed"
+    },
+    {
+      "name": "report industry link and unknown financial weight preserved",
+      "status": "passed"
+    },
+    {
+      "name": "pure source enhancement does not invalidate an existing a4 result",
+      "status": "passed"
+    },
+    {
+      "name": "in-flight old a4 pin remains adoptable without editing its context",
+      "status": "passed"
+    },
+    {
+      "name": "current freeze has one new mapping pin",
+      "status": "passed"
+    },
+    {
+      "name": "report receives authoritative tag classification and all three original sources",
+      "status": "passed"
+    },
+    {
+      "name": "shadow continuation accepts source-only enhancement with original parent ordinal and mapping pin",
+      "status": "passed",
+      "detail": {
+        "parentContextHash": "4449016674dae82f78e449b969537cec915488dd31aa035a04d82bfdef17267a",
+        "newContextHash": "3835b10cbb49e568f4612e580ad268fbe138dd754b9c334cc37de00e7a067f6a",
+        "childContextAsOf": "2026-11-17T02:55:20.707Z",
+        "addedMappingVersions": [],
+        "addedIndustryReports": [
+          {
+            "reportId": "synthetic-industry",
+            "version": "582d8c751e7a9db1914286633966d3460d173299f3d8869886dc42a9091d63b4",
+            "publishedAt": "2026-01-05T00:00:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "same base semantic replay reuses stored version after display updates",
+      "status": "passed"
+    },
+    {
+      "name": "display update projects current translation without invalidation",
+      "status": "passed"
+    },
+    {
+      "name": "collection metadata does not create a new semantic binding version",
+      "status": "passed"
+    },
+    {
+      "name": "unchanged semantics survive source ordering and algorithm audit metadata updates",
+      "status": "passed"
+    },
+    {
+      "name": "semantic definition change requires review for legacy and bound results",
+      "status": "passed"
+    },
+    {
+      "name": "semantic definition change requires review for legacy and bound results blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "changed semantics cannot silently rebind a stale base",
+      "status": "passed"
+    },
+    {
+      "name": "classification change requires review",
+      "status": "passed"
+    },
+    {
+      "name": "classification change requires review blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "tag rejection cannot be bypassed by old legacy mapping",
+      "status": "passed"
+    },
+    {
+      "name": "tag rejection cannot be bypassed by old legacy mapping blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "historical legacy freeze cannot bypass current tag rejection",
+      "status": "passed"
+    },
+    {
+      "name": "deleted tag requires review without a verified snapshot fallback",
+      "status": "passed"
+    },
+    {
+      "name": "deleted tag requires review without a verified snapshot fallback blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "original hash corruption requires review for all pinned family results",
+      "status": "passed"
+    },
+    {
+      "name": "original hash corruption requires review for all pinned family results blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "material identity corruption requires review",
+      "status": "passed"
+    },
+    {
+      "name": "material identity corruption requires review blocks adoption",
+      "status": "passed"
+    },
+    {
+      "name": "financial weight can remain independently versioned without a new tag",
+      "status": "passed"
+    },
+    {
+      "name": "real financial exposure change invalidates old result precisely",
+      "status": "passed"
+    },
+    {
+      "name": "new weighted mapping still uses the existing authoritative tag",
+      "status": "passed"
+    },
+    {
+      "name": "new weighted result is adoptable",
+      "status": "passed"
+    },
+    {
+      "name": "real mapping changes still reject shadow parent continuation",
+      "status": "passed"
+    },
+    {
+      "name": "legacy no-context result remains compatible",
+      "status": "passed"
+    },
+    {
+      "name": "old immutable mapping and parent context stay byte-identical",
+      "status": "passed"
+    },
+    {
+      "name": "no model, network, or new tag creation",
+      "status": "passed",
+      "detail": []
+    }
+  ],
+  "binding": {
+    "tagId": "taaaaaaaaaaaaaaaaaaaaaaaa",
+    "fingerprint": "1b1d6f081688db02dd4e6e941e9b2c75c19f8df18a4c54b106e97f746e315f58",
+    "algorithmVersion": "business-tags.v2-markdown",
+    "baseVersion": "a4",
+    "sources": [
+      {
+        "ref": {
+          "ticker": "SYNTAG",
+          "accession": "0000000001-26-000001",
+          "version": "1438cb2cecb66367e2e1d3d0d773456af9c6c08e86d8f306fe8b73db5c83638f"
+        },
+        "sourceId": "passage-1",
+        "contentHash": "ae28692bc7f3ab3acfa83292cc08c05a3de0046b369873900cbf5763b5c6fe3d"
+      },
+      {
+        "ref": {
+          "ticker": "SYNTAG",
+          "accession": "0000000001-26-000001",
+          "version": "1438cb2cecb66367e2e1d3d0d773456af9c6c08e86d8f306fe8b73db5c83638f"
+        },
+        "sourceId": "passage-2",
+        "contentHash": "381cced78755aba520764f627e4530f4bb2864a910652662d36ff5b10ca65419"
+      },
+      {
+        "ref": {
+          "ticker": "SYNTAG",
+          "accession": "0000000001-26-000001",
+          "version": "1438cb2cecb66367e2e1d3d0d773456af9c6c08e86d8f306fe8b73db5c83638f"
+        },
+        "sourceId": "passage-3",
+        "contentHash": "c4d5cced099ee09ced2b91fd6f16a67e11c086d7f56a03209fb05883f1b36757"
+      }
+    ]
+  },
+  "limitations": [
+    "No production data or running CRWV task edited",
+    "Cloudflare Access not configured in this isolated runtime",
+    "The adapter validates frozen material identities, prepared passage/table SHA-256 and binding fingerprints; it does not reclassify the company or regenerate the underlying tag"
+  ]
+}

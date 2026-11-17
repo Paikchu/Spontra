@@ -1,5 +1,5 @@
 import { companyResearchExposureSchema, publicResearchDraftSchema } from "../../../../shared/analysis-runtime/public-research-schema.ts";
-import { saveCompanyResearchExposure, freezeCompanyResearch } from "./context.ts";
+import { saveCompanyResearchExposure, freezeCompanyResearch, bindCompanyExposureFromTag } from "./context.ts";
 import { z } from "zod";
 import type { AnalysisEnv } from "../operations.ts";
 import { authenticateAdmin } from "../admin/auth.ts";
@@ -25,8 +25,13 @@ export async function handlePublicResearchAdminRequest(request:Request,env:Analy
   if(!env.DB)return json({error:"Research database unavailable"},503);
   const path=new URL(request.url).pathname.replace(/\/$/,""),db=env.DB;
   try{
+    if(path==="/admin/public-research/exposures/from-tag"&&request.method==="POST"){
+      const input=z.object({exposureId:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),baseVersion:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),tagId:z.string().regex(/^t[a-f0-9]{24}$/)}).strict().parse(await request.json());
+      return json(await bindCompanyExposureFromTag(env,input));
+    }
     if(path==="/admin/public-research/exposures"&&request.method==="POST"){
       const exposure=companyResearchExposureSchema.parse(await request.json());
+      if(exposure.tagBinding)return json({error:"Use exposures/from-tag to bind existing server-verified tag evidence"},400);
       if(await sha256(exposure.source.excerpt)!==exposure.source.contentHash)return json({error:"Exposure source hash mismatch"},400);
       if(Date.parse(exposure.source.availableAt)>Date.now())return json({error:"Future exposure source"},400);
       await saveCompanyResearchExposure(env,exposure);return json({saved:true,id:exposure.id,version:exposure.version});

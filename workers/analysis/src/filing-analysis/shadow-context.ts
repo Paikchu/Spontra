@@ -2,7 +2,8 @@ import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract
 import { publicClaimUsable, validateExposure } from "../../../../shared/analysis-runtime/public-research.ts";
 import type { ResearchContextState } from "../company-research/context-tools.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { freezeCompanyResearch } from "../public-research/context.ts";
+import { freezeCompanyResearch, companyExposureMappingStatus } from "../public-research/context.ts";
+import { exposureBusinessMeaning, resolveCompanyExposure } from "../public-research/tag-exposure.ts";
 import { readPublicResearch } from "../public-research/store.ts";
 import { sha256 } from "../sha256.ts";
 
@@ -22,15 +23,15 @@ export async function appendPublishedShadowIndustry(env: AnalysisEnv, ticker: st
     if (current.status !== "available" || !current.report || !publicClaimUsable(current.report, use.claimId) || Date.parse(current.report.publishedAt) > Date.parse(asOf)) throw new Error("A previously adopted parent claim is no longer published and valid at the child as-of time");
   }
   const fresh = await freezeCompanyResearch(env, ticker, asOf);
-  if (parent.mappingVersions.some(version => !fresh.mappingVersions.includes(version))) throw new Error("Company exposure mapping changed; existing parent IDs and versions cannot be replaced or removed");
-  const mappings = (await env.DB!.prepare("SELECT exposure_id,version,body_json FROM company_research_exposures WHERE company_id=?").bind(ticker).all<{ exposure_id: string; version: string; body_json: string }>()).results;
+  if ((await companyExposureMappingStatus(env,ticker,parent.mappingVersions)).status!=="valid") throw new Error("Company exposure mapping changed; existing parent IDs and versions cannot be replaced or removed");
+  const mappings = (await env.DB!.prepare("SELECT exposure_id,version,body_json FROM company_research_exposures WHERE company_id=? ORDER BY valid_from DESC,rowid DESC").bind(ticker).all<{ exposure_id: string; version: string; body_json: string }>()).results;
   const mappingFor = (version: string) => {
     const matches = mappings.filter(mapping => `${mapping.exposure_id}:${mapping.version}` === version);
     if (matches.length !== 1) throw new Error("Exposure mapping identity is missing or ambiguous");
     return matches[0]!;
   };
   const parentMappingIds = new Set(parent.mappingVersions.map(version => mappingFor(version).exposure_id));
-  const addedMappingVersions = fresh.mappingVersions.filter(version => !parent.mappingVersions.includes(version));
+  const addedMappingVersions = fresh.mappingVersions.filter(version => !parent.mappingVersions.includes(version)&&!parentMappingIds.has(mappingFor(version).exposure_id));
   const newMappingIndustryIds = new Set<string>();
   for (const version of addedMappingVersions) {
     const mapping = mappingFor(version), exposure = validateExposure(JSON.parse(mapping.body_json));
@@ -45,14 +46,25 @@ export async function appendPublishedShadowIndustry(env: AnalysisEnv, ticker: st
     const report = item.report;
     if (report.type !== "industry" || known.has(report.reportId) || report.freshnessStatus !== "valid" || !report.claims.length || report.claims.some(claim => !publicClaimUsable(report, claim.id))) continue;
     if (Date.parse(report.publishedAt) > Date.parse(asOf) || Date.parse(report.asOf) > Date.parse(asOf) || Date.parse(report.generatedAt) > Date.parse(asOf) || Date.parse(report.validUntil) <= Date.parse(asOf)) continue;
-    if (report.review.mode === "automatic" || report.review.conclusion !== "approved" || !item.exposures.length || item.exposures.some(exposure => exposure.industryId !== report.scope.industryId || !mappingVersions.includes(`${exposure.id}:${exposure.version}`))) continue;
+    const exposures=[];
+    for(const exposure of item.exposures){
+      const parentPin=parent.mappingVersions.map(mappingFor).find(mapping=>mapping.exposure_id===exposure.id);
+      if(parentPin&&parentPin.version!==exposure.version){
+        const pinned=validateExposure(JSON.parse(parentPin.body_json));
+        if(!exposure.tagBinding||exposureBusinessMeaning(pinned)!==exposureBusinessMeaning(exposure))throw new Error("Company exposure mapping changed; only a tag source enhancement may preserve a parent mapping pin");
+        const family=mappings.filter(mapping=>mapping.exposure_id===exposure.id).map(mapping=>validateExposure(JSON.parse(mapping.body_json))),resolved=await resolveCompanyExposure(env,pinned,family,asOf);
+        if(resolved.status!=="valid"||!resolved.exposure)throw new Error("Parent tag evidence requires review");
+        exposures.push(resolved.exposure);
+      }else exposures.push(exposure);
+    }
+    if (report.review.mode === "automatic" || report.review.conclusion !== "approved" || !exposures.length || exposures.some(exposure => exposure.industryId !== report.scope.industryId || !mappingVersions.includes(`${exposure.id}:${exposure.version}`))) continue;
     // freezeCompanyResearch supports historical reads. Admission specifically requires the current published version.
     const published = await env.DB!.prepare(`SELECT 1 ok FROM public_research_versions v JOIN public_research_reports r ON r.report_id=v.report_id
       WHERE v.report_id=? AND v.version=? AND v.state='published' AND r.current_version=v.version AND v.published_at<=?`)
       .bind(report.reportId, report.version, asOf).first();
     if (!published) continue;
     known.add(report.reportId);
-    additions.push(item);
+    additions.push({...item,exposures});
   }
   if (!additions.length) throw new Error("No additional currently published, valid industry report matches the evidenced company mapping");
   const covered = new Set(additions.map(item => item.report.scope.industryId));

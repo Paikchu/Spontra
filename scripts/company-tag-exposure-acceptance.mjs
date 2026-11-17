@@ -1,0 +1,123 @@
+/** Real admin/proxy/handler and D1/R2 journey. Synthetic existing tags and materials only; no model calls. */
+import {createRequire} from "node:module";
+import {createHash} from "node:crypto";
+import {mkdtemp,readFile,writeFile,mkdir} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {resolve} from "node:path";
+import {Miniflare,convertV4MiniflareOptions} from "miniflare";
+const require=createRequire(new URL("../node_modules/wrangler/package.json",import.meta.url)),{build}=require("esbuild");
+const root=resolve(new URL("..",import.meta.url).pathname),scratch=await mkdtemp(resolve(tmpdir(),"spontra-tag-exposure-"));
+const sha=value=>createHash("sha256").update(value).digest("hex"),clone=value=>structuredClone(value),at="2026-01-02T00:00:00.000Z",ticker="SYNTAG",tagId=`t${"a".repeat(24)}`;
+const ref={ticker,accession:"0000000001-26-000001",version:sha("synthetic-material")},materialKey=`sec-materials/v1/${ticker}/${ref.accession}/${ref.version}/index.json`;
+const texts=["SYNTHETIC ORIGINAL ONE: the company supplies cloud compute capacity.","SYNTHETIC ORIGINAL TWO: the cloud service includes a software platform.","SYNTHETIC ORIGINAL THREE: customer usage is subject to contractual terms."];
+const filing={ticker,accession:ref.accession,cik:"0000000001",form:"10-Q",filedAt:"2026-01-01",reportDate:"2025-12-31",companyName:"Synthetic acceptance only",primaryDocument:"fixture.htm",documentUrl:"https://example.com/synthetic.htm",indexUrl:"https://example.com/synthetic-index.htm"};
+const blocks=texts.map((text,index)=>({id:`passage-${index+1}`,documentId:"document-1",filename:"fixture.htm",sourceUrl:filing.documentUrl,title:`Synthetic passage ${index+1}`,path:["Synthetic original"],kind:"paragraph",text,tableId:null,locator:{start:0,end:text.length,page:null},storage:"inline",range:{anchorOffset:0,offset:0,length:Buffer.byteLength(text),chars:text.length,sha256:sha(text)}}));
+const snapshot={format:"filing-material.index.v2",ref,filing,createdAt:at,documents:[],blocks,tables:[],facts:[],markdown:{key:"synthetic-unused-markdown",bytes:0,chars:0},toc:[],coverage:{}};
+const source={id:"legacy-source",canonicalId:"synthetic-company-original",uri:filing.documentUrl,title:"Original manual relationship evidence",locator:"Synthetic legacy original",excerpt:texts[0],contentHash:sha(texts[0]),revision:ref.version,publishedAt:at,availableAt:at,collectedAt:at,observationPeriod:{start:"2025-12-31",end:"2025-12-31"},usage:"public",authorization:"Synthetic local acceptance only"};
+const exposure={id:"synthetic-cloud-business",version:"a4",companyId:ticker,segmentId:null,industryId:"synthetic-cloud",relation:"industry",regions:["US"],validFrom:at,validUntil:null,source,weight:null,weightBasis:null,status:"verified"};
+const refs=blocks.map(block=>({ref,sourceId:block.id})),tag={tagId,ticker,unitKey:`${ticker}|reported-company-total`,sector:"cloud_infrastructure",facet:"offering",label:"Cloud compute capacity",labelZh:"合成云算力",definition:"Synthetic cloud compute capacity service",sources:refs,status:"verified",version:"business-tags.v2-markdown",updatedAt:at};
+const claim={id:"claim-1",kind:"fact",title:"Synthetic funding conditions",statement:"Synthetic evidence records a financing channel.",sourceIds:[source.id],observationIds:[],premiseClaimIds:[],assumptions:[],impactChannels:["Financing → contractual repricing"],counterEvidence:["Fixed coupons do not reprice"],verification:"Inspect contractual terms",shockId:"synthetic-funding",financialVariable:"cashInterest"};
+const draft={schemaVersion:"public-research.v1",reportId:"synthetic-macro",type:"macro",title:"Synthetic macro",language:"en",scope:{regions:["US"],currency:"USD",industryId:null,description:"Synthetic context only"},asOf:at,generatedAt:at,validUntil:"2099-01-01T00:00:00.000Z",inputFingerprint:sha("synthetic-macro"),modelVersion:"no-model-called",promptVersion:"synthetic.v1",toolVersion:"synthetic.v1",coverage:"limited",missingInputs:["Synthetic acceptance only"],changes:["Synthetic initial fixture"],summary:"Synthetic evidence only.",sources:[source],observations:[],claims:[claim],dependencies:[],scenarios:[{name:"base",assumptions:["Contract terms control repricing"],claimIds:[claim.id]}],authorRunId:"synthetic-author",sections:[{id:"funding",title:"Synthetic funding",claimIds:[claim.id]}]};
+const workerPath=resolve(scratch,"worker.ts"),bundlePath=resolve(scratch,"worker.mjs");
+await writeFile(workerPath,`
+import {handlePublicResearchAdminRequest} from ${JSON.stringify(resolve(root,"workers/analysis/src/public-research/admin.ts"))};
+import {handleAdminRequest} from ${JSON.stringify(resolve(root,"apps/admin/worker/index.ts"))};
+import {createAdminSession} from ${JSON.stringify(resolve(root,"workers/analysis/src/admin/auth.ts"))};
+import {saveCompanyResearchExposure,freezeCompanyResearch,recordCompanyResearchDependencies,companyResearchDependencyStatus} from ${JSON.stringify(resolve(root,"workers/analysis/src/public-research/context.ts"))};
+import {appendPublishedShadowIndustry} from ${JSON.stringify(resolve(root,"workers/analysis/src/filing-analysis/shadow-context.ts"))};
+import {savePublicResearchDraft,reviewPublicResearch,publishPublicResearch} from ${JSON.stringify(resolve(root,"workers/analysis/src/public-research/store.ts"))};
+export {AdminGateway} from ${JSON.stringify(resolve(root,"workers/analysis/src/index.ts"))};
+export default {async fetch(request,env){try{
+ const url=new URL(request.url);
+ if(url.pathname==="/fixture/auth")return Response.json({token:await createAdminSession(env.REPORT_ADMIN_PASSWORD)});
+ if(url.pathname==="/fixture/publish"){const input=await request.json(),d=input.draft,saved=await savePublicResearchDraft(env,d),time=input.at;await reviewPublicResearch(env,d.reportId,saved.version,{mode:"human",reviewer:"synthetic-independent",reviewedAt:time,authorRunId:d.authorRunId,claimChecks:d.claims.map(c=>({claimId:c.id,supported:true,notes:"Synthetic original inspected"})),conclusion:"approved",notes:"Synthetic fixture only, no user sign-off"},time);return Response.json(await publishPublicResearch(env,d.reportId,saved.version,null,time));}
+ if(url.pathname==="/fixture/record"){await recordCompanyResearchDependencies(env,await request.json());return Response.json({recorded:true});}
+ if(url.pathname==="/fixture/save"){await saveCompanyResearchExposure(env,await request.json());return Response.json({saved:true});}
+ if(url.pathname==="/fixture/status")return Response.json(await companyResearchDependencyStatus(env,url.searchParams.get("id")));
+ if(url.pathname==="/fixture/append"){const input=await request.json();return Response.json(await appendPublishedShadowIndustry(env,input.ticker,input.parent,{researchUses:[]},input.asOf));}
+ if(url.pathname.startsWith("/api/admin/"))return handleAdminRequest(request,{...env,ASSETS:{fetch:()=>new Response("Not found",{status:404})}});
+ if(url.pathname.startsWith("/admin/"))return handlePublicResearchAdminRequest(request,env);
+ return new Response("Not found",{status:404});
+ }catch(error){return Response.json({error:String(error)},{status:400});}}};
+`);
+await build({entryPoints:[workerPath],outfile:bundlePath,bundle:true,format:"esm",platform:"node",target:"es2022",conditions:["workerd","worker","browser"],external:["cloudflare:*","node:*"],banner:{js:"import {createRequire as localCreateRequire} from 'node:module'; const require=localCreateRequire('/local-worker.mjs');"},loader:{".css":"text",".txt":"text"},plugins:[{name:"local-axe-text",setup(bundle){bundle.onLoad({filter:/\/axe\.min\.js$/},async({path})=>({contents:await readFile(path,"utf8"),loader:"text"}));}}]});
+const outbound=[],mf=new Miniflare(convertV4MiniflareOptions({name:"tag-exposure-acceptance",modules:true,modulesRoot:scratch,scriptPath:bundlePath,compatibilityDate:"2026-08-26",compatibilityFlags:["nodejs_compat"],serviceBindings:{SPONTRA_ANALYSIS:{name:"tag-exposure-acceptance",entrypoint:"AdminGateway"}},d1Databases:{DB:"tag-exposure-acceptance"},r2Buckets:["SEC_FILINGS"],bindings:{REPORT_ADMIN_PASSWORD:"synthetic-isolated-only"},outboundService:request=>{outbound.push(request.url);return new Response("Forbidden",{status:599});}}));
+const checks=[],check=(name,ok,detail)=>{if(!ok)throw Error(name+": "+JSON.stringify(detail));checks.push({name,status:"passed",...(detail===undefined?{}:{detail})});};
+const request=async(path,options={})=>{const response=await mf.dispatchFetch("http://localhost"+path,options);return {status:response.status,body:await response.json()};};
+try{
+ const {DB,SEC_FILINGS}=await mf.getBindings();
+ for(const file of ["0060_public_research.sql","0063_public_research_revisions.sql","0033_business_tags.sql","0058_markdown_business_sources.sql","0032_ai_tool_settings.sql"]){for(const sql of (await readFile(resolve(root,"workers/analysis/migrations",file),"utf8")).replace(/--[^\n]*/g,"").split(";").map(part=>part.trim()).filter(Boolean))await DB.prepare(sql).run();}
+ await DB.prepare("CREATE TABLE financial_company_settings(ticker TEXT PRIMARY KEY,enabled INTEGER)").run();await DB.prepare("CREATE TABLE business_feature_settings(ticker TEXT,feature TEXT,generate INTEGER)").run();
+ const insertTag=()=>DB.prepare("INSERT INTO sec_business_tags(tag_id,ticker,unit_key,sector,facet,label,label_zh,definition,sources,status,version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(tag.tagId,tag.ticker,tag.unitKey,tag.sector,tag.facet,tag.label,tag.labelZh,tag.definition,JSON.stringify(tag.sources),tag.status,tag.version,tag.updatedAt).run();
+ await insertTag();await SEC_FILINGS.put(materialKey,JSON.stringify(snapshot));
+ const token=(await request("/fixture/auth")).body.token,headers={authorization:`Bearer ${token}`,"content-type":"application/json",origin:"http://localhost"};
+ const post=(path,body)=>request(path,{method:"POST",headers,body:JSON.stringify(body)}),url="/api/admin/public-research/exposures/from-tag",input={exposureId:exposure.id,baseVersion:exposure.version,tagId};
+ const context=(asOf=new Date().toISOString())=>request(`/api/admin/public-research/companies/${ticker}/context?asOf=${encodeURIComponent(asOf)}`,{headers});
+ const status=id=>request(`/fixture/status?id=${id}`),record=(id,mappingVersions)=>post("/fixture/record",{ticker,resultId:id,mappingVersions,dependencies:[]});
+ check("legacy manual relationship still saves through the authenticated handler",(await post("/api/admin/public-research/exposures",exposure)).status===200);
+ const originalExposureBody=(await DB.prepare("SELECT body_json FROM company_research_exposures WHERE exposure_id=? AND version='a4'").bind(exposure.id).first()).body_json;
+ const macro=(await post("/fixture/publish",{draft,at:"2026-01-02T01:00:00.000Z"})).body;
+ check("existing synthetic published macro available",Boolean(macro.version));
+ const parent=(await context("2026-01-03T00:00:00.000Z")).body,parentHash=sha(JSON.stringify(parent));
+ check("old context pins the exact legacy mapping and original macro",parent.mappingVersions[0]===`${exposure.id}:a4`&&parent.reports[0].report.version===macro.version);
+ await record("existing-a4-result",parent.mappingVersions);
+ check("legacy result starts valid",(await status("existing-a4-result")).body.status==="valid");
+ check("direct from-tag requires authentication",(await request("/admin/public-research/exposures/from-tag",{method:"POST",body:"{}"})).status===401);
+ check("proxy enforces same origin",(await request(url,{method:"POST",headers:{...headers,origin:"https://foreign.example"},body:JSON.stringify(input)})).status===403);
+ check("proxy refuses GET and extra path",(await request(url,{headers})).status===404&&(await post(url+"/extra",input)).status===404);
+ for(const key of ["status","source","classification","weight"]){const result=await post(url,{...input,[key]:key==="weight"?1:"forged"});check(`from-tag rejects client ${key}`,result.status===400,result.body.error.slice(0,180));}
+ check("wrong base rejected",(await post(url,{...input,baseVersion:"missing"})).status===400);
+ await DB.prepare("UPDATE sec_business_tags SET ticker='OTHER' WHERE tag_id=?").bind(tagId).run();check("another company's tag rejected",(await post(url,input)).status===400);await DB.prepare("UPDATE sec_business_tags SET ticker=? WHERE tag_id=?").bind(ticker,tagId).run();
+ await DB.prepare("UPDATE sec_business_tags SET status='rejected' WHERE tag_id=?").bind(tagId).run();check("rejected tag cannot be bound",(await post(url,input)).status===400);await DB.prepare("UPDATE sec_business_tags SET status='verified' WHERE tag_id=?").bind(tagId).run();
+ const badSnapshot=clone(snapshot);badSnapshot.blocks[1].text="Synthetic tampering";await SEC_FILINGS.put(materialKey,JSON.stringify(badSnapshot));check("all originals checked, including a non-primary passage",(await post(url,input)).body.error.includes("hash mismatch"));await SEC_FILINGS.put(materialKey,JSON.stringify(snapshot));
+ await DB.prepare("UPDATE sec_business_tags SET sources=? WHERE tag_id=?").bind(JSON.stringify([{ref:{...ref,version:"missing-material"},sourceId:blocks[0].id}]),tagId).run();check("missing frozen material rejected",(await post(url,input)).status===400);
+ await DB.prepare("UPDATE sec_business_tags SET sources=? WHERE tag_id=?").bind(JSON.stringify([{ref:{...ref,ticker:"OTHER"},sourceId:blocks[0].id}]),tagId).run();check("foreign source material rejected",(await post(url,input)).status===400);
+ await DB.prepare("UPDATE sec_business_tags SET sources=? WHERE tag_id=?").bind(JSON.stringify([{ref,sourceId:"missing-passage"}]),tagId).run();check("unknown original source rejected",(await post(url,input)).status===400);
+ await DB.prepare("UPDATE sec_business_tags SET sources=? WHERE tag_id=?").bind(JSON.stringify(refs),tagId).run();
+ check("rejections create no relationship or tag copy",(await DB.prepare("SELECT COUNT(*) n FROM company_research_exposures").first()).n===1&&(await DB.prepare("SELECT COUNT(*) n FROM sec_business_tags").first()).n===1);
+ const joined=await Promise.all([post(url,input),post(url,input)]),bound=joined[0].body.exposure;
+ check("real proxy to service-bound handler binds an existing tag",joined.every(result=>result.status===200),joined.map(result=>({status:result.status,version:result.body.exposure?.version})));
+ check("concurrent same base and tag semantics save the same immutable body",JSON.stringify(joined[0].body.exposure)===JSON.stringify(joined[1].body.exposure));
+ check("one relationship, two auditable versions, no tag creation",(await DB.prepare("SELECT COUNT(*) n,COUNT(DISTINCT exposure_id) ids FROM company_research_exposures").first()).n===2&&(await DB.prepare("SELECT COUNT(DISTINCT exposure_id) n FROM company_research_exposures").first()).n===1&&(await DB.prepare("SELECT COUNT(*) n FROM sec_business_tags").first()).n===1);
+ check("report industry link and unknown financial weight preserved",bound.id===exposure.id&&bound.industryId===exposure.industryId&&bound.weight===null&&bound.weightBasis===null&&bound.tagBinding.sources.length===3);
+ const frozen=(await context()).body,mapped=frozen.reports.find(item=>item.report.type==="industry");
+ check("pure source enhancement does not invalidate an existing a4 result",(await status("existing-a4-result")).body.status==="valid");
+ check("in-flight old a4 pin remains adoptable without editing its context",(await record("in-flight-a4-result",parent.mappingVersions)).status===200&&sha(JSON.stringify(parent))===parentHash);
+ check("current freeze has one new mapping pin",frozen.mappingVersions.length===1&&frozen.mappingVersions[0]===`${bound.id}:${bound.version}`&&!mapped);
+ await record("bound-result",frozen.mappingVersions);
+ const industry={...clone(draft),reportId:"synthetic-industry",type:"industry",title:"Synthetic cloud industry",inputFingerprint:sha("synthetic-industry"),scope:{...draft.scope,industryId:exposure.industryId},asOf:"2026-01-04T00:00:00.000Z",generatedAt:"2026-01-04T00:00:00.000Z"};
+ const published=(await post("/fixture/publish",{draft:industry,at:"2026-01-05T00:00:00.000Z"})).body;
+ const withIndustry=(await context()).body,industryExposure=withIndustry.reports.find(item=>item.report.type==="industry").exposures[0];
+ check("report receives authoritative tag classification and all three original sources",industryExposure.businessTag.sector===tag.sector&&industryExposure.businessTag.facet===tag.facet&&industryExposure.businessTag.sources.length===3&&industryExposure.businessTag.sources.every(source=>source.contentHash===sha(source.excerpt)));
+ const extension=await post("/fixture/append",{ticker,parent,asOf:new Date().toISOString()});
+ check("shadow continuation accepts source-only enhancement with original parent ordinal and mapping pin",extension.status===200&&extension.body.context.mappingVersions[0]===parent.mappingVersions[0]&&extension.body.context.reports[0].report.version===macro.version&&extension.body.context.reports[1].report.version===published.version&&extension.body.context.reports[1].exposures[0].version==="a4",extension.status===200?extension.body.audit:extension.body);
+ await DB.prepare("UPDATE sec_business_tags SET label_zh='展示翻译更新',updated_at='2026-11-17T00:00:00.000Z' WHERE tag_id=?").bind(tagId).run();
+ const replay=await post(url,input),afterDisplay=(await context()).body;
+ check("same base semantic replay reuses stored version after display updates",replay.status===200&&replay.body.reused&&JSON.stringify(replay.body.exposure)===JSON.stringify(bound)&&(await DB.prepare("SELECT COUNT(*) n FROM company_research_exposures").first()).n===2);
+ check("display update projects current translation without invalidation",afterDisplay.reports.find(item=>item.report.type==="industry").exposures[0].businessTag.labelZh==="展示翻译更新"&&(await status("existing-a4-result")).body.status==="valid"&&(await status("bound-result")).body.status==="valid");
+ const laterCollection=clone(snapshot);laterCollection.createdAt="2026-01-02T01:00:00.000Z";await SEC_FILINGS.put(materialKey,JSON.stringify(laterCollection));
+ const collectedReplay=await post(url,input);check("collection metadata does not create a new semantic binding version",collectedReplay.status===200&&JSON.stringify(collectedReplay.body.exposure)===JSON.stringify(bound)&&(await DB.prepare("SELECT COUNT(*) n FROM company_research_exposures").first()).n===2&&(await status("existing-a4-result")).body.status==="valid");await SEC_FILINGS.put(materialKey,JSON.stringify(snapshot));
+ await DB.prepare("UPDATE sec_business_tags SET version='business-tags.synthetic-audit-only',sources=? WHERE tag_id=?").bind(JSON.stringify([...refs].reverse()),tagId).run();
+ const reordered=await post(url,input);check("unchanged semantics survive source ordering and algorithm audit metadata updates",reordered.status===200&&JSON.stringify(reordered.body.exposure)===JSON.stringify(bound)&&(await DB.prepare("SELECT COUNT(*) n FROM company_research_exposures").first()).n===2&&(await status("existing-a4-result")).body.status==="valid");await DB.prepare("UPDATE sec_business_tags SET version=?,sources=? WHERE tag_id=?").bind(tag.version,JSON.stringify(refs),tagId).run();
+ const blocked=async(name)=>{const fresh=(await context()).body;check(name,fresh.gaps.some(gap=>gap.reason.startsWith("review_required:"))&&!fresh.reports.some(item=>item.report.type==="industry")&&(await status("existing-a4-result")).body.status==="review_required"&&(await status("bound-result")).body.status==="review_required");check(name+" blocks adoption",(await record("blocked-"+checks.length,parent.mappingVersions)).status===400);};
+ await DB.prepare("UPDATE sec_business_tags SET definition='A changed business meaning' WHERE tag_id=?").bind(tagId).run();await blocked("semantic definition change requires review for legacy and bound results");
+ check("changed semantics cannot silently rebind a stale base",(await post(url,input)).status===400);
+ await DB.prepare("UPDATE sec_business_tags SET definition=? WHERE tag_id=?").bind(tag.definition,tagId).run();
+ await DB.prepare("UPDATE sec_business_tags SET sector='developer_tools' WHERE tag_id=?").bind(tagId).run();await blocked("classification change requires review");await DB.prepare("UPDATE sec_business_tags SET sector=? WHERE tag_id=?").bind(tag.sector,tagId).run();
+ await DB.prepare("UPDATE sec_business_tags SET status='rejected' WHERE tag_id=?").bind(tagId).run();await blocked("tag rejection cannot be bypassed by old legacy mapping");
+ const historical=(await context("2026-01-03T00:00:00.000Z")).body;check("historical legacy freeze cannot bypass current tag rejection",historical.gaps.some(gap=>gap.reason.startsWith("review_required:"))&&historical.mappingVersions.length===0);
+ await DB.prepare("UPDATE sec_business_tags SET status='verified' WHERE tag_id=?").bind(tagId).run();
+ await DB.prepare("DELETE FROM sec_business_tags WHERE tag_id=?").bind(tagId).run();await blocked("deleted tag requires review without a verified snapshot fallback");await insertTag();
+ await SEC_FILINGS.put(materialKey,JSON.stringify(badSnapshot));await blocked("original hash corruption requires review for all pinned family results");await SEC_FILINGS.put(materialKey,JSON.stringify(snapshot));
+ const wrongIdentity=clone(snapshot);wrongIdentity.ref.version="wrong-ref";await SEC_FILINGS.put(materialKey,JSON.stringify(wrongIdentity));await blocked("material identity corruption requires review");await SEC_FILINGS.put(materialKey,JSON.stringify(snapshot));
+ const financial={...clone(bound),version:"independent-weight-v2",validFrom:new Date().toISOString(),weight:0.25,weightBasis:"Synthetic independently evidenced financial sensitivity"};
+ check("financial weight can remain independently versioned without a new tag",(await post("/fixture/save",financial)).status===200);
+ check("real financial exposure change invalidates old result precisely",(await status("existing-a4-result")).body.status==="review_required"&&(await status("bound-result")).body.status==="review_required");
+ const weighted=(await context()).body;check("new weighted mapping still uses the existing authoritative tag",weighted.reports.find(item=>item.report.type==="industry").exposures[0].weight===0.25&&weighted.reports.find(item=>item.report.type==="industry").exposures[0].businessTag.tagId===tagId);
+ check("new weighted result is adoptable",(await record("weighted-result",weighted.mappingVersions)).status===200&&(await status("weighted-result")).body.status==="valid");
+ check("real mapping changes still reject shadow parent continuation",(await post("/fixture/append",{ticker,parent,asOf:new Date().toISOString()})).status===400);
+ check("legacy no-context result remains compatible",(await status("pre-context-historical-result")).body.status==="valid");
+ check("old immutable mapping and parent context stay byte-identical",(await DB.prepare("SELECT body_json FROM company_research_exposures WHERE exposure_id=? AND version='a4'").bind(exposure.id).first()).body_json===originalExposureBody&&sha(JSON.stringify(parent))===parentHash);
+ check("no model, network, or new tag creation",outbound.length===0&&(await DB.prepare("SELECT COUNT(*) n FROM sec_business_tags").first()).n===1,outbound);
+ const output=resolve(process.argv[2]??"/tmp/spontra-company-tag-exposure.json");await mkdir(resolve(output,".."),{recursive:true});await writeFile(output,JSON.stringify({at:new Date().toISOString(),scope:"Synthetic real local Cloudflare admin/proxy/AdminGateway/authenticated handler, prepared-material source readers, D1/R2, context freezing, adoption/status and shadow continuation; no model or production access",checks,binding:bound.tagBinding,limitations:["No production data or running CRWV task edited","Cloudflare Access not configured in this isolated runtime","The adapter validates frozen material identities, prepared passage/table SHA-256 and binding fingerprints; it does not reclassify the company or regenerate the underlying tag"]},null,2)+"\n");console.log(JSON.stringify({passed:checks.length,evidence:output}));
+}finally{await mf.dispose();}

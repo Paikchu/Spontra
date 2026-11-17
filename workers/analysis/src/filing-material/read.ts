@@ -5,7 +5,7 @@ import type { AnalysisEnv } from "../operations.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import { MATERIAL_READ_BYTES } from "../../../../shared/analysis-contract/filing-material.ts";
 
-type MaterialReadEnv = Pick<AnalysisEnv, "SEC_FILINGS">;
+type MaterialReadEnv = { SEC_FILINGS: Pick<AnalysisEnv["SEC_FILINGS"], "get"> };
 const encoder = new TextEncoder();
 const SOURCE_BYTES = MATERIAL_READ_BYTES;
 
