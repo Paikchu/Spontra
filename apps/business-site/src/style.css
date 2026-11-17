@@ -25,8 +25,9 @@ button { cursor: pointer; }
   border-radius: var(--rail-radius); background: var(--surface); border: 1px solid var(--hairline); box-shadow: var(--rail-shadow);
 }
 /* Type follows the Spontra product scale: ticker title-2, rows 15/14, meta caption 12, dossier title-3 over body-sm. */
-.rail-top { position: relative; z-index: 2; flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 8px 8px 14px; border-bottom: 1px solid transparent; transition: border-color .2s; }
+.rail-top { position: relative; z-index: 2; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 8px 8px 18px; border-bottom: 1px solid transparent; transition: border-color .2s; }
 .rail[data-scrolled] .rail-top { border-bottom-color: var(--hairline); }
+.rail-brand { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; color: var(--foreground); }
 /* Blur band just under the company row: rows soften as they slide up beneath it. Masked so the blur fades out downward. */
 .rail-blur {
   position: absolute; left: 0; right: 0; top: calc(100% + 1px); height: 28px; pointer-events: none; opacity: 0; transition: opacity .2s;
@@ -47,25 +48,25 @@ button { cursor: pointer; }
   .rail-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: transparent padding-box; }
   .rail-scroll:hover::-webkit-scrollbar-thumb, .rail-scroll[data-scrolling]::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--foreground) 22%, transparent); }
 }
-.company { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.company-logo { position: relative; display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: #fff; box-shadow: inset 0 0 0 1px #0b1f1a14; }
+.company { display: inline-flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
+.company-logo { position: relative; display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: inset 0 0 0 1px #0b1f1a14; }
 .company-logo img { position: absolute; inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); object-fit: contain; }
-.company-logo-fallback { font-size: 13px; font-weight: 680; letter-spacing: -.02em; color: #13231f; }
+.company-logo-fallback { font-size: 12px; font-weight: 680; letter-spacing: -.02em; color: #13231f; }
 .company-logo:not([data-failed]) .company-logo-fallback { opacity: 0; }
 .company-logo[data-failed] { background: var(--fill); box-shadow: inset 0 0 0 1px var(--hairline); }
 .company-logo[data-failed] .company-logo-fallback { color: var(--foreground); }
 .company-logo--sm { width: 32px; height: 32px; border-radius: 9px; }
 .company-logo--sm img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
-.company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+.company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 19px; font-weight: 650; letter-spacing: -.015em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
 .rail-actions { display: flex; gap: 2px; flex: none; }
-/* Ghost tools: the ticker is the rail's title, the tools a quiet row beside it that fills only under the pointer. */
+/* Ghost tools: the brand is the rail's title, the tools a quiet row beside it that fills only under the pointer. */
 .rail-actions .icon-button { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--faint); }
 .rail-actions .icon-button:hover { background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--foreground); }
 .rail-actions .icon-button[aria-pressed="true"] { color: var(--muted-foreground); }
 
-/* Collapsed: a slim floating column of logo and controls; the stage takes the width. */
+/* Collapsed: a slim floating column of controls; the stage takes the width. */
 @media (min-width: 961px) {
   /* Full width while the column animates open, so content is revealed instead of reflowing. */
   .rail-top, .rail-scroll { min-width: calc(var(--rail-w) - 2px); }
@@ -74,7 +75,7 @@ button { cursor: pointer; }
   main[data-rail="collapsed"] .rail { align-self: start; }
   main[data-rail="collapsed"] .rail-top { flex-direction: column; gap: 8px; padding: 12px 0; border-bottom-color: transparent; }
   main[data-rail="collapsed"] .company { flex: none; }
-  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur { display: none; }
+  main[data-rail="collapsed"] .rail-brand, main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur { display: none; }
   main[data-rail="collapsed"] .rail-actions { flex-direction: column; }
   main[data-rail="collapsed"] .rail-toggle { order: -1; }
 }
@@ -697,12 +698,13 @@ button { cursor: pointer; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
 /* ---------- The businesses, open from the start ---------- */
 .biz { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px 12px; }
-.biz-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 0 6px; }
-.biz-total { flex: none; display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
-.biz-total-value { font-size: 1.625rem; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.biz-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 2px 6px 2px 2px; }
+.biz-total { flex: 1; display: inline-flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
+.biz-total-metrics { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.biz-total-value { font-size: 19px; font-weight: 650; letter-spacing: -.015em; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total[aria-pressed="false"] .biz-total-value { color: var(--muted-foreground); }
 .biz-total:hover .biz-total-value { color: var(--foreground); }
-.biz-total-delta { font-size: .8125rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.biz-total-delta { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total-delta em { font-style: normal; }
 /* The mix as one bar: each business its hue, as wide as its share; the business under the pointer or picked stands out. */
 .biz-fold, .guidance-more { flex: none; width: 24px; height: 24px; color: var(--faint); }
@@ -1129,8 +1131,8 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
    Each page's remaining content crossfades behind; the old page leaves first so the new one arrives as the card lands. */
 :root[data-vt="page"] .home .search-panel, :root[data-vt="page"] .rail { view-transition-name: page-card; }
 :root[data-vt="page"] .home .search-field, :root[data-vt="page"] .rail-top { view-transition-name: page-head; }
-:root[data-vt="page"] .home .search-field svg, :root[data-vt="page"] .rail-top .company-logo { view-transition-name: page-logo; }
-:root[data-vt="page"] .home .search-field input, :root[data-vt="page"] .rail-top .company-ticker { view-transition-name: page-ticker; }
+:root[data-vt="page"] .home .search-field svg, :root[data-vt="page"] .rail .company-logo { view-transition-name: page-logo; }
+:root[data-vt="page"] .home .search-field input, :root[data-vt="page"] .rail .company-ticker { view-transition-name: page-ticker; }
 :root[data-vt="page"] .home-hero { animation: none; }
 ::view-transition-group(page-card), ::view-transition-group(page-head), ::view-transition-group(page-logo), ::view-transition-group(page-ticker) { animation-duration: .56s; animation-timing-function: var(--ease); }
 /* Card and row contents keep their size and are revealed by the morphing box rather than stretched with it. */

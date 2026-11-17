@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { CompanyMark } from "./CompanyMark";
 import { Rail } from "./Sidebar";
 import { VIEW_LABEL } from "./findings-labels";
 
@@ -18,7 +19,7 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
     <div className="map map--loading" role="status" aria-label={m.loading} aria-busy="true">
       <Rail ticker={ticker} actions={tools} label={m.companyBusinesses}>
         <section className="biz" data-section="business" aria-hidden="true">
-          <div className="biz-head"><span className="biz-total"><span className="biz-total-value ghost-text">$00.0B</span></span></div>
+          <div className="biz-head"><span className="biz-total"><CompanyMark ticker={ticker} /><span className="biz-total-metrics"><span className="biz-total-value ghost-text">$00.0B</span></span></span></div>
           <div className="biz-bar"><i style={{ flexBasis: "100%", background: "var(--hairline)" }} /></div>
           <div className="rail-list section-body">
             <div className="row row--all"><i className="row-chip row-chip--all" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>

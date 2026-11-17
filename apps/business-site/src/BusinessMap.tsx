@@ -27,6 +27,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart } from "./PoolChart";
+import { CompanyMark } from "./CompanyMark";
 import { Rail } from "./Sidebar";
 import { track } from "./track";
 import { stageChartBox } from "./chart-box";
@@ -669,8 +670,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
           <Button variant="unstyled" type="button" className="biz-total" aria-pressed={!current} title={quantified ? m.topLevelCount(topLevel) : m.totalRevenue} onClick={() => { if (current) pickBusiness(null); }}>
-            <span className="biz-total-value">{revenue != null ? money(revenue) : "—"}</span>
-            {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
+            <CompanyMark ticker={ticker} />
+            <span className="biz-total-metrics">
+              <span className="biz-total-value">{revenue != null ? money(revenue) : "—"}</span>
+              {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
+            </span>
           </Button>
           {rebased && <ChartNote label={m.segmentsRebased}>{m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)}</ChartNote>}
           <Button variant="unstyled" type="button" className="icon-button biz-fold" aria-expanded={!bizFolded} aria-controls="rail-business" aria-label={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} title={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} onClick={() => setBizFolded(v => !v)}>
