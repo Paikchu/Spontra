@@ -1,0 +1,133 @@
+{
+  "at": "2026-11-17T01:49:14.796Z",
+  "scope": "Synthetic local SQLite/object-store and real producer/read handlers; cached synthetic semantic verdict and render boundary fixture, not a real independent model review",
+  "modelCalls": 0,
+  "networkCalls": 0,
+  "productionWrites": 0,
+  "checks": [
+    {
+      "name": "actual filingLoader finish reaches validated shadow using complete cached semantic receipt",
+      "status": "pass"
+    },
+    {
+      "name": "onShadow persisted exact immutable impact before validation receipt",
+      "status": "pass"
+    },
+    {
+      "name": "printed million unit recovered despite missing resumed fact metadata",
+      "status": "pass"
+    },
+    {
+      "name": "base calculation preserves 16.4bn dollars and 82m sensitivity",
+      "status": "pass"
+    },
+    {
+      "name": "per-share event result remains absent with specific gaps",
+      "status": "pass"
+    },
+    {
+      "name": "identical save replays stable result and generatedAt",
+      "status": "pass"
+    },
+    {
+      "name": "different work cannot overwrite the exact edition",
+      "status": "pass"
+    },
+    {
+      "name": "legacy impact without machine-checked units is not exported as quantified",
+      "status": "pass"
+    },
+    {
+      "name": "read rejects tampered structured calculation bytes",
+      "status": "pass"
+    },
+    {
+      "name": "draft is not exposed through published exact edition reader",
+      "status": "pass"
+    },
+    {
+      "name": "signed preview reads same result and says preview",
+      "status": "pass"
+    },
+    {
+      "name": "forged and expired previews denied",
+      "status": "pass"
+    },
+    {
+      "name": "actual read handler serves exact published impact",
+      "status": "pass"
+    },
+    {
+      "name": "quantitative dependency reads cannot be pinned by a cache",
+      "status": "pass"
+    },
+    {
+      "name": "real read preserves exact source result while marking dependent outputs for review",
+      "status": "pass"
+    },
+    {
+      "name": "wrong hash and incomplete identity reject without fallback",
+      "status": "pass"
+    },
+    {
+      "name": "actual normal finish failure leaves an unpublished draft and no publication proof",
+      "status": "pass"
+    },
+    {
+      "name": "failed normal candidate is not exposed despite a known source hash",
+      "status": "pass"
+    },
+    {
+      "name": "onPublish sidecar failure leaves no public version or proof",
+      "status": "pass"
+    },
+    {
+      "name": "translation displays its own HTML hash but retains canonical same result",
+      "status": "pass"
+    },
+    {
+      "name": "saveVersion publication intent alone never marks a row public",
+      "status": "pass"
+    },
+    {
+      "name": "superseded exact history retains old result after current changes",
+      "status": "pass"
+    },
+    {
+      "name": "legacy current receives committed exact proof when replaced",
+      "status": "pass"
+    },
+    {
+      "name": "later success does not turn a failed candidate into readable history",
+      "status": "pass"
+    },
+    {
+      "name": "later publication does not expose the onPublish-failed orphan",
+      "status": "pass"
+    },
+    {
+      "name": "unknown legacy superseded row denied publicly, private snapshot reader remains compatible",
+      "status": "pass"
+    },
+    {
+      "name": "current edition without sidecar never borrows old bridge",
+      "status": "pass"
+    },
+    {
+      "name": "public handler denies exact draft even with known hash",
+      "status": "pass"
+    },
+    {
+      "name": "actual business BFF preserves exact result",
+      "status": "pass"
+    },
+    {
+      "name": "business handler exact edition is no-store",
+      "status": "pass"
+    },
+    {
+      "name": "no network or model operation was attempted",
+      "status": "pass"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
-import { PriceImpactSummary } from "./PriceImpactSummary";
+import { FilingImpactSummary, CompanyValuationReference } from "./FilingImpactSummary";
 import "./filing-conclusions.css";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
@@ -11,7 +11,7 @@ import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocume
 import type { VerifiedFinding } from "./findings-model";
 import { ArtifactFrame } from "./ArtifactFrame";
 import { ArtifactLanguage } from "./ArtifactLanguage";
-import { usePreview } from "./artifact-reads";
+import { usePreviewRead } from "./artifact-reads";
 import { COMPANY_READ_SCHEMA } from "./company-opening";
 import "katex/dist/katex.min.css";
 import "@/packages/web/src/styles/earning-report.css";
@@ -50,27 +50,33 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
   onClose: () => void;
   fallback?: ReactNode;
 }) {
-  const [detail, setDetail] = useState<PublicFilingDetail | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState<{ key: string; detail: PublicFilingDetail } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const locale = useLocale();
-  const preview = usePreview("filing-report", accession);
+  const preview = usePreviewRead("filing-report", accession, ticker);
+  const hasPreview = preview.token !== null;
   const reportDate = snapshot?.reportDate, reportVersion = snapshot?.reportVersion;
+  const editionParams = new URLSearchParams(location.search);
+  const artifactVersion = editionParams.get("artifactVersion"), artifactHash = editionParams.get("artifactHash");
+  const detailKey = JSON.stringify([ticker, accession, reportDate, reportVersion, revision, locale, artifactVersion, artifactHash]);
+  const detail = loaded?.key === detailKey ? loaded.detail : null;
+  const failed = failedKey === detailKey;
   useEffect(() => {
+    if (hasPreview) return;
     const controller = new AbortController();
-    setFailed(false);
     // The response is cached by its URL for hours; the report's revision is part of the URL so a republished report is a new one.
-    const params = new URLSearchParams({ schema: COMPANY_READ_SCHEMA, ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...locale === "en" ? {} : { lang: locale }, ...revision ? { rev: revision } : {} }).toString();
+    const params = new URLSearchParams({ schema: COMPANY_READ_SCHEMA, ...reportDate && reportVersion ? { reportDate, reportVersion } : {}, ...artifactVersion || artifactHash ? { artifactVersion: artifactVersion ?? "", artifactHash: artifactHash ?? "" } : {}, ...locale === "en" ? {} : { lang: locale }, ...revision ? { rev: revision } : {} }).toString();
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/filings/${encodeURIComponent(accession)}${params ? `?${params}` : ""}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<PublicFilingDetail> : Promise.reject(new Error(String(r.status))))
-      .then(body => { if (!controller.signal.aborted) setDetail(body); })
-      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+      .then(body => { if (!controller.signal.aborted) setLoaded({ key: detailKey, detail: body }); })
+      .catch(() => { if (!controller.signal.aborted) setFailedKey(detailKey); });
     return () => controller.abort();
-  }, [ticker, accession, reportDate, reportVersion, revision, locale]);
-  const artifact = preview ?? detail?.artifact ?? null;
+  }, [ticker, accession, reportDate, reportVersion, revision, locale, artifactVersion, artifactHash, detailKey, hasPreview]);
+  const candidate = hasPreview ? preview.artifact : detail?.artifact ?? null;
+  const artifact = candidate?.ticker === ticker && candidate.subject === accession && (!artifactVersion || candidate.version === Number(artifactVersion)) && (!artifactHash || (candidate.sourceHash ?? candidate.hash) === artifactHash) ? candidate : null;
   const title = artifact?.title ?? head.title;
-  const historical = !!reportVersion || new URLSearchParams(location.search).has("reportVersion");
-  const financialPeriodEnd = detail?.filing.fiscalPeriod?.periodEnd ?? (detail && /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(detail.filing.form) ? detail.filing.reportDate : undefined);
-  if (fallback && !artifact && (failed || detail && !detail.filing.summary?.report)) return <>{fallback}</>;
+  const historical = !!reportVersion || !!artifactVersion || new URLSearchParams(location.search).has("reportVersion");
+  if (fallback && !hasPreview && !artifactVersion && !artifactHash && !artifact && (failed || detail && !detail.filing.summary?.report)) return <>{fallback}</>;
   return <section className="lens report-lens" aria-label={m.report(title)}>
     <header className="lens-head">
       <div className="lens-title">
@@ -85,8 +91,10 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
         <h3>{sourceRelated ? m.citing : m.conclusions}</h3>
         <ul>{relatedFindings.map(f => <li key={f.id}><Button variant="unstyled" type="button" onClick={() => onFinding?.(f.id)}>{f.title}</Button>{sourceRelated && <> · <small>{m.researchPeriod(f.periodEnd)}</small></>}</li>)}</ul>
       </section>}
-      {valuation && <PriceImpactSummary valuation={valuation} compact reportGeneratedAt={artifact?.publishedAt} financialPeriodEnd={financialPeriodEnd} />}
-      {artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} hostTitle={title} />
+      {artifact && <FilingImpactSummary artifact={artifact} compact />}
+      <CompanyValuationReference valuation={valuation} />
+      {hasPreview && !artifact ? <p className="lens-empty" role={preview.status === "failed" || preview.status === "ready" ? "alert" : "status"}>{preview.status === "loading" ? m.loading : m.loadFailed}</p>
+        : artifact ? <ArtifactFrame artifact={artifact} showLanguage={false} hostTitle={title} />
         : detail ? <SecReportDocument {...filingPresentation(detail, ticker)} embedded />
         : failed ? <p className="lens-empty">{m.loadFailed}</p>
         : <p className="lens-empty">{m.loading}</p>}

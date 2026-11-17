@@ -248,7 +248,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value, unit: h.unit }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
         return ok(history.length ? history.map(h => `${h.factId} | ${factText(h)} | ${periodText(h)} | ${h.form} filed ${h.filedAt}`).join("\n") : "No earlier filing reports this line.");
       }),
-    handTool<S>({ name: "compute", description: "Work out a figure from facts and earlier results: a formula of fact ids (f…), result ids (c…) and numbers with + - * / and brackets, e.g. \"(f1a… - f2b…) / f2b… * 100\". Facts are in base units (dollars, shares). The result gets an id a block can cite. unit says what the result is: percent, USD, ratio, x, shares, days.",
+    handTool<S>({ name: "compute", description: "Work out a figure from facts and earlier results: a formula of fact ids (f…), result ids (c…) and numbers with + - * / and brackets, e.g. \"(f1a… - f2b…) / f2b… * 100\". Each fact retains its declared unit and scale; inspect that metadata and explicitly convert incompatible scales in the formula. A USD-millions fact is not already base dollars. The result gets an id a block can cite. unit says what the result is: percent, USD, ratio, x, shares, days.",
       input_schema: object({ label: { type: "string" }, formula: { type: "string" }, unit: { type: "string" } }, ["label", "formula", "unit"]) },
       async (args, state) => {
         const formula = str(args.formula), label = str(args.label).slice(0, 160);

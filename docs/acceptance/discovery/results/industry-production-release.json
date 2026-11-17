@@ -1,0 +1,112 @@
+{
+  "version": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d",
+  "draftReadbackEqual": true,
+  "counts": {
+    "claims": 27,
+    "sources": 19,
+    "observations": 65
+  },
+  "author": "operator-sol-industry-20261117",
+  "model": "gpt-6.1-sol",
+  "humanReviewRequired": true,
+  "reviewRecorded": true,
+  "published": true,
+  "sourceRunPreserved": "stopped/63",
+  "failedEnrichmentPreserved": "failed/13",
+  "codeCommit": "849d1ea74282bf548e9b72ef2102b47165d3890a",
+  "CI": "both success",
+  "productionVersions": {
+    "analysis": "046083ca-fac5-4a8e-93ed-f1eb5293eb7f",
+    "admin": "cf0f4426-7950-474b-82fb-0cf1779a9ea4",
+    "businessSite": "fd9705b2-2e65-416c-b374-79a8d23c430c"
+  },
+  "publishedAt": "2026-11-17T01:44:27.140Z",
+  "freshness": "valid",
+  "readbackMatchesExactApprovedDraft": true,
+  "browser": {
+    "at": "2026-11-17T01:47:19.482Z",
+    "base": "https://spontra-business-map.max-zhangyuchen.workers.dev",
+    "version": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d",
+    "realProduction": true,
+    "viewports": [
+      {
+        "viewport": [
+          1440,
+          900
+        ],
+        "errors": [],
+        "checks": {
+          "homeHasIndustryAndFullReadCue": true,
+          "full27ClaimsAnd19Sources": true,
+          "limitedCoverageVisible": true,
+          "summaryAndVersionInitiallyCollapsed": true,
+          "bodyStartsInViewport": true,
+          "wheelReachesEnd": true,
+          "railFixed": true,
+          "wheelReturnsToTop": true,
+          "sourceJumpOpensEvidence": true,
+          "reloadRetainsExactVersion": true,
+          "noHorizontalOverflow": true,
+          "noRuntimeErrors": true,
+          "industryIndexHasPublishedVersion": true
+        },
+        "homeStatus": 200,
+        "card": "United States · Issuer-disclosed international markets · USD\nCurrent\nAI云：合同兑现与建设融资决定每股回报，收入增速和订单规模不足以定价\n\n本稿是CoreWeave与Nebius两家发行人的有限AI云行业基线，核心判断是合同须经容量兑现、利润和现金回收后才形成每股价值。NBIS Q3 AI云收入973.8百万美元中含325.1百万非经常合作收入，集团收入980.8百万；64亿美元ARR是单月年化，不能把季度合作收入直接年化或从ARR机械扣除。两家九个月现金购置减OCF分别为CRWV 17,920、NBIS 11,199.6百万美元，均非稳态自由现金流或未来融资预测。CRWV RPO 132.3B、backlog 132.5B与NBIS RPO 38.7B的定义及履约排除不同，不做同口径倍数排名。融资风险须按固定/浮息、互换、期限与实际提款逐项判断；三情景仅给明确条件和传导，缺公司估值桥时不出目标价。宏观引用已发布7df9bcb8版本的政策区间与贷款标准，不将其重复变成公司成本冲击。\n\nData as of 2026-11-17\nLimited coverage\nRead full report →",
+        "title": "AI云：合同兑现与建设融资决定每股回报，收入增速和订单规模不足以定价",
+        "claims": 27,
+        "sources": 19,
+        "end": {
+          "top": 17460,
+          "height": 876,
+          "total": 18336
+        },
+        "primaryLink": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+      },
+      {
+        "viewport": [
+          390,
+          844
+        ],
+        "errors": [],
+        "checks": {
+          "homeHasIndustryAndFullReadCue": true,
+          "full27ClaimsAnd19Sources": true,
+          "limitedCoverageVisible": true,
+          "summaryAndVersionInitiallyCollapsed": true,
+          "bodyStartsInViewport": true,
+          "wheelReachesEnd": true,
+          "railFixed": true,
+          "wheelReturnsToTop": true,
+          "sourceJumpOpensEvidence": true,
+          "reloadRetainsExactVersion": true,
+          "noHorizontalOverflow": true,
+          "noRuntimeErrors": true,
+          "industryIndexHasPublishedVersion": true
+        },
+        "homeStatus": 200,
+        "card": "United States · Issuer-disclosed international markets · USD\nCurrent\nAI云：合同兑现与建设融资决定每股回报，收入增速和订单规模不足以定价\n\n本稿是CoreWeave与Nebius两家发行人的有限AI云行业基线，核心判断是合同须经容量兑现、利润和现金回收后才形成每股价值。NBIS Q3 AI云收入973.8百万美元中含325.1百万非经常合作收入，集团收入980.8百万；64亿美元ARR是单月年化，不能把季度合作收入直接年化或从ARR机械扣除。两家九个月现金购置减OCF分别为CRWV 17,920、NBIS 11,199.6百万美元，均非稳态自由现金流或未来融资预测。CRWV RPO 132.3B、backlog 132.5B与NBIS RPO 38.7B的定义及履约排除不同，不做同口径倍数排名。融资风险须按固定/浮息、互换、期限与实际提款逐项判断；三情景仅给明确条件和传导，缺公司估值桥时不出目标价。宏观引用已发布7df9bcb8版本的政策区间与贷款标准，不将其重复变成公司成本冲击。\n\nData as of 2026-11-17\nLimited coverage\nRead full report →",
+        "title": "AI云：合同兑现与建设融资决定每股回报，收入增速和订单规模不足以定价",
+        "claims": 27,
+        "sources": 19,
+        "end": {
+          "top": 23955,
+          "height": 638,
+          "total": 24593
+        },
+        "primaryLink": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm"
+      }
+    ],
+    "limitations": [
+      "Managed proxy browser ignores TLS certificate errors. Source snapshots were separately checked; browser does not navigate every external source."
+    ]
+  },
+  "sourceClick": {
+    "at": "2026-11-17T01:49:39.782Z",
+    "expected": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm",
+    "actual": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm",
+    "opensExactPrimaryUrl": true,
+    "title": "crwv-20260930",
+    "body": "Table of Contents\n\t\t\n\nUNITED STATES\nSECURITIES AND EXCHANGE COMMISSION\nWashington, D.C. 20549\n_________________________\nFORM 10-Q\n_________________________\n(Mark One)\n\t\t\t\t\t\n\nx\n\t\nQU",
+    "readCompleteSource": false
+  }
+}

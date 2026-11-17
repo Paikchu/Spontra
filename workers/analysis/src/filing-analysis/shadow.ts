@@ -13,9 +13,8 @@ import type { ResearchUse } from "../company-research/context-tools.ts";
 import { artifactId, previewToken, publishStatements, readArtifactVersion, saveWorkState } from "../artifact/store.ts";
 import { filingMemoryStatements } from "./memory-source.ts";
 import { sha256 } from "../sha256.ts";
+import { handleShadowRecovery, shadowKey as key, type ShadowRun } from "./shadow-resume.ts";
 
-const key = (runId: string) => `research-shadow:${runId}`;
-type ShadowRun = { runId: string; ticker: string; accession: string; createdAt: string; baseVersion: number | null; callsReserved: number; maxCalls: number; spec: FilingSpec };
 type ValidatedShadow = { spec: FilingSpec; version: number; hash: string; text: string; degraded: string[]; validatedAt: string; researchUses: ResearchUse[]; work: FilingWork };
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
@@ -57,7 +56,8 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
     return reply({ status: "accepted", runId: id, baseVersion: run.baseVersion, publicReportUnchanged: true }, 202);
   }
   const run = (await repository.getCache<ShadowRun>(key(runId)))?.payload;
-  if (!run || run.ticker !== ticker || run.accession !== accession) return reply({ error: "Shadow run not found" }, 404);
+  if (!run || run.runId !== runId || run.ticker !== ticker || run.accession !== accession) return reply({ error: "Shadow run not found" }, 404);
+  if (action === "checkpoint" || action === "resume") return handleShadowRecovery(request, env, run, action);
   if (action === "stop" && request.method === "POST") {
     await filingSessions(env)?.stop(runId);
     await env.SEC_FILINGS.put(`research-shadow/${runId}/failed.json`, JSON.stringify({ status: "stopped", reason: "Stopped by administrator", at: new Date().toISOString() }));

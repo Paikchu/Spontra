@@ -29,7 +29,7 @@ import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
-import { readPreview, readPublishedArtifact, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { readPreview, readPublishedArtifact, readArtifactEdition, artifactId, type ArtifactStoreEnv } from "../artifact/store.ts";
 import { stageAvailable } from "../stage/access.ts";
 import { listPublicResearch, readPublicResearch } from "../public-research/store.ts";
 
@@ -222,8 +222,16 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (await hidden("filings", detail.ticker)) return dataResponse(request, { ...detail, artifact: null, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
       // The filing's report as an artifact, when the filing path composed one (docs/analysis-html-artifact.md); the summary stays for older readers.
-      const artifact = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber, locale);
-      return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
+      const edition = url.searchParams.get("artifactVersion"), editionHash = url.searchParams.get("artifactHash");
+      const exactEdition = edition !== null || editionHash !== null;
+      if (exactEdition && (!edition || !/^[1-9]\d{0,8}$/.test(edition) || !editionHash || !/^[0-9a-f]{64}$/.test(editionHash))) return errorResponse("FILING_NOT_FOUND", "Filing report edition not found.");
+      // Legacy reportVersion selects the saved SEC summary, not an artifact edition. Never combine it with today's artifact.
+      const artifact = exactEdition
+        ? await readArtifactEdition(env as unknown as ArtifactStoreEnv, artifactId("filing-report", detail.ticker, detail.filing.accessionNumber), Number(edition), locale, { requirePublicationProof: true })
+        : url.searchParams.has("reportVersion") || url.searchParams.has("reportDate") ? null
+        : await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber, locale);
+      if (exactEdition && (!artifact || (artifact.sourceHash ?? artifact.hash) !== editionHash)) return errorResponse("FILING_NOT_FOUND", "Filing report edition not found.");
+      return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } }, artifact?.filingImpact ? "no-store" : "cacheable");
     }
     case "artifact": {
       if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");

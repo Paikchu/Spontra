@@ -27,18 +27,25 @@ import { blockText, openComposer, registerSource, sentencesOf, type ComposerStat
 import { readPublishedDocument, readWorkState, saveWorkState } from "../artifact/store.ts";
 import type { ArtifactDocument } from "../../../../shared/analysis-contract/artifact.ts";
 import { filingSemanticAudit } from "./semantic-audit.ts";
+import { shadowResumeEnvironment } from "./shadow-budget.ts";
+import { SHADOW_RESUME_CALLS } from "./shadow-resume.ts";
+import { sha256 } from "../sha256.ts";
+import { saveFilingImpact } from "./impact-publication.ts";
+import type { ShadowContextExtension } from "./shadow-context.ts";
 
 /** What the session is rebuilt from after an eviction. */
-export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string };
-export type FilingSpec = { shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
+export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; checkpoint: string; checkpointHash?: string };
+export type FilingSpec = { shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
 type FilingState = WebToolState & ResearchContextState & { composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
 
-export async function readFilingCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string, material: MaterialRef): Promise<FilingState> {
+export async function readFilingCheckpoint(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string, material: MaterialRef, expectedHash?: string): Promise<FilingState> {
   const object = await env.SEC_FILINGS.get(key);
   if (!object) throw new Error(`FILING_CHECKPOINT_MISSING:${key}`);
-  const checkpoint = z.object({ material: z.object({ ticker: z.string(), accession: z.string(), version: z.string() }), state: z.string() }).parse(JSON.parse(await object.text()));
+  const body = await object.text();
+  if (expectedHash && await sha256(body) !== expectedHash) throw new Error("FILING_CHECKPOINT_HASH_MISMATCH");
+  const checkpoint = z.object({ material: z.object({ ticker: z.string(), accession: z.string(), version: z.string() }), state: z.string() }).parse(JSON.parse(body));
   if (checkpoint.material.ticker !== material.ticker || checkpoint.material.accession !== material.accession || checkpoint.material.version !== material.version) throw new Error("FILING_CHECKPOINT_MATERIAL_MISMATCH");
   return unpackState<FilingState>(checkpoint.state);
 }
@@ -100,6 +107,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
   const setup: ComposerSetup<FilingState> = {
     publicationMode: spec.shadow ? "shadow" : undefined,
     onShadow: async (state, published) => {
+      await saveFilingImpact(env, { spec, version: published.version, hash: published.hash, work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } });
       await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/validated.json`, JSON.stringify({ spec, ...published, validatedAt: new Date().toISOString(), researchUses: state.researchUses ?? [], work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } }));
     },
     env, chart: null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns, settlement: "agent",
@@ -120,6 +128,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     },
     onPublish: async (state, published) => {
       if (!spec.shadow && await isPilotMaterial(env, ticker, accession)) throw new Error("Material reserved for explicit shadow review; normal publication blocked");
+      if (!spec.shadow) await saveFilingImpact(env, { spec, version: published.version, hash: published.hash, work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } });
       const now = new Date().toISOString();
       const headline = state.composer.blocks.find(b => b.id === "summary")?.title || state.composer.artifact.title;
       const summary = filingSummary(filing, { headline, text: published.text, ...(state.category ? { category: state.category } : {}) }, now);
@@ -148,7 +157,13 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     concurrent: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript", "read_evidence", "list_leads", "read_block", "outline", "view_issue"],
     system: () => profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}`,
     open: () => {
-      if (resumed) return resumed;
+      if (resumed) {
+        if (spec.shadow && spec.shadowContextExtension) {
+          resumed.publicResearchRead = false;
+          delete resumed.composer.researchContext;
+        }
+        return resumed;
+      }
       const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, web: {} };
       if (!base) return state;
       // The published report is the document the session opens on: its blocks stand as they were reviewed, and only
@@ -184,17 +199,22 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
 
 /** Rebuilds the session from its spec, on start and after an eviction. */
 export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<PiLoaded> {
+  env = await shadowResumeEnvironment(env, spec);
   if (!spec.shadow && await isPilotMaterial(env, spec.ticker, spec.filing.accessionNumber)) throw new Error("Material reserved for explicit shadow review; normal analysis blocked");
-  const profile = profileById(spec.profile);
+  const baseProfile = profileById(spec.profile);
+  const profile = spec.shadow && spec.mode === "resume" ? { ...baseProfile, turns: SHADOW_RESUME_CALLS } : baseProfile;
   const store = env as unknown as Parameters<typeof readPublishedDocument>[0];
   const document = spec.mode === "revise" && profile.id === "periodic" ? await readPublishedDocument(store, "filing-report", spec.ticker, spec.filing.accessionNumber).catch(() => null) : null;
   const snapshot = await readMaterialSnapshot(env, spec.material);
-  const resumed = spec.mode === "resume" ? await readFilingCheckpoint(env, spec.checkpoint, snapshot.ref) : null;
+  const resumed = spec.mode === "resume" ? await readFilingCheckpoint(env, spec.checkpoint, snapshot.ref, spec.checkpointHash) : null;
   const work = document ? await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) : null;
   const base = document && work?.material?.version === spec.material.version ? { document, work } : null;
   return {
     recipe: filingRecipe(env, spec, profile, snapshot, base, resumed), input: spec, effort: spec.shadow ? spec.shadowEffort ?? profile.reasoning : profile.reasoning, model: spec.shadow ? spec.shadowModel ?? modelFor(env, "filing") : modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },
     ...(spec.shadow ? { strictBudget: true as const, reserve: async () => {
+      if (env.MODEL_REQUEST_GATE) {
+        try { await env.MODEL_REQUEST_GATE(); return true; } catch { return false; }
+      }
       const reserved = await env.DB!.prepare(`UPDATE sec_cache SET payload=json_set(payload,'$.callsReserved',COALESCE(json_extract(payload,'$.callsReserved'),0)+1)
         WHERE cache_key=? AND COALESCE(json_extract(payload,'$.callsReserved'),0)<COALESCE(json_extract(payload,'$.maxCalls'),140)
         RETURNING cache_key`).bind(`research-shadow:${spec.sessionId}`).first();

@@ -256,9 +256,10 @@ export async function loadArtifact(ticker:string,kind:string,fetcher:typeof fetc
  return body.artifact&&typeof body.artifact.html==="string"&&body.artifact.ticker===ticker?body.artifact:null;
 }
 const artifactSettled=(artifact:PublishedArtifact)=>!artifact.translation||artifact.translation.status==="ready";
-export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDetail|null>{
+export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null,edition:{artifactVersion:string;artifactHash:string}|null=null):Promise<PublicFilingDetail|null>{
  if(!ACCESSION.test(accession))return null;
-  const query=snapshot?"?"+new URLSearchParams(snapshot):"";
+  const params=new URLSearchParams({...snapshot,...edition});
+  const query=params.size?"?"+params:"";
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/filings/${accession}${query}`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(response.status===404)return null;
   if(!response.ok)throw new Error("Filing detail source unavailable");
@@ -467,7 +468,7 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang","rev","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","artifactVersion","artifactHash","lang","rev","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
   allowed.add("schema");
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
@@ -517,9 +518,11 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
    if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
-    const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
+    const artifactVersion=url.searchParams.get("artifactVersion"),artifactHash=url.searchParams.get("artifactHash");
+    if((artifactVersion!==null||artifactHash!==null)&&(!artifactVersion||!/^[1-9]\d{0,8}$/.test(artifactVersion)||!artifactHash||!/^[0-9a-f]{64}$/.test(artifactHash)))return json({error:"Not found"},404);
+    const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale,artifactVersion&&artifactHash?{artifactVersion,artifactHash}:null);
     if(!body)return json({error:"Not found"},404);
-    const response=json(body);const canCache=!body.artifact||artifactSettled(body.artifact);if(!canCache)response.headers.set("cache-control","no-store");if(cache&&canCache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
+    const response=json(body);const canCache=!body.artifact?.filingImpact&&(!body.artifact||artifactSettled(body.artifact));if(!canCache)response.headers.set("cache-control","no-store");if(cache&&canCache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }

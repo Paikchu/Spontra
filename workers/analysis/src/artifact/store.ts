@@ -5,6 +5,9 @@ import { sha256 } from "../sha256.ts";
 import { documentHtml } from "./document.ts";
 import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { contentPublishedStatement } from "../publication/publish.ts";
+import { readFilingImpact } from "../filing-analysis/impact-publication.ts";
+import { readPublicResearch } from "../public-research/store.ts";
+import { publicClaimUsable } from "../../../../shared/analysis-runtime/public-research.ts";
 
 /**
  * Artifact persistence (docs/analysis-html-artifact.md §7.7, §8): every draft the visual review renders and every
@@ -57,7 +60,7 @@ export async function saveVersion(env: ArtifactStoreEnv, document: Omit<Artifact
   await db.batch([
     db.prepare(`INSERT INTO analysis_artifacts (artifact_id, kind, ticker, subject, title, updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(artifact_id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`).bind(id, full.kind, full.ticker, full.subject, full.title, at),
-    db.prepare("INSERT INTO analysis_artifact_versions (artifact_id, version, status, r2_key, hash, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, next, status, key, hash, runId, at),
+    db.prepare("INSERT INTO analysis_artifact_versions (artifact_id, version, status, r2_key, hash, run_id, created_at) VALUES (?, ?, 'draft', ?, ?, ?, ?)").bind(id, next, key, hash, runId, at),
   ]);
   return { version: next, hash, html };
 }
@@ -67,9 +70,17 @@ export function publishStatements(env: ArtifactStoreEnv, kind: ArtifactKind, tic
   const db = env.DB!;
   const id = artifactId(kind, ticker, subject);
   return [
+    // A legacy current pointer proves actual publication. Preserve that proof before moving it; never backfill unknown old rows.
+    db.prepare(`INSERT INTO analysis_artifact_checks(artifact_id,version,stage,round,result,created_at)
+      SELECT a.artifact_id,a.published_version,'publication',0,json_object('hash',a.published_hash,'legacyCurrent',1),COALESCE(a.published_at,a.updated_at)
+      FROM analysis_artifacts a JOIN analysis_artifact_versions v ON v.artifact_id=a.artifact_id AND v.version=a.published_version AND v.hash=a.published_hash
+      WHERE a.artifact_id=? AND NOT EXISTS(SELECT 1 FROM analysis_artifact_checks p WHERE p.artifact_id=a.artifact_id AND p.version=a.published_version AND p.stage='publication' AND json_extract(p.result,'$.hash')=a.published_hash)`).bind(id),
     db.prepare("UPDATE analysis_artifact_versions SET status = 'superseded' WHERE artifact_id = ? AND status = 'published'").bind(id),
     db.prepare("UPDATE analysis_artifact_versions SET status = 'published' WHERE artifact_id = ? AND version = ? AND hash = ?").bind(id, version, hash),
     db.prepare("UPDATE analysis_artifacts SET published_version = ?, published_hash = ?, published_at = ?, degraded = ?, updated_at = ? WHERE artifact_id = ?").bind(version, hash, at, JSON.stringify(degraded), at, id),
+    db.prepare(`INSERT INTO analysis_artifact_checks(artifact_id,version,stage,round,result,created_at)
+      SELECT artifact_id,version,'publication',0,json_object('hash',hash),? FROM analysis_artifact_versions
+      WHERE artifact_id=? AND version=? AND hash=?`).bind(at, id, version, hash),
     contentPublishedStatement(db, ticker, at),
   ];
 }
@@ -91,18 +102,26 @@ export async function readPublishedArtifact(env: ArtifactStoreEnv, kind: Artifac
 }
 
 /** A reader's saved report keeps the exact source edition even after its current publication changes. */
-export async function readArtifactEdition(env: ArtifactStoreEnv, id: string, version: number, locale?: Locale | null): Promise<PublishedArtifact | null> {
-  const row = await env.DB!.prepare(`SELECT COALESCE(CASE WHEN a.published_version = v.version THEN a.published_at END, v.created_at) published_at
+export async function readArtifactEdition(env: ArtifactStoreEnv, id: string, version: number, locale?: Locale | null, options: { requirePublicationProof?: boolean } = {}): Promise<PublishedArtifact | null> {
+  const proof = options.requirePublicationProof ? ` AND ((a.published_version=v.version AND a.published_hash=v.hash) OR EXISTS(
+    SELECT 1 FROM analysis_artifact_checks p WHERE p.artifact_id=v.artifact_id AND p.version=v.version AND p.stage='publication' AND json_extract(p.result,'$.hash')=v.hash))` : "";
+  const row = await env.DB!.prepare(`SELECT v.hash,COALESCE(CASE WHEN a.published_version = v.version THEN a.published_at END, v.created_at) published_at
     FROM analysis_artifact_versions v JOIN analysis_artifacts a ON a.artifact_id = v.artifact_id
-    WHERE v.artifact_id = ? AND v.version = ? AND v.status IN ('published','superseded')`)
-    .bind(id, version).first<{ published_at: string }>();
+    WHERE v.artifact_id = ? AND v.version = ? AND v.status IN ('published','superseded')${proof}`)
+    .bind(id, version).first<{ hash: string; published_at: string }>();
   if (!row) return null;
   const stored = await readArtifactVersion(env, id, version);
-  return stored ? localizedEdition(env, id, stored, row.published_at, locale) : null;
+  if (!stored || stored.hash !== row.hash || options.requirePublicationProof && await sha256(`${stored.html}\n${stored.css}`) !== row.hash) return null;
+  return localizedEdition(env, id, stored, row.published_at, locale);
 }
 
 export async function localizedEdition(env: ArtifactStoreEnv, id: string, stored: StoredArtifact, at: string, locale?: Locale | null): Promise<PublishedArtifact> {
   const original = toPublished(id, stored, at);
+  if (original.kind === "filing-report") {
+    original.sourceHash = stored.hash;
+    original.filingImpact = await readFilingImpact(env, id, original.version, stored.hash);
+    original.filingImpactState = "published";
+  }
   if (original.researchContext) {
     const freshness = await companyResearchDependencyStatus(env, `${id}:v${stored.document.version}`).catch(() => ({ status: "unavailable" as const }));
     original.researchFreshness = freshness.status;
@@ -123,7 +142,7 @@ export async function localizedEdition(env: ArtifactStoreEnv, id: string, stored
         const translation: NonNullable<PublishedArtifact["translation"]> = translated?.status === "ready"
           ? { locale: "zh-CN", status: "ready" }
           : { locale: "zh-CN", status: translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 };
-        return { ...toPublished(id, edition, publishedAt), ...(stored.document.kind === "dossier" && dossierPresentation(stored.document).status === "incomplete" ? { title: "研究尚未完成" } : {}), researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
+        return { ...toPublished(id, edition, publishedAt), ...(stored.document.kind === "dossier" && dossierPresentation(stored.document).status === "incomplete" ? { title: "研究尚未完成" } : {}), sourceHash: original.sourceHash, filingImpact: original.filingImpact, filingImpactState: original.filingImpactState, researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
       }
     }
   }
@@ -195,11 +214,26 @@ export async function readPreview(env: ArtifactStoreEnv, token: string, now = Da
     const claim = JSON.parse(new TextDecoder().decode(bytes(body))) as { a: string; v: number; e: number; l?: "zh-CN" };
     if (!(claim.e > now)) return null;
     let stored = await readArtifactVersion(env, claim.a, claim.v);
+    const canonical = stored;
     if (stored && claim.l === "zh-CN") {
       const translated = await readArtifactTranslation(env, claim.a, claim.v, stored.hash);
       const object = translated?.r2_key ? await env.SEC_FILINGS.get(translated.r2_key) : null;
       stored = object ? { ...JSON.parse(await object.text()) as Stored, createdAt: translated!.updated_at } : null;
     }
-    return stored ? toPublished(claim.a, stored, stored.createdAt) : null;
+    if (!stored || !canonical) return null;
+    const artifact = toPublished(claim.a, stored, stored.createdAt);
+    if (artifact.kind === "filing-report") {
+      artifact.sourceHash = canonical.hash;
+      artifact.filingImpact = await readFilingImpact(env, claim.a, claim.v, canonical.hash);
+      artifact.filingImpactState = "preview";
+      // A preview has no published dependency rows yet. Check the frozen adopted claims themselves.
+      artifact.researchContext = canonical.document.researchContext;
+      artifact.researchFreshness = "valid";
+      for (const use of artifact.researchContext?.uses ?? []) if (use.decision === "adopted") {
+        const source = await readPublicResearch(env, use.reportId, { version: use.version });
+        if (!source.report || !publicClaimUsable(source.report, use.claimId)) artifact.researchFreshness = "review_required";
+      }
+    }
+    return artifact;
   } catch { return null; }
 }

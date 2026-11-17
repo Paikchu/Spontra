@@ -16,3 +16,22 @@
 .valuation-adjustment-control form, .valuation-adjustment-control label { display: grid; gap: 8px; }
 .valuation-adjustment-control select, .valuation-adjustment-control input { min-width: 0; width: 100%; box-sizing: border-box; }
 .price-impact-meta { overflow-wrap: anywhere; }
+.filing-impact-chain { padding-block: 12px; border-bottom: 1px solid var(--hairline); }
+.filing-impact-chain > p { margin: 6px 0; }
+.filing-impact-assumption { font-weight: 600; }
+.filing-impact-chain > small { color: var(--muted-foreground); }
+.filing-impact-calculation p { margin-block: 6px; }
+.filing-impact-calculation small { color: var(--muted-foreground); }
+.filing-impact pre, .filing-impact blockquote, .filing-impact dd { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+.filing-impact dl { grid-template-columns: minmax(0, 1fr); }
+.filing-impact summary, .filing-company-reference > summary { cursor: pointer; padding-block: 8px; }
+.filing-company-reference { margin-block: 12px; }
+.filing-impact-sources li { margin-block: 10px; }
+.filing-impact-chain--compact { padding-block: 8px; }
+.filing-impact-chain--compact > details > summary { padding-block: 2px; }
+.filing-impact-chain--compact small { display: block; color: var(--muted-foreground); }
+.filing-impact-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; }
+.filing-impact-chain--compact > details[open] .filing-impact-preview { display: block; }
+@media (max-width: 640px) {
+  .filing-impact[data-compact="true"] .filing-impact-chain--compact:nth-of-type(n+2) { display: none; }
+}

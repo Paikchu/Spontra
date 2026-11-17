@@ -3,6 +3,8 @@ import { priceGuideOf } from "@/shared/analysis-runtime/valuation/price-guide";
 import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
 import { companyRequest } from "./company-request";
 import { PriceImpactSummary } from "./PriceImpactSummary";
+import { FilingImpactDetail } from "./FilingImpactSummary";
+import { filingImpactSelection } from "@/shared/analysis-runtime/filing-impact";
 import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { markContent } from "./vitals";
 import { Button } from "@/packages/web/src/ui/button";
@@ -594,7 +596,7 @@ function ValuationDocument({ ticker, valuation }: { ticker: string; valuation: V
 
 const versionMessages = messages({ loading: "Loading the saved valuation…", failed: "This saved valuation could not be loaded.", current: "Current valuation", saved: "Saved valuation", versions: "Research versions" }, { loading: "正在读取历史估值…", failed: "无法读取此历史估值。", current: "当前估值", saved: "历史估值", versions: "研究版本" });
 /** A shared summary link opens the exact immutable research version, with its original quote. */
-export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
+function CompanyValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
   const locale = useLocale();
   const [version, setVersion] = useState(() => typeof location === "undefined" ? null : new URLSearchParams(location.search).get("valuationVersion"));
   const [saved, setSaved] = useState<{ key: string; report: ValuationPublication | null; researchStatus?: ValuationResponse["researchStatus"] } | null>(null);
@@ -624,4 +626,14 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
     {version && <p className="val-banner">{versionMessages.saved} · {historical?.researchAsOf.slice(0, 10)} · <a href={`/companies/${encodeURIComponent(ticker)}?view=valuation`}>{versionMessages.current}</a></p>}
     <ValuationDocument ticker={ticker} valuation={shown} />
   </>;
+}
+
+export function ValuationPanel(props: { ticker: string; valuation: ValuationResponse }) {
+  const [selection, setSelection] = useState(() => filingImpactSelection(new URLSearchParams(location.search)));
+  useEffect(() => {
+    const changed = () => setSelection(filingImpactSelection(new URLSearchParams(location.search)));
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+  return selection ? <FilingImpactDetail {...props} selection={selection} /> : <CompanyValuationPanel {...props} />;
 }

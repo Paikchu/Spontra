@@ -166,6 +166,10 @@ export type ArtifactTranslation =
 
 /** A published artifact as the map reads it: the HTML the frame renders, the CSS compiled for its classes, and what it is. */
 export type PublishedArtifact = {
+  /** Canonical source identity is preserved when the displayed HTML is translated. */
+  sourceHash?: string;
+  filingImpact?: import("./filing-impact.ts").FilingImpactPublication | null;
+  filingImpactState?: "preview" | "published";
   researchContext?: ArtifactResearchContext;
   researchFreshness?: "valid" | "review_required" | "unavailable";
   id: string;

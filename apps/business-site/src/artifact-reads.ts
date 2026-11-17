@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 import { useLocale } from "@/packages/web/src/i18n";
 import { COMPANY_READ_SCHEMA } from "./company-opening";
@@ -8,19 +8,28 @@ import { COMPANY_READ_SCHEMA } from "./company-opening";
  * artifact's place for this one subject, so the review sees the draft in the real stage.
  */
 /** `subject` "*" takes any draft of the kind, as the stage does for its conversation reports. */
-export function usePreview(kind: PublishedArtifact["kind"], subject: string | null): PublishedArtifact | null {
-  const [token] = useState(() => new URLSearchParams(location.search).get("artifact-preview"));
-  const [draft, setDraft] = useState<PublishedArtifact | null>(null);
+const subscribeRoute = (changed: () => void) => { window.addEventListener("popstate", changed); window.addEventListener("spontra:filing-navigation", changed); return () => { window.removeEventListener("popstate", changed); window.removeEventListener("spontra:filing-navigation", changed); }; };
+const routeSearch = () => location.search;
+export function usePreviewRead(kind: PublishedArtifact["kind"], subject: string | null, ticker?: string): { artifact: PublishedArtifact | null; status: "none" | "loading" | "ready" | "failed"; token: string | null } {
+  const search = useSyncExternalStore(subscribeRoute, routeSearch, () => "");
+  const token = new URLSearchParams(search).get("artifact-preview");
+  const key = JSON.stringify([token, kind, subject, ticker]);
+  const [draft, setDraft] = useState<{ key: string; artifact: PublishedArtifact | null } | null>(null);
   useEffect(() => {
-    if (!token || !subject) return;
+    if (token === null || !subject) return;
     const controller = new AbortController();
     fetch(`/api/business/v1/artifact-preview/${encodeURIComponent(token)}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<{ artifact: PublishedArtifact }> : null)
-      .then(body => { if (body?.artifact && body.artifact.kind === kind && (subject === "*" || body.artifact.subject === subject)) setDraft(body.artifact); })
-      .catch(() => undefined);
+      .then(body => { if (!controller.signal.aborted) { const artifact = body?.artifact; setDraft({ key, artifact: artifact && artifact.kind === kind && (subject === "*" || artifact.subject === subject) && (!ticker || artifact.ticker === ticker) ? artifact : null }); } })
+      .catch(() => { if (!controller.signal.aborted) setDraft({ key, artifact: null }); });
     return () => controller.abort();
-  }, [token, kind, subject]);
-  return draft?.kind === kind && (subject === "*" || draft.subject === subject) ? draft : null;
+  }, [token, kind, subject, ticker, key]);
+  if (token === null || !subject) return { artifact: null, status: "none", token };
+  if (draft?.key !== key) return { artifact: null, status: "loading", token };
+  return { artifact: draft.artifact, status: draft.artifact ? "ready" : "failed", token };
+}
+export function usePreview(kind: PublishedArtifact["kind"], subject: string | null): PublishedArtifact | null {
+  return usePreviewRead(kind, subject).artifact;
 }
 
 /**

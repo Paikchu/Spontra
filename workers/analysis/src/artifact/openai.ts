@@ -3,7 +3,7 @@ import type { ChatCompletion, ChatCompletionContentPart, ChatCompletionCreatePar
 import { aiUsageFromMetrics, recordAiUsage } from "../ai-runs/usage.ts";
 import { reasoningEffort } from "../pi/reasoning.ts";
 
-export type JudgeEnv = { OPENAI_API_KEY?: string; OPENAI_REVIEW_MODEL?: string; DB?: D1Database };
+export type JudgeEnv = { OPENAI_API_KEY?: string; OPENAI_REVIEW_MODEL?: string; DB?: D1Database; MODEL_REQUEST_GATE?: () => Promise<void> };
 export type ImageInput = { mediaType: "image/jpeg" | "image/png"; base64: string };
 export type JudgeCall = {
   stage: string; system: string; text: string; images?: ImageInput[];
@@ -19,7 +19,9 @@ export const judgeConfigured = (env: JudgeEnv) => Boolean(env.OPENAI_API_KEY && 
 export async function judge<T>(env: JudgeEnv, call: JudgeCall): Promise<T> {
   const apiKey = env.OPENAI_API_KEY, model = env.OPENAI_REVIEW_MODEL;
   if (!apiKey || !model) throw new JudgeUnavailable("OPENAI_API_KEY and OPENAI_REVIEW_MODEL are required");
-  const client = new OpenAI({ apiKey, maxRetries: call.maxRetries ?? 2, timeout: call.timeoutMs ?? 5 * 60_000 });
+  const client = new OpenAI({ apiKey, maxRetries: call.maxRetries ?? 2, timeout: call.timeoutMs ?? 5 * 60_000,
+    ...(env.MODEL_REQUEST_GATE ? { fetch: async (input: RequestInfo | URL, init?: RequestInit) => { await env.MODEL_REQUEST_GATE!(); return fetch(input, init); } } : {}),
+  });
   const started = Date.now();
   const content: ChatCompletionContentPart[] = [
     ...(call.images ?? []).map((image): ChatCompletionContentPart => ({ type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.base64}` } })),

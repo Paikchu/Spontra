@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-11-17T02:04:36.240Z",
+  "savedReceipt": {
+    "saved": true,
+    "id": "crwv-ai-cloud-business",
+    "version": "a4c25679111f23340fc7b18fc6f77a3703ab467369f27e6f17b99c2868bfd119"
+  },
+  "exposure": {
+    "id": "crwv-ai-cloud-business",
+    "version": "a4c25679111f23340fc7b18fc6f77a3703ab467369f27e6f17b99c2868bfd119",
+    "companyId": "CRWV",
+    "segmentId": null,
+    "industryId": "ai-cloud",
+    "relation": "industry",
+    "regions": [
+      "United States"
+    ],
+    "validFrom": "2026-11-17T02:02:22.775Z",
+    "validUntil": null,
+    "source": {
+      "id": "crwv-business-ai-cloud-source",
+      "canonicalId": "sec:1769628:0001769628-26-000465:note1-business",
+      "uri": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm",
+      "title": "CoreWeave 2026Q3 10-Q · Note 1 business description",
+      "locator": "Note 1, Organization and Description of Business; crwv-10q.txt physical line3717; publication day has day precision, UTC midnight normalized without an intraday claim",
+      "excerpt": "CoreWeave, Inc. (together with its subsidiaries, the \"Company\" or \"CoreWeave\"), was originally formed as a Delaware limited liability company in 2017 and then converted to a Delaware corporation in 2018. The Company is headquartered in Livingston, New Jersey. The Company is a modern cloud infrastructure technology company that offers the CoreWeave Cloud Platform that consists of proprietary software and cloud services that deliver the automation and efficiency needed to manage complex artificial intelligence (\"AI\") infrastructure at scale.",
+      "contentHash": "9db9b45618ab2f8f1228650ce0c8e4388ebd0d44b35d85d7fd6dec176baddaa8",
+      "revision": "0001769628-26-000465:note1-business:2026-09-30",
+      "publishedAt": "2026-11-12T00:00:00.000Z",
+      "availableAt": "2026-11-12T00:00:00.000Z",
+      "collectedAt": "2026-11-17T02:02:22.775Z",
+      "observationPeriod": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "usage": "public",
+      "authorization": "Public SEC filing; exact primary description checked directly. Qualitative AI-cloud business relation only; no market share, revenue allocation or geographic weight inferred."
+    },
+    "weight": null,
+    "weightBasis": null,
+    "status": "verified"
+  },
+  "readback": {
+    "mappingVersions": [
+      "crwv-ai-cloud-business:a4c25679111f23340fc7b18fc6f77a3703ab467369f27e6f17b99c2868bfd119"
+    ],
+    "reports": [
+      {
+        "reportId": "macro-us-usd",
+        "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+        "type": "macro",
+        "publishedAt": "2026-11-16T23:20:54.257Z",
+        "exposureIds": []
+      },
+      {
+        "reportId": "industry-ai-cloud",
+        "version": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d",
+        "type": "industry",
+        "publishedAt": "2026-11-17T01:44:27.140Z",
+        "exposureIds": [
+          "crwv-ai-cloud-business"
+        ]
+      }
+    ],
+    "gaps": []
+  },
+  "parentTaskContextUnchanged": true,
+  "companyReportGenerated": false,
+  "newPaidGeneration": false
+}

@@ -8,7 +8,7 @@ import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { PiHost, type PiLoader } from "../pi/host.ts";
 import { piModelIds } from "../pi/model.ts";
 import type { PiRuns } from "../pi/runs.ts";
-import { filingLoader } from "../filing-analysis/recipe.ts";
+import { filingLoader, type FilingSpec } from "../filing-analysis/recipe.ts";
 import { BUSY_RECHECK_MS, isBusy, lostWake } from "./wakes.ts";
 import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
@@ -47,7 +47,15 @@ export class TaskRunner extends Agent<Env, RunView> {
     scheduleRecovery: () => this.schedule(1, "recoverPiSessions"),
   });
   // PiHarness.onStart opens/resumes sessions. A terminated object must stay inert even on a cold admin read.
-  private readonly piInstalled = this.storedRun()?.status === "terminated" ? null : this.lifecycle.use(this.pi.harness);
+  private readonly piInstalled = this.storedRun()?.status === "terminated" || this.endedFilingShadow() ? null : this.lifecycle.use(this.pi.harness);
+
+  /** A cold read of a naturally ended standalone shadow must not mount the model harness. */
+  private endedFilingShadow(): boolean {
+    const sql = this.ctx.storage.sql;
+    if (this.storedRun() || !sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='pi_bindings'").toArray().length) return false;
+    const rows = sql.exec<{ kind: string; spec: string; active: number }>("SELECT kind,spec,active FROM pi_bindings").toArray();
+    return rows.length > 0 && rows.every(row => row.active === 0 && row.kind === "filing" && (JSON.parse(row.spec) as FilingSpec).shadow === true);
+  }
 
   private storedRun(): RunRow | undefined {
     const sql = this.ctx.storage.sql;
@@ -113,6 +121,17 @@ export class TaskRunner extends Agent<Env, RunView> {
 
   /** Starts a Pi session that runs on its own; this returns as soon as Pi has stored the input. */
   async startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void> { await this.pi.start(kind, spec, opening, { operationId }); }
+
+  /** SQL only. Export the exact, naturally ended filing session; never recover or hydrate it. */
+  // Keep this synchronous: Agents SDK auto-starts lifecycle for custom async RPC methods.
+  readFilingShadowSession(runId: string, expected: FilingSpec) {
+    if (this.storedRun()) throw new Error("Shadow storage export requires a standalone filing session");
+    if (expected.shadow !== true || expected.sessionId !== runId || expected.jobId !== runId || expected.ticker !== expected.filing.ticker || expected.ticker !== expected.material.ticker || expected.filing.accessionNumber !== expected.material.accession) throw new Error("Shadow session identity mismatch");
+    const session = this.pi.readEndedSession(`${runId}:shadow`);
+    if (!session) return null;
+    if (session.kind !== "filing" || session.operationId !== `${runId}:shadow` || JSON.stringify(session.spec) !== JSON.stringify(expected)) throw new Error("Stored shadow specification does not match admitted run");
+    return session;
+  }
 
   /** Legacy stopped-run export: only SQL reads; deliberately independent of report()/status() recovery. */
   async readPublicResearchSession(runId: string, stageName: string) {

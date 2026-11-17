@@ -51,6 +51,8 @@ export type TagIndex = {
 };
 
 export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
+  /** Installed only inside a claimed filing-shadow continuation; reserves each auxiliary model HTTP send. */
+  MODEL_REQUEST_GATE?: () => Promise<void>;
   /** The Pi sessions of the durable run executing this task (durable-runs/runner.ts); absent elsewhere. */
   PI?: import("./pi/runs.ts").PiRuns;
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
@@ -267,7 +269,8 @@ async function requestWorkerSecModelContent(
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   // Keepalive bytes count as liveness while the model is reasoning.
   let liveAt = Date.now();
-  const client = modelClient(connected?.apiKey || apiKey, connected?.url || DEEPSEEK_BASE_URL, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
+  const gatedFetch: typeof fetch = env.MODEL_REQUEST_GATE ? async (input, init) => { await env.MODEL_REQUEST_GATE!(); return fetcher(input, init); } : fetcher;
+  const client = modelClient(connected?.apiKey || apiKey, connected?.url || DEEPSEEK_BASE_URL, executionBudgetMs, gatedFetch, metrics, () => { liveAt = Date.now(); });
   try {
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: `${system}\nReturn one valid JSON object only.` },

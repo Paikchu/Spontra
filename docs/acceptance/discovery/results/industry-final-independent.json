@@ -1,0 +1,2071 @@
+{
+  "schemaVersion": "spontra.independent-industry-final-review.v2",
+  "reviewedAt": "2026-11-17T01:19:29.953Z",
+  "reviewer": "independent-assistant:industry_final_independent",
+  "conclusion": "ready_for_human_review_limited_coverage",
+  "approvedByHuman": false,
+  "humanApproval": false,
+  "humanReviewRequired": true,
+  "publishAllowed": false,
+  "publicationGate": "行业人工审核这份精确版本尚未完成；独立助手核查不代替用户签核。",
+  "reviewScope": "逐条27结论、65观测值、19注册摘录的独立来源/数字/口径/事实推断情景核查；非整份财报审计、全行业调查或人工批准。",
+  "artifact": {
+    "path": "/workspace/spontra-deliverables/AI云行业报告-待审核.json",
+    "fileSHA256": "e300596ada6354147630a950a6634019762eced6d6b186603d4b73fcb1504df9",
+    "markdownPath": "/workspace/spontra-deliverables/AI云行业报告-待审核.md",
+    "markdownSHA256": "0f4a4579f859d20fda4bdfbe221fe4bfbd7d2fa3f9da8b01889dd2991d73f59e",
+    "reportId": "industry-ai-cloud",
+    "inputFingerprint": "46d5fedbe0c377dfd6f1a12efdce9b3836013dd8cbdaf6dc0c68d2fa1b36d10e",
+    "prospectiveStoredVersion": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d",
+    "asOf": "2026-11-17T01:08:48.533Z",
+    "generatedAt": "2026-11-17T01:15:32.459Z",
+    "validUntil": "2026-11-24T00:00:00.000Z",
+    "modelVersion": "gpt-6.1-sol",
+    "coverage": "limited",
+    "counts": {
+      "claims": 27,
+      "observations": 65,
+      "sources": 19,
+      "sections": 7
+    },
+    "canonicalURLCount": 8,
+    "sourceIndependence": "19摘录对应8个canonicalURL；同发行人披露包、同FOMC声明和同SLOOS调查不因此成为多份独立印证。"
+  },
+  "sourceReconstruction": [
+    {
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "excerptSHA256": "a8ee6eddca48b9b8d53f62ffdc86a66e49428ea5a1a8add21c8e2050405b074d",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "excerptSHA256": "94b41c321c1540eb14d298dba41bf8cf2142fd2a52e24327396f29d5e7c5135c",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.cashflow",
+      "excerptSHA256": "bb6c272388b750fd74fbd69e426587119ac8157f2f2df6693005727d78d5a296",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.segment",
+      "excerptSHA256": "a3d5acb09250a78fcce7eeed5a611745f6b9e9434a26616bc20eee9bec4c539c",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.rpo",
+      "excerptSHA256": "b877db5503e6816bb9e928e18d565eb0c8d4c0672ba3b96c41d9543b46c40f66",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.swap",
+      "excerptSHA256": "79a78a62575b61a3fc66f1127c17f1ae72a3551d2cc3a40216a231ec93854895",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.debt",
+      "excerptSHA256": "cd2feebbf5ff011ff55477160a9f7a12cabe85842dd62e9f8b940628685a67be",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.citi",
+      "excerptSHA256": "6839ac0117633554928f9005e6af4e067038352f952ca9b21992444dca036ca5",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-discovery-pilot/nbis-126238-index.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.cashflow",
+      "excerptSHA256": "be20a38dad57350b0a2086efcfc850943417bb997847cda98eb77bf313ee1cd5",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.income",
+      "excerptSHA256": "e2a4600283fbbf7f32325a1a23cf45c10b5723c2b63707a8d68369cc40957947",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.contract",
+      "excerptSHA256": "8d8bfad8934903a938c98ddff483fef4bfbbc7ede35cb605791ba0e53d2b1918",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.swap",
+      "excerptSHA256": "0fcfa6baf4ecb0d24bd7c5473347596a571ada27818f2380c29cd3cdc6e8cb7f",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.liquidity",
+      "excerptSHA256": "0ee9796f3dddf6bace59001d10214b84368dc4ef0a38235fc9bda0fdbc84bf74",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        },
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-10q.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.crwv.release",
+      "excerptSHA256": "c140a8c0c02fe89c257b698b92693478c95497a871cea845c3c7a2dd8ce5724a",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "second, publisher NewsArticle JSON-LD datePublished",
+      "parts": [
+        {
+          "file": "/tmp/spontra-industry-continuation/crwv-earnings-release.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "s.nbis.arr",
+      "excerptSHA256": "76bf2d71f62a1f1478eda2370b7c655c2792b9c5d94e9b41053807d40c9e8561",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "day; UTC midnight is schema normalization, not an asserted release clock time",
+      "parts": [
+        {
+          "file": "/tmp/spontra-nbis-primary/shareholder.txt",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "sb8285e9fd68532ac56458145",
+      "excerptSHA256": "c8be9769ffc3b98dfcee9b571ae8d55e571456f89597c263b8b13a96fa42f241",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "timestamp inherited from published macro snapshot",
+      "parts": [
+        {
+          "file": "/tmp/spontra-macro-corrections/published-readback.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "audit-fomc-dissent",
+      "excerptSHA256": "7ed589c304d5cbde26cd20f77762f3b5c4352099352e248360821202155813b0",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "timestamp inherited from published macro snapshot",
+      "parts": [
+        {
+          "file": "/tmp/spontra-macro-corrections/published-readback.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "audit-sloos-table1",
+      "excerptSHA256": "24437e2fb5f00c1b70d16e0b34876acd27f92fed25ea93a9b5fd6eaa187b865a",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "timestamp inherited from published macro snapshot",
+      "parts": [
+        {
+          "file": "/tmp/spontra-macro-corrections/published-readback.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "sourceId": "audit-sloos",
+      "excerptSHA256": "06e19f252490d210a2e353b48aa546d67c1042dcc3b4eb4cd32c6407b4b4d9a6",
+      "excerptMatch": true,
+      "contentHashMatch": true,
+      "canonicalIdMatch": true,
+      "revisionMatch": true,
+      "metadataTimeMatches": true,
+      "availableByReportAsOf": true,
+      "publicationTimePrecision": "timestamp inherited from published macro snapshot",
+      "parts": [
+        {
+          "file": "/tmp/spontra-macro-corrections/published-readback.json",
+          "fileHashMatch": true,
+          "partHashMatch": true
+        }
+      ],
+      "status": "pass"
+    }
+  ],
+  "observationChecks": [
+    {
+      "observationId": "obs.nbis.rev.q3",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 973.8,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.rev.q3.prior",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 131.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2025-07-01",
+        "end": "2025-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.rev.9m",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 1938.4,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.rev.9m.prior",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 266.2,
+      "unit": "USD million",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.partner.q3",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 325.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.partner.9m",
+      "sourceId": "s9cc413e6e62e18815d32b85d",
+      "value": 409.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.ocf.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 4231.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.defrev.inc.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 7829,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.ar.inc.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 3333.9,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.capex.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 15430.7,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.investing.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": -15924,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.acq.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 251.6,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.financing.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 16618,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.conv.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 10087.5,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.treasury.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 3908.5,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.warrants.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 2000,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.termloan.9m",
+      "sourceId": "s.nbis.cashflow",
+      "value": 773.3,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.rate.sens.q",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 41,
+      "unit": "USD million per 100bps",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.rate.sens.9m",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 123,
+      "unit": "USD million per 100bps",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.fx.fwd.notional",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 2400,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.fx.fwd.sens",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 236,
+      "unit": "USD million per 10% adverse move",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.ccs.notional",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 2300,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.ccs.sens",
+      "sourceId": "s124117dc3a325e3f27bc29a1",
+      "value": 227,
+      "unit": "USD million per 10% adverse move",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.group.q3",
+      "sourceId": "s.nbis.segment",
+      "value": 980.8,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.group.9m",
+      "sourceId": "s.nbis.segment",
+      "value": 1962.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.cash.change",
+      "sourceId": "s.nbis.cashflow",
+      "value": 4919.5,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.option.proceeds",
+      "sourceId": "s.nbis.cashflow",
+      "value": 57.2,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.debt.fees",
+      "sourceId": "s.nbis.cashflow",
+      "value": 20.5,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.debt.repaid",
+      "sourceId": "s.nbis.cashflow",
+      "value": 21.5,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.other.financing",
+      "sourceId": "s.nbis.cashflow",
+      "value": 2,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.fx.cash",
+      "sourceId": "s.nbis.cashflow",
+      "value": -5.6,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.rpo",
+      "sourceId": "s.nbis.rpo",
+      "value": 38700,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.nbis.deferred.balance",
+      "sourceId": "s.nbis.rpo",
+      "value": 9409.2,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.rpo.24m.pct",
+      "sourceId": "s.nbis.rpo",
+      "value": 40,
+      "unit": "percent",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.loan.principal",
+      "sourceId": "s.nbis.debt",
+      "value": 751.8,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.loan.effective",
+      "sourceId": "s.nbis.debt",
+      "value": 7.6,
+      "unit": "percent",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.swap.sofr",
+      "sourceId": "s.nbis.swap",
+      "value": 3.9,
+      "unit": "percent",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.loan.margin",
+      "sourceId": "s.nbis.debt",
+      "value": 2.5,
+      "unit": "percentage points",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.citi.commitment",
+      "sourceId": "s.nbis.citi",
+      "value": 3500,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-10-22",
+        "end": "2026-10-22"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.nbis.arr.end",
+      "sourceId": "s.nbis.arr",
+      "value": 6400,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.ocf.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": 5638,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.capex.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": 23558,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.investing.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": -24710,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.financing.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": 21346,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.cash.change.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": 2274,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.defrev.cf.9m",
+      "sourceId": "s.crwv.cashflow",
+      "value": 3492,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.rev.q3",
+      "sourceId": "s.crwv.income",
+      "value": 3661,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.rev.9m",
+      "sourceId": "s.crwv.income",
+      "value": 8314,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-01-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.opinc.q3",
+      "sourceId": "s.crwv.income",
+      "value": 207,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.netloss.q3",
+      "sourceId": "s.crwv.income",
+      "value": -709,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.cash.end",
+      "sourceId": "s.crwv.cashflow",
+      "value": 4122,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.restricted.cash.end",
+      "sourceId": "s.crwv.cashflow",
+      "value": 1405,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.restricted.cash.noncurrent.end",
+      "sourceId": "s.crwv.cashflow",
+      "value": 877,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.available.facility",
+      "sourceId": "s.crwv.liquidity",
+      "value": 5653,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.nbis.cash.total.end",
+      "sourceId": "s.nbis.cashflow",
+      "value": 8641.1,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.rpo",
+      "sourceId": "s.crwv.contract",
+      "value": 132300,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.deferred.balance",
+      "sourceId": "s.crwv.contract",
+      "value": 10000,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.reclass",
+      "sourceId": "s.crwv.contract",
+      "value": 1900,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.rpo.24m.pct",
+      "sourceId": "s.crwv.contract",
+      "value": 36,
+      "unit": "percent",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.swap.notional",
+      "sourceId": "s.crwv.swap",
+      "value": 6787,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.backlog",
+      "sourceId": "s.crwv.release",
+      "value": 132500,
+      "unit": "USD million",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Explicit USD billion to USD million conversion, x1000; row/window manually checked"
+    },
+    {
+      "observationId": "obs.crwv.active.gw.lower",
+      "sourceId": "s.crwv.release",
+      "value": 1.7,
+      "unit": "GW",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs.crwv.contracted.gw.lower",
+      "sourceId": "s.crwv.release",
+      "value": 4.6,
+      "unit": "GW",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "exact numeric token; sign and window manually tied to the source row/paragraph"
+    },
+    {
+      "observationId": "obs:us:ffr:target-low:2026-10-28",
+      "sourceId": "sb8285e9fd68532ac56458145",
+      "value": 3.75,
+      "unit": "percent, lower bound of target range",
+      "period": {
+        "start": "2026-10-28",
+        "end": "2026-10-28"
+      },
+      "status": "pass",
+      "method": "Official target-range fraction 3-3/4 = 3.75%; upper bound 4% checked separately"
+    },
+    {
+      "observationId": "obs:us:sloos:net-tightening:large:2026q3",
+      "sourceId": "audit-sloos-table1",
+      "value": 1.6667,
+      "unit": "percent of responding banks",
+      "period": {
+        "start": "2026-07-01",
+        "end": "2026-09-30"
+      },
+      "status": "pass",
+      "method": "Official response counts (4 tightening - 3 easing) / 60 x100; rounded, not interest/spread movement"
+    }
+  ],
+  "arithmeticChecks": [
+    {
+      "check": "NBIS Q3 historical remainder",
+      "computed": "648.7",
+      "expected": "648.7",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS 9M historical remainder",
+      "computed": "1529.3",
+      "expected": "1529.3",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS full investing sum",
+      "computed": "-15924.0",
+      "expected": "-15924.0",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS full financing sum",
+      "computed": "16618.0",
+      "expected": "16618.0",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS capex less OCF",
+      "computed": "11199.6",
+      "expected": "11199.6",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS investing outflow less OCF",
+      "computed": "11692.9",
+      "expected": "11692.9",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS other net investing cash use",
+      "computed": "493.3",
+      "expected": "493.3",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS sum three cash activities",
+      "computed": "4925.1",
+      "expected": "4925.1",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS cash change after FX",
+      "computed": "4919.5",
+      "expected": "4919.5",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS deferred balance movement",
+      "computed": "7831.7",
+      "expected": "7831.7",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS omitted financing net items",
+      "computed": "13.2",
+      "expected": "13.2",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS omitted investing inflows",
+      "computed": "31.9",
+      "expected": "31.9",
+      "status": "pass"
+    },
+    {
+      "check": "CRWV capex less OCF",
+      "computed": "17920",
+      "expected": "17920",
+      "status": "pass"
+    },
+    {
+      "check": "CRWV investing outflow less OCF",
+      "computed": "19072",
+      "expected": "19072",
+      "status": "pass"
+    },
+    {
+      "check": "CRWV sum cash activities",
+      "computed": "2274",
+      "expected": "2274",
+      "status": "pass"
+    },
+    {
+      "check": "CRWV ending cash plus restricted cash",
+      "computed": "6404",
+      "expected": "6404",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS contractual hedge rate illustration only",
+      "computed": "6.4",
+      "expected": "6.4",
+      "status": "pass"
+    },
+    {
+      "check": "NBIS Q3 remainder growth percent",
+      "computed": "394.8131197559115179252479024",
+      "reportedRounded": "394.8",
+      "status": "pass",
+      "scope": "Historical arithmetic, not organic/recurring growth or forecast"
+    },
+    {
+      "check": "NBIS 9M remainder growth percent",
+      "computed": "474.4928625093914350112697220",
+      "reportedRounded": "474.5",
+      "status": "pass",
+      "scope": "Historical arithmetic, not organic/recurring growth or forecast"
+    },
+    {
+      "check": "NBIS Q3 partnership share percent",
+      "computed": "33.38467857876360649003902239",
+      "reportedRounded": "33.4",
+      "status": "pass",
+      "scope": "Historical arithmetic, not organic/recurring growth or forecast"
+    },
+    {
+      "check": "NBIS 9M partnership share percent",
+      "computed": "21.10503508047874535699546017",
+      "reportedRounded": "21.1",
+      "status": "pass",
+      "scope": "Historical arithmetic, not organic/recurring growth or forecast"
+    }
+  ],
+  "claimReviews": [
+    {
+      "claimId": "c.nbis.rev.q3.9m",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.segment"
+      ],
+      "claimSHA256": "a7b1868195be32e1a5108bee800788845339e934ab60a18bc2791b8ac8c29441",
+      "rationale": "完整903字符AI云原段与集团收入原段均已注册；973.8/131.1及1938.4/266.2、集团980.8/1962.1的业务与窗口分开；增长驱动保留为管理层归因。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.partner.nonrecurring",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d"
+      ],
+      "claimSHA256": "4779569411508347d7aea0da3e003b272e092794d37018cb3167f1448896192c",
+      "rationale": "325.1/409.1为各自窗口中已包含的非经常合作收入；原文未来仍有合作收入预期亦保留，不把非经常等同永久归零。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.growth.overstate",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d"
+      ],
+      "claimSHA256": "a3f8609f96fb69563cbc97e82e42bc736e32267835315afb19ca7a99ee66bb45",
+      "rationale": "独立复算648.7、1529.3及约394.8%/474.5%、33.4%/21.1%；明确只是历史构成算术，不命名正式经常性、有机增长或未来上限。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.ocf.advances",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.cashflow",
+        "s.nbis.rpo"
+      ],
+      "claimSHA256": "96a2604e75cf02015c5e3881d85b0b485bc44f7a7491c2906608f59f0c3a0a97",
+      "rationale": "4231.1 OCF、7829.0递延调整、3333.9应收占用与9409.2余额相符；余额变化7831.7未混作现金流调整，未将应收全部归入本期收入未收款。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.capex.investing",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.cashflow"
+      ],
+      "claimSHA256": "1cdfb6c35991d9397a02c533fa1e6482f0aa5a40b82e1c7253bb0d23e06e1e4e",
+      "rationale": "九个月现金购置15430.7与净投资流出15924.0分列；完整投资分项独立勾稽精确相符，不推稳态维护支出或回本。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.financing.mix",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.cashflow"
+      ],
+      "claimSHA256": "596b8702661f781fb8a64828d4f31a55651f02645f2e2c00b21d56c34fb69a14",
+      "rationale": "融资全表含期权57.2、贷款费20.5、还债21.5及其他2.0，净额16618.0完整对账；不把净额当gross或把可转现金直接当稀释股数。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.liquidity.sources",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.debt"
+      ],
+      "claimSHA256": "c7a3dac81a960d3169fde3c4795bb1eacae46bd1e100ea1a266c6e5ffdbb818e",
+      "rationale": "来源清单与Ex99.1流动性原段一致；751.8贷款本金与733.1账面额分开，不承诺未来渠道或全部现金自由可用。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.crwv.rate.sens",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s124117dc3a325e3f27bc29a1",
+        "s.crwv.swap"
+      ],
+      "claimSHA256": "75e93c56caf9fac72357ce2c2fd20006970542efc85398408f0741e40bf7a36e",
+      "rationale": "Item3历史3M/9M、100bp、41/123百万与Note3互换6787百万相符；明确是否已净计swap未知，不未来净年化或二次扣swap。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.crwv.fx.hedges",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s124117dc3a325e3f27bc29a1"
+      ],
+      "claimSHA256": "0feb1d4717253e863bce02e39b3494c501499bf6ca1152ab2df70455b2525df6",
+      "rationale": "2.4/2.3十亿美元约数及236/227百万为分别工具测试；保留发行人预期标的抵消，不合成463百万组合净损失。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.infer.funding.gap",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.cashflow"
+      ],
+      "claimSHA256": "c0134cd3b757e460a0fe4aa2dbdbb19f0a900a180f31dcc2333cd516a448e1bd",
+      "rationale": "现金购置减OCF11199.6、净投资流出减OCF11692.9、差493.3、三活动4925.1及汇率后4919.5均独立复算；非稳态或未来融资预测。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.infer.rate.channel",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.swap",
+        "s.nbis.debt",
+        "s124117dc3a325e3f27bc29a1",
+        "s.crwv.swap",
+        "sb8285e9fd68532ac56458145",
+        "audit-fomc-dissent"
+      ],
+      "claimSHA256": "5fe4d828e76b071f14d7892d6fe4914ad2164b4ccd7fa14ed9136fd4467d0e6c",
+      "rationale": "公司自身贷款/swap与CRWV口径缺口支持差异传导；政策区间不是SOFR或信用利差，不重算全部固定债；保留宏观原shockId。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.infer.fx.channel",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s124117dc3a325e3f27bc29a1"
+      ],
+      "claimSHA256": "4e09558fa49ddb6f4258e60f6aedf8911c73598f21b8453287afb438207c1bd3",
+      "rationale": "币种与工具信息由CRWV Item3支持；推断明确需同币种/同窗口的工具和标的净额，未把工具账面损失直接扣股权或外推NBIS。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scope.crwv.coverage",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s124117dc3a325e3f27bc29a1",
+        "s.crwv.cashflow",
+        "s.crwv.contract",
+        "s.crwv.swap",
+        "s.crwv.liquidity",
+        "s.crwv.release"
+      ],
+      "claimSHA256": "1eb43f36bafae07e89a5bd4d4344eba47ebcbcc44b5221d48f7afe3b772c5507",
+      "rationale": "列明实际已登记的现金流、合同、swap、风险、流动性及公告范围；逐笔债务、股数和单位经济仍列缺口，不声称审计整份10-Q。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scope.nbis.coverage",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.cashflow",
+        "s.nbis.segment",
+        "s.nbis.rpo",
+        "s.nbis.swap",
+        "s.nbis.debt",
+        "s.nbis.citi",
+        "s.nbis.arr"
+      ],
+      "claimSHA256": "c662a12cec8e44d371a40c3622621fc1476e500eb5a01b428894741a76070bad",
+      "rationale": "披露日11/12与财务窗口9/30分开；已登记文本范围可回溯；img002及候选转录不标人工通过，图表指标未进入跨公司量化。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scope.macro.gap",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "sb8285e9fd68532ac56458145",
+        "audit-fomc-dissent",
+        "audit-sloos-table1",
+        "audit-sloos"
+      ],
+      "claimSHA256": "a1a35cdd7817d1a9895a737755f2ba3f4cd047f3654b277e345f0cb13814618a",
+      "rationale": "精确绑定已发布7df9bcb8全版本与两条claim；3.75%-4.00%和(4-3)/60约1.67%正确，SLOOS为基本不变背景而非即时信用利差。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scope.comparability",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.contract",
+        "s.crwv.release",
+        "s.nbis.rpo",
+        "s.nbis.segment",
+        "s.crwv.cashflow",
+        "s.nbis.cashflow"
+      ],
+      "claimSHA256": "1a84115e51457b31a4e46758655a63c8b3a77aa5e98846edde468a4869e4e064",
+      "rationale": "132.3/132.5/38.7分别保留定义与期限排除；不相除为份额、统一倍数；平均/期末、active/contracted及自有/合作资本边界明确。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.crwv.cashflow",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.cashflow",
+        "s.crwv.income",
+        "s.crwv.liquidity"
+      ],
+      "claimSHA256": "031dc9d184b5b4d1ca685f5e468d9d544f8eebab31c13a632ec6aff71a94edc7",
+      "rationale": "GAAP收入/营业利润/净损失及9M现金流、受限现金与5653额度已对原表；17920/19072/2274/6404独立复算，预付不再叠加。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.crwv.rpo",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.contract",
+        "s.crwv.release"
+      ],
+      "claimSHA256": "eb3b316998b8515a046d634f0e3b689f41d60e3a1e48842ebd0cb0effd7df698",
+      "rationale": "RPO132.3、backlog132.5及36%/38%和余下月份由原附注/公告支持；19亿美元转列仅为可取消条件变化，不当退款/取消/冲回或自动减RPO。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.rpo",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.rpo"
+      ],
+      "claimSHA256": "1a6bdf224b55cac4574ab243890bf934b7c9a34492a9297a60308ec651414001",
+      "rationale": "38.7十亿美元、40%/40%、期限排除和全部归AI云均由附注支持；递延9409.2与未来1-5年确认分开，履约结转非新现金。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.power.units",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.release",
+        "s.nbis.arr",
+        "s9cc413e6e62e18815d32b85d"
+      ],
+      "claimSHA256": "7ae3600412719ce147fa70149201ca3d88aa742e80f0309657ce674234219e39",
+      "rationale": "公告为超过1.7/4.6GW，结构化定义亦标下限，不作精确平均可计费分母；NBIS合作方出资文本已登记，无每MW回本或全市场短缺推断。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.swap",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.swap",
+        "s.nbis.debt"
+      ],
+      "claimSHA256": "5d336e5364f5b428dfe8c676e1c795b4301a2716f2389011075280c87d80d5af",
+      "rationale": "原段固定1M SOFR加权3.9%、摊销匹配、2030-10-15到期，表中2.5%利差/7.60%有效利率及751.8本金相符；6.4%只为合同条款合计。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.citi",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s.nbis.citi"
+      ],
+      "claimSHA256": "8e656858aa7be919ffb1389ca84fe39a73dc204e1da26617c57317f920bfc9fd",
+      "rationale": "35亿美元、10/22、364天、2.75%-3.50%利差由期后附注支持；未把额度作为9/30余额、9M现金或已提款，实际使用与对冲缺口保留。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.nbis.arr",
+      "kind": "fact",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.nbis.arr"
+      ],
+      "claimSHA256": "dd23523003e2615d9c3636131c0f676c642efcc1da1b23eeaac179b0d21203ee",
+      "rationale": "股东信完整ARR段支持6.4十亿美元、单月年化及管理层衡量限制；325.1属季度，未作×4持续预测或从单月ARR机械扣除。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.infer.value",
+      "kind": "inference",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.contract",
+        "s.nbis.rpo",
+        "s.crwv.cashflow",
+        "s.nbis.cashflow",
+        "s.nbis.debt",
+        "s.nbis.swap",
+        "s124117dc3a325e3f27bc29a1",
+        "audit-sloos-table1",
+        "audit-sloos"
+      ],
+      "claimSHA256": "331af3281d97e9d93b242bc758f2389c8b0015dab73a015a30de24ee8a47d6d4",
+      "rationale": "从合同/交付到收入、成本、利润、现金、融资及股数的方向传导有前提；公司估值输入不足明确，不虚构目标价、概率或定价贡献。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scen.base",
+      "kind": "scenario",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.contract",
+        "s.nbis.rpo",
+        "s.crwv.release",
+        "s.crwv.cashflow",
+        "s.nbis.cashflow",
+        "s.nbis.swap",
+        "s124117dc3a325e3f27bc29a1"
+      ],
+      "claimSHA256": "8d717631fe83b7aaeef47a33afc72e908532178d6264601ee8a2cbe788124af2",
+      "rationale": "明确条件情景，非发行人指引或预测；合作收入不复制每季，履约和融资前提及成本/股数反证均保留，无概率或价格。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scen.down",
+      "kind": "scenario",
+      "status": "pass",
+      "sourceIds": [
+        "s.crwv.contract",
+        "s.nbis.rpo",
+        "s.crwv.cashflow",
+        "s.nbis.cashflow",
+        "s.nbis.swap",
+        "s.nbis.debt",
+        "s124117dc3a325e3f27bc29a1",
+        "s.crwv.swap",
+        "s9cc413e6e62e18815d32b85d"
+      ],
+      "claimSHA256": "6ca5b847009dde8f96bbf6ca04acd8c75f8e563f2d59b58864be563a6ff6e130",
+      "rationale": "资金不足与新融资利差上升仅为假设；递延结转非来源，退款耗现金；合作收入反事实固定其余项，不限制未来增速，不量化未知净利率冲击。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    },
+    {
+      "claimId": "c.scen.up",
+      "kind": "scenario",
+      "status": "pass",
+      "sourceIds": [
+        "s9cc413e6e62e18815d32b85d",
+        "s.crwv.release",
+        "s.crwv.cashflow",
+        "s.nbis.cashflow",
+        "s.nbis.swap",
+        "s.nbis.debt",
+        "s124117dc3a325e3f27bc29a1"
+      ],
+      "claimSHA256": "6b5611f242c0ccb93767718f07301a76350f848312870435ca6db8865726cad6",
+      "rationale": "改善需交付、单位经济和资金时点证据；合作收入再现不保证高增长，利率下降只作用真实未对冲重置/新融资，不把对冲抵消当保证。",
+      "scope": "Source and semantic checks by independent assistant; not human approval"
+    }
+  ],
+  "original11Issues": [
+    {
+      "id": "I01",
+      "originalPriority": "P0",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.nbis.rev.q3.9m",
+        "c.nbis.growth.overstate"
+      ],
+      "independentFinding": "完整收入摘录与集团/业务分列补齐；历史扣除与增长可复算，保持非正式经常性口径。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I02",
+      "originalPriority": "P0",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.scen.down",
+        "c.scen.base",
+        "c.scen.up",
+        "c.nbis.growth.overstate"
+      ],
+      "independentFinding": "三个条件情景均无无条件增速保证/上限；合作反事实显式固定其他收入和基数。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I03",
+      "originalPriority": "P0",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.scen.down",
+        "c.nbis.rpo",
+        "c.nbis.ocf.advances"
+      ],
+      "independentFinding": "下行情景与RPO/现金流解释均将履约结转、退款及新增预付分开；余额下降不再作为融资来源。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I04",
+      "originalPriority": "P0",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.nbis.swap",
+        "c.infer.rate.channel"
+      ],
+      "independentFinding": "新增贷款swap原段、会计/现金/合同利率区分；NBIS未知净敞口未量化。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I05",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.nbis.citi"
+      ],
+      "independentFinding": "Citi独立期后claim，10/22、9/30和9M分开，额度不当现金/未对冲提款。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I06",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.nbis.capex.investing",
+        "c.nbis.financing.mix"
+      ],
+      "independentFinding": "净投资与净融资完整现金表对账；原遗漏净项31.9及13.2均补入，不混gross。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I07",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.infer.funding.gap"
+      ],
+      "independentFinding": "11199.6现金购置缺口与11692.9净投资缺口、4925.1三活动与4919.5最终现金变化准确命名。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I08",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.nbis.ocf.advances"
+      ],
+      "independentFinding": "应收增加仅认作营运资金占用，未无证据归入本期已确认收入未收款。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I09",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.scope.crwv.coverage",
+        "c.scope.nbis.coverage",
+        "c.scope.comparability",
+        "c.crwv.rpo",
+        "c.nbis.rpo",
+        "c.power.units"
+      ],
+      "independentFinding": "增量原文已补现金流、RPO/合同、swap及产能边界；满足有限两公司基线，未声称全行业覆盖或可比单位经济。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I10",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.scope.macro.gap",
+        "c.infer.rate.channel",
+        "c.infer.value"
+      ],
+      "independentFinding": "绑定已发布宏观精确版本和两条适用事实，局部owner保持；宏观无需人工不等同用户已阅，行业仍待签核。",
+      "publicationApproval": false
+    },
+    {
+      "id": "I11",
+      "originalPriority": "P1",
+      "status": "corrected_in_limited_draft",
+      "claimIds": [
+        "c.crwv.fx.hedges",
+        "c.infer.fx.channel",
+        "c.scen.up"
+      ],
+      "independentFinding": "各工具236/227百万分别展示，未合成已验证组合净损失；预期抵消非保证。",
+      "publicationApproval": false
+    }
+  ],
+  "additionalChecks": [
+    {
+      "id": "I12",
+      "status": "pass",
+      "priority": "P0_if_misused",
+      "claimIds": [
+        "c.crwv.rate.sens",
+        "c.infer.rate.channel",
+        "c.scen.down",
+        "c.scen.up"
+      ],
+      "finding": "41/123百万仅作为披露历史窗口，净套保范围未明；未未来净年化、未二次扣swap。"
+    },
+    {
+      "id": "R01",
+      "status": "repaired_then_rechecked",
+      "priority": "P0_registered_evidence_gap",
+      "claimIds": [
+        "c.nbis.arr"
+      ],
+      "finding": "独立检查发现ARR段未进注册摘录，原因是PDF form-feed被splitlines当行。作者定向扩展原股东信摘录并采用物理LF行号；最终重提取与ARR事实核查通过。"
+    },
+    {
+      "id": "D01",
+      "status": "pass",
+      "finding": "宏观输入精确版本、两个claim及局部owner已核对；利率channel保留原shockId。稿件不分配数值冲击，未发生宏观/行业/公司重复计价。"
+    },
+    {
+      "id": "S01",
+      "status": "pass",
+      "finding": "base/downside/upside为条件场景，未设置概率、无依据置信区间、共同股价涨跌或虚构目标价。"
+    }
+  ],
+  "macroDependencies": {
+    "reportId": "macro-us-usd",
+    "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+    "publishedAt": "2026-11-16T23:20:54.257Z",
+    "validUntil": "2026-11-30T00:00:00.000Z",
+    "actualAdoptions": [
+      {
+        "reportId": "macro-us-usd",
+        "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+        "claimId": "fact:us-ffr-hold",
+        "ownerClaimIds": [
+          "c.scope.macro.gap",
+          "c.infer.rate.channel"
+        ]
+      },
+      {
+        "reportId": "macro-us-usd",
+        "version": "7df9bcb8b1ec678d27a40e637bea3d7ceb55aa4835ef21b4af161355293cc53c",
+        "claimId": "fact:us:credit:large",
+        "ownerClaimIds": [
+          "c.scope.macro.gap",
+          "c.infer.value"
+        ]
+      }
+    ],
+    "scope": "仅政策区间与大中型C&I准入标准；同一原文不是独立第二证据。"
+  },
+  "unresolvedIssues": [],
+  "humanReviewItemsAndRetainedLimits": [
+    {
+      "id": "H01",
+      "priority": "P0_publication_gate",
+      "topic": "行业人工审核未完成",
+      "detail": "只有宏观人工审核被用户取消。行业主要结论/数字/来源仍需人工审阅这份精确版本；本文件不能代签。"
+    },
+    {
+      "id": "H02",
+      "priority": "P1_scope_limit",
+      "topic": "有限两公司样本",
+      "detail": "缺全行业价格/供需、GPU供给、客户预算、利用率、电价、平均可计费产能和统一维护支出；不支持行业份额、单位回报或回本排名。"
+    },
+    {
+      "id": "H03",
+      "priority": "P1_quantification_gate",
+      "topic": "净利率与汇率敞口未闭合",
+      "detail": "CRWV敏感度是否净计6787百万swap不明确；NBIS后续提款/新债对冲与两家联合FX净额未核实。不得量化未来净冲击。"
+    },
+    {
+      "id": "H04",
+      "priority": "P1_quantification_gate",
+      "topic": "现金及每股估值桥未闭合",
+      "detail": "可用非受限现金、提款/预付/退款及到期表、维护支出、同日价格与情景稀释股数缺口保留；稿件不提供目标价、概率或增量价格。"
+    },
+    {
+      "id": "H05",
+      "priority": "P1_evidence_gate",
+      "topic": "NBIS img002未人工签核",
+      "detail": "本稿使用已保存文本段，并未批准原图/候选转录；图中每MW合同价/回本等未批准量化不进入公司或比较。"
+    },
+    {
+      "id": "H06",
+      "priority": "P1_scope_limit",
+      "topic": "宏观仅有限适用输入",
+      "detail": "准确继承7df9bcb8版本两条claim；收益率曲线、当前汇率、市场信用定价及公司新增融资报价仍缺。"
+    },
+    {
+      "id": "H07",
+      "priority": "P2_precision",
+      "topic": "部分发布日期仅日精度",
+      "detail": "SEC/股东信午夜为schema日精度归一化，manifest明确不声称真实发布时分秒；所有源在当前asOf之前。不能用本稿证明日内时点。"
+    }
+  ],
+  "authorValidation": {
+    "path": "/tmp/spontra-industry-sol/validation.json",
+    "sha256": "19ea3a51a50121f991e965e5b2491af3105803262e32493ce3a0b020456a8dd3",
+    "snapshot": {
+      "schemaVersion": "operator-industry-validation.v1",
+      "validatedAt": "2026-11-17T01:15:34.273Z",
+      "status": "author_integrity_and_actual_shared_validation_passed_pending_independent_and_human_review",
+      "draftFileSHA256": "e300596ada6354147630a950a6634019762eced6d6b186603d4b73fcb1504df9",
+      "markdownFileSHA256": "0f4a4579f859d20fda4bdfbe221fe4bfbd7d2fa3f9da8b01889dd2991d73f59e",
+      "inputFingerprint": "46d5fedbe0c377dfd6f1a12efdce9b3836013dd8cbdaf6dc0c68d2fa1b36d10e",
+      "claimCount": 27,
+      "sourceCount": 19,
+      "observationCount": 65,
+      "retainedOriginalClaimCount": 19,
+      "allDataChecksPassed": true,
+      "sharedRuntimeValidation": {
+        "status": "passed",
+        "schema": "/workspace/Spontra/shared/analysis-runtime/public-research-schema.ts#publicResearchDraftSchema",
+        "runtime": "/workspace/Spontra/shared/analysis-runtime/public-research.ts#validatePublicResearchDraft",
+        "validatedAt": "2026-11-17T01:15:34.628Z",
+        "strictFieldRoundTrip": true,
+        "actualFunctionCalled": true
+      },
+      "prospectiveStoredVersion": "4f6cd1a10b518f845a947376f8161073eb24fbb410cd3a4f375291274dee1c6d"
+    }
+  },
+  "evidenceFiles": [
+    {
+      "path": "/workspace/spontra-deliverables/Spontra-行业停止草稿-未审核.json",
+      "sha256": "c8b8eb53a6aa5b9ecea36abbd341f2c1e376fd51514d6a087b90d41ffdc53ef1"
+    },
+    {
+      "path": "/tmp/spontra-industry-continuation/independent-preflight.json",
+      "sha256": "085e15db0f71cae319fe66d465ccb799facb630979cbf0bd1045b082dc65dd1d"
+    },
+    {
+      "path": "/tmp/spontra-industry-continuation/independent-final-review.json",
+      "sha256": "63633d22ef0d89a0d4158e6ad6c23db0c9b500d0faf4fc35c828c6f741a75a84"
+    },
+    {
+      "path": "/tmp/spontra-macro-corrections/published-readback.json",
+      "sha256": "de7f596d1597095ee8e38842e77d5748dc34497952c811634c476001293cc79e"
+    },
+    {
+      "path": "/tmp/spontra-industry-sol/source-manifest.json",
+      "sha256": "22d880ef43b95efb3064a586e932180f45ab27ba093f796075db3ab32c53a41a"
+    },
+    {
+      "path": "/tmp/spontra-industry-sol/revision-map.json",
+      "sha256": "302ed3c6d2ecb2befb658b633a4636536265b3b39ac00d7f6a3e479c453d67c4"
+    }
+  ],
+  "livePrimaryReadChecks": [
+    {
+      "uri": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000465/crwv-20260930.htm",
+      "status": "readable_official_primary",
+      "method": "read-only web open, current review"
+    },
+    {
+      "uri": "https://www.sec.gov/Archives/edgar/data/1513845/000110465926126238/nbis-ex99d1.htm",
+      "status": "readable_official_primary",
+      "method": "read-only web open, current review"
+    },
+    {
+      "uri": "https://www.sec.gov/Archives/edgar/data/1513845/000110465926126238/nbis-ex99d2.htm",
+      "status": "readable_official_primary",
+      "method": "read-only web open, current review"
+    },
+    {
+      "uri": "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Reports-Strong-Third-Quarter-2026-Results/",
+      "status": "readable_official_primary",
+      "method": "read-only web open, current review"
+    }
+  ],
+  "notExecuted": [
+    "未修改作者报告/项目代码/原始材料/生产数据。",
+    "未启动任何模型API、报告生成、付费研究或NBIS公司报告。",
+    "未执行生产保存/发布、用户人工审核、浏览器线上呈现验收或部署。",
+    "未将旧停止/失败生成任务追认成功；复用材料版本仍可区分。"
+  ],
+  "skillAvailability": "已读Public Equity Investing主技能；其引用的shared/deck-report-qc资源返回failed to read skill resource，未冒充已执行缺失技能。按项目原要求直接进行来源和口径核查。"
+}

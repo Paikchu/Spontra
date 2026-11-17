@@ -1,0 +1,113 @@
+{
+  "at": "2026-11-17T01:57:38.757Z",
+  "scope": "Actual local read-handler responses and synthetic company opening; no model or production requests",
+  "results": [
+    {
+      "viewport": [
+        1440,
+        900
+      ],
+      "lang": "en",
+      "resultId": "filing-impact:5a2d06ccf222fd2206a289e74d43e9ad44d434e78cfa68b432e87ee6039863b6",
+      "canonicalHash": "288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd",
+      "keyboardScrolled": true,
+      "reachesEnd": true,
+      "returnsToTop": true,
+      "inputTable": "Calculations and input units\nInput\tSource / printed units\tCalculation / base units\ndebts.0.principalfact\t16400 USDmillions\t16,400,000,000 USD\ndebts.0.rateChangefact\t50 bps\t0.005 ratio\ndebts.0.repricingYearsfact\t1 years\t1 years",
+      "requests": [
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&rev=2026-08-01T00%3A00%3A00Z",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&rev=2026-08-01T00%3A00%3A00Z",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=en&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=en&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=en&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=en&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&rev=2026-08-01T00%3A00%3A00Z",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&rev=2026-08-01T00%3A00%3A00Z"
+      ],
+      "errors": []
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "lang": "zh-CN",
+      "resultId": "filing-impact:5a2d06ccf222fd2206a289e74d43e9ad44d434e78cfa68b432e87ee6039863b6",
+      "canonicalHash": "288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd",
+      "keyboardScrolled": false,
+      "reachesEnd": true,
+      "returnsToTop": true,
+      "inputTable": "计算与输入单位\n输入\t原文／披露单位\t计算／基础单位\ndebts.0.principalfact\t16400 USDmillions\t16,400,000,000 USD\ndebts.0.rateChangefact\t50 bps\t0.005 ratio\ndebts.0.repricingYearsfact\t1 years\t1 years",
+      "requests": [
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&rev=2026-08-01T00%3A00%3A00Z",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&schema=artifact-i18n-v2-layers",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&rev=2026-08-01T00%3A00%3A00Z",
+        "/api/business/v1/companies/SYNTH/filings/0000000001-26-000001?schema=artifact-i18n-v2-layers&artifactVersion=2&artifactHash=288eae7217fc7ba09712acee955d36377d9f80e05480e70304463fd333101efd&lang=zh-CN&rev=2026-08-01T00%3A00%3A00Z"
+      ],
+      "errors": []
+    },
+    {
+      "variant": "preview",
+      "passed": true
+    },
+    {
+      "variant": "wrong-hash",
+      "passed": true
+    },
+    {
+      "variant": "stale",
+      "passed": true
+    },
+    {
+      "variant": "missing-sidecar",
+      "passed": true
+    },
+    {
+      "variant": "forged-preview",
+      "passed": true
+    },
+    {
+      "variant": "report-preview-denied",
+      "passed": true
+    },
+    {
+      "variant": "report-preview-empty",
+      "passed": true
+    },
+    {
+      "variant": "report-preview-loading",
+      "passed": true
+    },
+    {
+      "variant": "report-sidebar",
+      "passed": true
+    },
+    {
+      "variant": "detail-sidebar",
+      "passed": true
+    },
+    {
+      "variant": "preview-sidebar",
+      "passed": true
+    },
+    {
+      "variant": "private-reference",
+      "passed": true
+    },
+    {
+      "variant": "private-reference-mismatch",
+      "passed": true
+    },
+    {
+      "variant": "long-chain",
+      "passed": true
+    },
+    {
+      "variant": "long-chain-desktop",
+      "passed": true
+    }
+  ]
+}

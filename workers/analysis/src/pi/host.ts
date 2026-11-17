@@ -68,6 +68,7 @@ export type PiOutcome<O = unknown> = {
 export type StoredPiSession = {
   operationId: string; kind: string; spec: unknown; state: unknown; active: false;
   startedAt: number; turns: number; spent: number; capped: boolean; finished: boolean;
+  startupPending: boolean;
 };
 
 type Binding = {
@@ -270,6 +271,8 @@ export class PiHost {
       b.lastRound = true;
       b.capped = true;
       this.persist(b);
+      // A standalone strict session has no task polling it; terminate SDK retries on a recovery wake.
+      this.noticeIdle();
       throw new Error("pi: public research allowance exhausted or task stopped");
     }
   }
@@ -298,13 +301,7 @@ export class PiHost {
       // A transport denial is persisted before the SDK sees its connection error. End only that capped operation:
       // the SDK may otherwise retry it indefinitely, despite every further provider request being correctly blocked.
       const row = this.db().exec<Row>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
-      if (row?.capped && row.session) {
-        const binding = await this.bound(row.conversation);
-        if (binding?.loaded.strictBudget) {
-          await this.harness.sessions.get(row.session).abort(operationId);
-          return this.settle<O>(operationId, { status: "done" });
-        }
-      }
+      if (row && await this.abortCapped(row)) return this.settle<O>(operationId, { status: "done" });
       await this.ensureStarted(operationId);
       const pending = await this.harness.pending({ session }).catch(() => []);
       if (pending.some((p) => p.operationId === operationId)) return null;
@@ -344,7 +341,7 @@ export class PiHost {
     const row = sql.exec<Row & { active: number }>("SELECT * FROM pi_bindings WHERE operation_id = ?", operationId).toArray()[0];
     if (!row) return null;
     return { operationId: row.operation_id, kind: row.kind, spec: JSON.parse(row.spec), state: unpackState(row.state), active: false,
-      startedAt: row.started_at, turns: row.turns, spent: row.spent ?? 0, capped: !!row.capped, finished: !!row.finished };
+      startedAt: row.started_at, turns: row.turns, spent: row.spent ?? 0, capped: !!row.capped, finished: !!row.finished, startupPending: row.startup != null };
   }
 
   /** SDK ledger includes summarization attempts omitted by ordinary afterResponse hooks. Read only. */
@@ -375,6 +372,9 @@ export class PiHost {
     for (const row of this.db().exec<Row>("SELECT * FROM pi_bindings WHERE active = 1").toArray()) {
       if (row.startup) { out.push({ operationId: row.operation_id, state: "starting" }); continue; }
       if (this.ending.has(row.conversation)) { out.push({ operationId: row.operation_id, state: "ending" }); continue; }
+      // Reuse the polling path's strict-budget abort before asking whether the SDK is still retrying.
+      await this.abortCapped(row);
+      if (!this.db().exec<{ active: number }>("SELECT active FROM pi_bindings WHERE conversation=?", row.conversation).toArray()[0]?.active) { out.push({ operationId: row.operation_id, state: "ended" }); continue; }
       const pending = await this.harness.pending({ session: row.session }).catch(() => null);
       if (!pending) { out.push({ operationId: row.operation_id, state: "unknown" }); continue; }
       const held = pending.find(p => p.operationId === row.operation_id);
@@ -383,13 +383,30 @@ export class PiHost {
       if (!b?.loaded.recipe.afterRun) { out.push({ operationId: row.operation_id, state: "ended" }); continue; }
       const result = await within(POLL_WAIT_MS, signal => this.harness.sessions.get(row.session).wait(row.operation_id, signal)).catch(() => null);
       console.warn(JSON.stringify({ event: "pi-recovered-ended", kind: row.kind, operationId: row.operation_id, turns: b.turns, result: result ? { status: result.status, reason: result.reason ?? null } : null }));
+      await this.endRecipe(b);
+      out.push({ operationId: row.operation_id, state: "recovered" });
+    }
+    return out;
+  }
+
+  private async abortCapped(row: Row): Promise<boolean> {
+    if (!row.capped || !row.session) return false;
+    const binding = await this.bound(row.conversation);
+    if (!binding?.loaded.strictBudget) return false;
+    await this.harness.sessions.get(row.session).abort(row.operation_id);
+    return true;
+  }
+
+  /** Recovery and the SDK's afterRun hook can converge on the same operation; its ending runs only once. */
+  private async endRecipe(b: Binding): Promise<void> {
+    if (!b.loaded.recipe.afterRun || this.ending.has(b.conversation) || !this.db().exec<{ active: number }>("SELECT active FROM pi_bindings WHERE conversation=?", b.conversation).toArray()[0]?.active) return;
+    this.ending.add(b.conversation);
+    try {
       await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); });
       this.persist(b);
       await this.close(b);
       this.options.onSettled?.(b.operationId);
-      out.push({ operationId: row.operation_id, state: "recovered" });
-    }
-    return out;
+    } finally { this.ending.delete(b.conversation); }
   }
 
   /** Pi has nothing running: a session still open here ended unsettled, so recovery is asked for once. */
@@ -538,11 +555,8 @@ export class PiHost {
             // A recipe with its own ending has nobody coming to settle it, so its session closes here.
             // What the ending did to the state (a document the harness delivered) is kept for whoever settles the run.
             if (b.loaded.recipe.afterRun) {
-              this.ending.add(b.conversation);
-              try { await this.guard(async () => { await b.loaded.recipe.afterRun!(b.state); }); this.persist(b); await this.close(b); }
-              finally { this.ending.delete(b.conversation); }
-            }
-            this.options.onSettled?.(b.operationId);
+              await this.endRecipe(b);
+            } else this.options.onSettled?.(b.operationId);
           }
           return undefined;
         },

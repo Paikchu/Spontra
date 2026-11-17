@@ -276,6 +276,16 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
+/** Only deliberate navigation leaves an exact edition; refresh and browser history keep its original identity. */
+function leaveFilingEdition() {
+  const url = new URL(location.href);
+  const pins = ["filingImpact", "artifactVersion", "artifactHash", "artifact-preview"];
+  if (!pins.some(key => url.searchParams.has(key))) return;
+  for (const key of pins) url.searchParams.delete(key);
+  history.pushState(history.state, "", url);
+  window.dispatchEvent(new Event("spontra:filing-navigation"));
+}
+
 export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   revisions?: MapRevisions;
   /** Display choices for the current analysis layers. */
@@ -376,7 +386,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     if (option) revealInList(option, behavior());
   }, [current?.key]);
   useEffect(() => {
-    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select,dialog")) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); } };
+    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select,dialog")) { leaveFilingEdition(); setSelected(null); setFocusId(null); setEventId(null); setReportId(null); } };
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, []);
@@ -408,6 +418,18 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const view: View = chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
+  useEffect(() => {
+    const restore = () => {
+      const params = new URLSearchParams(location.search), requested = params.get("view");
+      setReportId(params.get("report")); setEventId(params.get("event")); setFocusId(params.get("finding"));
+      setSelected(params.get("business")); setDetail(params.has("detail"));
+      setView(VIEWS.includes(requested as View) ? requested as View : "profit");
+      const end = params.get("period");
+      setPeriod(end ? quarters.find(quarter => Math.abs(Date.parse(quarter.periodEnd) - Date.parse(end)) <= 20 * 86_400_000)?.id ?? null : null);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [quarters]);
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   useEffect(() => {
@@ -499,14 +521,15 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // The valuation is the company's own mode: a finding, flag, report or event takes the stage back to the statements.
   const leaveValuation = () => { if (chosenView === "valuation" || chosenView === "company") setView("profit"); };
   const pickView = (next: View) => {
+    leaveFilingEdition();
     if (next === "valuation" || next === "company") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); }
     crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
   };
   const showFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setSplit(false); } };
-  const focusFinding = (id: string | null) => { onNavigate?.(); showFinding(id); if (id) track("finding_expand", { ticker }); };
-  const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setReportId(null); setSplit(false); } };
+  const focusFinding = (id: string | null) => { leaveFilingEdition(); onNavigate?.(); showFinding(id); if (id) track("finding_expand", { ticker }); };
+  const focusEvent = (id: string | null) => { leaveFilingEdition(); onNavigate?.(); setEventId(id); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setReportId(null); setSplit(false); } };
   // The rail holds one pick at a time: a business, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
-  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setEventId(null); setReportId(null); setSplit(false); setView("profit"); setBizFolded(false); } };
+  const pickBusiness = (id: string | null) => { leaveFilingEdition(); onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setEventId(null); setReportId(null); setSplit(false); setView("profit"); setBizFolded(false); } };
   // The business rows fold away once the reader scrolls what is under them, so the stream takes the rail; the total and
   // the mix stay as the head. Scrolling up again at the top, the chevron, or picking a business brings the rows back.
   const [bizFolded, setBizFolded] = useState(false);
@@ -540,6 +563,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   useEffect(() => { if (focusRequest) { onNavigate?.(); if (focusRequest.finding) track("finding_expand", { ticker }); } }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
+    leaveFilingEdition();
     onNavigate?.(); setReportId(id);
     if (!id) return;
     leaveValuation();
@@ -548,7 +572,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     const match = end ? quarters.find(q => q.periodEnd === end) : null;
     if (match) setPeriod(match.id);
   };
-  const focusItem = (item: RailItem | null) => { if (!item) { setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
+  const focusItem = (item: RailItem | null) => { if (!item) { leaveFilingEdition(); setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
   // The businesses the chart draws at its left edge, each with its share of segment revenue, for the composition bar.
   const composition = items.filter(i => !i.parent).flatMap(i => i.value != null && segmentRevenue ? [{ key: i.key, name: i.name, slot: i.slot, share: Math.max(0, i.value / segmentRevenue * 100) }] : []);
   const active = hoverNode ?? (current ? "segment:" + current.key : null);

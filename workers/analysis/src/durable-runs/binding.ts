@@ -1,5 +1,6 @@
 import type { RunState } from "./engine.ts";
 import type { StoredPiSession } from "../pi/host.ts";
+import type { FilingSpec } from "../filing-analysis/recipe.ts";
 
 /** The run kinds, named by the env property each one is reached through. */
 export const RUN_BINDINGS = [
@@ -16,6 +17,7 @@ export type RunStub = {
   terminate(): Promise<void>;
   report(): Promise<unknown>;
   readPublicResearchSession(runId: string, stage: string): Promise<{ runId: string; status: "terminated"; session: StoredPiSession } | null>;
+  readFilingShadowSession(runId: string, spec: FilingSpec): Promise<StoredPiSession | null>;
   startSession(kind: string, spec: unknown, opening: string, operationId: string): Promise<void>;
 };
 type RunNamespace = { idFromName(name: string): unknown; get(id: never): unknown };
@@ -60,6 +62,8 @@ export function filingSessions(env: object) {
   return {
     start: async (id: string, kind: string, spec: unknown, opening: string, operationId: string) => (await stub(id)).startSession(kind, spec, opening, operationId),
     report: async (id: string) => (await stub(id)).report(),
+    // A checkpoint read must not initialize Pi through getAgentByName or repair a session.
+    readEndedShadow: (id: string, spec: FilingSpec) => (namespace.get(namespace.idFromName(`FILING:${id}`) as never) as RunStub).readFilingShadowSession(id, spec),
     stop: async (id: string) => (await stub(id)).terminate(),
   };
 }
