@@ -118,4 +118,6 @@ NBIS单源人工校对入口完成本地22项实际proxy→handler→store→pre
 
 完整npm run check、Analysis类型检查和部署dry-run通过；最终全仓lint仍为既有10 errors/5 warnings，无新增问题。最终小幅辅助标题语义修正后前端单独重构建；发布前后精确版本与只读验收另行记录。所有上述测试复用现有报告或本地合成资料，零真实生成。
 
-- G9停止后完整读取：31项本地Cloudflare运行时旅程通过，42,506字符的19结论合成草稿及尾部来源完整取回，重复读取SHA一致。停止对象冷启动不restore/mount/start/recover；63次调用、已停止状态、journal、公开指针均不变。未终止对象正常恢复机制保留；新阶段写内容寻址不可变归档，旧停止任务可纯存储导出。导出显式unreviewed/published:false，不等于审核通过，不会启动生成。
+- G9停止后完整读取：40项本地Cloudflare运行时旅程通过，42,506字符的19结论合成草稿及尾部来源完整取回，重复读取SHA一致。停止对象冷启动不restore/mount/start/recover；63次调用、已停止状态、journal、公开指针均不变。未终止对象正常恢复机制保留；新阶段写内容寻址不可变归档，旧停止任务可纯存储导出。导出显式unreviewed/published:false，不等于审核通过，不会启动生成。
+
+生产读回发现管理代理仍按旧路径长度拦截新checkpoint GET（HTTP404），已补精确只读路由，并将完整admin→proxy→命名AdminGateway→analysis→DO链纳入旅程。新增9项路由正反检查，合计40项通过，错误方法/阶段/身份/路径与超长URL继续拒绝；代理类型/lint与管理站构建通过。发布后仍须实际取回已停止生产草稿并核对调用数不变。

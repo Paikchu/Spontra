@@ -26,6 +26,8 @@ import { handlePublicResearchAdminRequest } from ${JSON.stringify(resolve(root, 
 import { publicResearchCheckpoint, savePublicResearchCheckpoint } from ${JSON.stringify(resolve(root, "workers/analysis/src/public-research/checkpoint.ts"))};
 import { createAdminSession } from ${JSON.stringify(resolve(root, "workers/analysis/src/admin/auth.ts"))};
 import { packState } from ${JSON.stringify(resolve(root, "workers/analysis/src/pi/state.ts"))};
+import { handleAdminRequest } from ${JSON.stringify(resolve(root, "apps/admin/worker/index.ts"))};
+export { AdminGateway } from ${JSON.stringify(resolve(root, "workers/analysis/src/index.ts"))};
 export class CheckpointRunner extends TaskRunner {
   constructor(ctx, env) {
     const sql=ctx.storage.sql, f=JSON.parse(env.FIXTURE), id=ctx.id.name?.split(":").at(-1), normal=id===f.normalId;
@@ -65,6 +67,7 @@ export default {async fetch(request,env) {
   }
   if(url.pathname==="/fixture/enrichment")return Response.json(publicResearchCheckpoint({...f.run,runId:f.normalId},"synthesis",{submitted:false,draft:null},{notes:f.notes,draft:f.draft}));
   if(url.pathname==="/fixture/missing-output")return Response.json(publicResearchCheckpoint(f.run,"synthesis",undefined,{notes:f.notes}));
+  if(url.pathname.startsWith("/api/admin/"))return handleAdminRequest(request,{...env,ASSETS:{fetch:()=>new Response("Not found",{status:404})}});
   if(url.pathname.startsWith("/admin/"))return handlePublicResearchAdminRequest(request,env);
   return new Response("Not found",{status:404});
 }};
@@ -80,7 +83,7 @@ await build({ entryPoints: [workerPath], outfile: bundlePath, bundle: true, form
 } }] });
 
 const outbound=[];
-const mf=new Miniflare(convertV4MiniflareOptions({name:"checkpoint-acceptance",modules:true,modulesRoot:scratch,scriptPath:bundlePath,compatibilityDate:"2026-08-26",compatibilityFlags:["nodejs_compat"],durableObjects:{TASK_RUNS:{className:"CheckpointRunner",useSQLite:true}},d1Databases:{DB:"checkpoint-acceptance"},r2Buckets:["SEC_FILINGS"],bindings:{FIXTURE:JSON.stringify(fixture),REPORT_ADMIN_PASSWORD:"isolated-acceptance-only"},outboundService:request=>{outbound.push(request.url);return new Response("Network forbidden in local checkpoint journey",{status:599});}}));
+const mf=new Miniflare(convertV4MiniflareOptions({name:"checkpoint-acceptance",modules:true,modulesRoot:scratch,scriptPath:bundlePath,compatibilityDate:"2026-08-26",compatibilityFlags:["nodejs_compat"],durableObjects:{TASK_RUNS:{className:"CheckpointRunner",useSQLite:true}},serviceBindings:{SPONTRA_ANALYSIS:{name:"checkpoint-acceptance",entrypoint:"AdminGateway"}},d1Databases:{DB:"checkpoint-acceptance"},r2Buckets:["SEC_FILINGS"],bindings:{FIXTURE:JSON.stringify(fixture),REPORT_ADMIN_PASSWORD:"isolated-acceptance-only"},outboundService:request=>{outbound.push(request.url);return new Response("Network forbidden in local checkpoint journey",{status:599});}}));
 const checks=[];
 const check=(name,ok,detail)=>{if(!ok)throw new Error(name+": "+JSON.stringify(detail));checks.push({name,status:"passed",...(detail===undefined?{}:{detail})});};
 const request=async(path,options={})=>{const response=await mf.dispatchFetch("http://localhost"+path,options),text=await response.text();let body;try{body=JSON.parse(text);}catch{body=text;}return {status:response.status,body};};
@@ -88,6 +91,10 @@ try {
   const {DB,SEC_FILINGS}=await mf.getBindings();
   const migration=await readFile(resolve(root,"workers/analysis/migrations/0060_public_research.sql"),"utf8");
   for(const sql of migration.replace(/--[^\n]*/g,"").split(";").map(sql=>sql.trim()).filter(Boolean))await DB.prepare(sql).run();
+  await DB.prepare("CREATE TABLE financial_company_settings(ticker TEXT PRIMARY KEY,enabled INTEGER)").run();
+  await DB.prepare("CREATE TABLE business_feature_settings(ticker TEXT,feature TEXT,generate INTEGER)").run();
+  const aiMigration=await readFile(resolve(root,"workers/analysis/migrations/0032_ai_tool_settings.sql"),"utf8");
+  for(const sql of aiMigration.replace(/--[^\n]*/g,"").split(";").map(sql=>sql.trim()).filter(Boolean))await DB.prepare(sql).run();
   for(const id of [runId,activeId,normalId,mismatchId])await DB.prepare("INSERT INTO public_research_runs(run_id,report_id,input_fingerprint,state,params_json,calls_reserved,max_calls,max_tokens,created_at,updated_at) VALUES(?,?,?,?,?,63,96,2000000,?,?)").bind(id,draft.reportId,sha(id),id===normalId?"running":"stopped",JSON.stringify({...baseSpec,runId:id}),at,at).run();
   // The admission fingerprint must agree with the exact saved synthesis, just as in production.
   await DB.prepare("UPDATE public_research_runs SET input_fingerprint=? WHERE run_id=?").bind(fingerprint,runId).run();
@@ -97,7 +104,7 @@ try {
   check("authentication required",(await request(url)).status===401);
   const before=(await request("/fixture/initialize")).body;
   check("terminated cold startup never opens/restores Pi",before.telemetry.length===0,before.telemetry);
-  const ledgerBefore=await DB.prepare("SELECT * FROM public_research_runs ORDER BY run_id").all(),pointerBefore=await DB.prepare("SELECT * FROM public_research_reports").all();
+  const ledgerBefore=(await DB.prepare("SELECT * FROM public_research_runs ORDER BY run_id").all()).results,pointerBefore=(await DB.prepare("SELECT * FROM public_research_reports").all()).results;
   const first=await request(url,{headers}),second=await request(url,{headers});
   check("full legacy stopped synthesis exported",first.status===200&&first.body.checkpoint.draft.claims.length===19,first.status);
   check("source tail beyond 4000 characters survives",JSON.stringify(first.body.checkpoint).length>4000&&first.body.checkpoint.draft.sources[0].excerpt.endsWith("COMPLETE-TAIL-SOURCE-EXCERPT"));
@@ -105,6 +112,16 @@ try {
   check("checkpoint hash covers complete exported content",sha(JSON.stringify(first.body.checkpoint))===first.body.contentHash);
   check("repeat reads are byte-equivalent",JSON.stringify(first)===JSON.stringify(second));
   check("export explicitly stopped and unreviewed",first.body.state==="stopped"&&first.body.runnerStatus==="terminated"&&first.body.reviewStatus==="unreviewed"&&first.body.published===false);
+  const proxyUrl=url.replace("/admin/","/api/admin/"),proxied=await request(proxyUrl),proxiedAgain=await request(proxyUrl);
+  check("real admin proxy and service-bound AdminGateway export complete stopped checkpoint",proxied.status===200&&JSON.stringify(proxied.body)===JSON.stringify(first.body),proxied);
+  check("proxy export repeated reads identical",JSON.stringify(proxied)===JSON.stringify(proxiedAgain));
+  check("proxy rejects checkpoint POST",(await request(proxyUrl,{method:"POST",headers:{origin:"http://localhost"}})).status===404);
+  check("proxy rejects checkpoint DELETE",(await request(proxyUrl,{method:"DELETE"})).status===405);
+  check("proxy rejects unknown checkpoint stage",(await request(proxyUrl.replace("synthesis","unknown"))).status===404);
+  check("proxy rejects invalid checkpoint run identity",(await request(proxyUrl.replace(runId,"public-short"))).status===404);
+  check("proxy rejects extra checkpoint path segments",(await request(proxyUrl+"/extra")).status===404);
+  check("proxy rejects unrelated five-segment public research path",(await request(proxyUrl.replace("checkpoints","other"))).status===404);
+  check("proxy retains URL size limit",(await request(proxyUrl+"?padding="+"a".repeat(2100))).status===413);
   check("unknown stage refused",(await request(url.replace("synthesis","unknown"),{headers})).status===400);
   check("unknown run refused",(await request(url.replace(runId,`public-${"e".repeat(40)}`),{headers})).status===404);
   check("cross-run storage RPC refused",(await request("/fixture/wrong-run")).status===400);
@@ -115,8 +132,8 @@ try {
   check("checkpoint is not publicly reachable",(await request(url.replace("/admin/","/api/v1/"))).status===404);
   const after=(await request("/fixture/snapshot")).body;
   check("storage snapshot unchanged by exports",JSON.stringify(before)===JSON.stringify(after));
-  check("run ledger and call reservations unchanged",JSON.stringify(ledgerBefore)===JSON.stringify(await DB.prepare("SELECT * FROM public_research_runs ORDER BY run_id").all()));
-  check("published pointer unchanged",JSON.stringify(pointerBefore)===JSON.stringify(await DB.prepare("SELECT * FROM public_research_reports").all()));
+  check("run ledger and call reservations unchanged",JSON.stringify(ledgerBefore)===JSON.stringify((await DB.prepare("SELECT * FROM public_research_runs ORDER BY run_id").all()).results));
+  check("published pointer unchanged",JSON.stringify(pointerBefore)===JSON.stringify((await DB.prepare("SELECT * FROM public_research_reports").all()).results));
   check("export creates no draft version",(await DB.prepare("SELECT COUNT(*) n FROM public_research_versions").first()).n===0);
   const archive=(await request("/fixture/archive")).body;
   check("archive is immutable and idempotent",archive.first.contentHash===archive.second.contentHash&&archive.before===archive.after);
@@ -137,6 +154,6 @@ try {
   check("no outbound request or model call",outbound.length===0,outbound);
   const output=resolve(process.argv[2]??"/tmp/spontra-public-research-checkpoint-acceptance.json");
   await mkdir(resolve(output,".."),{recursive:true});
-  await writeFile(output,JSON.stringify({at:new Date().toISOString(),scope:"Local Cloudflare runtime, synthetic 19-claim stopped run, real authenticated admin handler/R2/TaskRunner/PiHost SQL; no model/provider/production calls",checks,export:{runId,stage:"synthesis",characters:JSON.stringify(first.body.checkpoint).length,claims:19,contentHash:first.body.contentHash,sourceContentHash:source.contentHash},limitations:["Production stopped-run export remains for post-deployment read-only verification","Local instrumentation observes PiHost restore/mount/start/recover entry, not external provider invoices"]},null,2)+"\n");
+  await writeFile(output,JSON.stringify({at:new Date().toISOString(),scope:"Local Cloudflare runtime, synthetic 19-claim stopped run; real admin site handler/proxy, service-bound AdminGateway, authenticated analysis handler, R2 and TaskRunner/PiHost SQL; no model/provider/production calls",checks,export:{runId,stage:"synthesis",characters:JSON.stringify(first.body.checkpoint).length,claims:19,contentHash:first.body.contentHash,sourceContentHash:source.contentHash},limitations:["Production stopped-run export remains for post-deployment read-only verification","Cloudflare Access is not configured in this isolated local runtime","Local instrumentation observes PiHost restore/mount/start/recover entry, not external provider invoices"]},null,2)+"\n");
   console.log(JSON.stringify({passed:checks.length,evidence:output}));
 } finally {await mf.dispose();}

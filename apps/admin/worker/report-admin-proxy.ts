@@ -13,10 +13,11 @@ const json = (body: unknown, status: number) => Response.json(body, { status, he
 
 /** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(financials|business-map|ai|library|reports|public-research)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" || path[0] === "reports" ? 6 : path[0] === "business-map" || path[0] === "reports" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  const checkpointRead = request.method === "GET" && path.length === 5 && /^public-research\/runs\/public-[a-f0-9]{40}\/checkpoints\/(?:research-demand|research-financing|synthesis|review|repair|review-repair)$/.test(path.join("/"));
+  if (!path.length || !/^(financials|business-map|ai|library|reports|public-research)$/.test(path[0]!) || (!checkpointRead && path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" || path[0] === "reports" ? 6 : path[0] === "business-map" || path[0] === "reports" ? 5 : 4))) return json({ error: "Not found" }, 404);
   if (path[0] === "public-research") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && /^(?:runs|reports|runs\/[A-Za-z0-9._:-]{1,128}|reports\/[A-Za-z0-9._:-]{1,128}|companies\/[A-Z][A-Z0-9.-]{0,11}\/context)$/.test(route);
+    const read = checkpointRead || (request.method === "GET" && /^(?:runs|reports|runs\/[A-Za-z0-9._:-]{1,128}|reports\/[A-Za-z0-9._:-]{1,128}|companies\/[A-Z][A-Z0-9.-]{0,11}\/context)$/.test(route));
     const write = request.method === "POST" && /^(?:runs|runs\/[A-Za-z0-9._:-]{1,128}\/stop|exposures|reports\/[A-Za-z0-9._:-]{1,128}\/(?:review|publish|withdraw|restore|invalidate|revise))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
