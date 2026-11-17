@@ -107,7 +107,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
     resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS } : {}), precheck: periodic.precheck,
-    hardPrecheck: state => publicContext.precheck(state) ?? (state.periodic?.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
+    hardPrecheck: state => publicContext.precheck(state) ?? periodic.impactPrecheck(state) ?? (state.periodic?.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
     audit: state => filingSemanticAudit({ env, snapshot, runId: spec.sessionId, required: profile.id === "periodic" ? PERIODIC_BLOCKS : ["summary"] }, state),
     read: async (id, state) => {
       const publicSource = publicContext.read(id);

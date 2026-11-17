@@ -53,4 +53,10 @@ export type ImpactCalculation = {
   formulas: Record<string, string>;
   missingInputs: string[];
   limitations: string[];
+  /** Present only after typed source/assumption units were checked, never inferred from report prose. */
+  provenance?: {
+    unitContract: "impact-base-units.v1";
+    calculation: Record<string, unknown>;
+    inputs: Array<{ path: string; sourceId: string; basis: "fact" | "assumption"; rationale: string; unit: string }>;
+  };
 };

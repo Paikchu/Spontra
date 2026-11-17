@@ -1,6 +1,6 @@
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
-import { isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
+import { impactResultValues, impactUnitIssue, isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
 import { quoteInText } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { ARTIFACT_BLOCK_ID } from "../../../../shared/analysis-contract/artifact.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
@@ -26,7 +26,7 @@ export type PeriodicState = {
   investmentChains?: InvestmentChain[];
   impactComputations?: Record<string, ImpactCalculation>;
   leads: Lead[]; evidence: Evidence[]; computed: Record<string, Computed>;
-  facts: Record<string, { text: string; value: number }>; texts: Record<string, string>;
+  facts: Record<string, { text: string; value: number; unit?: string }>; texts: Record<string, string>;
   materials: MaterialRef[]; markdownRead: boolean; tablesFound: boolean; tablesRead: string[]; charted?: string[];
   chartRefs?: Record<string, string[]>;
   semanticAuditReceipt?: { digest: string | null; key: string | null; verdict: "pass" | "fail" | "unavailable"; complete: boolean };
@@ -47,7 +47,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   tools: AnyTool<S>[]; resolve(id: string, state: S): Promise<boolean>;
   figure(id: string, state: S): Promise<number[] | null>;
   read(id: string, state: S): { title: string; text: string } | null;
-  precheck(state: S): string | null; detail(state: S): Record<string, unknown>; standing(state: S): string;
+  precheck(state: S): string | null; impactPrecheck(state: S): string | null; detail(state: S): Record<string, unknown>; standing(state: S): string;
 } {
   const { ticker, filing, snapshot } = deps;
   const db = deps.env.DB!;
@@ -109,7 +109,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       const found = await sourceText(deps.env, material, id);
       if (!found) continue;
       s.texts[id] = found.text;
-      if (found.exact !== undefined) s.facts[id] = { text: found.text, value: found.exact };
+      if (found.exact !== undefined) s.facts[id] = { text: found.text, value: found.exact, unit: indexedFacts.get(id)?.unit };
       registerSource(state.composer, id, { title: found.title, url: found.url, kind: found.exact === undefined ? "sec" : "data" });
       if (material.ref.accession === accession) state.read = [...new Set([...(state.read ?? []), id])];
       return true;
@@ -131,9 +131,17 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     return null;
   };
   const leadLine = (l: Lead) => `${l.id} [${l.priority}, ${l.source}${l.verdict ? `, ${l.verdict}` : ", not closed"}] ${l.question}${l.finding ? ` → ${l.finding}` : ""}`;
+  const impactPrecheck = (state: S) => {
+    const s = p(state);
+    return impactUnitIssue(s.impactComputations, new Set([...(s.investmentChains ?? []).flatMap(chain => chain.computationRefs), ...state.composer.blocks.flatMap(block => block.sources), ...Object.values(s.chartRefs ?? {}).flat()]));
+  };
   const impact = impactCalculationTool<S>({
     sourceExists: (state, id) => !!state.composer.sources[id],
-    sourceValues: (state, id) => p(state).facts[id] ? [p(state).facts[id]!.value] : p(state).computed[id] ? [p(state).computed[id]!.value] : p(state).impactComputations?.[id] ? Object.values(p(state).impactComputations![id]!.values) : null,
+    sourceValues: (state, id) => {
+      const s = p(state), fact = s.facts[id], computed = s.computed[id], result = s.impactComputations?.[id];
+      const unit = fact?.unit ?? indexedFacts.get(id)?.unit;
+      return fact ? unit ? [{ value: fact.value, unit }] : null : computed ? [{ value: computed.value, unit: computed.unit }] : result ? impactResultValues(result) : null;
+    },
     sourceCalculation: (state, id) => p(state).impactComputations?.[id] ?? null,
     record: (state, result, inputs) => {
       const results = p(state).impactComputations ??= {};
@@ -156,6 +164,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const status = str(args.quantificationStatus);
         if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(status)) return fail("Unknown quantification status.");
         if (computationRefs.some(id => !p(state).computed[id] && !p(state).impactComputations?.[id])) return fail("Calculations must reference this session's deterministic compute results.");
+        const unitIssue = impactUnitIssue(p(state).impactComputations, computationRefs);
+        if (unitIssue) return fail(unitIssue);
         if (status !== "not_quantifiable" && computationRefs.some(id => p(state).impactComputations?.[id] && p(state).impactComputations?.[id]?.status !== "calculated")) return fail("Unavailable calculations cannot support quantified or sensitivity results; name the missing inputs.");
         if (status === "quantifiable" && computationRefs.some(id => isSensitivityCalculation(p(state).impactComputations?.[id]))) return fail("An assumed calculation is sensitivity only, not a quantified event result.");
         if (status !== "not_quantifiable" && !computationRefs.length) return fail("A quantitative or sensitivity chain needs computed results.");
@@ -235,7 +245,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (!fact.tagged) return ok(`${factLine(fact)}\nThis figure is not tagged, so it cannot be followed by code; use filing_history on its section, or grep its label in earlier filings.`);
         const history = await factHistory(fact, Math.min(16, Math.max(2, Number(args.periods) || 9)), state);
         remember(state);
-        for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
+        for (const h of history) { p(state).facts[h.factId] = { text: factSourceText(h), value: h.value, unit: h.unit }; registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" }); }
         return ok(history.length ? history.map(h => `${h.factId} | ${factText(h)} | ${periodText(h)} | ${h.form} filed ${h.filedAt}`).join("\n") : "No earlier filing reports this line.");
       }),
     handTool<S>({ name: "compute", description: "Work out a figure from facts and earlier results: a formula of fact ids (f…), result ids (c…) and numbers with + - * / and brackets, e.g. \"(f1a… - f2b…) / f2b… * 100\". Facts are in base units (dollars, shares). The result gets an id a block can cite. unit says what the result is: percent, USD, ratio, x, shares, days.",
@@ -279,7 +289,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
             const history = await factHistory(fact, Math.min(16, Math.max(2, Number(raw.periods) || 8)), state);
             remember(state);
             for (const h of history) {
-              s.facts[h.factId] = { text: factSourceText(h), value: h.value };
+              s.facts[h.factId] = { text: factSourceText(h), value: h.value, unit: h.unit };
               registerSource(state.composer, h.factId, { title: `${h.label}, ${periodText(h)} (${h.form} filed ${h.filedAt})`, url: null, kind: "data" });
               points.push({ end: h.periodEnd!, value: h.value });
               refs.push(h.factId);
@@ -393,6 +403,8 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     },
     precheck: (state) => {
       const s = p(state);
+      const unitIssue = impactPrecheck(state);
+      if (unitIssue) return unitIssue;
       if (!s.investmentChains?.length) return "Record at least one supported assumption-to-financial-impact chain with record_investment_impact. A specific unquantifiable gap is a valid result; do not invent a price.";
       if (!s.markdownRead) return "Read this filing with read_filing_markdown before finishing.";
       if (snapshot.tables.length && !s.tablesFound) return "Use find_filing_tables to confirm the relevant CSV by its table name or description before finishing.";
@@ -400,6 +412,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
       const open = s.leads.filter(l => l.priority === "high" && !l.verdict);
       return open.length ? `these high-priority leads are not closed: ${open.map(l => l.id).join(", ")}. Close each with close_lead (highlight, risk, nothing unusual, or open with what is missing)` : null;
     },
+    impactPrecheck,
     standing: (state) => {
       const s = p(state);
 

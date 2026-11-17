@@ -1,0 +1,184 @@
+{
+  "at": "2026-11-17T00:51:29.478Z",
+  "fixture": "synthetic numeric sources plus saved actual turn83 calculation for rejection only",
+  "actualTools": [
+    "periodicTools",
+    "filingLoader",
+    "compute_investment_impact",
+    "record_investment_impact",
+    "finish",
+    "filingSemanticInput",
+    "filingSemanticRequest",
+    "semanticIssuesOf"
+  ],
+  "modelCalls": 0,
+  "networkCalls": 0,
+  "databaseCalls": 0,
+  "productionWrites": 0,
+  "checks": 26,
+  "results": [
+    {
+      "step": "reject source 16400 USD millions falsely entered as 16400 USD",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "assumption cannot bypass a known printed million scale",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "correct base-unit source matching succeeds",
+      "actual": false,
+      "status": "pass"
+    },
+    {
+      "step": "16400 million times +50bp gives 82m base USD",
+      "actual": 82000000,
+      "status": "pass"
+    },
+    {
+      "step": "original calculation preserved",
+      "actual": 16400000000,
+      "status": "pass"
+    },
+    {
+      "step": "rates retained in decimals",
+      "actual": "ratio",
+      "status": "pass"
+    },
+    {
+      "step": "saved facts recover typed units from pinned source metadata",
+      "actual": false,
+      "status": "pass"
+    },
+    {
+      "step": "basis point source does not match raw percent-looking input",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "rate_percent 0.5 matches decimal 0.005",
+      "actual": false,
+      "status": "pass"
+    },
+    {
+      "step": "real turn83 untyped assumptions now require explicit units",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "no silent scale conversion for an assumption",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "explicit correct base-unit assumption can be computed",
+      "actual": [
+        false,
+        "sensitivity_only"
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "million-share source cannot be used as individual shares",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "individual shares normalize from million-share metadata",
+      "actual": [
+        false,
+        600000010
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "matching digits with incompatible dimension cannot fund a principal",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "valid chain recorded",
+      "actual": false,
+      "status": "pass"
+    },
+    {
+      "step": "legacy actual 82 USD result cannot be recorded as a supported chain",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "legacy result cannot be laundered through a successor calculation",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "structured impact included despite no HTML reference",
+      "actual": true,
+      "status": "pass"
+    },
+    {
+      "step": "investment-chain status and original evidence included",
+      "actual": [
+        "sensitivity_only",
+        true,
+        true
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "independent auditor request carries impact and chains",
+      "actual": [
+        1,
+        true
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "independent auditor required to review included impact",
+      "actual": 1,
+      "status": "pass"
+    },
+    {
+      "step": "HTML-only qualification cannot conceal a bad stored chain",
+      "actual": [
+        1,
+        true,
+        null
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "actual filing finish rejects saved wrong-scale chain even at final budget turn",
+      "actual": [
+        true,
+        true,
+        false
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "hard publication gate survives JSON session restore",
+      "actual": [
+        true,
+        true
+      ],
+      "status": "pass"
+    },
+    {
+      "step": "zero model/network/database/production mutation operations",
+      "actual": [
+        0,
+        0,
+        0
+      ],
+      "status": "pass"
+    }
+  ],
+  "notCovered": [
+    "real-model regeneration",
+    "production deployment",
+    "independent model semantic verdict"
+  ]
+}

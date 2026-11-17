@@ -1,0 +1,166 @@
+{
+  "fixtureKind": "synthetic",
+  "modelCalls": 0,
+  "productionWrites": 0,
+  "results": [
+    {
+      "checkpoint": "T01 actual repricing time",
+      "status": "pass",
+      "actual": [
+        10000000,
+        5000000
+      ]
+    },
+    {
+      "checkpoint": "T02 fixed coupon unchanged",
+      "status": "pass",
+      "actual": 10000000
+    },
+    {
+      "checkpoint": "T03 financing adds cash and shares",
+      "status": "pass",
+      "actual": [
+        11000000000,
+        110000000,
+        100
+      ]
+    },
+    {
+      "checkpoint": "T04 independent value and market comparisons",
+      "status": "pass",
+      "actual": {
+        "eventValueChange": -10,
+        "eventValueChangeFraction": -0.08333333,
+        "gapToReference": 0.1,
+        "marketChangeFraction": -0.1
+      }
+    },
+    {
+      "checkpoint": "T05 reclassification does not imply refund",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "T06 incompatible windows rejected",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "T07 missing contract exposure",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "T09 duplicate macro/industry shock rejected",
+      "status": "pass",
+      "actual": 1
+    },
+    {
+      "checkpoint": "T12 invalid scenario not reweighted",
+      "status": "pass",
+      "actual": null
+    },
+    {
+      "checkpoint": "T13 missing versus verified zero",
+      "status": "pass",
+      "actual": [
+        "unavailable",
+        0
+      ]
+    },
+    {
+      "checkpoint": "T15 accounting sensitivity has no cash replacement",
+      "status": "pass",
+      "actual": [
+        10,
+        [
+          "annualDepreciationChange"
+        ]
+      ]
+    },
+    {
+      "checkpoint": "Period-end capacity not average",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "Restricted cash unavailable for debt service",
+      "status": "pass",
+      "actual": 40
+    },
+    {
+      "checkpoint": "Analyst calculates and records cited sensitivity",
+      "status": "pass",
+      "actual": [
+        false,
+        1,
+        5000000
+      ]
+    },
+    {
+      "checkpoint": "Analyst fabricated numeric fact blocked",
+      "status": "pass",
+      "actual": [
+        true,
+        1
+      ]
+    },
+    {
+      "checkpoint": "Typed millions and 50bp yield 82 million base USD",
+      "status": "pass",
+      "actual": [
+        false,
+        82000000
+      ]
+    },
+    {
+      "checkpoint": "Printed millions cannot masquerade as base USD",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "checkpoint": "Assumption cannot bypass a known million scale",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "checkpoint": "Assumption units must be explicit",
+      "status": "pass",
+      "actual": true
+    },
+    {
+      "checkpoint": "Summary projection freezes denominator and identity",
+      "status": "pass",
+      "actual": [
+        "price-impact:aabbccdd",
+        100,
+        90,
+        null,
+        0.1
+      ]
+    },
+    {
+      "checkpoint": "Incomplete review withholds scenarios",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "Updating publication withholds current claims",
+      "status": "pass",
+      "actual": "unavailable"
+    },
+    {
+      "checkpoint": "Mixed currency withholds model",
+      "status": "pass",
+      "actual": "unavailable"
+    }
+  ],
+  "notCovered": [
+    "T08 source revision storage",
+    "T10 translation",
+    "T11 public research version freeze",
+    "T14 atomic publication",
+    "real-source evidence review",
+    "production browser"
+  ]
+}

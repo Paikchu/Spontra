@@ -1,7 +1,7 @@
 import type { InvestmentChain } from "../filing-analysis/periodic.ts";
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
-import { isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
+import { impactResultValues, impactUnitIssue, isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
 import { companyResearchDependencyStatements } from "../public-research/context.ts";
 import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract/public-research.ts";
 import { freezeCompanyResearch } from "../public-research/context.ts";
@@ -277,6 +277,8 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
       if (Object.values(texts).some(value => !value) || !sourceIds.length || sourceIds.some(id => !state.composer.sources[id])) return { observation: "A complete chain and registered evidence sources are required.", error: true };
       if (!["quantifiable", "sensitivity_only", "not_quantifiable"].includes(String(status))) return { observation: "Unknown quantification state.", error: true };
       if (status !== "not_quantifiable" && (!computationRefs.length || computationRefs.some(id => state.impactComputations?.[id]?.status !== "calculated"))) return { observation: "A quantified or sensitivity result needs successful compute_investment_impact results.", error: true };
+      const unitIssue = impactUnitIssue(state.impactComputations, computationRefs);
+      if (unitIssue) return { observation: unitIssue, error: true };
       if (status !== "quantifiable" && !missingInputs.length) return { observation: "Name the missing inputs preventing a full valuation result.", error: true };
       if (status === "quantifiable" && computationRefs.some(id => isSensitivityCalculation(state.impactComputations?.[id]))) return { observation: "Assumed inputs yield sensitivity only, not a quantified event.", error: true };
       const chain: InvestmentChain = { ...texts as Pick<InvestmentChain, typeof fields[number]>, sourceIds, computationRefs, missingInputs, quantificationStatus: status as InvestmentChain["quantificationStatus"] };
@@ -367,7 +369,7 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
     },
     onPublish: async (state, published) => companyResearchDependencyStatements(env, { ticker, resultId: `dossier:${ticker}:${state.composer.artifact.subject}:v${published.version}`, dependencies: (state.researchUses ?? []).filter(use => use.decision === "adopted"), mappingVersions: spec.publicResearch?.mappingVersions ?? [] }),
     // Every analysis reads the earlier reports (the user's rule): while an earlier report's analysis exists, the document quotes one.
-    hardPrecheck: state => publicContext.precheck(state) ?? (state.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
+    hardPrecheck: state => publicContext.precheck(state) ?? impactUnitIssue(state.impactComputations, (state.investmentChains ?? []).flatMap(chain => chain.computationRefs)) ?? (state.investmentChains?.length ? null : "Record a supported investment impact chain before publishing."),
     precheck: s => {
       if (!spec.earlierAvailable) return null;
       const quoted = s.composer.blocks.flatMap(b => checkBlock(b.html, { sourceUrl: () => null, charts: new Set(Object.keys(s.composer.charts)) }).claims.flatMap(c => c.kind === "quote" ? [c.source] : []));
@@ -377,7 +379,7 @@ export function analystRecipe(spec: AnalystSpec, env: AnalysisEnv, stage: StageD
   };
   const impact = impactCalculationTool<AnalystState>({
     sourceExists: (state, id) => !!state.composer.sources[id],
-    sourceValues: (state, id) => id === "d1" ? spec.finding.resolved.flatMap(row => [row.current.value, ...(row.compare ? [row.compare.value] : [])]) : state.impactComputations?.[id] ? Object.values(state.impactComputations[id]!.values) : null,
+    sourceValues: (state, id) => id === "d1" ? spec.finding.resolved.flatMap(row => [row.current, ...(row.compare ? [row.compare] : [])]).map(value => ({ value: value.value, unit: value.unit === "USD" ? value.currency ?? "USD" : value.unit === "per_share" ? `${value.currency ?? "USD"}/share` : value.unit === "points" ? "percentagepoints" : value.unit })) : state.impactComputations?.[id] ? impactResultValues(state.impactComputations[id]!) : null,
     sourceCalculation: (state, id) => state.impactComputations?.[id] ?? null,
     record: (state, result, inputs) => {
       const results = state.impactComputations ??= {};

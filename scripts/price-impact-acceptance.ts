@@ -1,6 +1,6 @@
 /** Synthetic analyst journey through the registered tool and the public valuation projection. No model, network or production writes. */
 import assert from "node:assert/strict";
-import { calculateImpact, priceImpactOf, scenarioWeightedValue, validateImpactChannels, type ImpactCalculationInput } from "../shared/analysis-runtime/price-impact.ts";
+import { calculateImpact, priceImpactOf, scenarioWeightedValue, validateImpactChannels, type ImpactCalculationInput, type ImpactSourceValue } from "../shared/analysis-runtime/price-impact.ts";
 import { impactCalculationTool } from "../workers/analysis/src/price-impact/tool.ts";
 import type { ValuationPublication } from "../shared/analysis-contract/valuation.ts";
 
@@ -24,15 +24,22 @@ const depreciation = calculateImpact({ kind: "depreciation", currency: "USD", de
 check("T15 accounting sensitivity has no cash replacement", [depreciation.values.annualDepreciationChange, Object.keys(depreciation.values)], [10, ["annualDepreciationChange"]]);
 check("Period-end capacity not average", calculateImpact({ kind: "capacity_economics", currency: "USD", revenue: 100, periodYears: 1, capacityMw: 2, capacityBasis: "period_end", gpuPerMw: 500, utilization: 1, comparableGpuMix: true }).status, "unavailable");
 check("Restricted cash unavailable for debt service", calculateImpact({ kind: "cash_gap", currency: "USD", cash: 100, restrictedCash: 60, cashInflows: 0, committedFinancing: 0, cashOutflows: 80 }).values.fundingGap, 40);
-const state = { values: { debt: [1e9], rate: [0.01], time: [0.5] } as Record<string, number[]>, records: [] as unknown[] };
+const state = { values: { debt: [{ value: 1e9, unit: "USD" }], rate: [{ value: 0.01, unit: "ratio" }], time: [{ value: 0.5, unit: "years" }], debtMillions: [{ value: 16400, unit: "USDmillions" }], rateBps: [{ value: 50, unit: "bps" }], year: [{ value: 1, unit: "years" }] } as Record<string, ImpactSourceValue[]>, records: [] as unknown[] };
 const tool = impactCalculationTool<typeof state>({ sourceExists: (s, id) => id in s.values, sourceValues: (s, id) => s.values[id] ?? null, sourceCalculation: () => null, record: (s, value, inputs) => { s.records.push({ value, inputs }); return `calculation-${s.records.length}`; } });
 const calculation: ImpactCalculationInput = { kind: "interest", currency: "USD", debts: [{ principal: 1e9, rateType: "floating", rateChange: 0.01, repricingYears: 0.5 }] };
-const inputs = [{ path: "debts.0.principal", sourceId: "debt", basis: "fact", rationale: "synthetic disclosed principal" }, { path: "debts.0.rateChange", sourceId: "rate", basis: "assumption", rationale: "synthetic rate sensitivity" }, { path: "debts.0.repricingYears", sourceId: "time", basis: "fact", rationale: "synthetic reset window" }];
+const inputs = [{ path: "debts.0.principal", sourceId: "debt", basis: "fact", rationale: "synthetic disclosed principal", unit: "USD" }, { path: "debts.0.rateChange", sourceId: "rate", basis: "assumption", rationale: "synthetic rate sensitivity", unit: "ratio" }, { path: "debts.0.repricingYears", sourceId: "time", basis: "fact", rationale: "synthetic reset window", unit: "years" }];
 const ctx = { state, signal: new AbortController().signal, recipe: "synthetic-impact-journey", stage: async <T>(_name: string, work: () => Promise<T>) => work() };
 const accepted = await tool.execute({ calculation, inputs }, ctx);
 check("Analyst calculates and records cited sensitivity", [accepted.error, state.records.length, JSON.parse(accepted.observation).values.pretaxInterestChange], [false, 1, 5e6]);
 const rejected = await tool.execute({ calculation: { ...calculation, debts: [{ ...calculation.debts[0], principal: 2e9 }] }, inputs }, ctx);
 check("Analyst fabricated numeric fact blocked", [rejected.error, state.records.length], [true, 1]);
+const scaledInputs = inputs.map(input => ({ ...input, sourceId: input.sourceId === "debt" ? "debtMillions" : input.sourceId === "rate" ? "rateBps" : "year", basis: "fact" }));
+const scaledCalculation = { ...calculation, debts: [{ principal: 16400000000, rateType: "floating", rateChange: 0.005, repricingYears: 1 }] };
+const scaled = await tool.execute({ calculation: scaledCalculation, inputs: scaledInputs }, ctx);
+check("Typed millions and 50bp yield 82 million base USD", [scaled.error, JSON.parse(scaled.observation).values.pretaxInterestChange], [false, 82000000]);
+check("Printed millions cannot masquerade as base USD", (await tool.execute({ calculation: { ...scaledCalculation, debts: [{ ...scaledCalculation.debts[0], principal: 16400 }] }, inputs: scaledInputs }, ctx)).error, true);
+check("Assumption cannot bypass a known million scale", (await tool.execute({ calculation: { ...scaledCalculation, debts: [{ ...scaledCalculation.debts[0], principal: 16400 }] }, inputs: scaledInputs.map(input => ({ ...input, basis: "assumption" })) }, ctx)).error, true);
+check("Assumption units must be explicit", (await tool.execute({ calculation, inputs: inputs.map(input => ({ ...input, unit: undefined, basis: "assumption" })) }, ctx)).error, true);
 // Explicit synthetic report; no fabricated production conclusions or data are published.
 const model = { calculatorVersion: "synthetic", modelType: "fcff", currency: "USD", shares: { economic: 1e8 }, scenarios: Object.fromEntries(["bear", "base", "bull"].map((key, i) => [key, { narrative: "Synthetic scenario", triggers: ["Synthetic trigger"], invalidation: ["Synthetic counterevidence"], evidenceIds: ["e1"], result: { perShare: 90 + i * 20 } }])), sensitivities: [], verification: { ok: true }, gates: [], forward: { months: 12 } };
 const report = { versionId: "aabbccdd", ticker: "SYNTHETIC", financialPeriodEnd: "2026-09-30", researchAsOf: "2026-11-10", generatedAt: "2026-11-10T12:00:00Z", baseInputFingerprint: "synthetic", calculatorVersion: "synthetic", currency: "USD", reportStatus: "ready", quote: { price: 100, currency: "USD", priceDate: "2026-11-09", source: "synthetic", sourceUrl: "https://example.invalid/fixture", fetchedAt: "2026-11-10", usable: true, limitations: [] }, model, gaps: [], facts: [], diagnostics: [], evidence: [{ evidenceId: "e1" }], sections: { counterEvidence: ["Synthetic counterevidence"], nextChecks: ["Synthetic check"] } } as unknown as ValuationPublication;

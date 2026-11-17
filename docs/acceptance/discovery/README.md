@@ -2,7 +2,7 @@
 
 本目录记录本轮实际结果，不替代或降低原始需求的 G0–G10 标准。输入身份与哈希见 [input-manifest.json](input-manifest.json)，生产起点见 [g0-baseline.md](g0-baseline.md)。合成数据仅在本地验收，不能发布到正式研究库。
 
-用户此前授权本轮美国/美元宏观、AI 云行业、CRWV 与 NBIS 模型 token 费用；最新指示为先完成代码，暂停全部新报告生成与付费研究。历史费用授权不能覆盖该暂停指示。保留每任务有限调用、两路并发及至多一次针对性修复，不因失败自动扩大预算或全文重跑。生产有效指针仅在内容和技术验收后切换。
+最新指示（2026-11-17）允许完成 AI 云行业及 CRWV 最新 10-Q 真实报告，不生成 NBIS 公司报告。宏观自动审核政策保持有效，行业及公司仍需人工审阅。复用既有材料、保持每任务有限调用与有界修复；失败不得静默增加原预算或全文重跑。生产有效指针仅在内容和技术验收后切换。
 
 | 关卡 | 当前状态 | 已有证据 / 下一步 |
 | --- | --- | --- |
@@ -129,3 +129,10 @@ NBIS单源人工校对入口完成本地22项实际proxy→handler→store→pre
 23项实际本地入场/拒绝及执行旅程通过：stopped/terminated真实纯读取、错hash/活跃/缺稿/递归拒绝、增量成功/失败、原任务及公开指针不变、partial审核保留、旧completed增量及宏观政策兼容。此为代码及模拟验收，真实报告与人工发布结果另记。
 
 CRWV真实影子已以唯一幂等ID启动：shadow-CRWV-0001769628-26-000465-ba1bd0e7-9568-471a-88c8-719aa8567235；源材料Q3截至2026-09-30，原公开v6不变。启动时行业尚未发布，不得倒填行业依赖；宏观可用版本7df9bcb8。行业与CRWV发布仍保留原人工审核门槛。
+
+
+## CRWV 真实影子暴露的单位与结构链缺口（2026-11-17）
+
+同一影子任务的 turn83 将 16400 USD millions 按 16400 USD 输入，得到 82 USD，却在链条中描述为 82 million/year。此前语义输入未包含 impactComputations 和 investmentChains；不能仅修改可见 HTML 就让下游使用错误结构。现改为按事实原单位校验基础货币/股数/比例，保存输入与单位凭据；旧无凭据计算必须重算，最终预算回合的 hardPrecheck 仍阻止发布。独立语义政策 v3 审查完整结构链及所有引用计算，尤其区分可取消与实际取消/退款、内部人二级出售与公司增发，以及利率披露敏感性与未来净成本。
+
+本地实际工具→filingLoader→finish 旅程 26 项及既有计算旅程 23 项通过，均无生产写入或模型调用；全仓/Analysis 类型检查、架构边界、改动文件 lint 与 Analysis dry-run 通过。全仓 lint 仍为已溯源的 10 errors / 5 warnings。可运行 `node --experimental-strip-types --no-warnings scripts/filing-impact-unit-acceptance.mjs` 与 `node --experimental-strip-types --no-warnings scripts/price-impact-acceptance.ts`。此处只证明技术门槛，不代表真实影子内容已通过，也不代表人工批准。

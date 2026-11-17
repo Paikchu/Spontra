@@ -20,6 +20,55 @@ export const impactCalculationSchema = z.discriminatedUnion("kind", [
 ]);
 export type ImpactCalculationInput = z.infer<typeof impactCalculationSchema>;
 
+export type ImpactSourceValue = { value: number; unit: string };
+/** These are calculation fields, not strings extracted from financial prose. */
+export function impactInputUnit(input: ImpactCalculationInput, path: string): string {
+  const field = path.split(".").at(-1)!;
+  if (["rateChange", "exposedShare", "priceChange", "periodFraction", "utilization"].includes(field)) return "ratio";
+  if (["repricingYears", "beforeYears", "afterYears", "periodYears"].includes(field)) return "years";
+  if (field === "shares") return "shares";
+  if (field === "capacityMw") return "MW";
+  if (field === "gpuPerMw") return "GPU/MW";
+  if (field === "issuePrice" || input.kind === "price_comparison") return `${input.currency}/share`;
+  return input.currency;
+}
+
+/** Only explicit unit metadata is converted. Unknown or incompatible dimensions stay unavailable. */
+function impactUnit(unit: string): { dimension: string; scale: number } | null {
+  const name = unit.toLowerCase().replace(/[\s_()]/g, "");
+  const scaleOf = (scale: string) => ["k", "thousand", "thousands"].includes(scale) ? 1e3 : ["m", "mm", "mn", "million", "millions"].includes(scale) ? 1e6 : ["b", "bn", "billion", "billions"].includes(scale) ? 1e9 : 1;
+  if (["ratio", "decimal", "fraction", "ratedecimal", "x"].includes(name)) return { dimension: "ratio", scale: 1 };
+  if (["percent", "ratepercent", "%", "percentagepoints"].includes(name)) return { dimension: "ratio", scale: 0.01 };
+  if (["bp", "bps", "basispoint", "basispoints"].includes(name)) return { dimension: "ratio", scale: 0.0001 };
+  if (["year", "years"].includes(name)) return { dimension: "years", scale: 1 };
+  if (["mw", "gw", "kw"].includes(name)) return { dimension: "MW", scale: name === "gw" ? 1e3 : name === "kw" ? 0.001 : 1 };
+  if (name === "gpu/mw") return { dimension: "GPU/MW", scale: 1 };
+  const shares = /^(?:shares?)(k|thousands?|m|mm|mn|millions?|b|bn|billions?)?$/.exec(name);
+  if (shares) return { dimension: "shares", scale: scaleOf(shares[1] ?? "") };
+  const money = /^([a-z]{3})(k|thousands?|m|mm|mn|millions?|b|bn|billions?)?(\/shares?)?$/.exec(name);
+  return money ? { dimension: `${money[1]!.toUpperCase()}${money[3] ? "/share" : ""}`, scale: scaleOf(money[2] ?? "") } : null;
+}
+
+export function impactValueInUnit(source: ImpactSourceValue, unit: string): number | null {
+  const from = impactUnit(source.unit), to = impactUnit(unit);
+  return from && to && from.dimension === to.dimension ? source.value * from.scale / to.scale : null;
+}
+
+export function impactResultValues(result: ImpactCalculation): ImpactSourceValue[] | null {
+  if (!result.provenance) return null;
+  return Object.entries(result.values).map(([name, value]) => ({ value, unit:
+    ["newShares", "postFinancingShares"].includes(name) ? "shares" :
+    ["ratio", "eventValueChangeFraction", "gapToReference", "marketChangeFraction"].includes(name) ? "ratio" :
+    name === "postFinancingPerShare" || result.provenance!.calculation.kind === "price_comparison" && name === "eventValueChange" ? `${result.currency}/share` :
+    name === "annualRevenuePerMw" ? `${result.currency}/MW/year` : name === "impliedGpuHourPrice" ? `${result.currency}/GPU/hour` : result.currency }));
+}
+
+/** Saved calculations without checked units must be rerun, not made publishable by editing display text. */
+export function impactUnitIssue(results: Record<string, ImpactCalculation> | undefined, refs: Iterable<string>): string | null {
+  for (const id of refs) if (results?.[id] && results[id]!.provenance?.unitContract !== "impact-base-units.v1") return `Recompute ${id} with compute_investment_impact using base currency units, individual shares and decimal rates, then replace its investment-chain and report references. This saved calculation predates typed-unit validation; editing its prose is insufficient.`;
+  return null;
+}
+
 /** Saved v1 calculations used prose for this distinction. Keep those results conservative when resumed. */
 export function isSensitivityCalculation(result: ImpactCalculation | null | undefined): boolean {
   return !!result && (result.quantificationBasis === "sensitivity_only" || result.limitations.some(note => /^(?:Accounting )?Sensitivity only\b/i.test(note)));
