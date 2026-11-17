@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-11-17T06:09:23.855625+00:00",
+  "status": "held_by_user_after_failed_visual_review",
+  "report": {
+    "accession": "0001769628-26-000465",
+    "draftVersion": 7,
+    "draftHash": "aeb9e6bdb5c217103211e91db71f1e92fa55296201f1b05e37abd18d188ce49a",
+    "stateHash": "0d3934b15ccc9d6898677ae745e96ecc6fb2cff5ac00b611464c4ee6623342a0"
+  },
+  "summaryContent": "passed actual",
+  "fiveOtherContent": "actual reconstructedLegacy-v1 reuse",
+  "fullSemantic": "passed actual",
+  "visual": {
+    "passed": false,
+    "weightedScore": 59.0,
+    "scores": {
+      "layout": 5,
+      "hierarchy": 6,
+      "density": 6,
+      "consistency": 8,
+      "readability": 5
+    },
+    "screenshots": 24,
+    "covered": {
+      "1440x900 light": [
+        "summary",
+        "highlights",
+        "risks",
+        "overlooked",
+        "versus-prior",
+        "what-to-watch"
+      ],
+      "390x844 light": [
+        "summary",
+        "highlights",
+        "risks",
+        "overlooked",
+        "versus-prior",
+        "what-to-watch"
+      ],
+      "1280x800 dark": [
+        "summary",
+        "highlights",
+        "risks",
+        "overlooked",
+        "versus-prior",
+        "what-to-watch"
+      ]
+    },
+    "unavailable": "the required visual review was unavailable: the required visual review named an unknown block or viewport",
+    "oldRawIssueText": "not recorded; cannot reconstruct literal unknown identifiers"
+  },
+  "newReviewRequests": 3,
+  "inheritedFailedRequests": 7,
+  "totalRequests": 10,
+  "maxTotalRequests": 12,
+  "humanApproval": false,
+  "newValidatedVersion": null,
+  "publishedVersion": 6,
+  "publication": "unchanged; new draft not published",
+  "layoutChanges": "paused by explicit user request",
+  "moreGeneration": "none initiated after pause"
+}

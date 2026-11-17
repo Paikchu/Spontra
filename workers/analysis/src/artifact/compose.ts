@@ -85,6 +85,9 @@ export type ComposerPhaseReceipt = {
   errors?: string[];
   shots?: number;
   visualReviewed?: boolean;
+  visualVerdict?: QaResult["visualVerdict"];
+  visualIdentifiersValid?: QaResult["visualIdentifiersValid"];
+  invalidVisualIdentifiers?: QaResult["invalidVisualIdentifiers"];
   published?: { version: number; hash: string };
   /** Newly captured actual request identity; absent from historical receipts predating the request builder. */
   inputHash?: string;
@@ -640,6 +643,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
         validation.render = receiptOf(validation, "render", !problems.length, problems.length ? `The rendered report did not pass:\n${problems.join("\n")}` : "Browser measurements and independent visual review passed at every required viewport.", {
           draft: { version: draft.version, hash: draft.hash }, scores: qa.scores, covered: qa.covered, measured: qa.measured, metrics: qa.metrics,
           errors: qa.errors ?? [], shots: qa.shots, visualReviewed: qa.visualReviewed, issues: qa.issues, ...(qa.unavailable ? { unavailable: qa.unavailable } : {}),
+          ...(qa.visualVerdict !== undefined ? { visualVerdict: qa.visualVerdict, visualIdentifiersValid: qa.visualIdentifiersValid, invalidVisualIdentifiers: qa.invalidVisualIdentifiers } : {}),
         });
       } catch (error) {
         validation.render = receiptOf(validation, "render", false, `Rendering validation failed: ${errorText(error)}`, { unavailable: errorText(error) });

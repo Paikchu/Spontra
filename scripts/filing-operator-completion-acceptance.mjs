@@ -51,6 +51,21 @@ const checks = [], outbound = [], blockedOutbound = [], browserTelemetry = [], s
 let transportMode = "pass", mf, chrome, chromeEndpoint, transportRelease, transportHeld;
 let slowR2Key = null, slowR2Release, slowR2EnteredResolve, slowR2EnteredAt = null, slowR2Evidence = null;
 const recoveryMode = process.env.SPONTRA_PREPARATION_RECOVERY_ACCEPTANCE === "1";
+const visualContractMode = process.env.SPONTRA_VISUAL_REVIEW_CONTRACT_ACCEPTANCE === "1";
+const visualViewports = ["1440x900 light", "390x844 light", "1280x800 dark"];
+const visualScores = { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 };
+const visualContractCases = [
+  { name: "visual-contract-schema", passes: true, verdict: { scores: visualScores, issues: [] } },
+  { name: "visual-contract-invalid", passes: false, verdict: { scores: visualScores, issues: [
+    { block: "all", severity: "major", viewport: visualViewports[0], problem: "Synthetic unknown block", suggestion: "Synthetic contract injection" },
+    { block: "summary", severity: "minor", viewport: "desktop", problem: "Synthetic unknown viewport", suggestion: "Synthetic contract injection" },
+    { block: "*", severity: "major", viewport: "all", problem: "Synthetic two invalid identifiers", suggestion: "Synthetic contract injection" },
+    { block: "risks", severity: "minor", viewport: visualViewports[1], problem: "Synthetic valid issue retained in raw", suggestion: "Synthetic contract injection" },
+  ] } },
+  { name: "visual-contract-low-score", passes: false, verdict: { scores: { layout: 5, hierarchy: 6, density: 6, consistency: 8, readability: 5 }, issues: [] } },
+  { name: "visual-contract-major", passes: false, verdict: { scores: visualScores, issues: [{ block: "summary", severity: "major", viewport: visualViewports[0], problem: "Synthetic major layout issue", suggestion: "Synthetic contract injection only" }] } },
+  { name: "visual-contract-valid84", passes: true, verdict: { scores: { layout: 8, hierarchy: 9, density: 8, consistency: 8, readability: 9 }, issues: [] } },
+];
 const recoveryHolds = new Map(), recoveryStorageWrites = [], recoveryReadReturns = [];
 const legacyOperator = recoveryMode ? { commit: execFileSync("git", ["rev-parse", "82a0"], { cwd: root, encoding: "utf8" }).trim(), source: execFileSync("git", ["show", "82a0:workers/analysis/src/filing-analysis/operator-completion.ts"], { cwd: root, encoding: "utf8" }) } : null;
 const legacyExecutionId = `shadow-${ticker}-${accession}-operator-fix-${uuid(432)}`;
@@ -213,14 +228,14 @@ async function modelTransport(incoming) {
   const content = body.messages?.find(message => message.role === "user")?.content;
   const text = Array.isArray(content) ? content.find(part => part.type === "text")?.text : content;
   const input = JSON.parse(text || "{}"), stage = /local gate transport/.test(system) ? "gate" : /independent publication auditor/.test(system) ? "semantic" : /design reviewer/.test(system) ? "visual" : "content";
-  outbound.push({ stage, mode: transportMode, model: body.model, streaming: body.stream === true, block: input.block?.id ?? null, images: Array.isArray(content) ? content.filter(part => part.type === "image_url").length : 0, input });
+  outbound.push({ stage, mode: transportMode, model: body.model, streaming: body.stream === true, block: input.block?.id ?? null, images: Array.isArray(content) ? content.filter(part => part.type === "image_url").length : 0, input, ...(visualContractMode && stage === "visual" ? { system, schema: body.response_format?.json_schema?.schema } : {}) });
   if (transportMode === "hold-content" && stage === "content") { transportHeld?.(); await new Promise(resolve => { transportRelease = resolve; }); }
   if (transportMode === "visual-unavailable" && stage === "visual" || transportMode === "retry-cap") return Response.json({ error: { message: "Synthetic provider transport failure" } }, { status: 500, headers: { "retry-after-ms": "1" } });
   if (stage === "gate") return completion(body, { ok: true });
   if (stage === "content" && transportMode === "malformed-content") return completion(body, {});
   if (stage === "content" && transportMode === "malformed-content-issue") return completion(body, { issues: [{}] });
   if (stage === "content") return completion(body, { issues: transportMode === "content-fail" ? [{ quote: input.block.sentences[0].text, problem: "Synthetic injected unsupported claim", replacement: "DELETE", suggestion: "Synthetic injection only", severity: "major" }] : [] });
-  if (stage === "visual") return completion(body, { scores: { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 }, issues: [] });
+  if (stage === "visual") return completion(body, visualContractMode ? visualContractCases.find(item => item.name === transportMode).verdict : { scores: { layout: 9, hierarchy: 9, density: 9, consistency: 9, readability: 9 }, issues: [] });
   const computations = input.computations.map(item => ({ id: item.id, status: "holds", problem: "Synthetic provider receipt: exact pinned arithmetic and stated static basis", sources: ["source-block"] }));
   return completion(body, { verdict: ["semantic-fail", "semantic-noquote"].includes(transportMode) ? "fail" : "pass", complete: true, summary: "SYNTHETIC independent-provider transport response, not real investment review", computations, issues: ["semantic-fail", "semantic-noquote"].includes(transportMode) ? [{ block: "summary", quote: transportMode === "semantic-noquote" ? "" : reviewerQuote, problem: "Synthetic injected semantic failure", replacement: reviewerReplacement, suggestion: "Synthetic injection only", sources: ["source-block"], evidence: originalQuote }] : [] });
 }
@@ -250,6 +265,45 @@ async function drive(id, { terminal = true, limit = 160, executionId = id } = {}
     await pause(30);
   }
   throw Error("Operator task did not reach a terminal receipt: " + JSON.stringify(saved));
+}
+async function runVisualContractJourney() {
+  const cases = [];
+  for (const [index, fixed] of visualContractCases.entries()) {
+    const n = index + 1, before = outbound.length, firstShot = screenshots.length;
+    transportMode = fixed.name;
+    const admitted = await send(n, 100 + n, await planFor(n), { proxy: true });
+    check(fixed.name + " admits only the fixed synthetic fixture through the actual proxy", admitted.status === 202, admitted);
+    const run = await drive(admitted.body.runId), receipt = run.stages?.render?.receipt;
+    const requests = outbound.slice(before), visual = requests.filter(item => item.stage === "visual");
+    check(fixed.name + " reaches real composer render with one synthetic visual HTTP and no retry", requests.length === 8 && requests.filter(item => item.stage === "content").length === 6 && requests.filter(item => item.stage === "semantic").length === 1 && visual.length === 1 && run.reviewCalls === 8, requests.map(({ stage, mode }) => ({ stage, mode })));
+    check(fixed.name + " sends actual block and viewport enums in the provider JSON schema", JSON.stringify(visual[0].schema?.properties?.issues?.items?.properties?.block?.enum) === JSON.stringify(blockIds) && JSON.stringify(visual[0].schema?.properties?.issues?.items?.properties?.viewport?.enum) === JSON.stringify(visualViewports), visual[0].schema);
+    check(fixed.name + " prompts for the same exact sets and forbids all wildcards and aliases", visual[0].system.includes(JSON.stringify(blockIds)) && visual[0].system.includes(JSON.stringify(visualViewports)) && visual[0].system.includes("never use all, *, aliases or combined identifiers"), visual[0].system);
+    check(fixed.name + " actually measures and sends screenshots of every block at all three viewports", receipt && visual[0].images >= 18 && screenshots.length - firstShot >= 18 && visualViewports.every(viewport => blockIds.every(id => receipt.measured?.[viewport]?.includes(id) && receipt.covered?.[viewport]?.includes(id) && visual[0].input.blockMap.some(part => part.block === id && part.viewport === viewport))), { images: visual[0].images, shots: screenshots.length - firstShot, measured: receipt?.measured, covered: receipt?.covered });
+    check(fixed.name + " retains the complete parsed visual verdict in the durable composer receipt", JSON.stringify(receipt?.visualVerdict) === JSON.stringify(fixed.verdict), receipt?.visualVerdict);
+    const persistedCheck = await db.prepare("SELECT result FROM analysis_artifact_checks WHERE artifact_id=? AND version=? AND stage='render' ORDER BY created_at DESC LIMIT 1").bind(`filing-report:${ticker}:${accession}`, receipt.draft.version).first();
+    const storedQa = persistedCheck ? JSON.parse(persistedCheck.result) : null;
+    check(fixed.name + " independently stores the same complete raw verdict in the actual artifact QA record", JSON.stringify(storedQa?.visualVerdict) === JSON.stringify(fixed.verdict) && JSON.stringify(storedQa?.invalidVisualIdentifiers) === JSON.stringify(receipt.invalidVisualIdentifiers), storedQa?.visualVerdict);
+    if (fixed.name === "visual-contract-invalid") {
+      const expectedInvalid = fixed.verdict.issues.slice(0, 3).map((issue, issueIndex) => ({ issue: issueIndex, block: issue.block, viewport: issue.viewport, unknownBlock: !blockIds.includes(issue.block), unknownViewport: !visualViewports.includes(issue.viewport) }));
+      check("invalid visual IDs preserve all four original issues and every offending position without remapping", receipt.visualVerdict.issues.length === 4 && receipt.visualIdentifiersValid === false && JSON.stringify(receipt.invalidVisualIdentifiers) === JSON.stringify(expectedInvalid) && !receipt.issues.some(issue => issue.problem.startsWith("Synthetic unknown") || issue.problem === "Synthetic two invalid identifiers"), receipt.invalidVisualIdentifiers);
+      check("invalid visual IDs cannot satisfy strict completion even with all nine scores", receipt.visualReviewed === false && /unknown block or viewport/.test(receipt.unavailable), { visualReviewed: receipt.visualReviewed, unavailable: receipt.unavailable, scores: receipt.scores });
+    } else {
+      check(fixed.name + " marks exact identifiers valid without inventing invalid locations", receipt.visualIdentifiersValid === true && receipt.invalidVisualIdentifiers.length === 0 && receipt.visualReviewed === true, { valid: receipt.visualIdentifiersValid, invalid: receipt.invalidVisualIdentifiers, reviewed: receipt.visualReviewed });
+    }
+    if (fixed.name === "visual-contract-low-score") {
+      const score = Object.entries({ layout: .25, hierarchy: .25, density: .2, consistency: .15, readability: .15 }).reduce((sum, [key, weight]) => sum + receipt.scores[key] * weight * 10, 0);
+      check("valid IDs do not turn the fixed 59 score into a visual pass", Math.round(score) === 59 && receipt.success === false && /score threshold/.test(receipt.observation), { weightedScore: score, scores: receipt.scores, observation: receipt.observation });
+    }
+    if (fixed.name === "visual-contract-major") check("valid IDs and nine scores cannot override a real major visual issue", receipt.success === false && receipt.issues.some(issue => issue.kind === "visual" && issue.severity === "major" && issue.block === "summary" && issue.viewport === visualViewports[0]), receipt.issues);
+    check(fixed.name + " enforces the final composer and shadow gate", receipt.success === fixed.passes && run.status === (fixed.passes ? "validated" : "failed") && (fixed.passes ? Boolean(run.validatedKey) : !run.validatedKey), { status: run.status, success: receipt.success, validatedKey: run.validatedKey });
+    const read = await request(reportPath(admitted.body.runId), { headers: { authorization: "Bearer " + token } });
+    check(fixed.name + " exposes a validated preview only for the two genuine local passing receipts", fixed.passes ? read.status === 200 && read.body.status === "validated_shadow" && Boolean(read.body.previewToken) : !read.body.previewToken && !read.body.artifact && read.body.status !== "validated_shadow", { status: read.status, bodyStatus: read.body.status, preview: Boolean(read.body.previewToken) });
+    cases.push({ name: fixed.name, fixedResponse: fixed.verdict, runId: admitted.body.runId, status: run.status, reviewCalls: run.reviewCalls, receipt, artifactQa: storedQa, request: visual[0], screenshots: screenshots.slice(firstShot) });
+  }
+  const pointer = await db.prepare("SELECT published_version,published_hash FROM analysis_artifacts WHERE artifact_id=?").bind(`filing-report:${ticker}:${accession}`).first();
+  check("visual contract acceptance preserves the exact public version and hash without promotion", pointer.published_version === 6 && pointer.published_hash === publicBaseline.hash, pointer);
+  check("fixed visual contract acceptance never contacts production or any external provider", blockedOutbound.length === 0, blockedOutbound);
+  return { cases, pointer };
 }
 async function startHeld(n) {
   transportMode = "hold-content";
@@ -600,7 +654,15 @@ try {
   token = (await request("/fixture/auth")).body.token;
   publicBaseline = (await request("/fixture/public")).body;
   check("fixture has an immutable sixth public version", publicBaseline.version === 6 && /^[a-f0-9]{64}$/.test(publicBaseline.hash), publicBaseline);
-  if (recoveryMode) {
+  if (visualContractMode) {
+    const visualContract = await runVisualContractJourney();
+    const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-visual-review-contract.json");
+    const implementation = {};
+    for (const name of ["qa.ts", "compose.ts"]) implementation[name] = sha(await readFile(resolve(root, "workers/analysis/src/artifact", name)));
+    const results = { at: new Date().toISOString(), scope: "five-fixed-synthetic-visual-contract-responses-only", environment: "Actual local proxy, named AdminGateway and TaskRunner, actual composer stages and QA, actual Chromium and ArtifactFrame; provider transport only is synthetic", synthetic: { fixedMaterials: true, fixedReportHtml: true, providerResponses: true, passedReceipts: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, implementation, visualContract, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, browserTelemetry, scratch, notVerified: ["Actual provider investment or image judgement quality", "Production report rerender, correction, recovery or publication", "Full production business-page shell", "Repeating historical 171, 47, 54 or 72 journeys"] };
+    await writeFile(resultFile, JSON.stringify(results, null, 2) + "\n");
+    console.log(JSON.stringify({ resultFile, checks: checks.length, fixedCases: visualContract.cases.length, syntheticProviderHttpCalls: outbound.length, actualModelCalls: 0, screenshots: screenshots.length, scratch }));
+  } else if (recoveryMode) {
     const preparationRecovery = await runPreparationRecoveryJourney(), baselineFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-correction-material-cache.json"), baselineBytes = await readFile(baselineFile, "utf8"), baseline = JSON.parse(baselineBytes);
     const resultFile = resolve(root, "docs/acceptance/discovery/results/filing-reviewer-preparation-recovery.json"), implementations = (await db.prepare("SELECT * FROM fixture_execution_implementations ORDER BY execution_id").all()).results;
     const results = { at: new Date().toISOString(), scope: "explicit-single-unbilled-preparation-recovery-with-actual-82a0-late-callback", environment: "Real handlers/proxy/named AdminGateway/TaskRunner/native RunStep/composer/current recovery implementation plus the complete historical 82a0 operator module", synthetic: { material: true, providerResponses: true, timerAcceleration: true, passedReceipts: false, finalRunnerStatus: false, userSignoff: false }, actualModelCalls: 0, productionAccess: false, preparationRecovery, implementations, checks, transports: outbound.map(({ input, ...rest }) => rest), screenshots, recoveryReadReturns, recoveryStorageWrites, scratch, baselineAcceptance: { file: basename(baselineFile), at: baseline.at, sha256: sha(baselineBytes), checks: baseline.checks.length }, notVerified: ["Real provider investment and visual judgement", "Production recovery or deployment", "Waiting an actual eleven-minute wall-clock timeout", "Repeating the historical full or cache journeys on this run"] };

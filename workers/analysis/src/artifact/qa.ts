@@ -51,6 +51,10 @@ export type QaResult = {
   metrics?: Record<string, Measured>;
   /** True only after a configured visual provider returned a complete review. */
   visualReviewed?: boolean;
+  /** The complete parsed provider verdict, retained even when its identifiers fail the contract. */
+  visualVerdict?: unknown;
+  visualIdentifiersValid?: boolean;
+  invalidVisualIdentifiers?: Array<{ issue: number; block: unknown; viewport: unknown; unknownBlock: boolean; unknownViewport: boolean }>;
 };
 type Measured = { stageWidth: number; blocks: Array<{ id: string; x: number; y: number; width: number; height: number }>; problems: Array<{ block: string; severity: "blocker" | "major" | "minor"; kind: "render" | "interaction"; problem: string }> };
 export type RenderingReviewOptions = {
@@ -209,14 +213,14 @@ const VISUAL_SYSTEM = `You are the design reviewer of an equity research platfor
 The house style: a research report, not a dashboard. Sections are separated by headings, body text, thin rules and space; data is shown with tables, charts, tabs and other components wherever they make the point clearer. Avoid piles of rounded, bordered boxes, decorative badges, gradients and large colour fills; the highlight colour and gain/loss colours are used sparingly.
 Score each dimension from 0 to 10: layout (grid, alignment, white space, balance), hierarchy (headings, key figures and charts read in the right order), density (neither cramped nor wasteful), consistency (house style: components serve the content, few bordered boxes, restrained colour), readability (type size, line length, contrast).
 List concrete problems, each tied to the block id of the screenshot where it appears, with a fix that can be made with the report's components and classes, such as "show these four figures as one two-column table" or "drop the border around these paragraphs". Do not report a problem you cannot point to.`;
-const VISUAL_SCHEMA = {
+export const visualReviewSchema = (blocks: readonly string[]) => ({
   type: "object", additionalProperties: false, required: ["scores", "issues"],
   properties: {
     scores: { type: "object", additionalProperties: false, required: ["layout", "hierarchy", "density", "consistency", "readability"], properties: Object.fromEntries(["layout", "hierarchy", "density", "consistency", "readability"].map(k => [k, { type: "number" }])) },
     issues: { type: "array", items: { type: "object", additionalProperties: false, required: ["block", "severity", "viewport", "problem", "suggestion"], properties: {
-      block: { type: "string" }, severity: { type: "string", enum: ["major", "minor"] }, viewport: { type: "string" }, problem: { type: "string" }, suggestion: { type: "string" } } } },
+      block: { type: "string", enum: [...blocks] }, severity: { type: "string", enum: ["major", "minor"] }, viewport: { type: "string", enum: VIEWPORTS.map(viewport => viewport.name) }, problem: { type: "string" }, suggestion: { type: "string" } } } },
   },
-};
+});
 const WEIGHTS: Record<string, number> = { layout: 0.25, hierarchy: 0.25, density: 0.2, consistency: 0.15, readability: 0.15 };
 /** Initial pass mark (§7.4): weighted 80, every dimension at least 7. */
 export const visualPasses = (scores: Record<string, number> | null) => !!scores && Object.entries(WEIGHTS).reduce((sum, [k, w]) => sum + (scores[k] ?? 0) * 10 * w, 0) >= 80 && Object.keys(WEIGHTS).every(k => (scores[k] ?? 0) >= 7);
@@ -274,22 +278,34 @@ export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker 
   }
   const coverage = { shots: images.length, covered, measured, metrics };
   if (options.strict && errors.length) return { issues, scores, unavailable: errors.join("; ").slice(0, 2000), ...coverage, visualReviewed: false, errors };
-  let visualReviewed = false, visualUnavailable: string | null = null;
+  let visualReviewed = false, visualUnavailable: string | null = null, visualVerdict: unknown;
+  let visualIdentifiersValid: boolean | undefined;
+  const invalidVisualIdentifiers: NonNullable<QaResult["invalidVisualIdentifiers"]> = [];
   if (requireVisual && (options.visual === false || !judgeConfigured(env) || !images.length)) visualUnavailable = options.visual === false ? "the required visual review is disabled" : !judgeConfigured(env) ? "the required visual provider is not configured" : "no screenshots reached the required visual review";
   if (options.visual !== false && judgeConfigured(env) && images.length) {
     const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {
-        stage: "artifact-visual", system: VISUAL_SYSTEM, schema: VISUAL_SCHEMA, effort: "medium", images: images.map(s => s.image),
+        stage: "artifact-visual", system: `${VISUAL_SYSTEM}\nEvery issue.block must be exactly one of ${JSON.stringify([...blocks])}. Every issue.viewport must be exactly one of ${JSON.stringify(VIEWPORTS.map(viewport => viewport.name))}. Use only those exact identifiers; never use all, *, aliases or combined identifiers. If a problem affects multiple blocks or widths, report separate issues with one valid block and one valid viewport each.`, schema: visualReviewSchema(blocks), effort: "medium", images: images.map(s => s.image),
         ...(options.strict ? { maxRetries: 0 } : {}),
         text: JSON.stringify({ blockMap: map, measuredProblems: issues.slice(0, 20).map(i => ({ block: i.block, problem: i.problem })) }),
         ledger: { kind: "artifact-visual", ticker: ledger.ticker, ...(ledger.runId ? { runId: ledger.runId } : {}) },
       });
-      scores = verdict.scores;
+      visualVerdict = verdict;
+      if (!verdict || typeof verdict !== "object") { visualIdentifiersValid = false; throw new JudgeUnavailable("the required visual review returned an invalid verdict"); }
+      scores = verdict.scores ?? null;
+      if (!Array.isArray(verdict.issues)) { visualIdentifiersValid = false; throw new JudgeUnavailable("the required visual review returned an invalid issues result"); }
+      for (const [index, issue] of verdict.issues.entries()) {
+        const value = issue && typeof issue === "object" ? issue as Record<string, unknown> : {};
+        const unknownBlock = typeof value.block !== "string" || !known.has(value.block);
+        const unknownViewport = typeof value.viewport !== "string" || !VIEWPORTS.some(viewport => viewport.name === value.viewport);
+        if (unknownBlock || unknownViewport) invalidVisualIdentifiers.push({ issue: index, block: value.block ?? null, viewport: value.viewport ?? null, unknownBlock, unknownViewport });
+      }
+      visualIdentifiersValid = invalidVisualIdentifiers.length === 0;
       if (requireVisual && (!scores || Object.keys(WEIGHTS).some(key => !Number.isFinite(scores![key]) || scores![key]! < 0 || scores![key]! > 10))) throw new JudgeUnavailable("the required visual review returned incomplete or invalid design scores");
+      if (options.strict && !visualIdentifiersValid) throw new JudgeUnavailable("the required visual review named an unknown block or viewport");
       for (const v of options.strict ? verdict.issues : verdict.issues.slice(0, 16)) {
         const block = known.has(v.block) ? v.block : null;
-        if (options.strict && (!block || !VIEWPORTS.some(viewport => viewport.name === v.viewport))) throw new JudgeUnavailable("the required visual review named an unknown block or viewport");
         if (!block) continue;
         issues.push({ block, kind: "visual", severity: v.severity, problem: v.problem, suggestion: v.suggestion, viewport: v.viewport, key: issueKey(block, `visual ${v.problem}`) });
       }
@@ -299,5 +315,5 @@ export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker 
       if (requireVisual) visualUnavailable = `the required visual review was unavailable: ${qaErrorMessage(error)}`;
     }
   }
-  return { issues, scores, unavailable: visualUnavailable, ...coverage, visualReviewed, ...(errors.length ? { errors } : {}) };
+  return { issues, scores, unavailable: visualUnavailable, ...coverage, visualReviewed, ...(visualVerdict !== undefined ? { visualVerdict, visualIdentifiersValid, invalidVisualIdentifiers } : {}), ...(errors.length ? { errors } : {}) };
 }
