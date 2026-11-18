@@ -378,11 +378,11 @@ export async function semanticCorpusRequest(corpus: SemanticCorpus) {
     contexts.set(key, held);
   }
   return { ...corpus,
-    references: "bindings.entries are zero-based indices into evidence.entries; bindings.documentId are indices into evidence.documents; documents.material are indices into evidence.filings. All original source and entry ids remain in their dictionary records.",
+    references: "Each bindings row is [document index, title, path, entry indices]. Document indices refer to evidence.documents, entry indices to evidence.entries, and documents.material to evidence.filings. All indices are zero-based.",
     tableEncoding: "A table entry's table is an index into evidence.tables. Each row is [hierarchy (string[]), row label, ...original printed cell text], with cells aligned to columns. Numeric cell values are derived from printed text; periods, units, headings, notes and XBRL metadata are retained.",
     matchedReferences: "A normalized-xbrl-instance matched group maps each original XML source id to its index in the target inventory entry's named facts, contexts or units collection.",
     entries, tables,
     documents: corpus.documents.map(document => ({ ...document, material: materialIndices.get(stable(jsonSchema.parse(document.material)))! })),
-    bindings: [...contexts.values()].map(context => ({ ...context, documentId: documentIndices.get(context.documentId)!, entries: [...context.entries] })),
+    bindings: [...contexts.values()].map(({ documentId, title, path, entries }) => [documentIndices.get(documentId)!, title, path, [...entries]]),
   };
 }
