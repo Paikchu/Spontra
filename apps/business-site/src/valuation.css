@@ -1,11 +1,11 @@
-/* The valuation assessment on the stage: one document in the stage's full width, separated by hairlines, never cards. */
+/* The valuation assessment on the stage: one document at the report reading measure, separated by hairlines, never cards. */
 .val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
 .val-panel--empty { display: grid; }
 .val-empty { gap: 8px; align-content: center; text-align: center; padding: 40px 0; }
 .val-empty h2 { margin: 0; font-size: 15px; font-weight: 620; color: var(--foreground); }
 .val-empty p { margin: 0; max-width: 46ch; color: var(--muted-foreground); font-size: 13px; }
 .val-empty .lens-loading { width: 160px; }
-.val-doc { --lens-measure: 100%; grid-template-columns: minmax(0, 1fr); gap: 0; font-variant-numeric: tabular-nums lining-nums; }
+.val-doc { grid-template-columns: minmax(0, 1fr); gap: 0; font-variant-numeric: tabular-nums lining-nums; }
 
 /* Head: the ticker and name on the left, the composite score and the reference close on the right. */
 .val-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; padding: 8px 0 24px; }
