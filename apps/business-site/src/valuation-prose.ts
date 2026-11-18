@@ -45,12 +45,21 @@ export type ProseBlock = { heading: string | null; text: string };
  * headed "PUBLIC FACTS (as reported)"; "RPO $664B vs $455B" and "GAAP EPS $1.92" do not, since nothing closes them.
  */
 const RUN_IN = /(?:^|(?<=[.!?]\s+))([A-Z][A-Z0-9'’&/-]*(?:[ -][A-Z0-9][A-Z0-9'’&/-]*){1,9}(?:\s*\([^)]{0,60}\))?)(\?|[.:])\s+/g;
+const SECTION_LEAD = /^(PUBLIC FACTS|MANAGEMENT GUIDANCE|RESEARCH ASSUMPTIONS|WHERE THE VALUE COMES FROM)(?:\s*\([^)]{0,60}\))?(?:[.:]?\s+)/;
 
 /** Paragraphs (blank-line separated) with run-in headings lifted into their own blocks. */
 export function proseBlocks(text: string): ProseBlock[] {
   const blocks: ProseBlock[] = [];
-  for (const paragraph of text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)) {
-    let heading: string | null = null, last = 0;
+  for (const rawParagraph of text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)) {
+    let heading: string | null = null;
+    let paragraph = rawParagraph;
+    const lead = SECTION_LEAD.exec(paragraph);
+    if (lead && !RUN_IN.test(paragraph.slice(0, lead[0].length))) {
+      heading = lead[1]!;
+      paragraph = paragraph.slice(lead[0].length).trim();
+    }
+    RUN_IN.lastIndex = 0;
+    let last = 0;
     for (const match of paragraph.matchAll(RUN_IN)) {
       const at = match.index ?? 0;
       const body = paragraph.slice(last, at).trim();
