@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type UIEvent } from "react
 import { Button } from "@/packages/web/src/ui/button";
 import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
 import { messages, setLocale, useLocale } from "@/packages/web/src/i18n";
+import { CompanyMark } from "./CompanyMark";
 import { crossfade } from "./page-turn";
 import { track } from "./track";
 
@@ -66,7 +67,7 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
  * Floating card: the company row stays put, everything below it scrolls inside the card.
  * Once the list moves, a blur band under the row softens what slides beneath it; the scrollbar thumb only shows while scrolling or hovered.
  */
-export function Rail({ ticker: _ticker, actions, label, foot = null, children }: {
+export function Rail({ ticker, actions, label, foot = null, children }: {
   ticker?: string; actions: ReactNode; label?: string;
   /** The console under the scrolling body: the way to ask, and the open console over the card. */
   foot?: ReactNode;
@@ -98,6 +99,7 @@ export function Rail({ ticker: _ticker, actions, label, foot = null, children }:
   return <Sidebar collapsible="none" asChild><aside className="rail" ref={aside} aria-label={label} data-scrolled={scrolled || undefined}>
     <SidebarHeader asChild><div className="rail-top">
       <strong className="rail-brand" lang="en">Spontra</strong>
+      {ticker && <CompanyMark ticker={ticker} />}
       {actions}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>

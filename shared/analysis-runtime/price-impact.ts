@@ -34,7 +34,7 @@ export function impactInputUnit(input: ImpactCalculationInput, path: string): st
 }
 
 /** Only explicit unit metadata is converted. Unknown or incompatible dimensions stay unavailable. */
-function impactUnit(unit: string): { dimension: string; scale: number } | null {
+export function impactUnit(unit: string): { dimension: string; scale: number } | null {
   const name = unit.toLowerCase().replace(/[\s_()]/g, "");
   const scaleOf = (scale: string) => ["k", "thousand", "thousands"].includes(scale) ? 1e3 : ["m", "mm", "mn", "million", "millions"].includes(scale) ? 1e6 : ["b", "bn", "billion", "billions"].includes(scale) ? 1e9 : 1;
   if (["ratio", "decimal", "fraction", "ratedecimal", "x"].includes(name)) return { dimension: "ratio", scale: 1 };

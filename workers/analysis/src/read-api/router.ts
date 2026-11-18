@@ -30,6 +30,7 @@ import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 import { readPreview, readPublishedArtifact, readArtifactEdition, artifactId, type ArtifactStoreEnv } from "../artifact/store.ts";
+import type { PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
 import { stageAvailable } from "../stage/access.ts";
 import { listPublicResearch, readPublicResearch } from "../public-research/store.ts";
 
@@ -141,7 +142,7 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
     // An artifact draft opened by the visual review through its signed, short-lived link; never cached.
     if (route.kind === "artifact-preview") {
       const draft = await readPreview(env as unknown as ArtifactStoreEnv, route.token);
-      return draft ? dataResponse(request, { schemaVersion: "artifact-preview.v1", artifact: draft }, "no-store") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      return draft ? dataResponse(request, { schemaVersion: "artifact-preview.v1", artifact: await withFilingImpactTranslations(env.DB, draft, draft.lang) }, "no-store") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     }
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
@@ -172,6 +173,12 @@ async function home(request: Request, database: D1Database): Promise<Response> {
   // Generation time changes on every read, even when the homepage content is unchanged.
   const validatorPayload = omit(digest, "generatedAt");
   return dataResponse(request, digest, "cacheable", validatorPayload);
+}
+
+async function withFilingImpactTranslations(database: D1Database, artifact: PublishedArtifact, locale: Locale | null): Promise<PublishedArtifact> {
+  if (!artifact.filingImpact || locale !== "zh-CN") return artifact;
+  const table = await readTranslationTable(database, locale, "filing-impact", artifact.ticker, artifact.filingImpact.resultId);
+  return table ? { ...artifact, filingImpactTranslations: table } : artifact;
 }
 
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" } | { kind: "public-research" }>): Promise<Response> {
@@ -231,7 +238,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
         : url.searchParams.has("reportVersion") || url.searchParams.has("reportDate") ? null
         : await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "filing-report", detail.ticker, detail.filing.accessionNumber, locale);
       if (exactEdition && (!artifact || (artifact.sourceHash ?? artifact.hash) !== editionHash)) return errorResponse("FILING_NOT_FOUND", "Filing report edition not found.");
-      return dataResponse(request, { ...detail, artifact, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } }, artifact?.filingImpact ? "no-store" : "cacheable");
+      return dataResponse(request, { ...detail, artifact: artifact && await withFilingImpactTranslations(database, artifact, locale), filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } }, artifact?.filingImpact ? "no-store" : "cacheable");
     }
     case "artifact": {
       if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");

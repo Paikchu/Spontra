@@ -1,7 +1,44 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
-import { useLocale } from "@/packages/web/src/i18n";
+import { getLocale, useLocale, type Locale } from "@/packages/web/src/i18n";
+import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
 import { COMPANY_READ_SCHEMA } from "./company-opening";
+
+type FilingRead = Pick<PublicFilingDetail, "artifact">;
+type FilingEditions<T> = Partial<Record<Locale, T | null>>;
+
+/** Prefetch the other language for the same edition while the reader reads the first. */
+export function useFilingEditions<T extends FilingRead>(url: string | null, localize = true): FilingEditions<T> {
+  const [loaded, setLoaded] = useState<{ url: string; editions: FilingEditions<T> } | null>(null);
+  useEffect(() => {
+    if (!url) return;
+    const abort = new AbortController();
+    const first = localize ? getLocale() : "en";
+    const other = first === "en" ? "zh-CN" : "en";
+    const read = async (locale: Locale, source?: PublishedArtifact | null) => {
+      const endpoint = new URL(url, location.origin);
+      if (locale === "zh-CN") endpoint.searchParams.set("lang", locale);
+      if (source) {
+        endpoint.searchParams.set("artifactVersion", String(source.version));
+        endpoint.searchParams.set("artifactHash", source.sourceHash ?? source.hash);
+      }
+      try {
+        const response = await fetch(endpoint, { signal: abort.signal });
+        return response.ok ? await response.json() as T : null;
+      } catch { return null; }
+    };
+    void read(first).then(async initial => {
+      if (abort.signal.aborted) return;
+      const editions = { [first]: initial };
+      setLoaded({ url, editions });
+      if (!localize) return;
+      const alternate = await read(other, initial?.artifact);
+      if (!abort.signal.aborted) setLoaded({ url, editions: { ...editions, [other]: alternate } });
+    });
+    return () => abort.abort();
+  }, [url, localize]);
+  return loaded?.url === url ? loaded.editions : {};
+}
 
 /**
  * A draft the visual review opened through its signed preview link (`?artifact-preview=`): it takes the published

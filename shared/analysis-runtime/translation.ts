@@ -11,7 +11,7 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "item" | "valuation" | "artifact";
+export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "filing-impact" | "item" | "valuation" | "artifact";
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -63,6 +63,10 @@ const RULES: Record<TranslatedResource, Rule> = {
     skip: set("quote", "quotes", "excerpt", "excerpts", "evidence", "evidenceIds", "discovery", "facts", "sourceMaterials", "figures", "trends",
       "financialLens", "keyMetrics", "publication", "latex", "url", "href", "src", "id", "nodeId", "metricKey", "metricKeys", "accessionNumber", "unit", "currency",
       "fiscalPeriod", "earningsGroup", "company", "status", "type", "kind", "version", "form", "path", "filename", "dataQuality"),
+  },
+  "filing-impact": {
+    keys: set("priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "missingInputs", "counterEvidence", "verification", "window", "label", "limitations", "rationale"),
+    skip: set("sources"),
   },
 };
 

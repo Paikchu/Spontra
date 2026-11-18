@@ -20,6 +20,7 @@ import { sha256 } from "../sha256.ts";
 import { checkArtifactTranslation, extractArtifactTranslation } from "../../../../shared/analysis-runtime/artifact/localization.ts";
 import { ArtifactTranslationDeferred, artifactSourceSettled, artifactTranslationProgress, publishArtifactTranslation, readArtifactSources, type ArtifactSource, type TranslationReview } from "./artifacts.ts";
 import { readArtifactVersion, type ArtifactStoreEnv } from "../artifact/store.ts";
+import { readFilingImpact } from "../filing-analysis/impact-publication.ts";
 import { z } from "zod";
 import { requireTranslationScheduled, TranslationPaused } from "./scheduling.ts";
 
@@ -65,7 +66,14 @@ export async function readSources(db: D1Database, ticker: string, artifacts?: Ar
     { resource: "events", scope: "", strings: collectProse("events", events?.events ?? null) },
     { resource: "filings", scope: "", strings: collectProse("filings", (page as PublicFilingPage | null)?.filings ?? null) },
   ];
-  if (artifacts) sources.unshift(...await readArtifactSources(artifacts, ticker));
+  if (artifacts) {
+    const documents = await readArtifactSources(artifacts, ticker);
+    const impacts = await Promise.all(documents.filter(({ artifact }) => artifact.stored.document.kind === "filing-report").map(async ({ artifact: { id, stored } }) => {
+      const impact = await readFilingImpact(artifacts, id, stored.document.version, stored.hash);
+      return impact && { resource: "filing-impact" as const, scope: impact.resultId, strings: collectProse("filing-impact", impact) };
+    }));
+    sources.unshift(...documents, ...impacts.filter(impact => impact !== null));
+  }
   // The current valuation report, scoped by its version so an older version keeps the words it was translated with.
   const valuation = await quiet(() => readValuationResponse(db, ticker));
   if (valuation?.report) sources.push({ resource: "valuation", scope: valuation.report.versionId, strings: collectProse("valuation", valuation.report) });

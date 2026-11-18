@@ -169,6 +169,7 @@ export type PublishedArtifact = {
   /** Canonical source identity is preserved when the displayed HTML is translated. */
   sourceHash?: string;
   filingImpact?: import("./filing-impact.ts").FilingImpactPublication | null;
+  filingImpactTranslations?: Readonly<Record<string, string>>;
   filingImpactState?: "preview" | "published";
   researchContext?: ArtifactResearchContext;
   researchFreshness?: "valid" | "review_required" | "unavailable";

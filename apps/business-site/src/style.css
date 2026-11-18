@@ -28,6 +28,7 @@ button { cursor: pointer; }
 .rail-top { position: relative; z-index: 2; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 8px 8px 18px; border-bottom: 1px solid transparent; transition: border-color .2s; }
 .rail[data-scrolled] .rail-top { border-bottom-color: var(--hairline); }
 .rail-brand { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; color: var(--foreground); }
+.rail-top > .company { display: none; }
 /* Blur band just under the company row: rows soften as they slide up beneath it. Masked so the blur fades out downward. */
 .rail-blur {
   position: absolute; left: 0; right: 0; top: calc(100% + 1px); height: 28px; pointer-events: none; opacity: 0; transition: opacity .2s;
@@ -74,8 +75,9 @@ button { cursor: pointer; }
   main[data-rail="collapsed"] .map { grid-template-columns: var(--rail-collapsed-w) minmax(0, 1fr); }
   main[data-rail="collapsed"] .rail { align-self: start; }
   main[data-rail="collapsed"] .rail-top { flex-direction: column; gap: 8px; padding: 12px 0; border-bottom-color: transparent; }
-  main[data-rail="collapsed"] .company { flex: none; }
-  main[data-rail="collapsed"] .rail-brand, main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur { display: none; }
+  main[data-rail="collapsed"] .rail-top > .company { display: flex; flex-direction: column; gap: 4px; max-width: 100%; padding-inline: 4px; }
+  main[data-rail="collapsed"] .rail-top .company-ticker { font-size: 12px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+  main[data-rail="collapsed"] .rail-brand, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur { display: none; }
   main[data-rail="collapsed"] .rail-actions { flex-direction: column; }
   main[data-rail="collapsed"] .rail-toggle { order: -1; }
 }
@@ -336,7 +338,11 @@ button { cursor: pointer; }
 .fc-tip-row b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 
 /* ---------- Quarterly trend ---------- */
-.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 58px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 58px; display: grid; grid-template-rows: auto clamp(196px, 24vh, 240px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.trend[data-view="bridge"] { grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); }
+@media (min-width: 961px) {
+  .stage:has(> .trend:not([data-view="bridge"])) { grid-template-rows: auto minmax(300px, 1fr) auto auto; overflow-y: auto; }
+}
 .trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
 .trend-title h2 { margin: 0; font-size: .9375rem; font-weight: 620; line-height: 1.4; letter-spacing: -.01em; }
 .trend-title h2 span { color: var(--muted-foreground); font-weight: 500; }
@@ -611,9 +617,8 @@ button { cursor: pointer; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
   .pool { position: relative; inset: auto; width: max(100%, 640px); height: 460px; }
   .stage-controls { margin-left: 0; justify-content: flex-start; }
-  .trend { --axis: 56px; --gap: 6px; height: 240px; }
-  /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
-  .trend:not([data-view="bridge"]) { height: auto; grid-template-rows: auto 220px; }
+  .trend { --axis: 56px; --gap: 6px; grid-template-rows: auto 220px; }
+  .trend[data-view="bridge"] { height: 240px; }
   .trend-plot[data-rates] { --axis-r: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -622,7 +627,7 @@ button { cursor: pointer; }
 }
 @media (min-width: 961px) and (max-height: 820px) {
   .stage { padding-top: 8px; }
-  .trend { height: 178px; }
+  .trend[data-view="bridge"] { height: 178px; }
 }
 
 /* Stack dates so all eight quarters stay readable. */
@@ -699,8 +704,8 @@ button { cursor: pointer; }
 /* ---------- The businesses, open from the start ---------- */
 .biz { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px 12px; }
 .biz-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 2px 6px 2px 2px; }
-.biz-total { flex: 1; display: inline-flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
-.biz-total-metrics { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.biz-total { flex: 1; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
+.biz-total-metrics { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .biz-total-value { font-size: 19px; font-weight: 650; letter-spacing: -.015em; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total[aria-pressed="false"] .biz-total-value { color: var(--muted-foreground); }
 .biz-total:hover .biz-total-value { color: var(--foreground); }
