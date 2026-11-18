@@ -4,6 +4,9 @@ import type { ValuationPublicEvidence } from "./public-research.ts";
 import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
+import { blockText } from "../artifact/document.ts";
+import { readArtifactVersion } from "../artifact/store.ts";
+import { readFilingImpact } from "../filing-analysis/impact-publication.ts";
 import { readStoredFindings } from "../findings/read.ts";
 import { businessTreeCacheKey } from "../business-tree/workflow.ts";
 import type { BusinessTree } from "../../../../shared/analysis-contract/business-tree.ts";
@@ -497,6 +500,18 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
       }, observe: (_a, v) => v }),
     // The layers below (docs/spontra-architecture-upgrade.md, U4): each filing's analysis and the passages it quoted
     // (layer 2), the company's findings (layer 3) and its business breakdown with the researched pages (layer 4).
+    tool({ name: "read_published_filing_report", description: "Read the published filing article for an accession listed in your input. It includes the analyst's investment and valuation implications. Verify any assumption you adopt against the underlying disclosure.", parameters: z.object({ accession: z.string() }),
+      execute: async ({ accession }, ctx) => {
+        const edition = ctx.state.input.filingReports?.find(report => report.accession === accession);
+        if (!edition) throw new Error("Choose an accession from the published filing reports in your input.");
+        return ctx.stage("published-filing-report", async () => {
+          const stored = await readArtifactVersion(env, edition.id, edition.version);
+          if (!stored) throw new Error("The published filing report is unavailable.");
+          const impact = await readFilingImpact(env, edition.id, edition.version, stored.hash);
+          const article = stored.document.blocks.map(block => blockText(block.html)).join("\n\n");
+          return JSON.stringify({ accession, version: edition.version, article, investmentChains: impact?.chains });
+        });
+      }, observe: (_a, value) => value }),
     tool({ name: "read_filing_analyses", description: "The written analysis of each of the company's filings, newest report first: id, form, dates and title. Read one with read_filing_analysis.", parameters: z.object({}), concurrencySafe: true,
       execute: async (_a, ctx) => { const list = await ctx.stage("analyses", () => listFilingAnalyses(db, ctx.state.input.ticker).catch(() => [])); return list.map(a => `${a.id} · ${a.form} filed ${a.filedAt} · report ${a.periodEnd} · ${a.title}`).join("\n") || "No filing analysis is written yet."; }, observe: (_a, v) => v }),
     tool({ name: "read_filing_analysis", description: "Read one filing analysis: its conclusion and the verbatim passages it quoted, each becoming evidence [e…]. Counts against filing reads.", parameters: z.object({ id: z.string().max(40), focus: z.array(z.string().max(60)).max(8).optional() }),
@@ -631,7 +646,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_findings", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_published_filing_report", "read_findings", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

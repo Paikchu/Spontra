@@ -284,9 +284,12 @@ export async function reviewRendering(env: JudgeEnv & { BROWSER?: BrowserWorker 
   if (requireVisual && (options.visual === false || !judgeConfigured(env) || !images.length)) visualUnavailable = options.visual === false ? "the required visual review is disabled" : !judgeConfigured(env) ? "the required visual provider is not configured" : "no screenshots reached the required visual review";
   if (options.visual !== false && judgeConfigured(env) && images.length) {
     const map = images.map((s, i) => ({ screenshot: i + 1, viewport: s.viewport, block: s.block, part: s.part, height: Math.round(s.height) }));
+    const filingLayout = new URL(url).searchParams.has("report")
+      ? "\nIn a filing report, investment and valuation implications belong beside the findings they explain. Flag standalone impact panels and company valuation panels as major layout issues."
+      : "";
     try {
       const verdict = await judge<{ scores: Record<string, number>; issues: Array<{ block: string; severity: "major" | "minor"; viewport: string; problem: string; suggestion: string }> }>(env, {
-        stage: "artifact-visual", system: `${VISUAL_SYSTEM}\nEvery issue.block must be exactly one of ${JSON.stringify([...blocks])}. Every issue.viewport must be exactly one of ${JSON.stringify(VIEWPORTS.map(viewport => viewport.name))}. Use only those exact identifiers; never use all, *, aliases or combined identifiers. If a problem affects multiple blocks or widths, report separate issues with one valid block and one valid viewport each.`, schema: visualReviewSchema(blocks), effort: "medium", images: images.map(s => s.image),
+        stage: "artifact-visual", system: `${VISUAL_SYSTEM}${filingLayout}\nEvery issue.block must be exactly one of ${JSON.stringify([...blocks])}. Every issue.viewport must be exactly one of ${JSON.stringify(VIEWPORTS.map(viewport => viewport.name))}. Use only those exact identifiers; never use all, *, aliases or combined identifiers. If a problem affects multiple blocks or widths, report separate issues with one valid block and one valid viewport each.`, schema: visualReviewSchema(blocks), effort: "medium", images: images.map(s => s.image),
         ...(options.strict ? { maxRetries: 0 } : {}),
         text: JSON.stringify({ blockMap: map, measuredProblems: issues.slice(0, 20).map(i => ({ block: i.block, problem: i.problem })) }),
         ledger: { kind: "artifact-visual", ticker: ledger.ticker, ...(ledger.runId ? { runId: ledger.runId } : {}) },

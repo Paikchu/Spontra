@@ -57,6 +57,7 @@ Confidence: ${CONFIDENCES.map(c => `${c} = ${CONFIDENCE_RULES[c]}`).join("; ")}.
 Do not give 5 for uncertainty: say what is known, what is not, and score null with a gap when the material is missing.`;
 
 const RESEARCH_SYSTEM = `You research one listed company for a valuation assessment. Everything you conclude must rest on evidence you read in this run: filing passages (a filing analysis's quoted passages included), call excerpts or the business breakdown's anchoring pages, registered with an id like [e1a2b3c4d5], or the validated facts listed by id. A finding or an analysis's conclusion is not evidence; only a registered passage is. Assumptions are never disclosures.
+When the input lists published filing reports, read the most recently published edition with read_published_filing_report. Check its material proposed assumption changes against the original evidence and carry the supported implications into the relevant research dimension for the valuation model. If newer filings already superseded the evidence, use the more recent disclosures. Explain any unresolved gap that prevents an adjustment. A company scenario value is not the incremental effect of a filing.
 Work the four research dimensions: businessQuality, growthExecution, financialResilience, mispricingCatalysts. Build on the analysis already done below you: read_findings for what the financial review concluded, read_business_tree for the businesses and the researched pages anchoring them, read_filing_analyses and read_filing_analysis for each filing's analysis and the passages it quoted. Read the complete prepared Markdown and standalone CSV tables yourself (search_filing_markdown, read_filing_markdown, find_filing_tables, read_filing_table) only for a disclosure none of them carries: the debt and commitments notes, share counts, leases. Read the calls. Treat counter-evidence first. There is no web search here; a gap the layers below do not cover is recorded as a gap.
 The diagnostics listed in the opening message were computed by code from the facts; each dimension's rationale must answer the ones that bear on it (ROIC, accruals, cash conversion, dilution, leverage, coverage) by name.
 A rationale is at most 1000 characters: the judgement first, then the two or three facts that decide it with their evidence ids. A figure the diagnostics list or another dimension already states is named, not re-derived; the page shows the diagnostics beside the scores.
@@ -82,6 +83,7 @@ function openingResearchFinalization(state: ValuationState): string {
 }
 
 export const ASSUME_SYSTEM = `${READER_LANGUAGE}
+Reflect verified changes from the latest filing in the relevant scenario assumptions. Explain the financial driver that changed and cite the evidence recorded in research. Keep a material but unquantified change as a risk or scenario condition until it has a supported model input.
 Sensitivity changePercent is the percentage change from the standalone base model value; perShare is the resulting stressed value. Describe the percentage as a change, and keep it separate from both the resulting per-share amount and the method-weighted base value.
 You set the valuation model's assumptions for one listed company. Submit common parameters with configure_valuation, then submit each complete operating path through its own set_*_case tool. calculate_prepared_valuation takes no arguments and computes the assembled model using fixed code. Every required field still needs a value and its rationale; nothing is defaulted or copied into a missing case. Submit only the part requested in this stage, with concise one- or two-sentence rationales; do not try to emit all five paths in a single reply or mentally calculate their values. One discount rate for all scenarios, each component (risk-free, beta, equity risk premium; cost of debt, tax rate, equity weight for WACC) with its value, its named source and evidence or fact ids. Risk goes into the scenarios' cash flows, not into separate rates.
 All money and share-count inputs use full base units, never billions or millions: copy the exact values shown by read_financials (for example 64076000000 USD, not 64.076). Rates are decimals. Use read_valuation_evidence to reread registered e... excerpts; read_financials accepts fact ids only.
@@ -128,6 +130,7 @@ export function openingResearch(state: ValuationState): string {
     `Company history by factor:\n${dist || "none"}`,
     `Diagnostics computed from the facts:\n${diag}`,
     state.frozenSources ? `Frozen original documents: ${state.frozenSources.length}; use list_snapshot_sources to choose the documents and read_snapshot_source to register evidence.` : `Readable filings: ${input.documents.length} (list_filings). Calls: ${input.transcripts.length ? input.transcripts.map(t => `${t.id} (${t.title}, FY${t.fiscalYear} Q${t.fiscalQuarter})`).join("; ") : "none"}.`,
+    !state.frozenSources && input.filingReports?.length ? `Published filing reports (most recently published first): ${input.filingReports.map(report => `${report.accession} v${report.version}`).join(", ")}. Read with read_published_filing_report.` : "",
     managementText(state),
     state.frozenSources ? "Start with list_snapshot_sources or find_snapshot_passages." : "Start with list_filings, then read_filing_markdown and the relevant CSV tables.",
   ].filter(Boolean).join("\n\n");
@@ -461,7 +464,7 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
   if (!readValuationPublication(publication, params.ticker)) throw new Error("The valuation failed its public contract.");
   const published = await step.do("valuation-publish", async () => {
     // The input moved on while the run worked: this result is not for the current material; the next sweep runs again.
-    const fresh = await buildValuationInput(env, params.ticker, now);
+    const fresh = await buildValuationInput(env, params.ticker, new Date().toISOString());
     if (!fresh || await runFingerprint(fresh.fingerprint) !== params.fingerprint) return { current: false, stored: false, reason: "input changed" };
     const outcome = await store.publish(params.ticker, publication, evidence, generation, params.fingerprint, publication.generatedAt);
     const completedAt = new Date().toISOString();

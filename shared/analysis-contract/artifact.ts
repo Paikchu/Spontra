@@ -206,8 +206,9 @@ export type ArtifactIssue = {
 export type ArtifactFrameMessage =
   | { type: "artifact:ready" }
   | { type: "artifact:ping" }
-  | { type: "artifact:render"; html: string; css: string; dark: boolean; lang: string; hostTitle?: string }
+  | { type: "artifact:render"; html: string; css: string; dark: boolean; lang: string; hostTitle?: string; filing?: { byline: string; close: string; notice?: string } }
   | { type: "artifact:theme"; dark: boolean }
   | { type: "artifact:rendered"; height: number }
   | { type: "artifact:size"; height: number }
-  | { type: "artifact:link"; href: string };
+  | { type: "artifact:link"; href: string }
+  | { type: "artifact:close" };

@@ -180,6 +180,26 @@ function render(m: Extract<ArtifactFrameMessage, { type: "artifact:render" }>) {
   removeRepeatedTitle(holder, m.hostTitle);
   document.body.replaceChildren(...holder.childNodes);
   const root = document.body;
+  if (m.filing) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "filing-tools";
+    const byline = document.createElement("span");
+    byline.textContent = m.filing.byline;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.setAttribute("aria-label", m.filing.close);
+    close.addEventListener("click", () => post({ type: "artifact:close" }));
+    toolbar.appendChild(byline);
+    toolbar.appendChild(close);
+    if (m.filing.notice) {
+      const notice = document.createElement("p");
+      notice.setAttribute("role", "status");
+      notice.textContent = m.filing.notice;
+      toolbar.appendChild(notice);
+    }
+    root.insertBefore(toolbar, root.firstChild);
+  }
   tabs(root); disclosures(root); tooltips(root); carousels(root); tables(root); progress(root);
   root.addEventListener("click", e => {
     const link = (e.target as Element).closest("a[href]");

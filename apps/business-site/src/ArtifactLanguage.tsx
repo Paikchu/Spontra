@@ -1,4 +1,4 @@
-import { messages, useLocale } from "@/packages/web/src/i18n";
+import { messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import type { PublishedArtifact } from "@/shared/analysis-contract/artifact";
 
 const m = messages({
@@ -24,12 +24,15 @@ const m = messages({
 });
 
 /** The language of the published body and the translation state for that exact source version. */
-export function ArtifactLanguage({ artifact }: { artifact: Pick<PublishedArtifact, "lang" | "translation"> }) {
-  const locale = useLocale();
+export function artifactLanguageText(artifact: Pick<PublishedArtifact, "lang" | "translation">, locale: Locale) {
   const translation = artifact.translation;
   const previous = { pending: m.previousPending, translating: m.previousTranslating, checking: m.previousChecking, failed: m.previousFailed };
-  const text = artifact.lang === "zh-CN" ? !translation ? m.chinese : translation.status === "ready" ? m.translated : previous[translation.status]
+  return artifact.lang === "zh-CN" ? !translation ? m.chinese : translation.status === "ready" ? m.translated : previous[translation.status]
     : locale === "zh-CN" && translation && translation.status !== "ready" ? m[translation.status] : m.english;
+}
+
+export function ArtifactLanguage({ artifact }: { artifact: Pick<PublishedArtifact, "lang" | "translation"> }) {
+  const locale = useLocale();
   return <span className="source-lang artifact-language" lang={locale} data-content-lang={artifact.lang}
-    data-translation-status={translation?.status ?? "original"} role="status">{text}</span>;
+    data-translation-status={artifact.translation?.status ?? "original"} role="status">{artifactLanguageText(artifact, locale)}</span>;
 }

@@ -37,6 +37,7 @@ export const VALUATION_INPUT_VERSION = "valuation.input.v5";
 const DAY = 86_400_000;
 
 export type ValuationDocument = { documentId: string; accession: string; form: string; docType: string; filedAt: string; reportDate: string; url: string };
+type ValuationFilingReport = { id: string; accession: string; version: number };
 export type ValuationTranscript = { id: string; periodEnd: string; title: string; filedAt: string; sourceUrl: string; characters: number; fiscalYear: number; fiscalQuarter: number };
 /** A peer's trailing figures from the peers projection and the SEC share series, for the forward-multiple cross-check; `weight` is its share of the weighted quartiles. */
 export type PeerFundamentals = { ticker: string; periodEnd: string; ebitda: number | null; coreEarnings: number | null; netDebt: number | null; shares: number | null; weight: number };
@@ -54,6 +55,7 @@ export type ValuationInput = {
   distributions: FactorDistribution[];
   diagnostics: DiagnosticMetric[];
   documents: ValuationDocument[];
+  filingReports?: ValuationFilingReport[];
   transcripts: ValuationTranscript[];
   /** Why a figure the models need is missing, by fact id. */
   missing: string[];
@@ -351,13 +353,17 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   missing.push(...leases.unresolved);
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
-  const [materials, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
+  const [materials, calls, cik, peerPublication, inputs, calendar, filingReports] = await Promise.all([
     listFilingMaterials(env, ticker).then(states => states.filter(state => state.status === "ready" && DOCUMENT_FORMS.includes(state.filing.form)).map(state => state.filing)),
     readyTranscripts(db, ticker, new Date(Date.parse(newest.periodEnd) - 400 * DAY).toISOString().slice(0, 10)).catch(() => []),
     knownCik(db, ticker).catch(() => null),
     readPeersResponse(db).then(r => r.peers).catch(() => null),
     readValuationCompanyInputs(db, ticker).catch(() => null),
     readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null),
+    db.prepare(`SELECT artifact_id AS id, subject AS accession, published_version AS version
+      FROM analysis_artifacts
+      WHERE kind = 'filing-report' AND ticker = ? AND published_version IS NOT NULL AND published_at <= ?
+      ORDER BY published_at DESC, subject DESC LIMIT 6`).bind(ticker, researchAsOf).all<ValuationFilingReport>().then(result => result.results),
   ]);
   const peers = await buildPeerFundamentals(db, ticker, peerPublication, inputs?.peers ?? null, undefined, undefined, async (peer, periodEnd, sheet) => (await readFilingLeaseFacts({ DB: db, SEC_FILINGS: env.SEC_FILINGS }, { ticker: peer, periodEnd, currency, researchAsOf, preferredAccession: sheet?.source.accession })).facts).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
   const { set: management, notes: managementNotes } = managementTargetSet(ticker, inputs?.targets ?? null, calendar, researchAsOf);
@@ -369,13 +375,14 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
     version: VALUATION_INPUT_VERSION, ticker, periodEnd: newest.periodEnd, currency,
     facts: facts.map(f => [f.id, f.value, f.periodEnd]), quarters: data.quarters.map(q => q.periodEnd).sort(),
     documents: documents.map(d => d.documentId).sort(), transcripts: transcripts.map(t => [t.id, t.characters]).sort(),
+    ...(filingReports.length ? { filingReports } : {}),
     management: management ? [management.asOf, management.targets.map(t => [t.metric, t.segment ?? "", t.fiscalYear, t.value])] : null,
     // The layers below it (docs/spontra-architecture-upgrade.md): a new findings set, business breakdown or filing analysis is new input.
     below: await belowFingerprints(db, ticker),
   }));
   return {
     ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
-    facts, distributions, diagnostics, documents, transcripts, missing, fingerprint,
+    facts, distributions, diagnostics, documents, filingReports, transcripts, missing, fingerprint,
     rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data, new Map([[newest.periodEnd, leases.facts]])),
   };
 }

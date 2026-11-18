@@ -152,6 +152,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
     { task: "memory", when: e => PERIODIC.test(form(e)) },
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
+    { task: "valuation" },
   ],
   // Findings read layer 2 only: the per-period extract, the filing analyses and the company analysis.
   "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],

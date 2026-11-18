@@ -4,5 +4,5 @@
 .filing-conclusions li { margin: 8px 0; }
 .filing-conclusions button { color: var(--foreground); text-align: left; line-height: 1.6; text-decoration: underline; text-underline-offset: 3px; }
 .filing-conclusions button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
-.filing-editions { position: relative; }
-.filing-edition[aria-hidden="true"] { position: absolute; inset: 0 0 auto; height: 0; overflow: hidden; visibility: hidden; }
+.filing-stage { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.filing-stage > .artifact-frame { width: 100%; }

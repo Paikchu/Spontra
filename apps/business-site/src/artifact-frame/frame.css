@@ -35,6 +35,10 @@ html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
 * { box-sizing: border-box; }
 body { color: var(--foreground); font: 16px/1.75 var(--sans); -webkit-font-smoothing: antialiased; }
 
+.filing-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; max-width: var(--report-measure); margin: 0 auto 8px; padding: 0 2px; color: var(--muted-foreground); font-size: 12px; }
+.filing-tools button { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: 20px; cursor: pointer; }
+.filing-tools p { grid-column: 1 / -1; margin: 0; }
+
 /* Reading geometry belongs to the reader, regardless of a generated report's layout utilities. */
 article[data-artifact] { width: 100%; max-width: var(--report-measure); min-width: 0; margin-inline: auto; overflow-wrap: anywhere; }
 article[data-artifact] > *, article[data-artifact] :where(section, header, footer, aside, figure, div, dl) { min-width: 0; max-width: 100%; }

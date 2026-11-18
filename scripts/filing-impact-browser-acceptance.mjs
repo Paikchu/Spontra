@@ -2,12 +2,13 @@
  * No model or production request. Run with node --experimental-strip-types --no-warnings. */
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { company, capital, findings, events, filings, valuation } from "./i18n/fixture.ts";
 const fixture = JSON.parse(await readFile("/tmp/spontra-filing-impact-fixture.json", "utf8"));
 const base = process.env.ACCEPTANCE_BASE ?? "http://127.0.0.1:4208";
 const directory = "/tmp/spontra-filing-impact-browser"; await mkdir(directory, { recursive: true });
-const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", headless: true, args: ["--no-sandbox"] });
+const browser = await chromium.launch({ ...(existsSync("/usr/bin/chromium") ? { executablePath: "/usr/bin/chromium" } : { channel: "chrome" }), headless: true, args: ["--no-sandbox"] });
 const results = [];
 const opening = JSON.parse(JSON.stringify({ revisions: {}, resources: {
   company: { status: 200, body: company }, capital: { status: 200, body: { status: "ready", capital } }, findings: { status: 200, body: { status: "ready", findings, passages: [] } }, events: { status: 200, body: { status: "ready", events } }, filings: { status: 200, body: { status: "ready", filings } }, fundamentals: { status: 200, body: { status: "unavailable" } }, valuation: { status: 200, body: { ...valuation, researchStatus: "valid" } }, insiders: { status: 200, body: { status: "unavailable" } },
@@ -16,6 +17,8 @@ const digest = opening.resources.filings.body.filings.filings[0];
 Object.assign(digest, { accessionNumber: fixture.selection.accession, reportDate: "2026-09-30", periodEnd: "2026-09-30", periodLabel: "FY2026 Q3", filingDate: "2026-11-12", date: "2026-11-12", headline: fixture.artifact.title });
 opening.resources.filings.body.filings.filings = [digest, { ...digest, accessionNumber: fixture.otherFiling.accession, headline: fixture.otherFiling.title, filingDate: "2026-11-13", date: "2026-11-13" }];
 const params = extra => new URLSearchParams({ report: fixture.selection.accession, artifactVersion: fixture.selection.version, artifactHash: fixture.selection.hash, ...extra });
+const reportFrame = "iframe[data-artifact-frame][data-rendered]";
+const detailParams = lang => new URLSearchParams({ view: "valuation", filingImpact: fixture.selection.accession, artifactVersion: fixture.selection.version, artifactHash: fixture.selection.hash, lang });
 async function setup(page) {
   const requests = [];
   await page.route("**/api/business/v1/**", async route => {
@@ -43,15 +46,13 @@ try {
     const page = await context.newPage(); const errors = []; page.on("pageerror", error => errors.push(error.message));
     const requests = await setup(page);
     await page.goto(`${base}/companies/SYNTH?${params({ lang })}`);
-    const summary = page.locator(`[data-filing-impact="${fixture.result.resultId}"]`);
-    await summary.waitFor({ timeout: 45000 });
-    assert.equal(await page.locator(".filing-company-reference").evaluate(element => element.open), false);
-    assert.ok((await summary.innerText()).includes("82M") || (await summary.innerText()).includes("8200万"));
-    assert.equal((await summary.innerText()).includes("+183.7%"), false);
-    const resultId = await summary.getAttribute("data-filing-impact");
-    await page.screenshot({ path: `${directory}/${width}-summary.png` });
-    await summary.locator("a").click();
-    await page.waitForURL(/view=valuation/);
+    await page.locator(reportFrame).waitFor({ timeout: 45000 });
+    assert.equal(await page.locator("#company-stage iframe").count(), 1);
+    assert.equal(await page.locator("#company-stage .lens-head, [data-filing-impact], .filing-company-reference").count(), 0);
+    assert.ok(await page.frameLocator(reportFrame).locator("article [data-block=summary] h2").isVisible());
+    await page.screenshot({ path: `${directory}/${width}-article.png` });
+    const resultId = fixture.result.resultId;
+    await page.goto(`${base}/companies/SYNTH?${detailParams(lang)}`);
     await page.locator(`[data-filing-impact="${resultId}"]`).waitFor();
     assert.equal(await page.locator("[data-filing-impact]").getAttribute("data-filing-impact"), resultId);
     assert.equal(new URL(page.url()).searchParams.get("artifactHash"), fixture.selection.hash);
@@ -72,7 +73,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `${directory}/${width}-detail.png` });
     await page.reload(); await page.locator(`[data-filing-impact="${resultId}"]`).waitFor();
-    await page.goBack(); await page.locator(`[data-filing-impact="${resultId}"]`).waitFor();
+    await page.goBack(); await page.locator(reportFrame).waitFor();
     assert.equal(errors.length, 0);
     results.push({ viewport: [width, height], lang, resultId, canonicalHash: fixture.selection.hash, keyboardScrolled, reachesEnd: true, returnsToTop: true, inputTable, requests, errors });
     await context.close();
@@ -100,7 +101,7 @@ try {
     const query = params({ lang: "en" });
     if (variant.startsWith("report-preview")) { query.delete("artifactVersion"); query.delete("artifactHash"); query.set("artifact-preview", variant === "report-preview-empty" ? "" : `${fixture.token}a`); }
     if (variant === "preview-sidebar") query.set("artifact-preview", fixture.token);
-    if (variant === "detail-sidebar") { query.delete("report"); query.set("view", "valuation"); query.set("filingImpact", fixture.selection.accession); }
+    if (variant === "detail-sidebar" || variant.startsWith("private-reference")) { query.delete("report"); query.set("view", "valuation"); query.set("filingImpact", fixture.selection.accession); }
     if (variant === "report-preview-loading") await page.route("**/api/business/v1/artifact-preview/**", async route => { await new Promise(resolve => setTimeout(resolve, 1500)); await route.fulfill({ status: 404, json: { error: "Synthetic denied preview" } }); });
     const adjustmentId = "a".repeat(32), adjustmentBase = "d".repeat(32);
     if (variant.startsWith("private-reference")) {
@@ -123,14 +124,15 @@ try {
       assert.equal(await page.locator("iframe[data-artifact-frame]").count(), 0);
       assert.equal(requests.some(url => /\/filings\//.test(url)), false);
     } else {
-      await page.locator(`[data-filing-impact="${fixture.result.resultId}"]`).waitFor();
+      const startingView = query.has("filingImpact") ? `[data-filing-impact="${fixture.result.resultId}"]` : reportFrame;
+      await page.locator(startingView).waitFor();
       if (variant.endsWith("sidebar")) {
-        await page.getByText(fixture.otherFiling.title, { exact: true }).click();
+        await page.getByRole("radio").filter({ hasText: fixture.otherFiling.title }).press("Enter");
         await page.locator(`iframe[data-artifact-hash="${fixture.otherFiling.hash}"]`).waitFor();
         const next = new URL(page.url());
         for (const pin of ["artifactVersion","artifactHash","filingImpact","artifact-preview"]) assert.equal(next.searchParams.has(pin), false);
         assert.equal(next.searchParams.get("report"), fixture.otherFiling.accession);
-        await page.goBack(); await page.locator(`[data-filing-impact="${fixture.result.resultId}"]`).waitFor();
+        await page.goBack(); await page.locator(startingView).waitFor();
       } else if (variant.startsWith("private-reference")) {
         await page.locator(".filing-company-reference > summary").click();
         const link = page.getByRole("link", { name: "Open company valuation", exact: true }); await link.waitFor();
@@ -140,10 +142,7 @@ try {
       } else if (variant.startsWith("long-chain")) {
         const start = await page.locator("iframe[data-artifact-frame]").boundingBox();
         assert.ok(start && start.y < height, `Body start is offscreen: ${JSON.stringify(start)}`);
-        assert.ok(await page.locator(".filing-impact-chain--compact").first().evaluate(element => element.clientHeight < 180));
-        await page.locator(".filing-impact-chain--compact details > summary").first().click();
-        assert.ok((await page.locator(".filing-impact-chain--compact").first().innerText()).length > 1000);
-        await page.screenshot({ path: `${directory}/${width}-long-chain-expanded.png` });
+        assert.equal(await page.locator("[data-filing-impact], .filing-company-reference").count(), 0);
       }
     }
     results.push({ variant, passed: true }); await context.close();
