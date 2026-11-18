@@ -286,8 +286,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     }
     case "findings": {
       const payload = await readFindingsResponse(database, route.ticker, { hidden: await hidden("findings") });
-      payload.findings = await translated("findings", payload.findings);
-      const enriched = await enrichFindings(env as unknown as ArtifactStoreEnv, payload, locale ?? "en");
+      const chinese = payload.findings && localize("findings", payload.findings, await readTranslationTable(database, "zh-CN", "findings", ticker));
+      const enriched = await enrichFindings(env as unknown as ArtifactStoreEnv, payload, chinese, locale ?? "en");
       return dataResponse(request, enriched, "no-store");
     }
     case "events": {

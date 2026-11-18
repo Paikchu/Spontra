@@ -87,6 +87,7 @@ export const pendingResearchSchema = z.object({ periodEnd: date, generatedAt: z.
 const publishedArticleSchema = z.object({ status: z.enum(["complete", "incomplete"]).optional(), findingId: text(80), title: text(300), lang: z.enum(["en", "zh-CN"]), version: z.number().int().positive(), hash: z.string().regex(/^[a-f0-9]{64}$/), publishedAt: z.string().datetime(), periodEnd: date, sourceAccessions: z.array(z.string().regex(/^\d{10}-\d{2}-\d{6}$/)).max(100), subject: text(160) });
 export const findingsPublicationSchema = z.object({
   articles: z.record(z.string(), publishedArticleSchema).optional(),
+  navigationTitles: z.record(z.string(), z.object({ en: text(300), "zh-CN": text(300) })).optional(),
   pendingResearch: pendingResearchSchema.optional(),
   schemaVersion: z.literal("findings.v1"),
   ticker: z.string().regex(TICKER_PATTERN),

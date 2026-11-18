@@ -18,7 +18,7 @@ export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | 
 /** Navigation only: the existing list and Sankey consume the lead's anchors; its body belongs to the analyst artifact. */
 export function verifiedFindings(publication: FindingsPublication | null, data: FindingData, locale: Locale = getLocale()): VerifiedFinding[] {
   return publication ? verifyFindingLeads(publication, data, locale).verified.filter(lead => !!publication.articles?.[lead.id] || !publication.leads && publication.findings.some(f => f.id === lead.id)).map<VerifiedFinding>(lead => ({ ...lead,
-    title: publication.articles?.[lead.id]?.title ?? lead.title,
+    title: publication.navigationTitles?.[lead.id]?.[locale] ?? publication.articles?.[lead.id]?.title ?? lead.title,
     judgment: { text: "", sourceIds: [] }, lens: { type: "document", document: { rows: [] } }, watchOutcome: null,
   })) : [];
 }

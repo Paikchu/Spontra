@@ -177,6 +177,8 @@ export type PublishedFindingArticle = {
 export type FindingsPublication = {
   /** Read projection from immutable published artifacts, never draft metadata. */
   articles?: Record<string, PublishedFindingArticle>;
+  /** Both navigation titles travel with the same publication so locale changes do not refetch the list. */
+  navigationTitles?: Record<string, { en: string; "zh-CN": string }>;
   /** New input is still awaiting completed research; the displayed publication remains its original version. */
   pendingResearch?: { periodEnd: string; generatedAt: string };
   schemaVersion: "findings.v1";
