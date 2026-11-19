@@ -14,11 +14,11 @@ import { qoqLabel } from "@/shared/analysis-runtime/locale";
 const m = messages({
   revenueModel: "Revenue model", partOf: "Part of", description: "Description", contains: "Contains",
   items: (n: number) => `${n} ${n === 1 ? "item" : "items"}`, details: (label: string) => `${label} business details`,
-  components: "Other components", flow: "Flow", lastQuarter: "last quarter",
+  flow: "Flow", lastQuarter: "last quarter",
 }, {
   revenueModel: "收入模式", partOf: "所属", description: "描述", contains: "包含",
   items: (n: number) => `${n} 项`, details: (label: string) => `${label} 业务详情`,
-  components: "其他构成", flow: "金额", lastQuarter: "上季度",
+  flow: "金额", lastQuarter: "上季度",
 });
 
 /** Translate only unambiguous statement terms; preserve issuer-specific lines verbatim. */
@@ -419,25 +419,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     point(event, { title: node.name, color: colorOf(item.anchor), rows: [...(node.gloss ? [[m.description, node.gloss] as [string, string]] : []), ...(node.revenue.length ? [[m.revenueModel, node.revenue.map(r => r.label).join(", ")] as [string, string]] : []), ...(node.children.length ? [[m.contains, m.items(node.children.length)] as [string, string]] : [])] });
   };
 
-  const compactNode = (n: PlacedNode) => {
-    const text = copy(n), interactive = Boolean(n.segmentId) || n.name === "revenue";
-    const content = <><span className="fc-compact-name" title={n.label}>{text.name}</span><span className="fc-compact-value">{text.value}</span>{text.change && <span className="fc-compact-change">{basis.change} {text.change.label}</span>}<span className="fc-compact-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.abs(n.value) / Math.max(1, revenue?.value ?? n.value) * 100)}%`, background: colorOf(n.name) }} /></span></>;
-    return <div className="fc-compact-node" key={n.name} data-owner={n.name} data-tone={n.tone}>
-      {interactive ? <button type="button" onClick={() => onPick(n)}>{content}</button> : <div>{content}</div>}
-    </div>;
-  };
-  const primaryNodes = ["revenue", "gross", "operating", "net"];
-  // Dense statements must not shrink names below a readable size, even on a desktop with an open sidebar.
-  const fittedNamePx = size ? type.name * Math.min(size.w / worldW, size.h / worldH) : Infinity;
-  const compact = narrowPane || (!expanded && fittedNamePx < 9);
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
-  return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (22 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-compact" role="group" aria-label={label}>
-      {primaryNodes.flatMap(name => { const node = byName.get(name); return node ? [compactNode(node)] : []; })}
-      <details className="fc-compact-details" open><summary>{m.components}</summary>
-        {layout.nodes.filter(n => !primaryNodes.includes(n.name)).map(compactNode)}
-      </details>
-    </div>
+  return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (22 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={m.details(productTarget.label)}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
