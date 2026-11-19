@@ -1,4 +1,4 @@
-/* The valuation assessment on the stage: restrained ink & highlighter typography at the report reading measure,
+/* The valuation assessment on the stage: restrained ink & highlighter typography at the full stage width,
    hairlines over card boxes, and container-responsive layouts for the valuation workbench. */
 .val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
 .val-panel--empty { display: grid; }
@@ -8,6 +8,7 @@
 .val-empty .lens-loading { width: 160px; }
 
 .val-doc {
+  --lens-measure: 100%;
   container: val-doc / inline-size;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
