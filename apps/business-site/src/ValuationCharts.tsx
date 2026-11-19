@@ -1,21 +1,44 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CandlestickSeries,
+  ColorType,
+  CrosshairMode,
+  LineSeries,
+  LineStyle,
+  LineType,
+  createChart,
+  type IChartApi,
+  type IPrimitivePaneView,
+  type ISeriesApi,
+  type ISeriesPrimitive,
+  type SeriesAttachedParameter,
+  type Time,
+} from "lightweight-charts";
 import { messages, labels, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { axisNumber, axisUnit, compactMoney, formatPct, perShare } from "@/shared/analysis-runtime/locale";
+import type { DailyPriceBar, LiveMarketDaily } from "@/shared/analysis-contract/market-daily";
 import type { ValuationPriceGuide } from "@/shared/analysis-contract/price-guide";
-import { DIMENSION_WEIGHTS, SCORE_ANCHOR_LEVELS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type MethodValuation, type Sensitivity, type ValuationDimensionKey, type ValuationMethodKey, type ValuationPublication, type YearRow } from "@/shared/analysis-contract/valuation";
+import { DIMENSION_WEIGHTS, SCORE_ANCHOR_LEVELS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type MethodValuation, type Sensitivity, type ValuationDimensionKey, type ValuationMethodKey, type ValuationPublication, type ValuationResponse, type YearRow } from "@/shared/analysis-contract/valuation";
 
 /**
  * Valuation figures: the fixed five-dimension pentagon, the dual-track valuation spectrum,
- * the method football-field bridge, the multi-year cash-flow trajectory, and the sensitivity tornado.
- * Every figure comes from the publication or price guide; nothing here invents estimates.
+ * the TradingView Lightweight Charts daily live fair-value chart with upper/lower bound lines drawn
+ * directly on the chart, the method football-field bridge, the multi-year cash-flow trajectory,
+ * and the sensitivity tornado.
  */
 const m = messages({
   radar: "Five-dimension chart", unscored: "not scored", ringNote: (levels: string) => `Rings at ${levels}`, weight: (w: string) => `Weight ${w}`,
   normalTrack: "12-month normal operating range", stressTrack: "Stress & opportunity scenarios",
-  shortTermForecast: "Short-term price range projection",
-  dailyCloseSeries: "Daily close",
-  upperBound: "Upper", centralTarget: "Base", lowerBound: "Lower",
-  fanAria: "Daily price history and radiating short-term price range projection",
+  liveFairRange: "Live fair value range assessment",
+  dailyChartAria: "TradingView daily candlestick chart with fair value upper and lower bound lines",
+  loadingChart: "Loading daily market prices…",
+  chartUnavailable: "Live daily market data is temporarily unavailable",
+  openLabel: "O", highLabel: "H", lowLabel: "L", closeLabel: "C",
+  hudRange: "Fair range",
+  basisNormal: "Normal range",
+  basisStress: "Bear–Bull",
+  upperBound: "Upper", lowerBound: "Lower",
   selectDimensionHint: "Click any dimension on the chart to inspect its analysis",
   normalLow: "Normal low", normalHigh: "Normal high", base: "Base", bear: "Bear", bull: "Bull", expected: "Expected",
   latestQuote: "Current close", frozenQuote: "Report close",
@@ -30,10 +53,15 @@ const m = messages({
 }, {
   radar: "五维图", unscored: "未评分", ringNote: (levels: string) => `环线为 ${levels} 分`, weight: (w: string) => `权重 ${w}`,
   normalTrack: "12 个月正常经营区间", stressTrack: "压力与情景测试",
-  shortTermForecast: "短期股价区间预测",
-  dailyCloseSeries: "日线收盘",
-  upperBound: "上限", centralTarget: "中枢", lowerBound: "下限",
-  fanAria: "日线走势与放射状短期股价区间预测",
+  liveFairRange: "实时股价合理范围评估",
+  dailyChartAria: "锁定日线周期的实时股价走势与合理估值上下限图",
+  loadingChart: "正在读取实时日线行情…",
+  chartUnavailable: "暂无法读取实时日线行情",
+  openLabel: "开", highLabel: "高", lowLabel: "低", closeLabel: "收",
+  hudRange: "当日合理范围",
+  basisNormal: "正常经营区间",
+  basisStress: "悲观至乐观",
+  upperBound: "上限", lowerBound: "下限",
   selectDimensionHint: "点击五维图任一维度查看对应分析",
   normalLow: "正常下限", normalHigh: "正常上限", base: "基准", bear: "悲观", bull: "乐观", expected: "期望",
   latestQuote: "最新参考价", frozenQuote: "报告基准价",
@@ -204,191 +232,494 @@ function placeMarks(items: SpectrumMark[], min: number, max: number): PlacedMark
   return sorted;
 }
 
-/** Deterministic daily close series ending at the current reference close on the divider pivot. */
-function buildDailySeries(report: ValuationPublication, guide: ValuationPriceGuide): Array<{ step: number; close: number }> {
-  const model = report.model;
-  const currentPrice = guide.quote?.price ?? report.quote?.price ?? model?.range.price ?? null;
-  if (!finite(currentPrice) || currentPrice <= 0) return [];
-  const frozenPrice = report.quote?.price ?? model?.range.price ?? currentPrice;
-  const beta = model?.discountRate.components.beta ?? 1.25;
-  const seedKey = `${report.ticker}:${report.researchAsOf}:${report.financialPeriodEnd}`;
-  let seed = 2166136261;
-  for (let i = 0; i < seedKey.length; i++) {
-    seed ^= seedKey.charCodeAt(i);
-    seed = Math.imul(seed, 16777619);
-  }
-  const nextRand = () => {
-    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
-    return seed / 4294967296;
+const signedPct = (v: number | null | undefined) => v == null || !Number.isFinite(v)
+  ? "—"
+  : `${v > 0 ? "+" : v < 0 ? "−" : ""}${(Math.abs(v) * 100).toFixed(1)}%`;
+
+function useLightTheme(): boolean {
+  const [light, setLight] = useState(() => typeof document !== "undefined" && document.documentElement.classList.contains("light"));
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const sync = () => setLight(root.classList.contains("light"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return light;
+}
+
+const LIVE_POLL_MS = 60_000;
+
+type ValuationCheckpoint = {
+  date: string;
+  generatedAt: string;
+  low: number;
+  mid: number;
+  high: number;
+};
+
+type TimelinePoint = {
+  time: string;
+  low: number;
+  mid: number;
+  high: number;
+  changed: boolean;
+  effectiveDate: string;
+};
+
+function buildValuationCheckpoints(
+  report: ValuationPublication,
+  versions: ValuationResponse["versions"] | undefined,
+  basis: "normal" | "stress",
+  currentBounds: { low: number; mid: number; high: number },
+): ValuationCheckpoint[] {
+  const byDate = new Map<string, ValuationCheckpoint>();
+  const put = (cp: ValuationCheckpoint) => {
+    const prev = byDate.get(cp.date);
+    if (!prev || cp.generatedAt >= prev.generatedAt) byDate.set(cp.date, cp);
   };
 
-  const count = 28;
-  const pivotStep = 24;
-  const swingAmp = currentPrice * 0.14 * Math.min(Math.max(beta, 0.85), 1.9);
-  const archAmp = currentPrice * 0.65;
-  const startBase = Math.max(currentPrice * 0.72, frozenPrice * 0.82);
-  const raw: number[] = new Array(count).fill(currentPrice);
-
-  for (let i = 0; i < pivotStep; i++) {
-    const t = i / pivotStep;
-    const baseLine = startBase + (frozenPrice - startBase) * t;
-    const arch = Math.pow(Math.sin(Math.PI * t), 1.35) * archAmp;
-    const secondary = Math.sin(t * Math.PI * 5.2) * swingAmp * 0.75;
-    const dailyTick = (nextRand() - 0.5) * swingAmp * 1.15;
-    raw[i] = Math.max(currentPrice * 0.55, baseLine + arch + secondary + dailyTick);
+  for (const v of versions ?? []) {
+    if (v.reportStatus !== "ready" || v.generatedAt > report.generatedAt) continue;
+    const range = basis === "normal" ? v.normalRange : v.stressRange;
+    if (!range || !finite(range.low) || !finite(range.base) || !finite(range.high)) continue;
+    const date = (v.researchAsOf || v.generatedAt).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      put({ date, generatedAt: v.generatedAt, low: range.low, mid: range.base, high: range.high });
+    }
   }
-  raw[pivotStep] = frozenPrice;
-  for (let i = pivotStep + 1; i < count - 1; i++) {
-    const t = (i - pivotStep) / (count - 1 - pivotStep);
-    const interp = frozenPrice + (currentPrice - frozenPrice) * t;
-    const jitter = (nextRand() - 0.5) * currentPrice * 0.04;
-    raw[i] = Math.max(currentPrice * 0.55, interp + jitter);
-  }
-  raw[count - 1] = currentPrice;
 
-  return raw.map((close, step) => ({ step, close }));
+  const currentVersion = versions?.find(v => v.versionId === report.versionId);
+  const currentDate = (currentVersion?.researchAsOf || report.researchAsOf || report.generatedAt).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(currentDate)) {
+    put({ date: currentDate, generatedAt: report.generatedAt, ...currentBounds });
+  }
+
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
- * Left: recent daily price trajectory up to the vertical current-close divider.
- * Right: radiating fan projection to the upper bound (green), central base (grey), and lower bound (red).
+ * Aligns historical valuation range checkpoints onto the daily candlestick timeline:
+ * preserves each historical range prior to subsequent change dates, shifts cleanly on each
+ * change date, and clamps any weekend/pre-market update onto the latest bar so live bounds stay visible.
  */
-export function PriceRangeFanChart({ report, guide }: {
-  report: ValuationPublication;
-  guide: ValuationPriceGuide;
-}) {
-  const locale = useLocale();
-  const model = report.model;
-  if (!model) return null;
+function buildValuationTimeline(bars: DailyPriceBar[], checkpoints: ValuationCheckpoint[]): TimelinePoint[] {
+  if (!bars.length || !checkpoints.length) return [];
+  const lastBarDate = bars.at(-1)!.time;
 
-  const fair = model.fairValueRange;
-  const fanLow = model.range.low;
-  const fanMid = fair?.status === "available" ? fair.base : model.range.base;
-  const fanHigh = model.range.high;
-  const currentPrice = guide.quote?.price ?? report.quote?.price ?? model.range.price;
-  if (!finite(currentPrice) || !finite(fanLow) || !finite(fanMid) || !finite(fanHigh)) return null;
+  const effectiveByDate = new Map<string, ValuationCheckpoint>();
+  for (const cp of checkpoints) {
+    const effective = cp.date > lastBarDate ? lastBarDate : cp.date;
+    const prev = effectiveByDate.get(effective);
+    if (!prev || cp.generatedAt >= prev.generatedAt) {
+      effectiveByDate.set(effective, { ...cp, date: effective });
+    }
+  }
+  const ordered = [...effectiveByDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 
-  const series = buildDailySeries(report, guide);
-  const allY = [
-    ...series.map(p => p.close),
-    currentPrice,
-    fanLow,
-    fanMid,
-    fanHigh,
-  ].filter(finite);
+  const timeline: TimelinePoint[] = [];
+  let idx = 0;
+  let prevLow: number | null = null;
+  let prevHigh: number | null = null;
 
-  const rawMin = Math.min(...allY);
-  const rawMax = Math.max(...allY);
-  const span = rawMax - rawMin || Math.max(currentPrice * 0.2, 1);
-  const yMin = rawMin < 0 ? rawMin - span * 0.08 : Math.max(0, rawMin - span * 0.08);
-  const yMax = rawMax + span * 0.08;
+  for (const bar of bars) {
+    while (idx + 1 < ordered.length && ordered[idx + 1]!.date <= bar.time) idx++;
+    const active = ordered[idx]!;
+    const changed = prevLow != null && prevHigh != null && (
+      Math.abs(active.low - prevLow) > 1e-6 || Math.abs(active.high - prevHigh) > 1e-6
+    );
+    timeline.push({
+      time: bar.time,
+      low: active.low,
+      mid: active.mid,
+      high: active.high,
+      changed,
+      effectiveDate: active.date,
+    });
+    prevLow = active.low;
+    prevHigh = active.high;
+  }
+  return timeline;
+}
 
-  const W = 880;
-  const H = 248;
-  const axisX = 96;
-  const pivotX = 468;
-  const fanEndX = 720;
-  const topY = 20;
-  const bottomY = 220;
-  const plotH = bottomY - topY;
-  const yOf = (v: number) => topY + ((yMax - v) / (yMax - yMin || 1)) * plotH;
-  const money = (v: number) => perShare(v, model.currency, locale);
+/**
+ * Lightweight Charts series primitive that paints a light-green translucent fair-value corridor
+ * following the historical upper/lower bound polylines point-by-point.
+ */
+class FairValueCorridorPrimitive implements ISeriesPrimitive<Time> {
+  private chart: IChartApi | null = null;
+  private series: ISeriesApi<"Candlestick", Time> | null = null;
+  private readonly points: TimelinePoint[];
+  private readonly fillColor: string;
+  private readonly view: IPrimitivePaneView;
 
-  const tickCount = 7;
-  const ticks = Array.from({ length: tickCount }, (_, i) => {
-    const ratio = i / (tickCount - 1);
-    return yMax - ratio * (yMax - yMin);
+  constructor(points: TimelinePoint[], fillColor: string) {
+    this.points = points;
+    this.fillColor = fillColor;
+    this.view = {
+      zOrder: () => "bottom",
+      renderer: () => ({
+        draw: target => {
+          const chart = this.chart;
+          const series = this.series;
+          if (!chart || !series || this.points.length < 2) return;
+          const timeScale = chart.timeScale();
+          const coords: Array<{ x: number; yHigh: number; yLow: number }> = [];
+          for (const pt of this.points) {
+            const x = timeScale.timeToCoordinate(pt.time as Time);
+            const yHigh = series.priceToCoordinate(pt.high);
+            const yLow = series.priceToCoordinate(pt.low);
+            if (x == null || yHigh == null || yLow == null) continue;
+            coords.push({ x, yHigh, yLow });
+          }
+          if (coords.length < 2) return;
+
+          target.useBitmapCoordinateSpace(({ context, horizontalPixelRatio, verticalPixelRatio }) => {
+            context.save();
+            context.beginPath();
+            context.moveTo(coords[0]!.x * horizontalPixelRatio, coords[0]!.yHigh * verticalPixelRatio);
+            for (let i = 1; i < coords.length; i++) {
+              context.lineTo(coords[i]!.x * horizontalPixelRatio, coords[i]!.yHigh * verticalPixelRatio);
+            }
+            for (let i = coords.length - 1; i >= 0; i--) {
+              context.lineTo(coords[i]!.x * horizontalPixelRatio, coords[i]!.yLow * verticalPixelRatio);
+            }
+            context.closePath();
+            context.fillStyle = this.fillColor;
+            context.fill();
+            context.restore();
+          });
+        },
+      }),
+    };
+  }
+
+  attached(param: SeriesAttachedParameter<Time>): void {
+    this.chart = param.chart as IChartApi;
+    this.series = param.series as ISeriesApi<"Candlestick", Time>;
+  }
+
+  detached(): void {
+    this.chart = null;
+    this.series = null;
+  }
+
+  paneViews(): readonly IPrimitivePaneView[] {
+    return [this.view];
+  }
+}
+
+function readThemePalette(light: boolean) {
+  const styles = typeof document !== "undefined" ? getComputedStyle(document.documentElement) : null;
+  const pick = (name: string, fallback: string) => styles?.getPropertyValue(name).trim() || fallback;
+  return {
+    background: pick("--surface", light ? "#ffffff" : "#0d0d0d"),
+    text: pick("--muted-foreground", light ? "#55685f" : "#a1a1a1"),
+    border: pick("--border", light ? "#dbe3dd" : "#2a2a2a"),
+    grid: light ? "rgba(11, 31, 26, 0.06)" : "rgba(255, 255, 255, 0.06)",
+    up: pick("--up", light ? "#096b5f" : "#79d9cd"),
+    loss: pick("--loss", light ? "#a33d34" : "#f08e83"),
+    bandFill: light ? "rgba(34, 197, 94, 0.13)" : "rgba(74, 222, 128, 0.12)",
+    mono: pick("--mono", "ui-monospace, monospace"),
+  };
+}
+
+function useLiveMarketDaily(ticker: string): { data: LiveMarketDaily | null; status: "loading" | "ready" | "unavailable" } {
+  const [state, setState] = useState<{ ticker: string; data: LiveMarketDaily | null; status: "loading" | "ready" | "unavailable" }>({
+    ticker,
+    data: null,
+    status: "loading",
   });
 
-  const startX = axisX + 8;
-  const historySpanX = pivotX - startX;
-  const polylinePoints = series
-    .map((pt, idx) => {
-      const x = startX + (idx / Math.max(series.length - 1, 1)) * historySpanX;
-      return `${x.toFixed(1)},${yOf(pt.close).toFixed(1)}`;
-    })
-    .join(" ");
+  useEffect(() => {
+    let active = true;
+    let currentAbort: AbortController | null = null;
 
-  const yCurrent = yOf(currentPrice);
-  const rays = [
-    { key: "high" as const, value: fanHigh, y: yOf(fanHigh), label: m.upperBound },
-    { key: "mid" as const, value: fanMid, y: yOf(fanMid), label: m.centralTarget },
-    { key: "low" as const, value: fanLow, y: yOf(fanLow), label: m.lowerBound },
-  ].sort((a, b) => a.y - b.y);
+    const load = async (initial: boolean) => {
+      if (initial && active) setState(prev => prev.ticker === ticker && prev.data ? prev : { ticker, data: null, status: "loading" });
+      currentAbort?.abort();
+      const abort = new AbortController();
+      currentAbort = abort;
+      try {
+        const res = await fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/market-daily`, {
+          signal: abort.signal,
+          headers: { accept: "application/json" },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json() as LiveMarketDaily;
+        if (!active || abort.signal.aborted) return;
+        if (body?.schemaVersion === "market-daily.v1" && Array.isArray(body.bars) && body.bars.length > 0) {
+          setState({ ticker, data: body, status: "ready" });
+        } else {
+          setState(prev => prev.ticker === ticker && prev.data ? prev : { ticker, data: null, status: "unavailable" });
+        }
+      } catch {
+        if (!active || abort.signal.aborted) return;
+        setState(prev => prev.ticker === ticker && prev.data ? prev : { ticker, data: null, status: "unavailable" });
+      }
+    };
 
-  const labelYs = rays.map(r => Math.max(topY + 12, Math.min(bottomY - 12, r.y)));
-  for (let i = 1; i < labelYs.length; i++) {
-    if (labelYs[i]! - labelYs[i - 1]! < 24) {
-      labelYs[i] = Math.min(bottomY - 10, labelYs[i - 1]! + 24);
-    }
+    void load(true);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(false);
+    }, LIVE_POLL_MS);
+
+    return () => {
+      active = false;
+      currentAbort?.abort();
+      window.clearInterval(timer);
+    };
+  }, [ticker]);
+
+  return state.ticker === ticker
+    ? { data: state.data, status: state.status }
+    : { data: null, status: "loading" };
+}
+
+/**
+ * Full-width TradingView Lightweight Charts daily candlestick chart locked to the 1D interval,
+ * with moving upper/lower valuation boundary polylines and shaded fair-value corridor that adjust
+ * from each valuation change date while preserving historical valuation records.
+ */
+export function LivePriceValuationTool({ report, guide, versions }: {
+  report: ValuationPublication;
+  guide: ValuationPriceGuide;
+  versions?: ValuationResponse["versions"];
+}) {
+  const locale = useLocale();
+  const light = useLightTheme();
+  const chartHostRef = useRef<HTMLDivElement>(null);
+  const model = report.model;
+  const symbol = report.ticker.trim().toUpperCase();
+  const { data: market, status: marketStatus } = useLiveMarketDaily(symbol);
+
+  const fair = model?.fairValueRange;
+  const hasNormal = fair?.status === "available" && finite(fair.low) && finite(fair.base) && finite(fair.high);
+  const hasStress = !!model && finite(model.range.low) && finite(model.range.base) && finite(model.range.high);
+  const rangesDiffer = hasNormal && hasStress && (
+    Math.abs(fair.low - model.range.low) > 0.01 || Math.abs(fair.high - model.range.high) > 0.01
+  );
+
+  const defaultBasis = hasNormal ? "normal" : "stress";
+  const [basis, setBasis] = useState<"normal" | "stress">(defaultBasis);
+  const [syncKey, setSyncKey] = useState(() => `${report.ticker}:${report.versionId}`);
+  const nextSyncKey = `${report.ticker}:${report.versionId}`;
+  if (syncKey !== nextSyncKey) {
+    setSyncKey(nextSyncKey);
+    setBasis(defaultBasis);
   }
-  for (let i = labelYs.length - 2; i >= 0; i--) {
-    if (labelYs[i + 1]! - labelYs[i]! < 24) {
-      labelYs[i] = Math.max(topY + 10, labelYs[i + 1]! - 24);
-    }
-  }
+  const activeBasis = basis === "normal" && hasNormal ? "normal" : hasStress ? "stress" : "normal";
 
-  const topRayY = Math.min(yOf(fanHigh), yOf(fanLow));
-  const botRayY = Math.max(yOf(fanHigh), yOf(fanLow));
-  const conePoints = `${pivotX},${yCurrent.toFixed(1)} ${fanEndX},${topRayY.toFixed(1)} ${fanEndX},${botRayY.toFixed(1)}`;
-  const tickFmt = (v: number) => perShare(span > 25 ? Math.round(v) : Number(v.toFixed(1)), model.currency, locale);
+  const bandLow = model ? (activeBasis === "normal" && hasNormal ? fair.low : model.range.low) : null;
+  const bandMid = model ? (activeBasis === "normal" && hasNormal ? fair.base : (fair?.status === "available" ? fair.base : model.range.base)) : null;
+  const bandHigh = model ? (activeBasis === "normal" && hasNormal ? fair.high : model.range.high) : null;
+
+  const timeline = useMemo(() => {
+    if (!market?.bars.length || !finite(bandLow) || !finite(bandMid) || !finite(bandHigh)) return [] as TimelinePoint[];
+    const checkpoints = buildValuationCheckpoints(report, versions, activeBasis, { low: bandLow, mid: bandMid, high: bandHigh });
+    return buildValuationTimeline(market.bars, checkpoints);
+  }, [market, report, versions, activeBasis, bandLow, bandMid, bandHigh]);
+
+  const timelineByTime = useMemo(() => new Map(timeline.map(pt => [pt.time, pt])), [timeline]);
+
+  const [hoveredBar, setHoveredBar] = useState<DailyPriceBar | null>(null);
+
+  useEffect(() => {
+    const container = chartHostRef.current;
+    if (!container || !market?.bars.length || !timeline.length) return;
+
+    const palette = readThemePalette(light);
+    const chart = createChart(container, {
+      width: container.clientWidth || 720,
+      height: container.clientHeight || 400,
+      layout: {
+        background: { type: ColorType.Solid, color: palette.background },
+        textColor: palette.text,
+        fontFamily: palette.mono,
+        fontSize: 11,
+        attributionLogo: true,
+      },
+      grid: {
+        vertLines: { color: palette.grid },
+        horzLines: { color: palette.grid },
+      },
+      rightPriceScale: {
+        borderColor: palette.border,
+        scaleMargins: { top: 0.12, bottom: 0.12 },
+      },
+      timeScale: {
+        borderColor: palette.border,
+        timeVisible: false,
+        secondsVisible: false,
+        rightOffset: 6,
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: palette.border, labelBackgroundColor: palette.border },
+        horzLine: { color: palette.border, labelBackgroundColor: palette.border },
+      },
+      localization: {
+        locale: locale === "zh-CN" ? "zh-CN" : "en-US",
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: palette.up,
+      downColor: palette.loss,
+      borderVisible: false,
+      wickUpColor: palette.up,
+      wickDownColor: palette.loss,
+      priceLineVisible: true,
+      lastValueVisible: true,
+    });
+    candleSeries.setData(market.bars);
+
+    // Light-green translucent fair-value corridor following the moving upper/lower polylines.
+    candleSeries.attachPrimitive(new FairValueCorridorPrimitive(timeline, palette.bandFill));
+
+    // Solid red upper boundary polyline & solid green lower boundary polyline: adjust on each change date, preserve history.
+    const upperSeries = chart.addSeries(LineSeries, {
+      color: palette.loss,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineType: LineType.Simple,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3.5,
+      title: m.upperBound,
+    });
+    upperSeries.setData(timeline.map(pt => ({ time: pt.time, value: pt.high })));
+
+    const lowerSeries = chart.addSeries(LineSeries, {
+      color: palette.up,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineType: LineType.Simple,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3.5,
+      title: m.lowerBound,
+    });
+    lowerSeries.setData(timeline.map(pt => ({ time: pt.time, value: pt.low })));
+
+    chart.timeScale().fitContent();
+
+    const byTime = new Map(market.bars.map(bar => [bar.time, bar]));
+    const onCrosshair = (param: { time?: Time }) => {
+      const bar = typeof param.time === "string" ? byTime.get(param.time) ?? null : null;
+      setHoveredBar(bar);
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
+
+    let rafId = 0;
+    const ro = new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        chart.applyOptions({
+          width: Math.max(240, Math.floor(rect.width)),
+          height: Math.max(260, Math.floor(rect.height)),
+        });
+      });
+    });
+    ro.observe(container);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+      chart.unsubscribeCrosshairMove(onCrosshair);
+      chart.remove();
+      setHoveredBar(null);
+    };
+  }, [market, timeline, light, locale]);
+
+  if (!model || !finite(bandLow) || !finite(bandMid) || !finite(bandHigh)) return null;
+
+  const latestBar = market?.bars.at(-1) ?? null;
+  const activeBar = hoveredBar ?? latestBar;
+  const activePoint = activeBar ? timelineByTime.get(activeBar.time) ?? null : null;
+  const livePrice = market?.livePrice ?? latestBar?.close ?? guide.quote?.price ?? report.quote?.price ?? model.range.price ?? null;
+  const prevClose = hoveredBar
+    ? (() => {
+        const idx = market?.bars.findIndex(b => b.time === hoveredBar.time) ?? -1;
+        return idx > 0 ? market!.bars[idx - 1]!.close : null;
+      })()
+    : market?.previousClose ?? (market && market.bars.length >= 2 ? market.bars.at(-2)!.close : null);
+
+  const shownPrice = activeBar?.close ?? livePrice;
+  const dayChange = shownPrice != null && prevClose != null && prevClose > 0 ? (shownPrice - prevClose) / prevClose : null;
+
+  const money = (v: number) => perShare(v, model.currency, locale);
 
   return (
-    <div className="val-spec-row val-fan-row">
+    <div className="val-spec-row val-tv-row">
       <div className="val-spec-head">
-        <span className="val-spec-title">{m.shortTermForecast}</span>
-        <span className="val-spec-span">{money(fanLow)} – {money(fanHigh)}</span>
+        <div className="val-tv-title-group">
+          <span className="val-spec-title">{m.liveFairRange}</span>
+          {rangesDiffer && (
+            <div className="val-tv-basis" role="tablist" aria-label={m.liveFairRange}>
+              <button type="button" role="tab" aria-selected={activeBasis === "normal"} onClick={() => setBasis("normal")}>
+                {m.basisNormal}
+              </button>
+              <button type="button" role="tab" aria-selected={activeBasis === "stress"} onClick={() => setBasis("stress")}>
+                {m.basisStress}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="val-fan-wrap">
-        <svg viewBox={`0 0 ${W} ${H}`} className="val-fan-svg" role="img" aria-label={`${m.fanAria} · ${money(fanLow)} – ${money(fanHigh)}`}>
-          {ticks.map((tickVal, idx) => {
-            const y = yOf(tickVal);
-            return (
-              <g key={idx}>
-                <line x1={axisX} y1={y} x2={fanEndX} y2={y} className="val-fan-grid" />
-                <text x={axisX - 10} y={y + 4} textAnchor="end" className="val-fan-tick">{tickFmt(tickVal)}</text>
-              </g>
-            );
-          })}
-          <line x1={axisX} y1={topY} x2={axisX} y2={bottomY} className="val-fan-axis" />
-          <line x1={pivotX} y1={topY} x2={pivotX} y2={bottomY} className="val-fan-divider" />
-          <polygon points={conePoints} className="val-fan-cone" />
-          {polylinePoints && <polyline points={polylinePoints} className="val-fan-history" />}
-          {rays.map((ray, idx) => {
-            const ly = labelYs[idx]!;
-            return (
-              <g key={ray.key}>
-                <line x1={pivotX} y1={yCurrent} x2={fanEndX} y2={ray.y} className={`val-fan-ray val-fan-ray--${ray.key}`} />
-                <circle cx={fanEndX} cy={ray.y} r={6.5} className={`val-fan-dot val-fan-dot--${ray.key}`}>
-                  <title>{`${ray.label} · ${money(ray.value)}`}</title>
-                </circle>
-                <text x={fanEndX + 14} y={ly + 5} className={`val-fan-price val-fan-price--${ray.key}`}>
-                  {money(ray.value)}
-                </text>
-              </g>
-            );
-          })}
-          <circle cx={pivotX} cy={yCurrent} r={6} className="val-fan-pivot">
-            <title>{`${m.latestQuote} · ${money(currentPrice)}`}</title>
-          </circle>
-        </svg>
+
+      <div className="val-tv-stage">
+        {activeBar && (
+          <div className="val-tv-hud" aria-live="polite">
+            <span className="val-tv-hud-date">{activeBar.time}</span>
+            <span className="val-tv-hud-ohlc">
+              <span><small>{m.openLabel}</small> {activeBar.open.toFixed(2)}</span>
+              <span><small>{m.highLabel}</small> {activeBar.high.toFixed(2)}</span>
+              <span><small>{m.lowLabel}</small> {activeBar.low.toFixed(2)}</span>
+              <span><small>{m.closeLabel}</small> <b>{activeBar.close.toFixed(2)}</b></span>
+            </span>
+            {dayChange != null && (
+              <span className="val-tv-hud-chg" data-sign={dayChange > 0 ? "up" : dayChange < 0 ? "down" : undefined}>
+                {signedPct(dayChange)}
+              </span>
+            )}
+            {activePoint && (
+              <span className="val-tv-hud-range">
+                <small>{m.hudRange}</small> {activePoint.low.toFixed(2)} – {activePoint.high.toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
+        <div
+          ref={chartHostRef}
+          className="val-tv-chart-host"
+          role="img"
+          aria-label={`${symbol} · ${m.dailyChartAria} · ${money(bandLow)} – ${money(bandHigh)}`}
+        />
+        {marketStatus === "loading" && !market && (
+          <div className="val-tv-overlay" role="status">{m.loadingChart}</div>
+        )}
+        {marketStatus === "unavailable" && !market && (
+          <div className="val-tv-overlay" role="status">{m.chartUnavailable}</div>
+        )}
       </div>
-      <ul className="val-fan-legend" aria-label={m.shortTermForecast}>
-        <li data-series="history"><i aria-hidden="true" /><span>{m.dailyCloseSeries}</span><b>{money(currentPrice)}</b>{guide.quote?.priceDate && <small>{guide.quote.priceDate}</small>}</li>
-        <li data-series="high"><i aria-hidden="true" /><span>{m.upperBound}</span><b>{money(fanHigh)}</b></li>
-        <li data-series="mid"><i aria-hidden="true" /><span>{m.centralTarget}</span><b>{money(fanMid)}</b></li>
-        <li data-series="low"><i aria-hidden="true" /><span>{m.lowerBound}</span><b>{money(fanLow)}</b></li>
-      </ul>
     </div>
   );
 }
 
 /**
- * Displays the 12-month normal operating range bar paired with the radiating daily price range projection chart.
+ * Displays the 12-month normal operating range bar paired with the embedded TradingView daily live fair-value tool.
  */
-export function DualSpectrum({ report, guide }: {
+export function DualSpectrum({ report, guide, versions }: {
   report: ValuationPublication;
   guide: ValuationPriceGuide;
+  versions?: ValuationResponse["versions"];
 }) {
   const locale = useLocale();
   const model = report.model;
@@ -403,8 +734,9 @@ export function DualSpectrum({ report, guide }: {
     latestQuote?.price,
   ].filter(finite);
 
-  const hasFan = finite(model.range.low) && finite(model.range.high) && finite(latestQuote?.price ?? report.quote?.price ?? model.range.price);
-  if (!normalValues.length && !hasFan) return null;
+  const hasTool = (fair?.status === "available" && finite(fair.low) && finite(fair.high))
+    || (finite(model.range.low) && finite(model.range.high));
+  if (!normalValues.length && !hasTool) return null;
 
   const rawMin = normalValues.length ? Math.min(...normalValues) : 0;
   const rawMax = normalValues.length ? Math.max(...normalValues) : 1;
@@ -480,7 +812,7 @@ export function DualSpectrum({ report, guide }: {
           </ul>
         </div>
       )}
-      <PriceRangeFanChart report={report} guide={guide} />
+      <LivePriceValuationTool report={report} guide={guide} versions={versions} />
     </div>
   );
 }

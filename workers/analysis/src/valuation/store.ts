@@ -96,10 +96,44 @@ export class ValuationStore {
   }
 
   async versions(ticker: string, limit = 20, before?: string): Promise<ValuationResponse["versions"]> {
-    const rows = await this.db.prepare(`SELECT version_id, generated_at, research_as_of, report_status, json_extract(payload_json, '$.weightedScore') score, json_extract(payload_json, '$.verdict') verdict
+    const rows = await this.db.prepare(`SELECT version_id, generated_at, research_as_of, report_status,
+        json_extract(payload_json, '$.weightedScore') score,
+        json_extract(payload_json, '$.verdict') verdict,
+        json_extract(payload_json, '$.model.fairValueRange.status') fair_status,
+        json_extract(payload_json, '$.model.fairValueRange.low') fair_low,
+        json_extract(payload_json, '$.model.fairValueRange.base') fair_base,
+        json_extract(payload_json, '$.model.fairValueRange.high') fair_high,
+        json_extract(payload_json, '$.model.range.low') range_low,
+        json_extract(payload_json, '$.model.range.base') range_base,
+        json_extract(payload_json, '$.model.range.high') range_high
       FROM valuation_versions WHERE ticker = ?${before ? " AND generated_at < (SELECT generated_at FROM valuation_versions WHERE version_id = ?)" : ""} ORDER BY generated_at DESC, version_id LIMIT ?`)
-      .bind(...(before ? [ticker, before, limit] : [ticker, limit])).all<{ version_id: string; generated_at: string; research_as_of: string; report_status: ReportStatus; score: number | null; verdict: ValuationPublication["verdict"] }>();
-    return rows.results.map(r => ({ versionId: r.version_id, generatedAt: r.generated_at, researchAsOf: r.research_as_of, reportStatus: r.report_status, weightedScore: r.score, verdict: r.verdict }));
+      .bind(...(before ? [ticker, before, limit] : [ticker, limit])).all<{
+        version_id: string;
+        generated_at: string;
+        research_as_of: string;
+        report_status: ReportStatus;
+        score: number | null;
+        verdict: ValuationPublication["verdict"];
+        fair_status: string | null;
+        fair_low: number | null;
+        fair_base: number | null;
+        fair_high: number | null;
+        range_low: number | null;
+        range_base: number | null;
+        range_high: number | null;
+      }>();
+    const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+    const bounds = (low: unknown, base: unknown, high: unknown) => (num(low) && num(base) && num(high) ? { low, base, high } : null);
+    return rows.results.map(r => ({
+      versionId: r.version_id,
+      generatedAt: r.generated_at,
+      researchAsOf: r.research_as_of,
+      reportStatus: r.report_status,
+      weightedScore: r.score,
+      verdict: r.verdict,
+      normalRange: r.fair_status === "available" ? bounds(r.fair_low, r.fair_base, r.fair_high) : null,
+      stressRange: bounds(r.range_low, r.range_base, r.range_high),
+    }));
   }
 
   /** One evidence snapshot, only through a version that cites it. */

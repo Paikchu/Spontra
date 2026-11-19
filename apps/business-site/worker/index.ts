@@ -504,11 +504,11 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/artifacts\/dossier\/[a-z0-9][a-z0-9-]{0,79}|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/artifacts\/company-analysis|\/artifacts\/dossier\/[a-z0-9][a-z0-9-]{0,79}|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/market-daily|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():match?.[2]==="/opening"?new Set(["lang","scope","schema"]):detail?new Set(["reportDate","reportVersion","artifactVersion","artifactHash","lang","rev","cfg","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","cfg","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev","cfg"]);
+  const allowed=match?.[2]==="/revision"||match?.[2]==="/market-daily"?new Set<string>():match?.[2]==="/opening"?new Set(["lang","scope","schema"]):detail?new Set(["reportDate","reportVersion","artifactVersion","artifactHash","lang","rev","cfg","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","cfg","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev","cfg"]);
   allowed.add("schema");
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
@@ -549,6 +549,22 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   }
   // What changed since the page loaded: answered fresh every time, never from a cache.
   if(match[2]==="/revision"){const state=await loadRevisionState(match[1],source);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:state?.revisions??{},...(state?.config?{config:state.config}:{})},state?200:503);response.headers.set("cache-control","private, no-store");return response;}
+  // Live / latest daily candlesticks for the valuation chart: short edge cache so intraday price stays fresh.
+  if(match[2]==="/market-daily"){
+   const cacheKey=new Request(`${url.origin}/api/business/v1/companies/${match[1]}/market-daily`,{method:"GET"});
+   const hit=await cache?.match(cacheKey);
+   if(hit)return hit;
+   try{
+    const upstream=await source(ANALYSIS_ORIGIN+`/api/v1/companies/${match[1]}/market-daily`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+    if(!upstream.ok)return json({error:"Market data temporarily unavailable"},503);
+    const body=await upstream.json() as {schemaVersion?:unknown;bars?:unknown};
+    if(body?.schemaVersion!=="market-daily.v1"||!Array.isArray(body.bars))return json({error:"Market data temporarily unavailable"},503);
+    const response=json(body);
+    response.headers.set("cache-control","public, max-age=60, stale-while-revalidate=60");
+    if(cache)ctx.waitUntil(cache.put(cacheKey,response.clone()));
+    return response;
+   }catch{return json({error:"Market data temporarily unavailable"},503);}
+  }
   const privateRead=match[2]==="/insiders"||match[2]?.startsWith("/insiders/")||match[2]?.startsWith("/items/");
   if(match[2]==="/findings")url.searchParams.set("schema","findings-navigation-v1");
   const resourceKind=companyResourceOf(match[2]);

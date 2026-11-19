@@ -22,6 +22,7 @@ import { isLocale, type Locale } from "../../../../shared/analysis-runtime/local
 import { readTranslationTable } from "../translation/translate.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
 import { readValuationResponse, ValuationStore } from "../valuation/store.ts";
+import { readYahooDailyBars } from "../market/yahoo.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import { LAYERS, type Feature, type Layer } from "../../../../shared/analysis-contract/business-features.ts";
@@ -71,6 +72,7 @@ type RouteMatch =
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
   | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
+  | { kind: "market-daily"; ticker: string }
   | { kind: "findings-index" }
   | { kind: "ticker"; ticker: string }
   | { kind: "home" }
@@ -341,6 +343,11 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
       return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
     }
+    case "market-daily": {
+      const ticker = route.ticker.trim().toUpperCase();
+      const payload = await readYahooDailyBars(ticker);
+      return payload ? dataResponse(request, payload, "no-store") : errorResponse("STORAGE_UNAVAILABLE", "Daily market prices are temporarily unavailable.");
+    }
     case "fundamentals": {
       const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
       const payload = await getSecFundamentals(database, query);
@@ -383,7 +390,7 @@ function matchRoute(pathname: string): RouteMatch | null {
     if (ticker === null || personKey === null) return null;
     return personKey === undefined ? { kind: "insiders", ticker } : { kind: "insider-transactions", ticker, personKey };
   }
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|findings|events|items|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|findings|events|items|revisions|market-daily)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -406,6 +413,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "findings") return { kind: "findings", ticker };
   if (resource === "events") return { kind: "events", ticker };
   if (resource === "revisions") return { kind: "revisions", ticker };
+  if (resource === "market-daily") return { kind: "market-daily", ticker };
   return { kind: "fundamentals", ticker };
 }
 

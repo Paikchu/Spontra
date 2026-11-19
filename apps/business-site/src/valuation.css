@@ -1,6 +1,6 @@
 /* The valuation assessment on the stage: restrained ink & highlighter typography at the full stage width,
    hairlines over card boxes, and container-responsive layouts for the valuation workbench. */
-.val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
+.val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; animation: none; }
 .val-panel--empty { display: grid; }
 .val-empty { gap: 8px; align-content: center; text-align: center; padding: 40px 0; }
 .val-empty h2 { margin: 0; font-size: 15px; font-weight: 620; color: var(--foreground); }
@@ -186,102 +186,106 @@
   .val-spec-legend { display: none; }
 }
 
-/* ---------- Short-Term Radiating Price Range Projection ---------- */
-.val-fan-row { gap: 10px; }
-.val-fan-wrap {
-  width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 75%, var(--background));
-  padding: 8px 6px;
+/* ---------- Live Fair Value Range Assessment (TradingView Lightweight Charts Daily + Bounds) ---------- */
+.val-tv-row { gap: 10px; }
+.val-tv-title-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
-.val-fan-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 260px;
-}
-.val-fan-grid {
-  stroke: var(--hairline);
-  stroke-width: 1;
-  stroke-dasharray: 4 5;
-  vector-effect: non-scaling-stroke;
-}
-.val-fan-axis, .val-fan-divider {
-  stroke: var(--border);
-  stroke-width: 1.2;
-  vector-effect: non-scaling-stroke;
-}
-.val-fan-tick {
-  fill: var(--faint);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 520;
-}
-.val-fan-cone {
-  fill: color-mix(in srgb, var(--foreground) 9%, transparent);
-}
-.val-fan-history {
-  fill: none;
-  stroke: #d89648;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.val-fan-ray {
-  stroke-width: 2.5;
-  stroke-dasharray: 5 5;
-  stroke-linecap: round;
-}
-.val-fan-ray--high { stroke: var(--up); }
-.val-fan-ray--mid { stroke: var(--muted-foreground); }
-.val-fan-ray--low { stroke: var(--loss); }
-.val-fan-dot--high { fill: var(--up); }
-.val-fan-dot--mid { fill: var(--muted-foreground); }
-.val-fan-dot--low { fill: var(--loss); }
-.val-fan-pivot {
-  fill: var(--muted-foreground);
-  stroke: var(--background);
-  stroke-width: 2;
-}
-.val-fan-price {
-  font-family: var(--mono);
-  font-size: 16px;
-  font-weight: 680;
-}
-.val-fan-price--high { fill: var(--up); }
-.val-fan-price--mid { fill: var(--muted-foreground); }
-.val-fan-price--low { fill: var(--loss); }
 
-.val-fan-legend {
+.val-tv-basis {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--fill);
+}
+.val-tv-basis button {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.val-tv-basis button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px #00000014;
+}
+.val-tv-basis button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.val-tv-stage {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.val-tv-chart-host {
+  width: 100%;
+  height: 360px;
+}
+@container val-doc (min-width: 720px) {
+  .val-tv-chart-host {
+    height: 400px;
+  }
+}
+
+.val-tv-hud {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 4;
+  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12px;
-}
-.val-fan-legend li {
-  display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 6px 12px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(4px);
+  font-family: var(--mono);
+  font-size: 11.5px;
   color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
-.val-fan-legend i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
-  align-self: center;
+.val-tv-hud-date { color: var(--faint); }
+.val-tv-hud-ohlc {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
-.val-fan-legend li[data-series="history"] i { width: 12px; height: 3px; border-radius: 2px; background: #d89648; }
-.val-fan-legend li[data-series="high"] i { background: var(--up); }
-.val-fan-legend li[data-series="mid"] i { background: var(--muted-foreground); }
-.val-fan-legend li[data-series="low"] i { background: var(--loss); }
-.val-fan-legend b { font-family: var(--mono); font-weight: 600; color: var(--foreground); }
-.val-fan-legend small { color: var(--faint); }
+.val-tv-hud-ohlc small { color: var(--faint); font-family: var(--sans); }
+.val-tv-hud-ohlc b { color: var(--foreground); font-weight: 640; }
+.val-tv-hud-chg { font-weight: 600; }
+.val-tv-hud-chg[data-sign="up"] { color: var(--up); }
+.val-tv-hud-chg[data-sign="down"] { color: var(--loss); }
+.val-tv-hud-range {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  color: var(--foreground);
+}
+.val-tv-hud-range small { color: var(--faint); font-family: var(--sans); margin-right: 4px; }
+
+.val-tv-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  z-index: 5;
+}
 
 /* ---------- Method Bridge (Football Field) ---------- */
 .val-methods { display: grid; gap: 12px; }

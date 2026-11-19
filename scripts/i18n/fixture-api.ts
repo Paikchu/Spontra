@@ -6,9 +6,62 @@
  */
 import type { Plugin } from "vite";
 import type { HomeDigest } from "../../shared/analysis-contract/home.ts";
+import type { DailyPriceBar, LiveMarketDaily } from "../../shared/analysis-contract/market-daily.ts";
 import { calendarLabel, resolvePeriod } from "../../shared/analysis-runtime/fiscal-label.ts";
 import { decodeCursor, historyFromEvents, historyLimit, INSIDER_NEW_DAYS, personsFromEvents } from "../../shared/analysis-runtime/insiders.ts";
+import { readYahooDailyBars } from "../../workers/analysis/src/market/yahoo.ts";
 import { capital, company, events, filings, findings, flow, TICKER, valuation } from "./fixture.ts";
+
+function fixtureMarketDaily(): LiveMarketDaily {
+  const targetClose = valuation.report?.quote?.price ?? 98;
+  const endDate = new Date(`${valuation.report?.quote?.priceDate ?? "2026-08-11"}T00:00:00Z`);
+  const dates: string[] = [];
+  const cursor = new Date(endDate.getTime());
+  while (dates.length < 126) {
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6) dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  dates.reverse();
+
+  let seed = 421987;
+  const rand = () => {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const rawCloses: number[] = [];
+  let level = targetClose * 0.84;
+  for (let i = 0; i < dates.length; i++) {
+    const t = i / (dates.length - 1);
+    const wave = Math.sin(t * Math.PI * 2.4) * targetClose * 0.08 + Math.cos(t * Math.PI * 5.1) * targetClose * 0.03;
+    const drift = (targetClose * (0.84 + 0.16 * t) + wave - level) * 0.16;
+    const shock = (rand() - 0.5) * targetClose * 0.035;
+    level = Math.max(targetClose * 0.55, level + drift + shock);
+    rawCloses.push(level);
+  }
+  const scale = targetClose / rawCloses.at(-1)!;
+  const bars: DailyPriceBar[] = [];
+  let prevClose = Number((rawCloses[0]! * scale).toFixed(2));
+  for (let i = 0; i < dates.length; i++) {
+    const close = i === dates.length - 1 ? targetClose : Number((rawCloses[i]! * scale).toFixed(2));
+    const open = i === 0 ? close : Number((prevClose + (rand() - 0.5) * targetClose * 0.012).toFixed(2));
+    const spread = Math.max(Math.abs(close - open), targetClose * 0.008);
+    const high = Number((Math.max(open, close) + spread * (0.35 + rand() * 0.65)).toFixed(2));
+    const low = Number(Math.max(1, Math.min(open, close) - spread * (0.35 + rand() * 0.65)).toFixed(2));
+    bars.push({ time: dates[i]!, open, high, low, close });
+    prevClose = close;
+  }
+  return {
+    schemaVersion: "market-daily.v1",
+    ticker: TICKER,
+    currency: valuation.report?.currency ?? "USD",
+    livePrice: bars.at(-1)!.close,
+    liveDate: bars.at(-1)!.time,
+    previousClose: bars.at(-2)?.close ?? null,
+    marketState: "regular",
+    bars,
+  };
+}
 
 let published = 0;
 const revision = () => new Date(Date.UTC(2026, 7, 10) + published * 3_600_000).toISOString();
@@ -111,6 +164,26 @@ export function fixtureApi(): Plugin {
           res.statusCode = req.method === "GET" ? 200 : 405;
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify(req.method === "GET" ? homeDigest() : { error: "Method not allowed" }));
+          return;
+        }
+        const marketDaily = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)\/market-daily(?:\?.*)?$/);
+        if (marketDaily) {
+          const requestedTicker = decodeURIComponent(marketDaily[1]!).toUpperCase();
+          if (requestedTicker === TICKER) {
+            res.statusCode = 200;
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify(fixtureMarketDaily()));
+            return;
+          }
+          void readYahooDailyBars(requestedTicker).then(payload => {
+            res.statusCode = payload ? 200 : 503;
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify(payload ?? { error: "market data unavailable" }));
+          }).catch(() => {
+            res.statusCode = 503;
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify({ error: "market data unavailable" }));
+          });
           return;
         }
         const history = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)\/insiders\/([^/?]+)\/transactions(?:\?(.*))?$/);

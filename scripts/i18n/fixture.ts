@@ -245,7 +245,19 @@ export const valuationReport: ValuationPublication = {
   evidence: [{ evidenceId: "e0123456789", kind: "sec", title: "ACME 10-K 2026-06-30", url: SRC, documentId: "d1", passageId: "p1", form: "10-K", publishedAt: "2026-07-30", fetchedAt: "2026-08-12T00:00:00Z", excerpt: "We sell cloud infrastructure by subscription.", contentSha256: "abc", path: "Item 1 › Business" }],
   gaps: [], versionId: "v1fixture",
 };
-export const valuation: ValuationResponse = { schemaVersion: "valuation-response.v1", ticker: TICKER, availability: "ready", report: valuationReport, latestAttempt: null, outdated: false, versions: [{ versionId: "v1fixture", generatedAt: "2026-08-12T00:00:00Z", researchAsOf: "2026-08-12T00:00:00Z", reportStatus: "ready", weightedScore: 6.4, verdict: "pending" }] };
+export const valuation: ValuationResponse = {
+  schemaVersion: "valuation-response.v1",
+  ticker: TICKER,
+  availability: "ready",
+  report: valuationReport,
+  latestAttempt: null,
+  outdated: false,
+  versions: [
+    { versionId: "v1fixture", generatedAt: "2026-08-12T00:00:00Z", researchAsOf: "2026-07-24T00:00:00Z", reportStatus: "ready", weightedScore: 6.4, verdict: "pending", stressRange: { low: 77, base: 132, high: 187 } },
+    { versionId: "v0fixture2", generatedAt: "2026-06-12T00:00:00Z", researchAsOf: "2026-06-12T00:00:00Z", reportStatus: "ready", weightedScore: 6.1, verdict: "pending", stressRange: { low: 68, base: 118, high: 164 } },
+    { versionId: "v0fixture1", generatedAt: "2026-04-15T00:00:00Z", researchAsOf: "2026-04-15T00:00:00Z", reportStatus: "ready", weightedScore: 5.9, verdict: "pending", stressRange: { low: 60, base: 105, high: 146 } },
+  ],
+};
 
 export const ZH_TABLES = {
   flow: {

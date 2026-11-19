@@ -458,6 +458,19 @@ export type ValuationAttempt = {
   gaps: ValuationGap[];
   errorCode: string | null;
 };
+export type ValuationVersionRange = { low: number; base: number; high: number };
+export type ValuationVersionSummary = {
+  versionId: string;
+  generatedAt: string;
+  researchAsOf: string;
+  reportStatus: ReportStatus;
+  weightedScore: number | null;
+  verdict: ValuationVerdict;
+  /** Published normal operating fair-value range of this version, when available. */
+  normalRange?: ValuationVersionRange | null;
+  /** Published bear–base–bull scenario range of this version, when available. */
+  stressRange?: ValuationVersionRange | null;
+};
 export type ValuationResponse = {
   schemaVersion: "valuation-response.v1";
   ticker: string;
@@ -469,5 +482,5 @@ export type ValuationResponse = {
   researchStatus?: "valid" | "review_required" | "unavailable";
   latestAttempt: ValuationAttempt | null;
   outdated: boolean;
-  versions: Array<{ versionId: string; generatedAt: string; researchAsOf: string; reportStatus: ReportStatus; weightedScore: number | null; verdict: ValuationVerdict }>;
+  versions: ValuationVersionSummary[];
 };

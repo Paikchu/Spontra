@@ -20,13 +20,13 @@ import "./valuation.css";
 
 /**
  * Valuation stage panel (refined Case 2 workbench): three clearly delimited sections with medium headings —
- * core valuation range & radiating price forecast, interactive scenario path inspector, and auto-rotating
+ * core valuation range & live TradingView daily valuation tool, interactive scenario path inspector, and auto-rotating
  * click-to-pause 5-dimension radar scorecard.
  */
 const m = messages({
   title: "Valuation assessment",
   compositeScore: "Composite score", outOfTen: "/ 10",
-  valuationRangeSection: "Valuation range & price projection",
+  valuationRangeSection: "Valuation range & live price assessment",
   scores: "Five-dimension research score", partialResearch: "Research so far",
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
@@ -351,7 +351,7 @@ function Status({ valuation }: { valuation: ValuationResponse }) {
 
 type CaseKey = "bear" | "lower" | "base" | "upper" | "bull" | "management";
 
-function WorkbenchView({ report, guide, onCite }: { report: ValuationPublication; guide: ValuationPriceGuide; onCite: (id: string) => void }) {
+function WorkbenchView({ report, guide, versions, onCite }: { report: ValuationPublication; guide: ValuationPriceGuide; versions: ValuationResponse["versions"]; onCite: (id: string) => void }) {
   const locale = useLocale();
   const model = report.model;
   const fair = model?.fairValueRange;
@@ -387,7 +387,7 @@ function WorkbenchView({ report, guide, onCite }: { report: ValuationPublication
           <h3 className="val-section-title">{m.valuationRangeSection}</h3>
         </div>
         <KeyMetricsStrip report={report} guide={guide} />
-        {model && <DualSpectrum report={report} guide={guide} />}
+        {model && <DualSpectrum report={report} guide={guide} versions={versions} />}
       </section>
 
       {model && activeCase && (
@@ -528,7 +528,7 @@ function ValuationDocument({ ticker, valuation }: { ticker: string; valuation: V
       <section className="lens val-panel" aria-label={m.title} data-design-case="workbench">
         <div className="lens-doc val-doc" tabIndex={0}>
           <Status valuation={valuation} />
-          <WorkbenchView report={report} guide={guide} onCite={setOpen} />
+          <WorkbenchView report={report} guide={guide} versions={valuation.versions} onCite={setOpen} />
           <Sources report={report} open={open} onClose={() => setOpen(null)} />
         </div>
       </section>
