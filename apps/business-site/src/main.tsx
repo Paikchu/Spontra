@@ -138,6 +138,7 @@ function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("light", light);
     document.documentElement.classList.toggle("dark", !light);
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", light ? "light" : "dark");
     try {
       localStorage.setItem("business-map-theme", light ? "light" : "dark");
     } catch {

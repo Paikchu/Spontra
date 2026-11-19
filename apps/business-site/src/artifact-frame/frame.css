@@ -5,6 +5,13 @@
  */
 @import "../tokens.css";
 
+:root {
+  color-scheme: light dark;
+  background: transparent;
+}
+:root.dark { color-scheme: dark; }
+:root.light { color-scheme: light; background: transparent; }
+
 :root, :root.light {
   --card-foreground: var(--foreground);
   --popover: var(--surface-raised);

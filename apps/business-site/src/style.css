@@ -1422,7 +1422,8 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .light .fc-compact { --flow-profit: #096b5f; --flow-expense: #91521c; }
 
 /* An analysis report drawn in its sandbox (ArtifactFrame.tsx): the frame is as tall as the report it holds. */
-.artifact-frame { display: block; width: min(100%, var(--report-measure)); max-width: 100%; min-width: 0; margin-inline: auto; justify-self: center; border: 0; background: transparent; color-scheme: normal; }
+.artifact-frame { display: block; width: min(100%, var(--report-measure)); max-width: 100%; min-width: 0; margin-inline: auto; justify-self: center; border: 0; background: transparent; opacity: 0; transition: opacity .18s ease; }
+.artifact-frame[data-rendered] { opacity: 1; }
 .artifact-language-row { width: min(100%, var(--report-measure)); min-width: 0; margin-inline: auto; justify-self: center; }
 
 /* ---------- Aligned loading skeleton & below-the-fold containment ---------- */

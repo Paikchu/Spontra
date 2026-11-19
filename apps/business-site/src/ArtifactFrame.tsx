@@ -26,6 +26,7 @@ export function ArtifactDocumentFrame({ artifact, hostTitle, filing, onClose }: 
   onClose?: () => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const [initialDark] = useState(isDark);
   const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false), [height, setHeight] = useState(480);
   const post = (message: ArtifactFrameMessage) => frame.current?.contentWindow?.postMessage(message, "*");
   useEffect(() => {
@@ -52,7 +53,7 @@ export function ArtifactDocumentFrame({ artifact, hostTitle, filing, onClose }: 
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
   }, []);
-  return <iframe ref={frame} className="artifact-frame" src="/artifact-frame" sandbox="allow-scripts" title={artifact.title}
+  return <iframe ref={frame} className="artifact-frame" src={`/artifact-frame?theme=${initialDark ? "dark" : "light"}`} sandbox="allow-scripts" title={artifact.title}
     data-artifact-frame="" data-artifact-hash={artifact.hash} data-rendered={rendered ? "" : undefined} style={{ height }}
     onLoad={() => { if (!drawn.current) post({ type: "artifact:ping" }); }} />;
 }

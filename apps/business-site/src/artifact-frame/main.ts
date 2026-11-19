@@ -216,6 +216,12 @@ function render(m: Extract<ArtifactFrameMessage, { type: "artifact:render" }>) {
   void document.fonts.ready.then(() => { requestAnimationFrame(report); setTimeout(report, 120); });
 }
 
+const initialTheme = new URLSearchParams(location.search).get("theme");
+if (initialTheme === "light" || initialTheme === "dark") {
+  document.documentElement.classList.toggle("dark", initialTheme === "dark");
+  document.documentElement.classList.toggle("light", initialTheme === "light");
+}
+
 window.addEventListener("message", (event: MessageEvent<ArtifactFrameMessage>) => {
   if (event.source !== window.parent || !event.data || typeof event.data !== "object") return;
   const m = event.data;
