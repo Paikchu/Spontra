@@ -258,39 +258,52 @@ function Scores({ report, onCite }: { report: ValuationPublication; onCite: (id:
             );
           })}
         </div>
-        {activeDim && (
-          <article key={activeDim.key} className="val-dim-card" role="tabpanel" aria-label={DIM[activeDim.key]}>
-            <header className="val-dim-card-head">
-              <span className="val-dim-name">
-                {DIM[activeDim.key]}
-                {complete && <small>{pct(DIMENSION_WEIGHTS[activeDim.key], 0)}</small>}
-                {activeDim.confidence !== "medium" && <small>{m.confidence} {CONF[activeDim.confidence]}</small>}
-              </span>
-              {complete && activeDim.score != null && (
-                <span className="val-dim-score">{activeDim.score.toFixed(1)}<small>/10</small></span>
-              )}
-            </header>
-            <div className="val-dim-judgement">
-              <Prose text={activeDim.rationale} onCite={onCite} />
-              {activeDim.gaps.length > 0 && (
-                <p className="val-note">
-                  <b>{m.gaps}</b>{" "}
-                  {activeDim.gaps.map((g, i) => (
-                    <span key={i} lang={langOf(g)}>
-                      {readerText(g)}{i < activeDim.gaps.length - 1 ? "；" : ""}
-                    </span>
-                  ))}
-                </p>
-              )}
-              {activeDim.nextCheck && (
-                <p className="val-note">
-                  <b>{m.nextCheck}</b>{" "}
-                  <span lang={langOf(activeDim.nextCheck)}>{readerText(activeDim.nextCheck)}</span>
-                </p>
-              )}
-            </div>
-          </article>
-        )}
+        <div className="val-dim-stage">
+          {report.dimensions.map(dim => {
+            const active = activeDim?.key === dim.key;
+            return (
+              <article
+                key={dim.key}
+                className="val-dim-card"
+                role="tabpanel"
+                aria-label={DIM[dim.key]}
+                aria-hidden={!active || undefined}
+                data-active={active || undefined}
+                inert={!active ? true : undefined}
+              >
+                <header className="val-dim-card-head">
+                  <span className="val-dim-name">
+                    {DIM[dim.key]}
+                    {complete && <small>{pct(DIMENSION_WEIGHTS[dim.key], 0)}</small>}
+                    {dim.confidence !== "medium" && <small>{m.confidence} {CONF[dim.confidence]}</small>}
+                  </span>
+                  {complete && dim.score != null && (
+                    <span className="val-dim-score">{dim.score.toFixed(1)}<small>/10</small></span>
+                  )}
+                </header>
+                <div className="val-dim-judgement">
+                  <Prose text={dim.rationale} onCite={onCite} />
+                  {dim.gaps.length > 0 && (
+                    <p className="val-note">
+                      <b>{m.gaps}</b>{" "}
+                      {dim.gaps.map((g, i) => (
+                        <span key={i} lang={langOf(g)}>
+                          {readerText(g)}{i < dim.gaps.length - 1 ? "；" : ""}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {dim.nextCheck && (
+                    <p className="val-note">
+                      <b>{m.nextCheck}</b>{" "}
+                      <span lang={langOf(dim.nextCheck)}>{readerText(dim.nextCheck)}</span>
+                    </p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

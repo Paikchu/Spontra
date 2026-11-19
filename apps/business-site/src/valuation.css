@@ -537,12 +537,29 @@ button.val-radar-label[data-active] b { font-weight: 640; }
   font-weight: 600;
 }
 
+.val-dim-stage {
+  display: grid;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
 .val-dim-card {
+  grid-area: 1 / 1;
+  align-self: start;
   display: grid;
   gap: 10px;
   padding: 14px 0 12px;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .16s var(--ease);
+}
+.val-dim-card[data-active] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .val-dim-card { transition: none; }
 }
 .val-dim-card-head {
   display: flex;
