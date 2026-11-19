@@ -6,7 +6,6 @@ import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/
 import { CompanyLogo } from "./CompanyMark";
 import { SeverityIcon } from "./SeverityIcon";
 import type { DigestStatus } from "./home-data";
-import { stripBandPath, stripOf } from "./home-strip";
 import { PeriodMark } from "./PeriodMark";
 import { PrivacyNote } from "./PrivacyNote";
 import { markContent } from "./vitals";
@@ -36,26 +35,7 @@ const m = messages({
   tabShifts: "Shifts",
   signalsEmpty: "Nothing new in this category",
   moreFindings: (n: number) => `${n} more`,
-  companiesTitle: "Companies",
-  sortLabel: "Sort",
-  sortLatest: "Latest report",
-  sortYoy: "Revenue YoY",
-  sortRisk: "Risk count",
-  sortTicker: "Ticker order",
-  colCompany: "Company",
-  colStatement: "Latest quarter",
-  colRevenue: "Revenue",
-  colYoy: "YoY",
-  colReport: "Report",
-  colFindings: "Findings",
-  stripLabel: (revenue: string, net: string) => `Revenue ${revenue}, net income ${net}`,
-  counts: (r: number, s: number) => `${r} risks · ${s} strengths`,
-  findingsPending: "Findings still generating",
-  noFindings: "No findings yet",
-  updating: "Updating",
   disclaimer: "Generated from public SEC filings for research only. Not investment advice.",
-  notDisclosed: "Not disclosed this quarter",
-  missingYoy: "Fewer than two quarters, so the year-over-year rate is unavailable",
   error: "Couldn't load data",
   retry: "Retry",
   offline: "You are offline",
@@ -79,45 +59,15 @@ const m = messages({
   tabShifts: "变化",
   signalsEmpty: "这一类暂时没有新要点",
   moreFindings: (n: number) => `另有 ${n} 条`,
-  companiesTitle: "公司",
-  sortLabel: "排序",
-  sortLatest: "最近财报",
-  sortYoy: "营收同比",
-  sortRisk: "风险数量",
-  sortTicker: "代码字母序",
-  colCompany: "公司",
-  colStatement: "最新季度",
-  colRevenue: "营收",
-  colYoy: "同比",
-  colReport: "财报",
-  colFindings: "要点",
-  stripLabel: (revenue: string, net: string) => `营收 ${revenue}，净利润 ${net}`,
-  counts: (r: number, s: number) => `风险 ${r} · 优势 ${s}`,
-  findingsPending: "要点生成中",
-  noFindings: "暂无要点",
-  updating: "更新中",
   disclaimer: "本站内容基于公开 SEC 申报自动生成，仅供研究参考，不构成投资建议。",
-  notDisclosed: "该季度财报未披露此项",
-  missingYoy: "历史不足两个季度，无法计算同比",
   error: "数据暂时加载失败",
   retry: "重试",
   offline: "网络已断开",
 });
 
-type SortKey = "latest" | "yoy" | "risk" | "ticker";
-
 function money(value: string, currency: string): string {
   const amount = Number(value);
   return Number.isFinite(amount) ? compactMoney(amount, currency, getLocale()) : "—";
-}
-
-function sorted(companies: HomeCompany[], sort: SortKey): HomeCompany[] {
-  const list = [...companies];
-  const ticker = (a: HomeCompany, b: HomeCompany) => a.ticker.localeCompare(b.ticker);
-  if (sort === "ticker") return list.sort(ticker);
-  if (sort === "yoy") return list.sort((a, b) => (b.revenue?.yoyPct ?? -Infinity) - (a.revenue?.yoyPct ?? -Infinity) || ticker(a, b));
-  if (sort === "risk") return list.sort((a, b) => b.findingCounts.risk - a.findingCounts.risk || ticker(a, b));
-  return list.sort((a, b) => (b.latestPeriod?.periodEnd ?? "").localeCompare(a.latestPeriod?.periodEnd ?? "") || ticker(a, b));
 }
 
 /** Cards in rank order, gathered under the company each belongs to; a company's group stands where its first card ranked. */
@@ -138,29 +88,6 @@ function Delta({ pct, title }: { pct: number | null; title?: string }) {
   const arrow = pct > 0 ? "▲" : pct < 0 ? "▼" : "";
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
   return <span className="home-delta" data-dir={dir}>{arrow}{sign}{Math.abs(pct).toFixed(1)}%</span>;
-}
-
-/** Eight quarters of revenue as bars: the row's picture when the quarter's statement is not in the digest. */
-function Bars({ trend }: { trend: Array<{ value: string }> }) {
-  const values = trend.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value >= 0);
-  const max = Math.max(1, ...values);
-  return <span className="home-bars" aria-hidden="true">{values.map((value, index) =>
-    <i key={index} style={{ ["--h" as string]: `${Math.max(8, (value / max) * 100)}%` }} />)}</span>;
-}
-
-/** The quarter's revenue flowing into its costs and its profit: the statement the company page draws, at row size. */
-function StatementStrip({ company }: { company: HomeCompany }) {
-  const statement = company.statement ?? null;
-  const strip = statement ? stripOf(statement) : null;
-  if (!statement || !strip) return <Bars trend={company.revenueTrend} />;
-  const { width, height, bar } = strip;
-  return <svg className="home-strip" viewBox={`0 0 ${width} ${height + (strip.loss ? strip.loss.h + 2 : 0)}`} width={width} height={height + (strip.loss ? strip.loss.h + 2 : 0)} role="img"
-    aria-label={m.stripLabel(money(statement.revenue, statement.currency), money(statement.net, statement.currency))}>
-    {strip.bands.map(band => <path key={band.kind} className="home-strip-band" data-kind={band.kind} d={stripBandPath(band, strip)} />)}
-    <rect className="home-strip-bar" data-kind="revenue" x={0} y={0} width={bar} height={height} />
-    {strip.bands.map(band => <rect key={band.kind} className="home-strip-bar" data-kind={band.kind} x={width - bar} y={band.ty} width={bar} height={band.th} />)}
-    {strip.loss && <rect className="home-strip-loss" x={width - bar - 0.5} y={strip.loss.y + 1.5} width={bar - 1} height={strip.loss.h - 1} />}
-  </svg>;
 }
 
 const filedDate = (date: string) => getLocale() === "zh-CN" ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
@@ -209,7 +136,6 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const [stuck, setStuck] = useState(false);
   const [fieldHidden, setFieldHidden] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [sort, setSort] = useState<SortKey>("latest");
   const [tab, setTab] = useState<SignalTab>("all");
   const companies = digest?.companies ?? [];
   const catalog = companies.map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
@@ -217,13 +143,11 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const chips = recent.length > 0
     ? recent.slice(0, 5).map(ticker => ({ ticker, popular: false }))
     : (digest?.popular ?? []).slice(0, 5).map(ticker => ({ ticker, popular: true }));
-  const shown = sorted(companies, sort);
-  useEffect(() => { if (digestStatus === "ready" && shown.length > 0) markContent("home"); }, [digestStatus, shown.length]);
+  useEffect(() => { if (digestStatus === "ready" && companies.length > 0) markContent("home"); }, [digestStatus, companies.length]);
   const groups = grouped(worthWatching(companies, tab, 8));
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const [now] = useState(() => new Date());
   const fresh = digestStatus === "loading" ? [] : freshResults(companies, now);
-  const count = digest?.coverage.count ?? 0;
 
   useEffect(() => { if (matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
@@ -320,44 +244,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
             })}
           </ol>}
       </section>}
-      <section className="home-companies" id="home-companies" aria-labelledby="home-companies-title" aria-busy={digestStatus === "loading"}>
-        <div className="home-section-head">
-          <h2 id="home-companies-title">{m.companiesTitle}{digestStatus !== "loading" && <b>{locale === "zh-CN" ? `（${count}）` : ` (${count})`}</b>}</h2>
-          {digestStatus === "ready" && <select aria-label={m.sortLabel} value={sort} onChange={e => setSort(e.target.value as SortKey)}>
-            <option value="latest">{m.sortLatest}</option>
-            <option value="yoy">{m.sortYoy}</option>
-            <option value="risk">{m.sortRisk}</option>
-            <option value="ticker">{m.sortTicker}</option>
-          </select>}
-        </div>
-        {digestStatus === "error" ? <div className="home-error" role="alert"><p>{m.error}</p><button type="button" onClick={onRetry}>{m.retry}</button></div>
-          : <table className="home-table">
-            <thead><tr><th scope="col">{m.colCompany}</th><th scope="col">{m.colStatement}</th><th scope="col" className="num">{m.colRevenue}</th><th scope="col" className="num">{m.colYoy}</th><th scope="col">{m.colReport}</th><th scope="col">{m.colFindings}</th></tr></thead>
-            <tbody>
-              {digestStatus === "loading" ? Array.from({ length: 8 }, (_, i) => <tr key={i} className="home-ghost" aria-hidden="true"><td colSpan={6} /></tr>)
-                : shown.map(company => {
-                  const name = nameOf(company);
-                  const missing = company.revenueReason === "NOT_DISCLOSED" ? m.notDisclosed : company.revenueReason === "MISSING_TWO_QUARTERS" ? m.missingYoy : undefined;
-                  const counts = company.findingCounts.risk + company.findingCounts.strength + company.findingCounts.shift + company.findingCounts.watch;
-                  const period = company.latestPeriod;
-                  return <tr key={company.ticker}>
-                    <td className="home-co">
-                      <a href={`/companies/${company.ticker}`} data-nav className="home-row-link">
-                        <CompanyLogo ticker={company.ticker} />
-                        <span><b lang="en">{company.ticker}</b><small lang={name.lang}>{name.text}</small></span>
-                        {company.status === "preparing" && <em className="home-badge">{m.updating}</em>}
-                      </a>
-                    </td>
-                    <td className="home-pic"><StatementStrip company={company} /></td>
-                    <td className="num"><strong title={company.revenue ? undefined : missing}>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong></td>
-                    <td className="num"><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></td>
-                    <td className="home-period">{period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : null}</td>
-                    <td className="home-counts">{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : m.noFindings}</td>
-                  </tr>;
-                })}
-            </tbody>
-          </table>}
-      </section>
+      {digestStatus === "error" && <div className="home-error" role="alert"><p>{m.error}</p><button type="button" onClick={onRetry}>{m.retry}</button></div>}
       <footer className="home-foot">
         <p>{m.disclaimer}</p>
         <PrivacyNote />
