@@ -68,7 +68,7 @@ export default function FilingReport({ accession, snapshot, revision, head, tick
     const notice = artifact.researchFreshness === "review_required" ? m.review : artifact.researchFreshness === "unavailable" ? m.unavailable : undefined;
     return <div className="filing-stage">
       <ArtifactDocumentFrame key={`${artifact.hash}:${locale}:${language}:${notice ?? ""}`} artifact={artifact} onClose={onClose}
-        filing={{ byline: `${head.kind} · ${m.filed(head.form, head.filed)} · ${language}`, close: m.close, notice }} />
+        filing={{ byline: [head.kind, m.filed(head.form, head.filed), language].filter(Boolean).join(" · "), close: m.close, notice }} />
     </div>;
   }
   const historical = !!reportVersion || !!artifactVersion || new URLSearchParams(location.search).has("reportVersion");

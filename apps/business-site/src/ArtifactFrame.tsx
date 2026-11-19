@@ -14,7 +14,7 @@ const isDark = () => !document.documentElement.classList.contains("light");
 export function ArtifactFrame({ artifact, showLanguage = true, showResearchContext = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css" | "researchContext" | "researchFreshness">; showLanguage?: boolean; showResearchContext?: boolean; hostTitle?: string }) {
   return <>
     {showResearchContext && <ArtifactResearchContext artifact={artifact} />}
-    {showLanguage && <div className="artifact-language-row"><ArtifactLanguage artifact={artifact} /></div>}
+    {showLanguage && <ArtifactLanguage artifact={artifact} row />}
     <ArtifactDocumentFrame key={`${artifact.id}:${artifact.lang}:${artifact.hash}:${hostTitle ?? ""}`} artifact={artifact} hostTitle={hostTitle} />
   </>;
 }
