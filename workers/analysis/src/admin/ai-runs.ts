@@ -179,7 +179,7 @@ async function repairArtifactTranslation(request: Request, env: AnalysisEnv, db:
   const unitHashes = [...new Set(await Promise.all(extractArtifactTranslation(stored.document).units.map(unit => sha256(unit.text))))];
   // Repair revision is separate from the translator version: no unrelated report is re-enqueued.
   // Stable across request IDs so concurrent clicks cannot buy duplicate repairs.
-  const fingerprint = await sha256(`protected-literals-v2-calendar|${ticker}|${artifactId}|${sourceVersion}|${sourceHash}`);
+  const fingerprint = await sha256(`protected-literals-v3-durations|${ticker}|${artifactId}|${sourceVersion}|${sourceHash}`);
   const runId = `translate-repair-${fingerprint.slice(0, 40)}`, key = `translate:repair:${fingerprint}`, at = new Date(now).toISOString();
   const first = "EXISTS (SELECT 1 FROM sec_cache WHERE cache_key=? AND json_extract(payload, '$.resetPending')=1)";
   await db.batch([
