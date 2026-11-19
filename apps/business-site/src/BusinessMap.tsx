@@ -1,10 +1,9 @@
-import { HistoricalDossier } from "./HistoricalDossier";
 import { belongsToFiling, citesEventSource } from "./finding-association";
 import { ChartNote } from "./ChartNote";
 import { ModuleFailure } from "./ModuleFailure";
 import type { Layer } from "@/shared/analysis-contract/business-features";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
-import { CompanyDetailsSkeleton } from "./CompanySkeleton";
+import { DocumentSkeleton, ValuationSkeleton } from "./CompanySkeleton";
 import { Button } from "@/packages/web/src/ui/button";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
@@ -41,21 +40,16 @@ import { basisChangedAt, businessValue, yearAgoOnBasis } from "@/shared/analysis
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
 import { SeverityIcon } from "./SeverityIcon";
 import { RailStream } from "./RailStream";
-import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang } from "./events-model";
 import { defaultEventFilter, readRailTabs, withRailTabs, type RailTab } from "./event-noise";
 import { filingQuarterLabel, railItems, reportTitle, reportTitleLang, type RailItem } from "./reports-model";
-import { EventLens } from "./EventLens";
-import { ReportLens } from "./ReportLens";
 import { fiscalPhrase } from "./PeriodMark";
 import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
-import { ValuationPanel } from "./ValuationPanel";
-import { ArtifactFrame } from "./ArtifactFrame";
 import { usePreview, usePublishedArtifactRead } from "./artifact-reads";
 import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { coreSlots } from "./company-meta";
@@ -126,7 +120,15 @@ const m = messages({
 });
 
 const FilingReport = lazy(() => import("./FilingReport"));
-const LensLoading = () => <div className="lens-doc" aria-busy="true"><i className="lens-loading" aria-hidden="true" /></div>;
+const loadValuationPanel = () => import("./ValuationPanel").then(mod => ({ default: mod.ValuationPanel }));
+const ValuationPanel = lazy(loadValuationPanel);
+const preloadValuationPanel = () => { void loadValuationPanel().catch(() => {}); };
+const LensPanel = lazy(() => import("./LensPanel").then(mod => ({ default: mod.LensPanel })));
+const EventLens = lazy(() => import("./EventLens").then(mod => ({ default: mod.EventLens })));
+const ReportLens = lazy(() => import("./ReportLens").then(mod => ({ default: mod.ReportLens })));
+const HistoricalDossier = lazy(() => import("./HistoricalDossier").then(mod => ({ default: mod.HistoricalDossier })));
+const ArtifactFrame = lazy(() => import("./ArtifactFrame").then(mod => ({ default: mod.ArtifactFrame })));
+const LensLoading = () => <DocumentSkeleton />;
 
 /** What the reader has on the map: its own URL-held view, read by the stage agent. */
 export type CompanyView = { periodEnd: string | null; view: "profit" | "cash" | "balance" | "valuation" | "company"; business: string | null; finding: string | null; event: string | null; report: string | null; metric: string | null };
@@ -339,7 +341,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const rail = useMemo(() => railItems(filings, events, now), [filings, events, now]);
   const railList = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
   const [railTabs, setRailTabs] = useState<ReadonlySet<RailTab>>(() => readRailTabs(location.search));
-  const { filter: eventFilter, fallback: eventFallback } = defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now);
+  const { filter: eventFilter, fallback: eventFallback } = useMemo(
+    () => defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now),
+    [initialEventSearch, eventsPhase, detailsLoading, railList, now],
+  );
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
   // The visual review opens a report draft through a preview link before the filing has a published report.
@@ -573,6 +578,10 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
     if (match) setPeriod(match.id);
   };
   const focusItem = (item: RailItem | null) => { if (!item) { leaveFilingEdition(); setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
+  const railCallbacks = useRef({ focusItem, focusFinding });
+  railCallbacks.current = { focusItem, focusFinding };
+  const onRailFocusItem = useCallback((item: RailItem | null) => railCallbacks.current.focusItem(item), []);
+  const onRailFocusFinding = useCallback((id: string | null) => railCallbacks.current.focusFinding(id), []);
   // The businesses the chart draws at its left edge, each with its share of segment revenue, for the composition bar.
   const composition = items.filter(i => !i.parent).flatMap(i => i.value != null && segmentRevenue ? [{ key: i.key, name: i.name, slot: i.slot, share: Math.max(0, i.value / segmentRevenue * 100) }] : []);
   const active = hoverNode ?? (current ? "segment:" + current.key : null);
@@ -655,7 +664,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
   const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
-      {valuationShown && <ToggleGroupItem value="valuation" data-view-choice="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
+      {valuationShown && <ToggleGroupItem value="valuation" data-view-choice="valuation" role="radio" aria-checked={view === "valuation"} onPointerEnter={preloadValuationPanel} onFocus={preloadValuationPanel}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
       {companyReport && <ToggleGroupItem value="company" data-view-choice="company" role="radio" aria-checked={view === "company"}>{VIEW_LABEL.company}</ToggleGroupItem>}
       <ToggleGroupItem value="profit" data-view-choice="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
       {cash && <ToggleGroupItem value="cash" data-view-choice="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
@@ -709,10 +718,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
         </div></div>
       </section>
       {moduleErrors.filter(r => ["findings", "events", "filings"].includes(r) && (r !== "findings" || layers?.findings !== false)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}
-      {detailsLoading && <CompanyDetailsSkeleton />}
-      {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
-        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
-        articles={findings?.articles} onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
+      {(detailsLoading || rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
+        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={detailsLoading ? "loading" : eventsPhase} filter={eventFilter} fallback={eventFallback} tabs={railTabs} onTabs={setRailTabs} quarters={quarters}
+        articles={findings?.articles} onFocusItem={onRailFocusItem} onFocusFinding={onRailFocusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>
         <dl>
@@ -728,26 +736,26 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
           switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
       {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
-      {focusId && !focused && !stageDraft ? <div className="lens-stage"><HistoricalDossier ticker={ticker} findingId={focusId} onClose={() => focusFinding(null)} /></div>
-      : stageDraft ? <div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={stageDraft} /></div>
-      : stageOverride ? stageOverride : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+      {focusId && !focused && !stageDraft ? <Suspense fallback={<DocumentSkeleton />}><div className="lens-stage"><HistoricalDossier ticker={ticker} findingId={focusId} onClose={() => focusFinding(null)} /></div></Suspense>
+      : stageDraft ? <Suspense fallback={<DocumentSkeleton />}><div className="lens-stage company-report" tabIndex={0}><ArtifactFrame artifact={stageDraft} /></div></Suspense>
+      : stageOverride ? stageOverride : focused && findings ? <Suspense fallback={<DocumentSkeleton />}><div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           dossier={{ version: dossiers?.[focused.id] ? revisions.findings ?? dossiers[focused.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${focused.id}` : null }}
           onPair={() => setSplit(v => !v)} onClose={() => focusFinding(null)} />
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
           dossier={{ version: dossiers?.[pair.id] ? revisions.findings ?? dossiers[pair.id] : null, subject: findings.fingerprint ? `${findings.fingerprint.slice(0, 16)}.${pair.id}` : null }}
           onPair={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
-      </div>
+      </div></Suspense>
       // A filing with a report reads as that one report, whichever row opened it; a row without one keeps what it has.
       : focusedReport && layers?.filings !== false && (focusedReport.hasReport || previewing) ? <div className="lens-stage"><Suspense fallback={<LensLoading />}><FilingReport key={focusedReport.accessionNumber} ticker={ticker} accession={focusedReport.snapshot?.accession ?? focusedReport.accessionNumber} relatedFindings={verified.filter(f => findings?.articles?.[f.id] && belongsToFiling(findings.articles[f.id]!, focusedReport))} onFinding={focusFinding} snapshot={focusedReport.snapshot} revision={revisions.filings ?? focusedReport.generatedAt}
         head={{ kind: filingQuarterLabel(ticker, focusedReport) ?? focusedReport.form, title: reportTitle(focusedReport, ticker), titleLang: reportTitleLang(focusedReport), form: focusedReport.form, filed: focusedReport.filingDate, sourceTexts: [focusedReport.headline] }} onClose={() => focusReport(null)} /></Suspense></div>
-      : focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div>
-      : focusedEvent && events ? <div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens} sourceRelated
+      : focusedReport ? <Suspense fallback={<DocumentSkeleton />}><div className="lens-stage"><ReportLens report={focusedReport} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusReport(null)} /></div></Suspense>
+      : focusedEvent && events ? <Suspense fallback={<DocumentSkeleton />}><div className="lens-stage">{(lens => focusedEvent.summary ? <Suspense fallback={<LensLoading />}><FilingReport key={focusedEvent.id} ticker={ticker} accession={focusedEvent.id} revision={revisions.events} fallback={lens} sourceRelated
         relatedFindings={verified.filter(f => findings?.articles?.[f.id] && citesEventSource(findings.articles[f.id]!, focusedEvent.id)).map(f => ({ ...f, periodEnd: findings!.articles![f.id]!.periodEnd }))} onFinding={focusFinding}
         head={{ kind: EVENT_CLASS_LABEL[focusedEvent.class], title: eventTitle(focusedEvent), titleLang: eventTitleLang(focusedEvent), form: focusedEvent.form, filed: focusedEvent.filedAt, sourceTexts: [focusedEvent.summary.headline] }} onClose={() => focusEvent(null)} /></Suspense> : lens)(
-        <EventLens event={focusedEvent} publication={events} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div>
-      : view === "company" ? <div className="lens-stage company-report" tabIndex={0}>{companyReport ? <ArtifactFrame artifact={companyReport} showResearchContext={false} /> : <div className="empty" role="status" aria-busy={companyArtifact.status === "loading"}><p>{companyArtifact.status === "loading" ? m.companyReportLoading : companyArtifact.status === "failed" ? m.companyReportFailed : m.companyReportMissing}</p>{companyArtifact.status === "failed" && <Button onClick={() => setCompanyReportRetry(value => value + 1)}>{m.companyReportRetry}</Button>}</div>}</div>
-      : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
+        <EventLens event={focusedEvent} publication={events} analysisEnabled={layers?.filings !== false} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onFocusEvent={focusEvent} onClose={() => focusEvent(null)} />)}</div></Suspense>
+      : view === "company" ? <div className="lens-stage company-report" tabIndex={0}>{companyReport ? <Suspense fallback={<DocumentSkeleton />}><ArtifactFrame artifact={companyReport} showResearchContext={false} /></Suspense> : companyArtifact.status === "loading" ? <DocumentSkeleton /> : <div className="empty" role="status"><p>{companyArtifact.status === "failed" ? m.companyReportFailed : m.companyReportMissing}</p>{companyArtifact.status === "failed" && <Button onClick={() => setCompanyReportRetry(value => value + 1)}>{m.companyReportRetry}</Button>}</div>}</div>
+      : view === "valuation" && valuation ? <Suspense fallback={<ValuationSkeleton />}><div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div></Suspense>
       : <>
       <header className="stage-head stage-head--summary">
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} />

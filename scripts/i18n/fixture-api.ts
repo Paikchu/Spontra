@@ -122,12 +122,21 @@ export function fixtureApi(): Plugin {
           res.end(JSON.stringify(page ? { schemaVersion: "insider-transactions-response.v1", status: "ready", transactions: page } : { error: "not in fixture" }));
           return;
         }
-        const match = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)(\/[a-z]+)?(?:\?|$)/);
+        const match = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)(\/[a-z]+)?(?:\?(.*))?$/);
         if (!match) return next();
+        const query = new URLSearchParams(match[3] ?? "");
+        const scope = query.get("scope");
         const parts = resources();
+        const allResources = Object.entries(parts).filter(([path]) => path !== "/revision").map(([path, body]) => [path.slice(1) || "company", { status: 200, body }] as const);
+        const scoped = scope === "primary"
+          ? allResources.filter(([name]) => !["events", "filings"].includes(name))
+          : scope === "stream"
+            ? allResources.filter(([name]) => ["events", "filings"].includes(name))
+            : allResources;
         const opening = {
           revisions: (parts["/revision"] as { revisions: unknown }).revisions,
-          resources: Object.fromEntries(Object.entries(parts).filter(([path]) => path !== "/revision").map(([path, body]) => [path.slice(1) || "company", { status: 200, body }])),
+          config: "11111-1",
+          resources: Object.fromEntries(scoped),
         };
         const body = match[1] === TICKER ? match[2] === "/opening" ? opening : parts[match[2] ?? ""] : undefined;
         res.statusCode = body ? 200 : 404;

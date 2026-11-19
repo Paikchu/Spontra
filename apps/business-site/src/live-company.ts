@@ -270,6 +270,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         const result = await loadOpening(ticker, request, onSeen, location.search, swapping ? undefined : first => {
           if (signal.aborted || gen !== loadGen.current) return;
           primaryShown = true;
+          stageChartBox();
           commit(first);
         });
         if (signal.aborted || gen !== loadGen.current) return;
@@ -277,7 +278,8 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         if (swapping && !result.data.flow && !result.data.publication?.reasons.includes("DATA_POLICY_DENIED")) { setSettled(true); checksReady.current = true; return; }
         const complete = () => commit(result, true);
         if (primaryShown) startTransition(complete);
-        else crossfade(() => { stageChartBox(); complete(); }, "map");
+        else if (swapping) crossfade(() => { stageChartBox(); complete(); }, "map");
+        else { stageChartBox(); complete(); }
         checksReady.current = true;
       } catch {
         if (signal.aborted || gen !== loadGen.current) return;

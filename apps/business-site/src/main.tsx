@@ -27,7 +27,10 @@ const Company = lazy(loadCompanyPage);
 const PublicResearch = lazy(() => import("./PublicResearchPage"));
 const ArticlePreview = lazy(() => import("./ArtifactPreviewPage"));
 // Speculative loading must not surface an error before the reader opens the route.
-const preloadCompanyPage = () => { void loadCompanyPage().catch(() => {}); };
+const preloadCompanyPage = (search = typeof location !== "undefined" ? location.search : "") => {
+  void loadCompanyPage().catch(() => {});
+  if (new URLSearchParams(search).get("view") === "valuation") void import("./ValuationPanel").catch(() => {});
+};
 
 /** The route chunk can fail before the company's own render boundary has loaded. */
 class CompanyRouteBoundary extends Component<{
@@ -236,7 +239,7 @@ function App() {
   useEffect(() => {
     const warm = (e: Event) => {
       const link = (e.target instanceof Element ? e.target : null)?.closest<HTMLAnchorElement>("a[data-nav]");
-      if (link?.getAttribute("href")?.startsWith("/companies/")) preloadCompanyPage();
+      if (link?.getAttribute("href")?.startsWith("/companies/")) preloadCompanyPage(link.search);
     };
     const follow = (e: MouseEvent) => {
       const link = (e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null)?.closest<HTMLAnchorElement>("a[data-nav]");

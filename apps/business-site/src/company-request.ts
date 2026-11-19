@@ -20,15 +20,16 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 /** Exactly one automatic retry per read, cancelled when its page leaves. */
-export async function companyRequest(url: string, signal: AbortSignal, initial?: Promise<Response>): Promise<Response> {
-  const response = await (initial ?? fetch(url, { signal }));
+export async function companyRequest(url: string, signal: AbortSignal, initial?: Promise<Response>, priority?: "high" | "low" | "auto"): Promise<Response> {
+  const init = (priority ? { signal, priority } : { signal }) as RequestInit;
+  const response = await (initial ?? fetch(url, init));
   signal.throwIfAborted();
   if (response.status !== 429 || response.headers.has("x-retry-exhausted")) return response;
   waiting++;
   listeners.forEach(listener => listener(true));
   try {
     await pause(retryDelay(response.headers.get("retry-after")), signal);
-    return await fetch(url, { signal });
+    return await fetch(url, init);
   } finally {
     waiting--;
     listeners.forEach(listener => listener(waiting > 0));

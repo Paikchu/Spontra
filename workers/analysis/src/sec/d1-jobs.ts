@@ -129,6 +129,32 @@ export class SecAnalysisJobRepository {
     return { status: row.status, updatedAt: row.updatedAt ?? null, errorCode: safeJobErrorCode(row.status, row.errorCode) };
   }
 
+  /** Batch read of the newest analysis job per accession for a filings page, collapsing N queries into one. */
+  async getLatestAnalysisJobSummaries(ticker: string, accessionNumbers: readonly string[]): Promise<Map<string, {
+    status: SecAnalysisJobStatus | null;
+    updatedAt: string | null;
+    errorCode: string | null;
+  }>> {
+    const out = new Map<string, { status: SecAnalysisJobStatus | null; updatedAt: string | null; errorCode: string | null }>();
+    const unique = [...new Set(accessionNumbers)];
+    for (let i = 0; i < unique.length; i += 80) {
+      const slice = unique.slice(i, i + 80);
+      const placeholders = slice.map(() => "?").join(", ");
+      const rows = await this.database.prepare(`
+        SELECT accession_number AS accessionNumber, status, updated_at AS updatedAt, error_code AS errorCode
+        FROM sec_analysis_jobs
+        WHERE ticker = ? AND accession_number IN (${placeholders})
+        ORDER BY updated_at DESC
+      `).bind(ticker, ...slice).all<{ accessionNumber: string; status: SecAnalysisJobStatus; updatedAt: string | null; errorCode: string | null }>();
+      for (const row of rows.results) {
+        if (!out.has(row.accessionNumber)) {
+          out.set(row.accessionNumber, { status: row.status, updatedAt: row.updatedAt ?? null, errorCode: safeJobErrorCode(row.status, row.errorCode) });
+        }
+      }
+    }
+    return out;
+  }
+
 }
 
 /**

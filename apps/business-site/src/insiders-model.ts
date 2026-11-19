@@ -71,11 +71,13 @@ type HistoryState = { key: string; items: InsiderTransactionRow[]; nextCursor: s
  * when they did not, so it lists either way. `more` asks for the page after the cursor, or tries again after a failure.
  */
 export function useInsiderHistory(ticker: string, personKey: string, source: InsidersPublication["source"], events: readonly CompanyEvent[], now: Date): InsiderHistory {
-  const key = `${ticker}:${personKey}:${source}`;
+  const hasInlineLines = useMemo(() => events.some(e => (e.insider?.lines.length ?? 0) > 0), [events]);
+  const remote = source === "ledger" || !hasInlineLines;
+  const key = `${ticker}:${personKey}:${remote ? "remote" : "inline"}`;
   const [state, setState] = useState<HistoryState>({ key, items: [], nextCursor: null, phase: "idle", pending: false });
   const current: HistoryState = state.key === key ? state : { key, items: [], nextCursor: null, phase: "idle", pending: false };
   // The first page is pending from the start; later ones when asked for. Pending holds through the read.
-  const pending = source === "ledger" && (current.pending || current.phase === "idle");
+  const pending = remote && (current.pending || current.phase === "idle");
   useEffect(() => {
     if (!pending) return;
     const cursor = current.nextCursor;
@@ -87,9 +89,9 @@ export function useInsiderHistory(ticker: string, personKey: string, source: Ins
     fetchInsiderHistory(ticker, personKey, cursor, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
   }, [key, pending]); // eslint-disable-line react-hooks/exhaustive-deps
-  // From the filings the pages are derived, never fetched: one more page each time `more` is asked.
+  // From the filings the pages are derived only when inline lines are present; otherwise the dedicated endpoint serves them.
   const [pages, setPages] = useState(1);
-  const fallback = useMemo(() => source === "ledger" ? null : pageRows(rowsFromEvents(events, now).filter(r => r.personKey === personKey), null, pages * INSIDER_HISTORY_PAGE), [source, events, now, personKey, pages]);
+  const fallback = useMemo(() => remote ? null : pageRows(rowsFromEvents(events, now).filter(r => r.personKey === personKey), null, pages * INSIDER_HISTORY_PAGE), [remote, events, now, personKey, pages]);
   if (fallback) return { items: fallback.items, nextCursor: fallback.nextCursor, phase: "ready", more: () => setPages(n => n + 1) };
   const more = () => { if (current.phase === "error" || (current.phase === "ready" && current.nextCursor)) setState({ ...current, pending: true }); };
   return { items: current.items, nextCursor: current.nextCursor, phase: pending ? "loading" : current.phase, more };

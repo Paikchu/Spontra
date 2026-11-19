@@ -69,8 +69,12 @@ export type InsiderTransaction = {
   exercised: number;
   /** Shares held directly after the last non-derivative line; null when the filing reports none. */
   heldAfter: number | null;
-  /** Footnotes as filed, trimmed. */
+  /** Footnotes as filed, trimmed. Empty on compact rail responses; classification flags below retain their signals. */
   footnotes: string[];
+  /** Precomputed from footnotes before trimming compact rail responses. */
+  espp?: boolean;
+  /** Precomputed from footnotes before trimming compact rail responses. */
+  taxWithholding?: boolean;
 };
 
 /** How loudly a filing belongs on the default rail. Computed, never written by a model. */

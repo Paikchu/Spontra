@@ -22,7 +22,7 @@ import {findingLeadsOf,readFindingFundamentals,readFindingsPublication,type Find
 import type {FindingPassage,FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
-import {readEventsPublication} from "@/shared/analysis-runtime/events";
+import {readEventsPublication,trimEventsForRail} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
 import {readInsiderTransactionsPage,readInsidersPublication} from "@/shared/analysis-runtime/insiders";
 import type {InsiderTransactionsPage,InsidersPublication} from "@/shared/analysis-contract/insiders";
@@ -34,7 +34,7 @@ import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
 import {handleTelemetry,type TelemetryNamespace} from "../src/telemetry.ts";
 export {TelemetryStore} from "./telemetry-store.ts";
-import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
+import {DISPLAY_CONFIG_TOKEN,MAP_RESOURCES,PRIMARY_MAP_RESOURCES,REVISION,STREAM_MAP_RESOURCES,type MapResource,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 /** A read in the reader's language: Spontra Analysis applies its translations of the generated prose. English needs no parameter. */
@@ -175,13 +175,14 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,loca
  }catch{return null;}
 }
 
-/** Filed events (8-K and Form 4), re-validated; unavailable reads as null. */
+/** Filed events (8-K and Form 4), re-validated and trimmed to rail summaries; unavailable reads as null. */
 export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<EventsPublication|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/events`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;events?:unknown};
-  return body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
+  const parsed=body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
+  return parsed?trimEventsForRail(parsed):null;
  }catch{return null;}
 }
 
@@ -313,17 +314,21 @@ export async function loadValuation(ticker:string,path:string,params:URLSearchPa
  }catch{return null;}
 }
 
-/** The company's publication revisions; only known resources at well-formed times pass through. */
-export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Promise<MapRevisions|null>{
+/** The company's publication revisions and live display-switch fingerprint; only well-formed values pass through. */
+async function loadRevisionState(ticker:string,fetcher:typeof fetch=fetch):Promise<{revisions:MapRevisions;config:string|null}|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/revisions`,{signal:AbortSignal.timeout(5000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:unknown;revisions?:unknown};
+  const body=await response.json() as {schemaVersion?:unknown;revisions?:unknown;config?:unknown};
   if(body.schemaVersion!=="revisions.v1"||!body.revisions||typeof body.revisions!=="object")return null;
   const source=body.revisions as Record<string,unknown>,revisions:MapRevisions={};
   for(const resource of MAP_RESOURCES){const value=source[resource];if(typeof value==="string"&&REVISION.test(value))revisions[resource]=value;}
-  return revisions;
+  const config=typeof body.config==="string"&&DISPLAY_CONFIG_TOKEN.test(body.config)?body.config:null;
+  return {revisions,config};
  }catch{return null;}
+}
+export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Promise<MapRevisions|null>{
+ return (await loadRevisionState(ticker,fetcher))?.revisions??null;
 }
 
 /** The reader's signed id lives in an HttpOnly cookie scoped to the stage, so page scripts never hold it and sockets carry it. */
@@ -375,16 +380,51 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  return out;
 }
 
-export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
- const companyRead=new URL(request.url).pathname.startsWith("/api/business/v1/companies/");
- // A retained URL or revision must obey today's switches. Company reads bypass edge copies and browser storage.
- const response=await handleRequest(request,env,ctx,upstream,companyRead?undefined:cache);
- if(!companyRead)return response;
+function companyRevalidated(request:Request,response:Response):Response{
+ const etag=response.headers.get("etag");
+ const asked=request.headers.get("if-none-match");
+ if(etag&&asked&&asked.split(",").some(tag=>tag.trim().replace(/^W\//,"")===etag.replace(/^W\//,"")))return new Response(null,{status:304,headers:{...security,etag,"cache-control":"private, no-cache"}});
  const out=new Response(response.body,response);
- out.headers.set("cache-control","private, no-store");
+ out.headers.set("cache-control","private, no-cache");
  return out;
 }
-async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
+function companyResourceOf(subpath?:string):MapResource|null{
+ if(!subpath)return "company";
+ if(subpath==="/capital"||subpath==="/findings"||subpath==="/fundamentals"||subpath==="/events"||subpath==="/filings"||subpath==="/valuation")return subpath.slice(1) as MapResource;
+ return null;
+}
+function companyCacheKey(url:URL,liveConfig:string,liveRev?:string):Request{
+ const key=new URL(url.href);
+ key.searchParams.set("cfg",liveConfig);
+ if(liveRev&&!key.searchParams.has("rev"))key.searchParams.set("rev",liveRev);
+ key.searchParams.sort();
+ return new Request(key.href,{method:"GET"});
+}
+async function finalizeCompanyResponse(request:Request,response:Response,cacheKey:Request|null,cache:Cache|undefined,ctx:SiteContext,privateRead:boolean):Promise<Response>{
+ const cc=response.headers.get("cache-control")??"";
+ if(!response.ok||cc.includes("no-store")){
+  const out=new Response(response.body,response);
+  out.headers.set("cache-control","private, no-store");
+  return out;
+ }
+ if(privateRead){
+  const out=new Response(response.body,response);
+  out.headers.set("cache-control","private, max-age=30");
+  return out;
+ }
+ const text=await response.text();
+ const headers=new Headers(response.headers);
+ headers.set("etag",`W/"${(await sha256Hex(text)).slice(0,32)}"`);
+ headers.set("cache-control","public, max-age=14400");
+ const edge=new Response(text,{status:response.status,headers});
+ if(cache&&cacheKey)ctx.waitUntil(cache.put(cacheKey,edge.clone()));
+ return companyRevalidated(request,edge);
+}
+
+export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
+ return handleRequest(request,env,ctx,upstream,cache);
+}
+async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache,trustedConfig?:string|null):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
@@ -398,9 +438,9 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   }
   const source=upstream??analysisFetcher(env);
   let readFailureStatus=0, readRetryAfter:string|null=null;
-  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);const sourcePath=new URL(input instanceof Request?input.url:String(input)).pathname;const absentCompanyArtifact=response.status===404&&/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/artifacts\/company-analysis\/?$/.test(sourcePath);if(!response.ok&&!absentCompanyArtifact){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
+  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);const sourcePath=new URL(input instanceof Request?input.url:String(input)).pathname;const absentResource=response.status===404&&(/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/artifacts\/(?:company-analysis|dossier\/[a-z0-9][a-z0-9-]{0,79})\/?$/.test(sourcePath)||/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/fundamentals\/?$/.test(sourcePath));if(!response.ok&&!absentResource){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
   const moduleJson=(body:unknown)=>{const response=json(body,readFailureStatus||200);if(readFailureStatus===429)response.headers.set("retry-after",readRetryAfter??"60");return response;};
-  if(!fetcher)return json({error:"Read service unavailable"},503);
+  if(!fetcher||!source)return json({error:"Read service unavailable"},503);
   // An analysis draft opened by the visual review through its signed, short-lived link (docs/analysis-html-artifact.md §7.1).
   const preview=url.pathname.match(/^\/api\/business\/v1\/artifact-preview\/([A-Za-z0-9_.-]{20,1000})$/);
   if(preview){
@@ -468,11 +508,15 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","artifactVersion","artifactHash","lang","rev","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():match?.[2]==="/opening"?new Set(["lang","scope","schema"]):detail?new Set(["reportDate","reportVersion","artifactVersion","artifactHash","lang","rev","cfg","schema"]):match?.[2]?.startsWith("/artifacts/")?new Set(["lang","rev","cfg","schema"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev","cfg"]);
   allowed.add("schema");
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
+  const cfg=url.searchParams.get("cfg");
+  if(cfg!=null&&!DISPLAY_CONFIG_TOKEN.test(cfg))return json({error:"Not found"},404);
+  const scope=url.searchParams.get("scope");
+  if(scope!=null&&scope!=="primary"&&scope!=="stream")return json({error:"Not found"},404);
   // `?lang=zh-CN` reads the generated prose in Chinese where it has been translated; the cache keys on the full URL.
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
@@ -482,58 +526,75 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
-  // One browser request; resource caches retain their individual revision and locale keys.
+  // One browser request per loading phase; resource caches key on revision, locale and live display-switch state.
   if(match[2]==="/opening"){
-   const revisions=await loadRevisions(match[1],fetcher)??{};
-   const entries=await Promise.all(MAP_RESOURCES.map(async resource=>{
+   const state=await loadRevisionState(match[1],source);
+   const revisions=state?.revisions??{};
+   const config=state?.config??null;
+   const selected=scope==="primary"?PRIMARY_MAP_RESOURCES:scope==="stream"?STREAM_MAP_RESOURCES:MAP_RESOURCES;
+   const entries=await Promise.all(selected.map(async resource=>{
     const part=new URL(url.origin+`/api/business/v1/companies/${match[1]}${resource==="company"?"":`/${resource}`}`);
+    if(schema)part.searchParams.set("schema",schema);
     if(lang)part.searchParams.set("lang",lang);
     if(revisions[resource])part.searchParams.set("rev",revisions[resource]!);
+    if(config)part.searchParams.set("cfg",config);
     try{
-     const response=await handle(new Request(part),{...env,PUBLIC_READ_LIMIT:{limit:async()=>({success:true})}},ctx,fetcher,cache);
+     const response=await handleRequest(new Request(part),{...env,PUBLIC_READ_LIMIT:{limit:async()=>({success:true})}},ctx,source,cache,config);
      return [resource,{status:response.status,body:await response.json(),retryAfter:response.headers.get("retry-after")}];
     }catch{return [resource,{status:503,body:null}];}
    }));
-   const response=json({revisions,resources:Object.fromEntries(entries)});
-   response.headers.set("cache-control","no-store");
+   const response=json({revisions,...(config?{config}:{}),resources:Object.fromEntries(entries)});
+   response.headers.set("cache-control","private, no-store");
    return response;
   }
   // What changed since the page loaded: answered fresh every time, never from a cache.
-  if(match[2]==="/revision"){const revisions=await loadRevisions(match[1],fetcher);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:revisions??{}},revisions?200:503);response.headers.set("cache-control","no-store");return response;}
+  if(match[2]==="/revision"){const state=await loadRevisionState(match[1],source);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:state?.revisions??{},...(state?.config?{config:state.config}:{})},state?200:503);response.headers.set("cache-control","private, no-store");return response;}
   const privateRead=match[2]==="/insiders"||match[2]?.startsWith("/insiders/")||match[2]?.startsWith("/items/");
   if(match[2]==="/findings")url.searchParams.set("schema","findings-navigation-v1");
-  const key=new Request(url.href,{method:"GET"});const cached=privateRead?undefined:await cache?.match(key);if(cached)return cached;
+  const resourceKind=companyResourceOf(match[2]);
+  // Every cached company read verifies the live display-switch fingerprint so admin changes take effect immediately.
+  const liveState=!privateRead&&cache&&trustedConfig===undefined?await loadRevisionState(match[1],source):null;
+  const liveConfig=trustedConfig!==undefined?trustedConfig:liveState?.config??null;
+  const liveRev=rev??(resourceKind?liveState?.revisions[resourceKind]:undefined);
+  const canUseEdgeCache=!privateRead&&Boolean(cache&&liveConfig&&!liveConfig.startsWith("0")&&(liveRev||!resourceKind));
+  const key=canUseEdgeCache?companyCacheKey(url,liveConfig!,liveRev):null;
+  const cached=key?await cache?.match(key):undefined;
+  if(cached)return companyRevalidated(request,cached);
+  const finish=(response:Response)=>finalizeCompanyResponse(request,response,key,cache,ctx,privateRead);
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
-   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>,cacheable?:(body:T)=>boolean)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});const canCache=!!body&&(!cacheable||cacheable(body));if(!canCache)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&canCache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
-   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{},...(bundle?.pendingResearch?{pendingResearch:bundle.pendingResearch}:{})});const cacheable=bundle?.status==="ready"&&!!bundle.findings.navigationTitles;if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>,cacheable?:(body:T)=>boolean)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});const canCache=!!body&&(!cacheable||cacheable(body));if(!canCache)response.headers.set("cache-control","no-store");return finish(response);};
+   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body});if(!body)response.headers.set("cache-control","no-store");return finish(response);}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?.status??"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null,dossiers:bundle?.dossiers??{},...(bundle?.pendingResearch?{pendingResearch:bundle.pendingResearch}:{})});const cacheable=bundle?.status==="ready"&&!!bundle.findings.navigationTitles;if(!cacheable)response.headers.set("cache-control","no-store");return finish(response);}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
-   // The company analysis and dossiers select a translated artifact for the reader's locale.
-   if(match[2]==="/artifacts/company-analysis"){try{return await supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);}catch{readFailureStatus ||= 503;return moduleJson({schemaVersion:"artifact-response.v1",status:"unavailable",artifact:null});}}
-   if(match[2].startsWith("/artifacts/dossier/"))return supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher,locale),artifactSettled);
+   // The company analysis and dossiers select a translated artifact for the reader's locale; 404 absence reads as unavailable, never 503.
+   if(match[2]==="/artifacts/company-analysis"){try{return await supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],"company-analysis",fetcher,locale),artifactSettled);}catch{readFailureStatus ||= 503;return finish(moduleJson({schemaVersion:"artifact-response.v1",status:"unavailable",artifact:null}));}}
+   if(match[2].startsWith("/artifacts/dossier/")){try{return await supplementary("artifact","artifact-response.v1",()=>loadArtifact(match[1],match[2]!.slice("/artifacts/".length),fetcher,locale),artifactSettled);}catch{readFailureStatus ||= 503;return finish(moduleJson({schemaVersion:"artifact-response.v1",status:"unavailable",artifact:null}));}}
    if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
    if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
-   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return finish(readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503));const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");return finish(response);}
    if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const artifactVersion=url.searchParams.get("artifactVersion"),artifactHash=url.searchParams.get("artifactHash");
-    if((artifactVersion!==null||artifactHash!==null)&&(!artifactVersion||!/^[1-9]\d{0,8}$/.test(artifactVersion)||!artifactHash||!/^[0-9a-f]{64}$/.test(artifactHash)))return json({error:"Not found"},404);
+    if((artifactVersion!==null||artifactHash!==null)&&(!artifactVersion||!/^[1-9]\d{0,8}$/.test(artifactVersion)||!artifactHash||!/^[0-9a-f]{64}$/.test(artifactHash)))return finish(json({error:"Not found"},404));
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale,artifactVersion&&artifactHash?{artifactVersion,artifactHash}:null);
-    if(!body)return json({error:"Not found"},404);
-    const response=json(body);const canCache=!body.artifact?.filingImpact&&(!body.artifact||artifactSettled(body.artifact));if(!canCache)response.headers.set("cache-control","no-store");if(cache&&canCache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
+    if(!body)return finish(json({error:"Not found"},404));
+    const response=json(body);const canCache=!body.artifact?.filingImpact&&(!body.artifact||artifactSettled(body.artifact));if(!canCache)response.headers.set("cache-control","no-store");return finish(response);}catch{return finish(readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503));}}
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
-   {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");return finish(response);}
   }
   try{const flow=await loadPublicFlow(match[1],fetcher,locale);
-   const [explainer,tree]=flow.layers?.tree===false||flow.layers?.map===false?[null,null]:await Promise.all([loadExplainer(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);
+   let supplementalFailed=false;
+   const optionalSource:typeof fetch=async(input,init)=>{try{const r=await source(input,init);if(!r.ok&&r.status!==404)supplementalFailed=true;return r;}catch(error){supplementalFailed=true;throw error;}};
+   // Optional explainer/tree failures never poison the primary flow response, only skip edge caching.
+   const [explainer,tree]=flow.layers?.tree===false||flow.layers?.map===false?[null,null]:await Promise.all([loadExplainer(match[1],optionalSource,locale),loadTree(match[1],optionalSource,locale)]);
    const response=moduleJson({...flow,explainer,tree});
-   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours (public, max-age=14400).
-   const cacheable=flow.status==="ready"&&!readFailureStatus;
+   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours.
+   const cacheable=flow.status==="ready"&&!readFailureStatus&&!supplementalFailed;
    if(!cacheable)response.headers.set("cache-control","no-store");
-   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503);}
+   return finish(response);}catch{return finish(readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503));}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

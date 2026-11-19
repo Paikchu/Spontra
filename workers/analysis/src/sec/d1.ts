@@ -88,6 +88,29 @@ export class D1SecRepository implements SecRepository {
     }
   }
 
+  /** Batch read of cache entries by exact key, avoiding per-row queries on list pages. */
+  async getCaches<T>(keys: readonly string[]): Promise<Map<string, SecCacheRecord<T>>> {
+    const out = new Map<string, SecCacheRecord<T>>();
+    const unique = [...new Set(keys)];
+    for (let i = 0; i < unique.length; i += 80) {
+      const slice = unique.slice(i, i + 80);
+      const placeholders = slice.map(() => "?").join(", ");
+      const rows = await this.database.prepare(`
+        SELECT cache_key AS cacheKey, payload, fetched_at AS fetchedAt
+        FROM sec_cache
+        WHERE cache_key IN (${placeholders})
+      `).bind(...slice).all<{ cacheKey: string; payload: string; fetchedAt: string }>();
+      for (const row of rows.results) {
+        try {
+          out.set(row.cacheKey, { payload: JSON.parse(row.payload) as T, fetchedAt: row.fetchedAt });
+        } catch {
+          /* Skip malformed cache entry. */
+        }
+      }
+    }
+    return out;
+  }
+
   async setCache<T>(key: string, payload: T, fetchedAt: string): Promise<void> {
     await this.database.prepare(`
       INSERT INTO sec_cache (cache_key, payload, fetched_at)
@@ -158,6 +181,10 @@ export class D1SecRepository implements SecRepository {
     return this.jobs.getLatestAnalysisJobSummary(...args);
   }
 
+  getLatestAnalysisJobSummaries(...args: Parameters<SecAnalysisJobRepository["getLatestAnalysisJobSummaries"]>) {
+    return this.jobs.getLatestAnalysisJobSummaries(...args);
+  }
+
   /**
    * A storage failure used to be caught here and returned as `null`, which every caller then
    * rendered as "this filing has no analysis". A D1 outage therefore looked exactly like a filing
@@ -210,12 +237,83 @@ export class D1SecRepository implements SecRepository {
     `).bind(...values).all<PublicFilingRow>();
     const hasMore = rows.results.length > limit;
     const pageRows = rows.results.slice(0, limit);
-    const filings = await Promise.all(pageRows.map((row) => this.hydratePublicFiling(row)));
+    const filings = await this.hydratePublicFilings(ticker, pageRows);
     const last = pageRows.at(-1);
     return {
       filings,
       nextCursor: hasMore && last ? encodePageCursor({ filingDate: last.sortDate ?? last.filingDate, accessionNumber: last.accessionNumber }) : null,
     };
+  }
+
+  private async hydratePublicFilings(ticker: string, pageRows: readonly PublicFilingRow[]): Promise<SecFilingWithSummary[]> {
+    if (!pageRows.length) return [];
+    const accessions = [...new Set(pageRows.map(row => row.accessionNumber))];
+    const filingIds = [...new Set(pageRows.map(row => row.filingId))];
+    const accPlaceholders = accessions.map(() => "?").join(", ");
+    const idPlaceholders = filingIds.map(() => "?").join(", ");
+    const [summaryRows, periodRows] = await Promise.all([
+      this.database.prepare(`
+        SELECT accession_number AS accessionNumber, payload
+        FROM sec_filing_summaries
+        WHERE ticker = ? AND accession_number IN (${accPlaceholders})
+      `).bind(ticker, ...accessions).all<{ accessionNumber: string; payload: string }>(),
+      this.database.prepare(`
+        SELECT filing_id AS filingId, period_id AS periodId
+        FROM sec_filing_periods
+        WHERE filing_id IN (${idPlaceholders})
+        ORDER BY role = 'primary' DESC
+      `).bind(...filingIds).all<{ filingId: string; periodId: string }>(),
+    ]);
+    const summaries = new Map<string, SecFilingSummary>();
+    for (const row of summaryRows.results) {
+      try { summaries.set(row.accessionNumber, JSON.parse(row.payload) as SecFilingSummary); } catch { /* skip malformed */ }
+    }
+    const periods = new Map<string, string>();
+    for (const row of periodRows.results) {
+      if (!periods.has(row.filingId)) periods.set(row.filingId, row.periodId);
+    }
+    const periodIds = new Set<string>();
+    const rowPeriodId = pageRows.map(row => {
+      const reportPeriodId = /^(10-K|10-Q|20-F|40-F)/.test(row.form) && row.reportDate
+        ? periods.get(row.filingId) ?? buildPeriodIdentity(row.ticker, row.form, row.reportDate).periodId : null;
+      if (reportPeriodId) periodIds.add(reportPeriodId);
+      return reportPeriodId;
+    });
+    const reports = new Map<string, PublishedSecReport>();
+    if (periodIds.size) {
+      const ids = [...periodIds];
+      const placeholders = ids.map(() => "?").join(", ");
+      const reportRows = await this.database.prepare(`
+        SELECT period_id AS periodId, payload
+        FROM sec_published_reports
+        WHERE ticker = ? AND period_id IN (${placeholders})
+          AND verification_status IN ('verified', 'partial')
+        ORDER BY generated_at DESC, rowid DESC
+      `).bind(ticker, ...ids).all<{ periodId: string; payload: string }>();
+      for (const row of reportRows.results) {
+        if (!reports.has(row.periodId)) {
+          const parsed = normalizeStoredReader(parseJson<PublishedSecReport>(row.payload));
+          if (parsed) reports.set(row.periodId, parsed);
+        }
+      }
+    }
+    return pageRows.map((row, index): SecFilingWithSummary => ({
+      ticker: row.ticker,
+      cik: row.cik,
+      cikNumber: Number(row.cik.replace(/\D/g, "")) || 0,
+      companyName: row.companyName ?? row.ticker,
+      form: row.form,
+      filingDate: row.filingDate,
+      reportDate: row.reportDate,
+      accessionNumber: row.accessionNumber,
+      primaryDocument: row.documentUrl.split("/").at(-1) ?? "",
+      description: row.form,
+      items: "",
+      documentUrl: row.documentUrl,
+      indexUrl: row.indexUrl,
+      summary: summaries.get(row.accessionNumber) ?? null,
+      analysis: rowPeriodId[index] ? reports.get(rowPeriodId[index]!) ?? null : null,
+    }));
   }
 
   /** Counted on its own so paging pays for it once, on the first page, instead of on every page. */

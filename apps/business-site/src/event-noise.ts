@@ -19,6 +19,34 @@ function readEventFilter(search: string): EventFilter {
   return EVENT_FILTERS.includes(raw as EventFilter) ? raw as EventFilter : "key";
 }
 
+/** Pre-groups events by insider owner and offering count so filtering runs in O(N) instead of O(N²). */
+function importanceResolver(allEvents: readonly CompanyEvent[] | undefined): (event: CompanyEvent) => ReturnType<typeof eventImportance> {
+  if (!allEvents?.length) return event => eventImportance(event);
+  const byOwner = new Map<string, CompanyEvent[]>();
+  const offerings: CompanyEvent[] = [];
+  for (const event of allEvents) {
+    if (event.class === "insider" && event.insider) {
+      const key = event.insider.ownerCik ? `cik:${event.insider.ownerCik}` : `name:${event.insider.ownerName}`;
+      const list = byOwner.get(key);
+      if (list) list.push(event);
+      else byOwner.set(key, [event]);
+    } else if (event.class === "financing") {
+      offerings.push(event);
+    }
+  }
+  const cache = new Map<string, ReturnType<typeof eventImportance>>();
+  return event => {
+    const hit = cache.get(event.id);
+    if (hit) return hit;
+    const scope = event.class === "insider" && event.insider
+      ? byOwner.get(event.insider.ownerCik ? `cik:${event.insider.ownerCik}` : `name:${event.insider.ownerName}`)
+      : event.class === "financing" ? offerings : undefined;
+    const result = eventImportance(event, scope);
+    cache.set(event.id, result);
+    return result;
+  };
+}
+
 /** Only the implicit default falls back; explicit category links keep the reader's choice. */
 export function defaultEventFilter(search: string, items: readonly RailItem[] | null, now: Date): { filter: EventFilter; fallback: boolean } {
   const filter = readEventFilter(search);
@@ -28,8 +56,9 @@ export function defaultEventFilter(search: string, items: readonly RailItem[] | 
   const events = items?.filter(item => item.kind === "event") ?? [];
   const recent = events.filter(item => item.date >= since && item.date <= today);
   const allEvents = events.flatMap(item => item.kind === "event" ? [item.event] : []);
+  const importance = importanceResolver(allEvents);
   const fallback = !explicit && filter === "key" && recent.length > 0
-    && !recent.some(item => matchesEventFilter(item, "key", allEvents));
+    && !recent.some(item => matchesEventFilter(item, "key", allEvents, [], importance));
   return { filter: fallback ? "all" : filter, fallback };
 }
 
@@ -51,7 +80,13 @@ function reportInKey(item: RailItem & { kind: "report" }, items: readonly RailIt
 }
 
 /** Whether one rail row belongs in a filter. Reports are earnings, so they are in Key, Earnings and All. */
-export function matchesEventFilter(item: RailItem, filter: EventFilter, allEvents?: readonly CompanyEvent[], items: readonly RailItem[] = []): boolean {
+export function matchesEventFilter(
+  item: RailItem,
+  filter: EventFilter,
+  allEvents?: readonly CompanyEvent[],
+  items: readonly RailItem[] = [],
+  importance?: (event: CompanyEvent) => ReturnType<typeof eventImportance>,
+): boolean {
   if (filter === "all") return true;
   if (item.kind === "report") {
     if (filter === "earnings") return true;
@@ -59,11 +94,12 @@ export function matchesEventFilter(item: RailItem, filter: EventFilter, allEvent
     return reportInKey(item, items);
   }
   const event = item.event;
-  if (filter === "key") return eventImportance(event, allEvents) === "key";
+  const rank = importance ?? (e => eventImportance(e, allEvents));
+  if (filter === "key") return rank(event) === "key";
   if (filter === "earnings") return event.class === "earnings" || event.class === "guidance";
   if (filter === "insiders") return event.class === "insider";
   if (MATERIAL.has(event.class)) return true;
-  return event.class === "other" && eventImportance(event, allEvents) !== "routine";
+  return event.class === "other" && rank(event) !== "routine";
 }
 
 export type NoiseRow =
@@ -73,13 +109,14 @@ export type NoiseRow =
 /** The rows of a reading: routine 6-Ks fold by month; everything else, each Form 4 included, lists as itself at its date. */
 function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
   const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
-  const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items)).sort((a, b) => b.date.localeCompare(a.date));
+  const importance = importanceResolver(allEvents);
+  const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items, importance)).sort((a, b) => b.date.localeCompare(a.date));
   const hosts = new Map<RailItem, NoiseRow>();
   const routines = new Map<string, Extract<NoiseRow, { kind: "routine" }>>();
   for (const item of picked) {
     if (item.kind !== "event") continue;
     const event = item.event;
-    if (event.form.startsWith("6-K") && eventImportance(event, allEvents) === "routine") {
+    if (event.form.startsWith("6-K") && importance(event) === "routine") {
       const key = event.filedAt.slice(0, 7);
       const group = routines.get(key) ?? { kind: "routine", id: `routine:${key}`, date: item.date, items: [] };
       group.items.push(item);

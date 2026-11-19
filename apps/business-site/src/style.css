@@ -1424,3 +1424,88 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 /* An analysis report drawn in its sandbox (ArtifactFrame.tsx): the frame is as tall as the report it holds. */
 .artifact-frame { display: block; width: min(100%, var(--report-measure)); max-width: 100%; min-width: 0; margin-inline: auto; justify-self: center; border: 0; background: transparent; color-scheme: normal; }
 .artifact-language-row { width: min(100%, var(--report-measure)); min-width: 0; margin-inline: auto; justify-self: center; }
+
+/* ---------- Aligned loading skeleton & below-the-fold containment ---------- */
+.stage[data-view="valuation"] { grid-template-rows: auto minmax(0, 1fr); padding-bottom: 12px; }
+
+.skel-bar {
+  display: inline-block; max-width: 100%; height: 13px; border-radius: 5px;
+  background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 8%, transparent), var(--hairline)) 0 0 / 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.skel-bar--total { width: 78px; height: 20px; }
+.skel-bar--delta { width: 52px; height: 13px; }
+.skel-dot { display: block; width: 14px; height: 14px; border-radius: 4px; background: var(--hairline); }
+.skel-lines { display: grid; gap: 8px; }
+.skel-lines--note { margin-top: 6px; gap: 6px; }
+.skel-lines .skel-bar { height: 12px; }
+.skel-lines--note .skel-bar { height: 11px; }
+
+/* Reserve the Ask console slot at the bottom of the rail so the list height stays fixed while loading. */
+.skel-ask { display: flex; gap: 8px; padding: 6px 12px 12px; }
+.skel-ask .ask-open {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 40px; border-radius: 999px;
+  background: var(--fill); color: var(--muted-foreground); font-size: 13.5px; font-weight: 600; opacity: .72;
+}
+.skel-ask .ask-open svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+
+/* Valuation stage skeleton: mirrors five-dimension radar + core valuation strip without waiting for valuation.css. */
+.skel-val, .skel-doc { height: auto; min-height: 0; margin-top: 0; border-top: 0; animation: none; }
+.skel-val { display: grid; grid-template-rows: auto; gap: 0; padding-top: 4px; }
+.skel-val-section { display: grid; gap: 20px; padding: 12px 0 28px; }
+.skel-val-section--bordered { padding-top: 28px; border-top: 1px solid var(--hairline); }
+.skel-val-heading { display: flex; align-items: center; gap: 10px; }
+.skel-val-accent { width: 3px; height: 16px; border-radius: 2px; background: var(--border); }
+.skel-val-scores { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 20px 44px; align-items: center; }
+.skel-radar { display: grid; place-items: center; }
+.skel-radar-svg { display: block; width: 100%; max-width: 240px; height: auto; }
+.skel-radar-ring, .skel-radar-axis { fill: none; stroke: var(--hairline); stroke-width: 1; }
+.skel-radar-fill { fill: color-mix(in srgb, var(--foreground) 6%, transparent); stroke: var(--border); stroke-width: 1.25; }
+.skel-val-detail { display: grid; gap: 14px; min-width: 0; }
+.skel-val-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.skel-val-pill { height: 28px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); }
+.skel-val-pill--active { border-color: var(--border); background: var(--fill); }
+.skel-val-dimhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.skel-val-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px; }
+.skel-val-kpi { display: grid; gap: 8px; align-content: start; }
+.skel-val-range { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+
+/* Single-column document skeleton (company analysis / lens). */
+.skel-doc { display: grid; gap: 18px; }
+.skel-doc-title { display: grid; gap: 10px; }
+.skel-doc-block { height: 180px; border-radius: 12px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 6%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+
+/* Statement flow & quarterly trend skeleton silhouette. */
+.skel-flow {
+  position: absolute; inset: 12px 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) 22px minmax(0, 1fr) 22px;
+  align-items: center; gap: 0; padding: 12px 10%;
+}
+.skel-flow-col { display: flex; flex-direction: column; justify-content: center; gap: 14px; height: 100%; }
+.skel-flow-bar { display: block; width: 100%; border-radius: 5px; background: var(--hairline); }
+.skel-flow-bar--trunk { background: color-mix(in srgb, var(--foreground) 12%, transparent); }
+.skel-flow-band {
+  height: 62%; margin-inline: 2px; border-radius: 8px;
+  background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 5%, transparent), var(--hairline)) 0 0 / 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+.skel-trend-plot { align-items: end; }
+.skel-trend-plot .trend-col { height: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.skel-trend-bar { display: block; width: min(100%, 44px); border-radius: 3px 3px 0 0; background: var(--hairline); }
+
+/* Defer off-screen quarter groups in long rails; keep the first two above-the-fold frames eager. */
+.quarter-frame:nth-child(n + 3) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 220px;
+}
+@supports not (content-visibility: auto) {
+  .quarter-frame:nth-child(n + 3) { contain: layout style paint; }
+}
+
+@media (max-width: 960px) {
+  .skel-val-scores { grid-template-columns: minmax(0, 1fr); }
+  .skel-val-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skel-flow { position: relative; inset: auto; height: 260px; padding: 12px 4%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel-bar, .skel-doc-block, .skel-flow-band { animation: none; }
+}

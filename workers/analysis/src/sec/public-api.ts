@@ -1,4 +1,5 @@
-import { readFiscalPeriod } from "./fiscal-period.ts";
+import { fiscalPeriodKey, readFiscalPeriod } from "./fiscal-period.ts";
+import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
 import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { cleanSecAccession, type SecFilingWithSummary } from "./sec.ts";
 import { decodePageCursor } from "./config.ts";
@@ -43,13 +44,25 @@ export async function getPublicFilingPage(
   if (rawCursor && !decodePageCursor(rawCursor)) throw new AnalysisRequestError("INVALID_CURSOR", "Cursor is invalid.");
   const limit = parseFilingLimit(rawLimit);
   const cursor = decodePageCursor(rawCursor);
-  const cachedFeed = typeof repository.getCache === "function" ? await readCachedSecFeed(repository, ticker) : null;
   // Membership and the canonical report can change after discovery. Page the durable grouping,
   // never an older per-file feed window; otherwise releases reappear or cross page boundaries.
-  const total = cursor ? null : await repository.countPublicFilings(ticker);
-  const page = await repository.listPublicFilings(ticker, rawCursor, limit);
+  const [cachedFeed, total, page] = await Promise.all([
+    typeof repository.getCache === "function" ? readCachedSecFeed(repository, ticker) : Promise.resolve(null),
+    cursor ? Promise.resolve(null) : repository.countPublicFilings(ticker),
+    repository.listPublicFilings(ticker, rawCursor, limit),
+  ]);
   const company = cachedFeed?.company ?? (page.filings[0] ? companyFromFiling(page.filings[0]) : await companyFromDirectory(repository, ticker));
-  const filings = await Promise.all(page.filings.map(async (filing) => toPublicFiling(repository, filing, company?.name ?? ticker)));
+  const resolved = page.filings.map(resolvePublishedFiling);
+  const [jobs, fiscalPeriods] = await Promise.all([
+    readJobSummaries(repository, ticker, page.filings.map(f => f.accessionNumber)),
+    readFiscalPeriodsBatch(repository, resolved),
+  ]);
+  const filings = await Promise.all(page.filings.map((filing, index) =>
+    toPublicFiling(repository, filing, company?.name ?? ticker, {
+      resolved: resolved[index],
+      job: jobs ? jobs.get(filing.accessionNumber) ?? { status: null, updatedAt: null, errorCode: null } : undefined,
+      fiscalPeriod: fiscalPeriods ? fiscalPeriods.get(resolved[index]!.accessionNumber) ?? null : undefined,
+    })));
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
     ticker,
@@ -100,8 +113,7 @@ export async function getPublicFiling(
   };
 }
 
-async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWithSummary, companyName: string): Promise<PublicSecFiling> {
-  const jobAccession = filing.accessionNumber;
+function resolvePublishedFiling(filing: SecFilingWithSummary): SecFilingWithSummary {
   // A report the filing path published is the whole of what a reader sees for this filing, whatever an earlier run left.
   if (filing.summary?.generatedBy === "pi"||filing.summary?.generatedBy === "operator") filing = { ...filing, analysis: undefined };
   if (filing.analysis?.publication) {
@@ -109,7 +121,20 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
     // A report first published under the earnings release stays on this filing's own row.
     filing = { ...(published.accessionNumber === filing.accessionNumber ? published : filing), summary, analysis: filing.analysis };
   }
-  const job = await readJobSummary(repository, filing.ticker, jobAccession);
+  return filing;
+}
+
+async function toPublicFiling(
+  repository: D1SecRepository,
+  rawFiling: SecFilingWithSummary,
+  companyName: string,
+  prefetched?: { resolved?: SecFilingWithSummary; job?: JobSummary | null; fiscalPeriod?: SecFiscalPeriod | null },
+): Promise<PublicSecFiling> {
+  const jobAccession = rawFiling.accessionNumber;
+  const filing = prefetched?.resolved ?? resolvePublishedFiling(rawFiling);
+  const job = prefetched && "job" in prefetched && prefetched.job !== undefined
+    ? prefetched.job
+    : await readJobSummary(repository, filing.ticker, jobAccession);
   const report = filing.analysis;
   /**
    * Unchanged mapping — existing readers branch on these four values. It describes the *published
@@ -122,8 +147,13 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
     ? report.dataQuality.verificationStatus === "verified" && report.dataQuality.analysisStatus !== "partial" ? "complete" : "partial"
     : job?.status === "queued" || job?.status === "running" ? "processing" : "not_collected";
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
+  const fiscalPeriod = report?.fiscalPeriod !== undefined
+    ? report.fiscalPeriod
+    : prefetched && "fiscalPeriod" in prefetched && prefetched.fiscalPeriod !== undefined
+      ? prefetched.fiscalPeriod
+      : typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null;
   return {
-    fiscalPeriod: report?.fiscalPeriod !== undefined ? report.fiscalPeriod : typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null,
+    fiscalPeriod,
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,
     companyName,
@@ -160,6 +190,29 @@ async function readJobSummary(repository: D1SecRepository, ticker: string, acces
   } catch {
     return null;
   }
+}
+
+async function readJobSummaries(repository: D1SecRepository, ticker: string, accessionNumbers: readonly string[]): Promise<Map<string, JobSummary> | null> {
+  if (typeof repository.getLatestAnalysisJobSummaries !== "function") return null;
+  try {
+    return await repository.getLatestAnalysisJobSummaries(ticker, accessionNumbers);
+  } catch {
+    return null;
+  }
+}
+
+async function readFiscalPeriodsBatch(repository: D1SecRepository, filings: readonly SecFilingWithSummary[]): Promise<Map<string, SecFiscalPeriod | null> | null> {
+  if (typeof repository.getCaches !== "function") return null;
+  const needed = filings.filter(f => f.analysis?.fiscalPeriod === undefined && /^(10-Q|10-K|20-F)(\/A)?$/.test(f.form));
+  if (!needed.length) return new Map();
+  const cached = await repository.getCaches<SecFiscalPeriod | null>(needed.map(fiscalPeriodKey));
+  const out = new Map<string, SecFiscalPeriod | null>();
+  for (const filing of needed) {
+    const entry = cached.get(fiscalPeriodKey(filing));
+    const period = entry?.payload?.periodEnd === filing.reportDate && entry.payload.sourceAccession === filing.accessionNumber ? entry.payload : null;
+    out.set(filing.accessionNumber, period);
+  }
+  return out;
 }
 
 function toRunSummary(job: JobSummary | null): AnalysisRunSummary {

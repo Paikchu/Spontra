@@ -136,13 +136,15 @@ const insiderTexts = (event: CompanyEvent) => [
 
 export function isEsppTransaction(event: CompanyEvent): boolean {
   if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "buy" || (event.insider?.sold?.shares ?? 0) > 0) return false;
+  if (event.insider?.espp === true) return true;
   return [...insiderTexts(event), event.insider?.securityTitle]
     .some(text => /employee\s+stock\s+purchase\s+plan|\bespp\b/i.test(text ?? ""));
 }
 
 /** A sale to fund vesting taxes, distinct from issuer-withheld shares on a separate F line. */
-function isTaxWithholdingSale(event: CompanyEvent): boolean {
+export function isTaxWithholdingSale(event: CompanyEvent): boolean {
   if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "sell") return false;
+  if (event.insider?.taxWithholding === true) return true;
   const texts = insiderTexts(event);
   const taxSale = /(?:sale\s+of\s+shares|shares\s+sold|sold)\b[^.]*\b(?:solely\s+|purely\s+)?to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?(?:reporting\s+person['’]s\s+)?tax\s+(?:liability|withholding|obligations?)|\bsolely\s+to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?tax\s+(?:liability|withholding|obligations?)|\bto\s+(?:satisfy|cover)\s+(?:the\s+reporting\s+person['’]s\s+)?tax\s+withholding\s+obligations?\b/i;
   // Separate cash-sale explanations take precedence over a tax explanation elsewhere in the filing.
@@ -251,6 +253,7 @@ const insider = z.object({
   sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
   bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
   exercised: finite.nonnegative(), heldAfter: finite.nullable(), footnotes: z.array(text(2000)).max(40),
+  espp: z.boolean().optional(), taxWithholding: z.boolean().optional(),
 });
 /** The model's text is kept as it wrote it: its length is no reason to refuse a company's whole list of filings. */
 const summary = z.object({
@@ -279,6 +282,35 @@ export function readEventsPublication(value: unknown, ticker: string): EventsPub
     .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate))
     .map(event => annotateEvent(event));
   return { ...parsed.data, events: events.map(event => ({ ...event, importance: eventImportance(event, events) })) };
+}
+
+/**
+ * Rail list projection: strips verbose per-line Form 4 tables and raw footnotes while retaining
+ * all precomputed classification flags (`rule10b51`, `espp`, `taxWithholding`, `importance`).
+ * Individual transaction lines load on demand from `/insiders/:personKey/transactions`.
+ */
+export function trimEventsForRail(publication: EventsPublication): EventsPublication {
+  return {
+    ...publication,
+    events: publication.events.map(event => {
+      const t = event.insider;
+      if (!t || (t.lines.length === 0 && t.footnotes.length === 0)) return event;
+      const planned = isPlannedInsiderTrade(event);
+      const espp = isEsppTransaction(event);
+      const taxWithholding = isTaxWithholdingSale(event);
+      return {
+        ...event,
+        insider: {
+          ...t,
+          rule10b51: planned ? true : t.rule10b51,
+          ...(espp ? { espp: true } : {}),
+          ...(taxWithholding ? { taxWithholding: true } : {}),
+          lines: [],
+          footnotes: [],
+        },
+      };
+    }),
+  };
 }
 
 /* ---------- Insider analytics ---------- */

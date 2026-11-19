@@ -24,7 +24,7 @@ import { readRevisions } from "../pipeline/revisions.ts";
 import { readValuationResponse, ValuationStore } from "../valuation/store.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
-import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { LAYERS, type Feature, type Layer } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
@@ -203,10 +203,16 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
   const translated = async <T>(resource: TranslatedResource, value: T, scope = ""): Promise<T> =>
     locale && value ? localize(resource, value, await readTranslationTable(database, locale, resource, route.ticker.trim().toUpperCase(), scope)) : value;
   switch (route.kind) {
-    // What changed since a reader loaded: one indexed read, never cached, so the answer is as current as the events routed.
+    // What changed since a reader loaded: one indexed read, never cached, carrying the live display-switch fingerprint so caches obey switch changes immediately.
     case "revisions": {
       const ticker = route.ticker.trim().toUpperCase();
-      return dataResponse(request, { schemaVersion: "revisions.v1", ticker, revisions: await readRevisions(database, ticker) } satisfies RevisionsResponse, "no-store");
+      const [revisions, currentLayers, stageEnabled] = await Promise.all([
+        readRevisions(database, ticker),
+        shownLayers(database, ticker),
+        stageAvailable({ DB: database }, ticker),
+      ]);
+      const config = `${LAYERS.map((layer: Layer) => (currentLayers[layer] ? "1" : "0")).join("")}-${stageEnabled ? "1" : "0"}`;
+      return dataResponse(request, { schemaVersion: "revisions.v1", ticker, revisions, config } satisfies RevisionsResponse, "no-store");
     }
     case "filings": {
       const page = await getPublicFilingPage(

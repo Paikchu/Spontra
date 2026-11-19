@@ -4,7 +4,8 @@ import { Check } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { QuarterTimelineSkeleton } from "./CompanySkeleton";
 import type { CompanyEvent, EventClass } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
@@ -69,7 +70,7 @@ export type QuarterSource = Parameters<typeof quarterHeading>[1];
  * management or both, and the filings about one fiscal quarter are framed together.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
-export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
+export const RailStream = memo(function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, verdicts, ticker, updates, focus, phase = "ready", filter, tabs = ALL_TABS, quarters = [], fallback = false, onTabs, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
@@ -83,7 +84,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
   updates: number;
   /** The focused finding id, report accession or event id. */
   focus: string | null;
-  /** `loading` while a retry is in flight; `error` when the events request failed and the rest of the page did not. */
+  /** `loading` while a retry or secondary stream is in flight; `error` when the events request failed and the rest of the page did not. */
   phase?: "ready" | "loading" | "error";
   /** The reading of the list (`?events=`); Key by default. */
   filter: EventFilter;
@@ -98,13 +99,20 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
   onRetry?: () => void;
 }) {
   useLocale();
-  const all = rail ? [...rail.recent, ...rail.earlier] : [];
-  const rows = railLayout(all, filter).rows;
-  const blocks = streamBlocks(rows, tabs, all, findingsPeriodEnd ?? quarters[0]?.periodEnd ?? null);
+  const anchorPeriod = findingsPeriodEnd ?? quarters[0]?.periodEnd ?? null;
+  const all = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
+  const rows = useMemo(() => railLayout(all, filter).rows, [all, filter]);
+  const blocks = useMemo(() => streamBlocks(rows, tabs, all, anchorPeriod), [rows, tabs, all, anchorPeriod]);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const [allFindings, setAllFindings] = useState(false);
-  // Only remove a topic from the company list when a readable filing actually owns its conclusion.
-  const unmatched = findings.filter(f => !articles[f.id] || !all.some(item => item.kind === "report" && item.report.hasReport && belongsToFiling(articles[f.id]!, item.report)));
+  // Only remove a topic from the company list when a readable filing actually owns its conclusion;
+  // while filings are still loading, hold filing-linked articles so they never flash and disappear.
+  const unmatched = useMemo(() => findings.filter(f => {
+    const article = articles[f.id];
+    if (!article) return true;
+    if (phase === "loading" && !rail && article.status !== "incomplete" && article.sourceAccessions.length > 0) return false;
+    return !all.some(item => item.kind === "report" && item.report.hasReport && belongsToFiling(article, item.report));
+  }), [findings, articles, phase, rail, all]);
   const focusAt = unmatched.findIndex(f => f.id === focus);
   const findingsShown = allFindings || focusAt >= FEW ? unmatched : unmatched.slice(0, FEW);
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || rowLeaves(r).some(item => item.id === id)) ?? null : null;
@@ -113,12 +121,12 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
   // The recent blocks open the list; each time the end comes into view another page of older ones joins, and the block
   // in focus is always among them.
   const since = rail?.since ?? "";
-  const recentCount = Math.max(PAGE, blocks.filter(b => blockDate(b) >= since).length);
+  const recentCount = useMemo(() => Math.max(PAGE, blocks.filter(b => blockDate(b) >= since).length), [blocks, since]);
   const [limit, setLimit] = useState(recentCount);
   const reading = `${filter}:${RAIL_TABS.filter(t => tabs.has(t)).join(",")}`;
   const [pagedFor, setPagedFor] = useState(reading);
   if (pagedFor !== reading) { setPagedFor(reading); setLimit(recentCount); }
-  const shown = blocks.slice(0, Math.max(limit, focusedBlock ? blocks.indexOf(focusedBlock) + 1 : 0));
+  const shown = useMemo(() => blocks.slice(0, Math.max(limit, focusedBlock ? blocks.indexOf(focusedBlock) + 1 : 0)), [blocks, limit, focusedBlock]);
   const more = shown.length < blocks.length;
   const end = useRef<HTMLDivElement>(null);
   // Up to 960px the rail lays out flat (`display: contents`) and the page scrolls instead.
@@ -130,11 +138,12 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
     observer.observe(el);
     return () => observer.disconnect();
   }, [more, shown.length, flat]);
-  const ids = [...findingsShown.map(f => f.id), ...shown.flatMap(rowsOf).flatMap(r => [r.id, ...rowLeaves(r).map(item => item.id)])];
+  const ids = useMemo(() => [...findingsShown.map(f => f.id), ...shown.flatMap(rowsOf).flatMap(r => [r.id, ...rowLeaves(r).map(item => item.id)])], [findingsShown, shown]);
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
   const tip = useRailTip();
-  const rowMotion: RowMotion = { layout: still ? false : "position", layoutDependency: ids.join(), exit: rowExit };
+  // FLIP layout projection is only needed when a live update reorders rows; skipping it otherwise avoids layout thrashing.
+  const rowMotion: RowMotion = useMemo(() => ({ layout: still || updates === 0 ? false : "position", layoutDependency: updates === 0 ? "" : ids.join(), exit: rowExit }), [still, updates, ids]);
   const [previousFocus, setPreviousFocus] = useState<string | null>(null);
   if (previousFocus !== focus) {
     setPreviousFocus(focus);
@@ -163,7 +172,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
         </ToggleGroupItem>)}
       </ToggleGroup>
     </div>
-    {phase === "loading" ? <StreamSkeleton /> : phase === "error" ? <div className="event-state">
+    {phase === "loading" ? <QuarterTimelineSkeleton /> : phase === "error" ? <div className="event-state">
       <p>{m.loadFailed}</p>
       <Button variant="unstyled" type="button" onClick={onRetry}>{m.retry}</Button>
     </div> : <>
@@ -181,15 +190,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, articles = {}, v
     {more && <div ref={end} className="stream-end" aria-hidden="true" />}
     </>}
   </section>;
-}
-
-function StreamSkeleton() {
-  return <>
-    <div className="stream-rows">
-      {[0, 1, 2, 3, 4].map(i => <div key={i} className="stream-row"><span className="stream-mark"><i className="finding-mark" /></span><span className="stream-body"><span className="stream-title ghost-text">{m.title}</span><span className="stream-meta ghost-text">00.00</span></span></div>)}
-    </div>
-  </>;
-}
+});
 
 /** One fiscal quarter's filings in one frame, headed by the quarter and its end. */
 function QuarterFrame({ frame, ticker, quarters, motion: rowMotion, children }: { frame: Extract<Block, { kind: "quarter" }>; ticker: string; quarters: readonly QuarterSource[]; motion: RowMotion; children: ReactNode }) {
