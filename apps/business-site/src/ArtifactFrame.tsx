@@ -11,9 +11,9 @@ const isDark = () => !document.documentElement.classList.contains("light");
  * frame to the height it reports, and opens the links it forwards. `data-rendered` tells the visual review the report
  * has drawn.
  */
-export function ArtifactFrame({ artifact, showLanguage = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css" | "researchContext" | "researchFreshness">; showLanguage?: boolean; hostTitle?: string }) {
+export function ArtifactFrame({ artifact, showLanguage = true, showResearchContext = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css" | "researchContext" | "researchFreshness">; showLanguage?: boolean; showResearchContext?: boolean; hostTitle?: string }) {
   return <>
-    <ArtifactResearchContext artifact={artifact} />
+    {showResearchContext && <ArtifactResearchContext artifact={artifact} />}
     {showLanguage && <div className="artifact-language-row"><ArtifactLanguage artifact={artifact} /></div>}
     <ArtifactDocumentFrame key={`${artifact.id}:${artifact.lang}:${artifact.hash}:${hostTitle ?? ""}`} artifact={artifact} hostTitle={hostTitle} />
   </>;
