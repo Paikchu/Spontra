@@ -235,29 +235,32 @@ function Scores({ report, onCite }: { report: ValuationPublication; onCite: (id:
       <div className="val-section-head">
         <h3 className="val-section-title">{complete ? m.scores : m.partialResearch}</h3>
       </div>
-      <div className="val-score-side">
-        {complete && <Radar report={report} label={key => DIM[key]} compact selectedKey={activeDim?.key} onSelect={selectDimension} />}
-      </div>
-      <div className="val-score-rows">
-        <div className="val-dim-tabs" role="tablist" aria-label={m.dimensions}>
-          {report.dimensions.map(d => {
-            const active = activeDim?.key === d.key;
-            return (
-              <Button
-                key={d.key}
-                variant="unstyled"
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className="val-dim-tab"
-                onClick={() => selectDimension(d.key)}
-              >
-                <span>{DIM[d.key]}</span>
-                {complete && d.score != null && <b>{d.score.toFixed(1)}</b>}
-              </Button>
-            );
-          })}
+      {complete && (
+        <div className="val-score-side">
+          <Radar report={report} label={key => DIM[key]} compact selectedKey={activeDim?.key} onSelect={selectDimension} />
         </div>
+      )}
+      <div className="val-score-rows">
+        {!complete && (
+          <div className="val-dim-tabs" role="tablist" aria-label={m.dimensions}>
+            {report.dimensions.map(d => {
+              const active = activeDim?.key === d.key;
+              return (
+                <Button
+                  key={d.key}
+                  variant="unstyled"
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className="val-dim-tab"
+                  onClick={() => selectDimension(d.key)}
+                >
+                  <span>{DIM[d.key]}</span>
+                </Button>
+              );
+            })}
+          </div>
+        )}
         <div className="val-dim-stage">
           {report.dimensions.map(dim => {
             const active = activeDim?.key === dim.key;
@@ -265,7 +268,7 @@ function Scores({ report, onCite }: { report: ValuationPublication; onCite: (id:
               <article
                 key={dim.key}
                 className="val-dim-card"
-                role="tabpanel"
+                role={!complete ? "tabpanel" : undefined}
                 aria-label={DIM[dim.key]}
                 aria-hidden={!active || undefined}
                 data-active={active || undefined}

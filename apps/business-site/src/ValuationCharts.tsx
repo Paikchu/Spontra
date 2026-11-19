@@ -106,7 +106,7 @@ export function Radar({ report, label, confidence, compact, selectedKey, onSelec
       {SCORE_ANCHOR_LEVELS.map(level => <polygon key={level} className="val-radar-ring" points={ring(RADAR.r * level / 10)} />)}
       {points.map(p => {
         const end = vertex(VALUATION_DIMENSIONS.indexOf(p.key), RADAR.r);
-        return <line key={p.key} className="val-radar-axis" data-active={selectedKey === p.key ? "" : undefined} x1={RADAR.cx} y1={RADAR.cy} x2={end.x.toFixed(1)} y2={end.y.toFixed(1)} />;
+        return <line key={p.key} className="val-radar-axis" x1={RADAR.cx} y1={RADAR.cy} x2={end.x.toFixed(1)} y2={end.y.toFixed(1)} />;
       })}
       <polygon className="val-radar-area" points={points.map(p => `${p.v.x.toFixed(1)},${p.v.y.toFixed(1)}`).join(" ")} />
       {points.map(p => {

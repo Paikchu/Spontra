@@ -462,7 +462,7 @@
 .val-table--facts tbody th { font-weight: 500; white-space: normal; min-width: 180px; }
 
 /* ---------- Five Dimensions & Interactive Radar ---------- */
-.val-scores { gap: 18px 36px; align-items: start; }
+.val-scores { gap: 18px 36px; align-items: center; }
 .val-scores .val-section-head { grid-column: 1 / -1; }
 @container val-doc (min-width: 780px) {
   .val-scores:not([data-incomplete]) { grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); }
@@ -473,7 +473,6 @@
 .val-radar-plot { position: relative; }
 .val-radar-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .val-radar-ring, .val-radar-axis { fill: none; stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.val-radar-axis[data-active] { stroke: var(--chart-2); stroke-width: 1.75; }
 .val-radar-area { fill: color-mix(in srgb, var(--chart-2) 16%, transparent); stroke: var(--chart-2); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .val-radar-dot { fill: var(--foreground); stroke: var(--background); stroke-width: 2; transition: fill .15s var(--ease); }
 .val-radar-dot[data-active] { fill: var(--chart-2); stroke: var(--background); stroke-width: 2.2; }
@@ -552,10 +551,10 @@ button.val-radar-label[data-active] b { font-weight: 640; }
 }
 .val-dim-card {
   grid-area: 1 / 1;
-  align-self: start;
+  align-self: center;
   display: grid;
   gap: 10px;
-  padding: 14px 0 12px;
+  padding: 14px 0;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
