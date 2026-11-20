@@ -10,8 +10,9 @@ import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
 import { AnalyticsPanel } from "./analytics";
 import { FilingMaterials } from "./filing-materials";
+import { ReportBenchmark } from "./report-benchmark";
 
-export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
+export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "benchmark" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the companies page, so it has no entry of its own. */
@@ -22,6 +23,7 @@ const PAGES: Record<Section, Page> = {
   filings: { path: "/admin/filings", title: "财报" },
   business: { path: "/admin/business", title: "公司业务" },
   findings: { path: "/admin/findings", title: "要点" },
+  benchmark: { path: "/admin/benchmark", title: "报告评测" },
   models: { path: "/admin/models", title: "模型配置" },
   messages: { path: "/admin/messages", title: "消息" },
 };
@@ -114,6 +116,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
           : key === "financials" ? <FinancialMaintenance {...auth} />
           : key === "filings" ? <FilingMaterials {...auth} />
           : key === "business" ? <BusinessSegments {...auth} />
+          : key === "benchmark" ? <ReportBenchmark />
           : key === "models" ? <AiModels {...auth} />
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
           : <AiRuns {...auth} kinds={["findings", "analyst", "valuation"]} translations />;

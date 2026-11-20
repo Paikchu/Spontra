@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
+import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FileMagnifyingGlassIcon as FileSearch, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
 import Link from "@/packages/web/src/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader,
@@ -9,7 +9,7 @@ import type { Section } from "./business-view-admin";
 
 const NAV_GROUPS: Array<{ title: string; items: Array<[Section, Icon]> }> = [
   { title: "数据", items: [["whitelist", ListChecks], ["analytics", ChartColumn]] },
-  { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter]] },
+  { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter], ["benchmark", FileSearch]] },
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
 

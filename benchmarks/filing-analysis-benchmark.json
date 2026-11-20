@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "filing-benchmark.v1",
+  "rubricVersion": "18-subitems.v1",
+  "rubric": {
+    "vetoRules": [
+      {
+        "id": "V1",
+        "name": "事实/算式失真",
+        "description": "核心财务数字、单位（百万/十亿）、同比/环比方向或自算推导与原始材料存在实质错误"
+      },
+      {
+        "id": "V2",
+        "name": "脑补未披露事实",
+        "description": "将原始文件中未披露的内容写成既定事实，而非诚实声明信息缺口"
+      },
+      {
+        "id": "V3",
+        "name": "漏掉当期头号主线",
+        "description": "遗漏该份申报文件最核心的单一重大变化（如指引大调、重大融资摊薄、盈亏性质反转或口径变更）"
+      }
+    ],
+    "dimensions": [
+      { "id": "D1", "name": "事实准确与口径严谨", "max": 20 },
+      { "id": "D2", "name": "核心异动与隐蔽风险召回", "max": 25 },
+      { "id": "D3", "name": "财务因果与三表传导深度", "max": 25 },
+      { "id": "D4", "name": "决策可读性与结论密度", "max": 15 },
+      { "id": "D5", "name": "溯源完整度与下游可消费性", "max": 15 }
+    ],
+    "subItems": [
+      { "id": "S1.1", "dimension": "D1", "name": "核心财务数字与单位零误差", "max": 6 },
+      { "id": "S1.2", "dimension": "D1", "name": "同比 / 环比 / 累计口径与期间严谨", "max": 5 },
+      { "id": "S1.3", "dimension": "D1", "name": "GAAP 与 Non-GAAP / Adjusted 界限清晰", "max": 5 },
+      { "id": "S1.4", "dimension": "D1", "name": "信息边界与未披露缺口诚实声明", "max": 4 },
+      { "id": "S2.1", "dimension": "D2", "name": "反直觉张力识别（增长质量背离）", "max": 7 },
+      { "id": "S2.2", "dimension": "D2", "name": "盈利质量与非经营项拆解", "max": 6 },
+      { "id": "S2.3", "dimension": "D2", "name": "指引与前瞻压力测算", "max": 6 },
+      { "id": "S2.4", "dimension": "D2", "name": "附注与表外风险挖掘", "max": 6 },
+      { "id": "S3.1", "dimension": "D3", "name": "业务/合同驱动到利润表的因果穿透", "max": 7 },
+      { "id": "S3.2", "dimension": "D3", "name": "利润表 → 现金流 → 资产负债表三表联动", "max": 7 },
+      { "id": "S3.3", "dimension": "D3", "name": "跨期边际变化聚焦", "max": 6 },
+      { "id": "S3.4", "dimension": "D3", "name": "关键假设与下季度可验证追踪指标", "max": 5 },
+      { "id": "S4.1", "dimension": "D4", "name": "标题与前 30 秒倒金字塔结论密度", "max": 6 },
+      { "id": "S4.2", "dimension": "D4", "name": "买方专业语感与零 AI 套话克制度", "max": 5 },
+      { "id": "S4.3", "dimension": "D4", "name": "表格 / 图表与核心论点的协同度", "max": 4 },
+      { "id": "S5.1", "dimension": "D5", "name": "核心论断原文/表格行可追溯锚点覆盖率", "max": 5 },
+      { "id": "S5.2", "dimension": "D5", "name": "关键附注与融资条款高保真摘录", "max": 5 },
+      { "id": "S5.3", "dimension": "D5", "name": "下游 Agent 消费友好度", "max": 5 }
+    ]
+  },
+  "benchmarks": []
+}
