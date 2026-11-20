@@ -9,6 +9,7 @@ import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
 import { AnalyticsPanel } from "./analytics";
+import { FilingMaterials } from "./filing-materials";
 
 export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
@@ -111,7 +112,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} />
           : key === "analytics" ? <AnalyticsPanel />
           : key === "financials" ? <FinancialMaintenance {...auth} />
-          : key === "filings" ? null
+          : key === "filings" ? <FilingMaterials {...auth} />
           : key === "business" ? <BusinessSegments {...auth} />
           : key === "models" ? <AiModels {...auth} />
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />

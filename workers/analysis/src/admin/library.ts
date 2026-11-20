@@ -17,7 +17,20 @@ import { json } from "./http.ts";
 
 const ACCESSION = /^\d{10}-\d{2}-\d{6}$/;
 const SLUG = /^[\p{L}\p{N}-]{1,60}$/u;
+const materialReviewKey = (ticker: string, accession: string) => `filing-material:review:v1:${ticker}:${accession}`;
+type MaterialReview = { decision: "approved" | "rejected"; version: string | null; note?: string; reviewedAt: string };
 const category = (value: string | null): IndustryCategory | undefined => value && Object.hasOwn(INDUSTRY_CATEGORIES, value) ? value as IndustryCategory : undefined;
+
+async function attachMaterialReviews(db: D1Database, list: MaterialState[]): Promise<Array<MaterialState & { review: MaterialReview | null }>> {
+  const prefix = "filing-material:review:v1:";
+  const rows = await db.prepare("SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?")
+    .bind(prefix, `${prefix}\uffff`).all<{ cache_key: string; payload: string }>();
+  const map = new Map<string, MaterialReview>();
+  for (const r of rows.results) {
+    try { map.set(r.cache_key, JSON.parse(r.payload) as MaterialReview); } catch { /* ignore */ }
+  }
+  return list.map(m => ({ ...m, review: map.get(materialReviewKey(m.filing.ticker, m.filing.accession)) ?? null }));
+}
 
 export async function handleLibraryAdminRequest(request: Request, env: AnalysisEnv): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD)) return json({ error: "请登录财报管理后台。" }, 401);
@@ -29,10 +42,10 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     const rows = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ? ORDER BY fetched_at DESC")
       .bind(prefix, `${prefix}\uffff`).all<{ payload: string }>();
     const materials: MaterialState[] = rows.results.map(row => JSON.parse(row.payload));
-    return json({ materials });
+    return json({ materials: await attachMaterialReviews(env.DB, materials) });
   }
   if (request.method === "GET" && parts[0] === "companies" && parts.length === 2 && TICKER_PATTERN.test(parts[1]!)) {
-    return json({ materials: await listFilingMaterials(env, parts[1]!) });
+    return json({ materials: await attachMaterialReviews(env.DB, await listFilingMaterials(env, parts[1]!)) });
   }
   if (parts[0] === "materials" && TICKER_PATTERN.test(parts[1] ?? "") && ACCESSION.test(parts[2] ?? "")) {
     const ticker = parts[1]!, accession = parts[2]!;
@@ -44,6 +57,20 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare-pilot") return preparePilotMaterial(request, env, ticker, accession);
     const state = await getFilingMaterial(env, ticker, accession);
     if (!state) return json({ error: "未找到该申报材料。" }, 404);
+    if (request.method === "POST" && parts.length === 4 && parts[3] === "review") {
+      const body = await request.json().catch(() => null) as { decision?: string; note?: string } | null;
+      if (body?.decision !== "approved" && body?.decision !== "rejected") return json({ error: "请选择审批结论（通过或驳回）。" }, 400);
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : "";
+      const review: MaterialReview = {
+        decision: body.decision,
+        version: state.status === "ready" ? state.ref.version : null,
+        ...(note ? { note } : {}),
+        reviewedAt: new Date().toISOString(),
+      };
+      await env.DB.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+        .bind(materialReviewKey(ticker, accession), JSON.stringify(review), review.reviewedAt).run();
+      return json({ status: "saved", review });
+    }
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare") {
       if (await isPilotMaterial(env, ticker, accession)) return json({ error: "This accession is reserved for explicit shadow preparation; use prepare-pilot" }, 409);
       const body = await request.text();
@@ -82,8 +109,12 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     }
     if (request.method === "GET") {
       if (parts.length === 3) {
-        const pilot = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker,accession)).first<{payload:string}>();
-        return json({ ...state, ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}) });
+        const [pilot, revRow] = await Promise.all([
+          env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker,accession)).first<{payload:string}>(),
+          env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialReviewKey(ticker,accession)).first<{payload:string}>(),
+        ]);
+        const review = revRow ? JSON.parse(revRow.payload) as MaterialReview : null;
+        return json({ ...state, review, ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}) });
       }
       if (state.status !== "ready") return json(state, 409);
       const snapshot = await readMaterialSnapshot(env, { ...state.ref, version: url.searchParams.get("version") ?? state.ref.version });
