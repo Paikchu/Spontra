@@ -154,12 +154,11 @@ export async function prepareFilingReadingEdition(
     const candidates = structure.sections.map(section => ({ id: section.id, title: section.title, page: section.page, anchor: section.anchor }));
     const outline = outlineSchema.parse(await call("outline", outlineInstruction, { document: source.filename, contents: structure.toc, candidates }));
     const selected = new Set(outline.sectionIds);
-    const ordered = candidates.filter(section => selected.has(section.id)).map(section => section.id);
-    if (!outline.sectionIds.length || JSON.stringify(ordered) !== JSON.stringify(outline.sectionIds)
-      || (directory.size > 0 && (directory.size !== selected.size || [...directory].some(id => !selected.has(id))))) {
-      throw new Error("DeepSeek did not confirm the linked filing outline in source order");
-    }
-    await env.SEC_FILINGS.put(outlineKey, JSON.stringify(outline), { onlyIf: { etagDoesNotMatch: "*" } });
+    const modelSectionIds = candidates.filter(section => selected.has(section.id)).map(section => section.id);
+    // The parser has verified these destinations against the archived HTML.
+    const sectionIds = directory.size ? candidates.filter(section => directory.has(section.id)).map(section => section.id) : modelSectionIds;
+    if (!sectionIds.length) throw new Error("DeepSeek did not identify a filing outline");
+    await env.SEC_FILINGS.put(outlineKey, JSON.stringify({ sectionIds, modelSectionIds }), { onlyIf: { etagDoesNotMatch: "*" } });
     return { status: "preparing", progress: "目录与章节位置已确认" };
   }
   const outline = outlineSchema.parse(JSON.parse(await existingOutline.text()));
