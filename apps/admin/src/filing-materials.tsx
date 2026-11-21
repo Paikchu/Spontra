@@ -60,8 +60,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   const [tablesList, setTablesList] = useState<MaterialTable[]>([]);
   const [tablesCursor, setTablesCursor] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>("");
-  const [tableDetail, setTableDetail] = useState<TableReadResponse | null>(null);
-  const [copiedCsv, setCopiedCsv] = useState(false);
+  const [loadedTable, setLoadedTable] = useState<TableReadResponse | null>(null);
+  const [copiedTable, setCopiedTable] = useState<TableReadResponse | null>(null);
 
   const [actionBusy, setActionBusy] = useState(false);
   const [actionNote, setActionNote] = useState("");
@@ -149,7 +149,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       setTablesCursor(res.nextCursor);
       if (!cursor) {
         setSelectedTableId(res.tables[0]?.tableId ?? "");
-        if (!res.tables.length) setTableDetail(null);
+        if (!res.tables.length) setLoadedTable(null);
       }
     } catch (error) {
       if (!signal?.aborted) fail(error);
@@ -161,7 +161,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     const version = encodeURIComponent(material.ref.version);
     try {
       const res = await adminApi<TableReadResponse>(`library/materials/${ticker}/${accession}/tables/${encodeURIComponent(tableId)}?version=${version}`, { signal });
-      if (!signal.aborted) setTableDetail(res);
+      if (!signal.aborted) setLoadedTable(res);
     } catch (error) {
       if (!signal.aborted) fail(error);
     }
@@ -173,7 +173,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       setSnapshot(null);
       setMdPage(null);
       setTablesList([]);
-      setTableDetail(null);
+      setLoadedTable(null);
       return;
     }
     const { ticker, accession } = selectedMaterial.filing;
@@ -186,7 +186,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     setTablesCursor(null);
     setSelectedTableId("");
     setTableQuery("");
-    setTableDetail(null);
+    setLoadedTable(null);
     const c = new AbortController();
     materialRequest.current = c;
 
@@ -305,18 +305,22 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     }
   }
 
-  function copyCsv() {
-    if (!tableDetail?.csv) return;
-    void navigator.clipboard?.writeText(tableDetail.csv).then(() => {
-      setCopiedCsv(true);
-      setTimeout(() => setCopiedCsv(false), 1500);
-    });
-  }
-
   const hasSelectedDetail = detail !== null && materialKey(detail) === selectedKey;
   const currentMaterial = hasSelectedDetail ? detail : selectedMaterial;
   const reportPage = hasSelectedDetail ? mdPage : null;
   const currentSnapshot = hasSelectedDetail ? snapshot : null;
+  const tableDetail = hasSelectedDetail && detail.status === "ready"
+    && loadedTable?.ref.version === detail.ref.version && loadedTable.table.tableId === selectedTableId
+    ? loadedTable : null;
+  const copiedCsv = tableDetail !== null && copiedTable === tableDetail;
+
+  function copyCsv() {
+    if (!tableDetail?.csv) return;
+    void navigator.clipboard?.writeText(tableDetail.csv).then(() => {
+      setCopiedTable(tableDetail);
+      setTimeout(() => setCopiedTable(copied => copied === tableDetail ? null : copied), 1500);
+    });
+  }
 
   return (
     <div className="ra-workspace fm2-workspace">
@@ -485,7 +489,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                     </aside>
                     <div className="fm2-content">
                       {!tableDetail ? (
-                        <p className="bs-empty">{tablesList.length ? "加载表格内容中…" : "未提取到匹配表格"}</p>
+                        <p className="bs-empty" role="status">{tablesList.length ? "加载表格内容中…" : "未提取到匹配表格"}</p>
                       ) : (
                         <>
                           <div className="fm2-bar">
