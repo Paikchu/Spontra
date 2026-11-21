@@ -41,10 +41,12 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized }: { onAuthen
   return <div className="ra-workspace bs-workspace">
     <section className="ra-list" aria-label="公司">
       <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label><button className="bs-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={17} /></button></div>
-      <div className="ra-list-caption">{companies ? `${companies.length} 家公司` : '加载中'}</div>
+      <div className="ra-list-caption">{companies ? `${shown.length} 家公司` : '加载中'}</div>
       {error && <p className="ra-error" role="alert">{error}</p>}
       <div className="ra-list-scroll">{shown.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong></span></button>)}</div>
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong></span></button>)}
+        {companies && !shown.length && <p className="bs-empty">没有匹配的公司</p>}
+      </div>
     </section>
     <section className="ra-detail bs-detail" aria-label="业务板块">
       <nav className="bs-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}</nav>

@@ -43,10 +43,10 @@ export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; on
     <label htmlFor={`bm-peers-${ticker}`}>可比公司</label>
     <input id={`bm-peers-${ticker}`} value={peers} onChange={e => { setPeers(e.target.value); setSaved(false); }} placeholder="自动选取" autoComplete="off" spellCheck={false} />
     <label htmlFor={`bm-targets-${ticker}`}>管理层目标（JSON）</label>
-    <textarea id={`bm-targets-${ticker}`} value={targets} onChange={e => { setTargets(e.target.value); setSaved(false); }} placeholder="未设置" rows={targets ? 14 : 3} spellCheck={false} />
+    <textarea id={`bm-targets-${ticker}`} value={targets} onChange={e => { setTargets(e.target.value); setSaved(false); }} placeholder="未设置" rows={8} spellCheck={false} />
     <label className="bm-valuation-check"><input type="checkbox" checked={reassess} onChange={e => { setReassess(e.target.checked); setSaved(false); }} />方法更新时自动重估</label>
     <p className="bm-valuation-meta">{inputs.fiscalYearEndMonth ? `财年结束：${inputs.fiscalYearEndMonth} 月` : '财年结束：未知；目标未启用'}{inputs.targets && ` · 截至 ${inputs.targets.asOf}`}{inputs.updatedAt && ` · 更新于 ${inputs.updatedAt.slice(0, 10)}`}</p>
     {error && <p role="alert" className="ra-error">{error}</p>}
-    <div className="bm-valuation-actions"><button className="fm-button" disabled={saving}>{saving ? '保存中' : '保存'}</button>{saved && <span role="status">已保存</span>}</div>
+    <div className="bm-valuation-actions"><button className="fm-button" type="submit" disabled={saving}>{saving ? '保存中' : '保存'}</button>{saved && <span role="status">已保存</span>}</div>
   </form>;
 }

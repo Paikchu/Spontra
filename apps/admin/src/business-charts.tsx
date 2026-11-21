@@ -32,9 +32,9 @@ function profitRows(quarters: BusinessFlowQuarter[]): Row[] {
   };
   const union = <T extends { id: string; name: string }>(list: (q: BusinessFlowQuarter) => T[] | undefined) =>
     [...new Map(quarters.flatMap(q => list(q) ?? []).map(x => [x.id, x.name])).entries()];
-  rows.push({ key: 'h-seg', label: '分部收入', values: new Map(), kind: 'head' });
   for (const [id, name] of union(q => q.segments)) add(`seg-${id}`, name, q => amount(q.segments.find(s => s.id === id)?.revenue, q));
   for (const [id, name] of union(q => q.revenueAdjustments)) add(`adj-${id}`, name, q => amount(q.revenueAdjustments?.find(a => a.id === id)?.amount, q), undefined, '调节');
+  if (rows.length) rows.unshift({ key: 'h-seg', label: '分部收入', values: new Map(), kind: 'head' });
   rows.push({ key: 'h-is', label: '利润表', values: new Map(), kind: 'head' });
   for (const metric of FLOW_METRICS) add(`m-${metric}`, METRICS[metric], q => amount(q.figures[metric], q), TOTALS.has(metric) ? 'total' : undefined,
     quarters.some(q => q.figures[metric]?.basis === 'derived') ? '含推导' : undefined);
@@ -76,12 +76,12 @@ function balanceRows(quarters: CapitalQuarter[]): Row[] {
   ];
 }
 
-function Statement({ periods, rows, currency }: { periods: string[]; rows: Row[]; currency: string }) {
-  return <div className="bc-wrap"><table className="bc-table">
-    <thead><tr><th>{`百万 ${currency}`}</th>{periods.map(p => <th key={p}>{p}</th>)}</tr></thead>
+function Statement({ periods, rows, currency, label }: { periods: string[]; rows: Row[]; currency: string; label: string }) {
+  return <div className="bc-wrap" role="region" aria-label={label} tabIndex={0}><table className="bc-table">
+    <thead><tr><th scope="col">{`百万 ${currency}`}</th>{periods.map(p => <th key={p} scope="col">{p}</th>)}</tr></thead>
     <tbody>{rows.map(r => r.kind === 'head'
       ? <tr key={r.key} className="bc-head"><th colSpan={periods.length + 1}>{r.label}</th></tr>
-      : <tr key={r.key} data-kind={r.kind}><th>{r.label}{r.note && <small>{r.note}</small>}</th>{periods.map(p => { const v = r.values.get(p); return <td key={p} data-negative={v != null && v < 0 || undefined}>{million(v)}</td>; })}</tr>)}</tbody>
+      : <tr key={r.key} data-kind={r.kind}><th scope="row">{r.label}{r.note && <small>{r.note}</small>}</th>{periods.map(p => { const v = r.values.get(p); return <td key={p} data-negative={v != null && v < 0 || undefined}>{million(v)}</td>; })}</tr>)}</tbody>
   </table></div>;
 }
 
@@ -96,17 +96,17 @@ export function BusinessCharts({ ticker, onUnauthorized }: { ticker: string; onU
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError((e as Error).message); });
     return () => c.abort();
   }, [ticker]);
-  if (error) return <p className="ra-error">{error}</p>;
-  if (!data || data.ticker !== ticker) return <p className="bs-empty">加载中</p>;
+  if (error) return <p className="ra-error" role="alert">{error}</p>;
+  if (!data || data.ticker !== ticker) return <p className="bs-empty" role="status">加载财务数据</p>;
   const profit = data.profit?.quarters ?? [], capital = [...data.capital?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
   const capitalCurrency = capital.find(q => q.balanceSheet)?.balanceSheet?.currency ?? capital.find(q => q.cashFlow)?.cashFlow?.currency ?? 'USD';
   const cash = capital.filter(q => q.cashFlow), balance = capital.filter(q => q.balanceSheet);
   const available: Record<Chart, number> = { profit: profit.length, cash: cash.length, balance: balance.length };
   return <div className="bc">
-    <div className="bc-bar"><nav className="ra-segmented" aria-label="图表">{CHARTS.map(([k, label]) => <button key={k} aria-pressed={chart === k} onClick={() => setChart(k)}>{label}<small>{available[k]}</small></button>)}</nav>
-      <span className="ra-badge" data-status={data.status === 'ready' ? 'reviewed' : 'idle'}>{data.status === 'ready' ? '地图已发布' : data.status === 'preparing' ? '准备中' : '未发布'}</span></div>
-    {chart === 'profit' ? profit.length ? <Statement periods={profit.map(q => q.periodEnd)} rows={profitRows(profit)} currency={profit[0]!.currency} /> : <p className="bs-empty">无利润数据</p>
-      : chart === 'cash' ? cash.length ? <Statement periods={cash.map(q => q.periodEnd)} rows={cashRows(cash)} currency={capitalCurrency} /> : <p className="bs-empty">无现金流数据</p>
-      : balance.length ? <Statement periods={balance.map(q => q.periodEnd)} rows={balanceRows(balance)} currency={capitalCurrency} /> : <p className="bs-empty">无资产负债数据</p>}
+    <div className="bc-bar"><nav className="ra-segmented" aria-label="财务报表">{CHARTS.map(([k, label]) => <button key={k} type="button" aria-pressed={chart === k} onClick={() => setChart(k)}>{label}<small>{available[k]} 季</small></button>)}</nav>
+      <span className="bc-status">{data.status === 'ready' ? '地图已发布' : data.status === 'preparing' ? '地图准备中' : '地图未发布'}</span></div>
+    {chart === 'profit' ? profit.length ? <Statement label="利润数据表" periods={profit.map(q => q.periodEnd)} rows={profitRows(profit)} currency={profit[0]!.currency} /> : <p className="bs-empty">无利润数据</p>
+      : chart === 'cash' ? cash.length ? <Statement label="现金流数据表" periods={cash.map(q => q.periodEnd)} rows={cashRows(cash)} currency={capitalCurrency} /> : <p className="bs-empty">无现金流数据</p>
+      : balance.length ? <Statement label="资产负债数据表" periods={balance.map(q => q.periodEnd)} rows={balanceRows(balance)} currency={capitalCurrency} /> : <p className="bs-empty">无资产负债数据</p>}
   </div>;
 }

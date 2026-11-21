@@ -94,7 +94,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
   return <div className="ra-workspace ai-workspace">
     <section className="ra-list" aria-label="公司">
       <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-      <div className="ra-list-caption"><span>{list ? `${listed.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
+      <div className="ra-list-caption"><span>{list ? `${companies.length} 家公司` : "加载中"}</span><button type="button" aria-label="刷新公司" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
         <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kind !== "translations" && kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
@@ -103,7 +103,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
       </div>
     </section>
     <section className="ra-detail ai-detail" aria-label="生成详情">
-      {tabs.length > 1 && <div className="ra-tabbar"><div role="tablist" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
+      {tabs.length > 1 && <div className="ra-tabbar"><div className="ra-segmented" role="group" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
       {!ticker ? <p className="ai-empty">未选择公司</p> : kind === "translations" ? <TranslationsPanel key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} />
         : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
     </section>
@@ -163,11 +163,13 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
     {notice && <p className="ra-notice" role="status">{notice}</p>}{error && <p className="ra-error" role="alert">{error}</p>}
     <h3>运行记录</h3>
     {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
-    <h3>模型用量</h3>
-    {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap"><table className="ai-table ai-usage">
+    <details className="ai-usage-panel">
+      <summary>模型用量</summary>
+      {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap" role="region" aria-label="模型用量表" tabIndex={0}><table className="ai-table ai-usage">
       <thead><tr><th>日期</th><th>调用</th><th>输入</th><th>缓存</th><th>输出</th><th>搜索</th></tr></thead>
       <tbody>{detail.usage.map(u => <tr key={u.day}><td>{u.day}</td><td>{count(u.calls)}</td><td>{count(u.inputTokens)}</td><td>{count(u.cachedTokens)}</td><td>{count(u.outputTokens)}</td><td>{count(u.searchCalls)}</td></tr>)}</tbody>
-    </table></div>}
+      </table></div>}
+    </details>
     <Versions detail={detail} onError={onError} />
   </div>;
 }
@@ -180,7 +182,7 @@ function RunItem({ run }: { run: AiRun }) {
   const result = run.result as { findings?: number; businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
   return <li><details>
     <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
-      <small>{run.trigger === "manual" ? "手动" : "自动"} · 开始 {date(run.startedAt)} · 用时 {elapsed(run)}</small></summary>
+      <small>{run.trigger === "manual" ? "手动" : "自动"}{ACTIVE.has(run.status) ? ` · 开始 ${date(run.startedAt)}` : ""} · 用时 {elapsed(run)}</small></summary>
     {run.error && <p className="ra-error">{run.error}</p>}
     {result && <p className="ai-result">{[
       result.findings !== undefined && `发布 ${result.findings} 条要点`, result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
@@ -221,9 +223,9 @@ function ValuationView({ report }: { report: ValuationPublication }) {
   const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
   return <div className="ai-valuation">
     <p><b>{VERDICT_ZH[report.verdict]}</b> · 综合分 {report.weightedScore ?? "—"} · 置信度 {report.confidence} · 研究日期 {report.researchAsOf.slice(0, 10)} · 财务基期 {report.financialPeriodEnd} · {report.reportStatus === "ready" ? "完整" : "材料不足"}</p>
-    <table className="ai-table"><thead><tr><th>维度</th><th>分数</th><th>置信度</th><th>理由</th></tr></thead><tbody>
+    <div className="ai-table-wrap" role="region" aria-label="估值分项评分" tabIndex={0}><table className="ai-table"><thead><tr><th>维度</th><th>分数</th><th>置信度</th><th>理由</th></tr></thead><tbody>
       {report.dimensions.map(d => <tr key={d.key}><td>{DIMENSION_ZH[d.key]}</td><td>{d.score ?? "—"}</td><td>{d.confidence}</td><td lang="en">{d.rationale}</td></tr>)}
-    </tbody></table>
+    </tbody></table></div>
     {report.model && r && <p>模型 {report.model.modelType} · 折现率 {pct(report.model.discountRate.value)} · 每股价值 {r.low.toFixed(2)} / {r.base.toFixed(2)} / {r.high.toFixed(2)}{r.expected != null ? ` · 期望 ${r.expected.toFixed(2)}` : ""} · 参考价 {r.price ?? "—"} · 安全边际 {pct(r.marginOfSafety)}{report.model.implied ? ` · 现价隐含增长 ${pct(report.model.implied.implied)}` : ""}</p>}
     {report.gaps.length > 0 && <ul>{report.gaps.map((g, i) => <li key={i}><code>{g.code}</code> <span lang="en">{g.message}</span></li>)}</ul>}
     <p lang="en">{report.sections.summary}</p>
@@ -254,8 +256,8 @@ type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: s
 function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {
   const trace = (id: string) => publication.lensTrace?.findings.find(f => f.id === id);
   const leads = publication.leads ?? publication.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, question: f.judgment.text, evidence: f.evidence, anchors: f.anchors, pairWith: f.pairWith }));
-  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model} · {leads.length} 条线索，仅供分析师研究</p>{leads.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
-    <header><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
+  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model} · {leads.length} 条线索</p>{leads.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
+    <header><h4>{f.title}</h4><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">重要度 {f.severity}/3</span></header>
     <p>{f.question}</p>
     <small>{f.evidence.length} 项起始证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}</small>
     {t && <details className="ai-raw"><summary>Lens 生成过程 · {t.turns.length} 轮{t.document ? "" : " · 未采用，沿用原图"}{t.warnings.length ? ` · ${t.warnings.length} 条提示` : ""}</summary>

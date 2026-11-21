@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { WarningIcon as AlertTriangle, CheckCircleIcon as CheckCircle2, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { WarningIcon as AlertTriangle, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { BusinessMapCompanies, BusinessMapCompany, BusinessMapDirectory, DirectoryCompany } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, LAYER_REQUIRES, LAYERS, type Feature, type Layer } from '@/shared/analysis-contract/business-features';
 import { layersAbove } from '@/shared/analysis-runtime/business-features';
@@ -336,7 +336,7 @@ function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onS
         {runs.map(({feature,run,count})=><RunProgress key={`${run.kind}:${run.startedAt}`} run={run} name={count>1||RUN_LABEL[run.kind]!==FEATURE_LABEL[feature]?`${FEATURE_LABEL[feature]} · ${RUN_LABEL[run.kind]}`:FEATURE_LABEL[feature]}/>)}
       </div>}
       <header className="bm-detail-head">
-        <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
+        <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-periods">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
         {c.task&&!running&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}
       </header>
       <div className="bm-rows" role="list" aria-label="生成状态与数据">
@@ -356,7 +356,7 @@ function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onS
             {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
             {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
           </>:<p className="bm-empty">暂无记录</p>}</div></section>
-        <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
+        <section role="listitem" className="bm-col" data-tone={problems.length?'caution':undefined}><h4>{problems.length>0&&<AlertTriangle size={13} aria-hidden="true"/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
           {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</div></section>
       </div>
       <CompanyReports ticker={c.ticker} onUnauthorized={onUnauthorized}/>

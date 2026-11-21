@@ -135,7 +135,7 @@ const indent = (node: Element) => {
   return out;
 };
 
-function tableFromGrid(grid: TableGrid, context: string): { table: FilingTable; headers: number; columnMap: Map<number, number>; issues: string[] } {
+function tableFromGrid(grid: TableGrid, context: string, readingEdition: boolean): { table: FilingTable; headers: number; columnMap: Map<number, number>; issues: string[] } {
   const expanded = grid.rows.map(() => Array.from({ length: grid.columns }, () => ""));
   const owners = grid.rows.map(() => Array.from<number | null>({ length: grid.columns }).fill(null));
   grid.rows.forEach((row, r) => row.cells.forEach(cell => {
@@ -219,8 +219,11 @@ function tableFromGrid(grid: TableGrid, context: string): { table: FilingTable; 
     const r = offset + headers, label = cells[0] ?? "";
     const labelNode = grid.rows[r]!.cells.find(cell => cell.column === 0)?.node;
     const space = labelNode ? indent(labelNode) : 0;
-    while (stack.length && stack.at(-1)!.indent >= space) stack.pop();
-    const path = stack.map(p => p.label);
+    const preserveParent = readingEdition && !cells.some(Boolean);
+    if (!preserveParent) {
+      while (stack.length && stack.at(-1)!.indent >= space) stack.pop();
+    }
+    const path = preserveParent ? [] : stack.map(p => p.label);
     if (label && cells.slice(1).every(v => !v)) stack.push({ indent: space, label });
     return { label, path, cells: cells.slice(1).map(text => ({ text, value: numeric(text) })) };
   });
@@ -255,7 +258,7 @@ export function createMaterialTable(filing: MaterialFiling, source: MaterialSour
     csvKey: "", csv, sha256: "", sourceUrl: source.url, anchor: tableId, form: filing.form, filedAt: filing.filedAt, reportDate: filing.reportDate, table };
 }
 
-export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource, html: string): ParsedMaterialDocument {
+export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource, html: string, options: { readingEdition?: boolean } = {}): ParsedMaterialDocument {
   const parsed = parseMarkup(html), inventory = inventoryOf(html, parsed.root), coverage = documentCoverage(source);
   const blocks: MaterialBlock[] = [], tables: MaterialTable[] = [];
   const selected = inventory.tables.filter(table => !descendants(table).some(n => n.local === "table") && tableGrid(table).rows.some(row => row.cells.some(cell => cell.text)));
@@ -296,7 +299,7 @@ export function parseMaterialHtml(filing: MaterialFiling, source: MaterialSource
       const headingLine = grid.rows.flatMap(row => row.cells.map(cell => cell.text)).filter(Boolean).join(" ");
       if (headingLine.length < 220 && /^(?:Item\s+\d+[A-Z]?\.?\s|PART\s+[IVX]+\b)/i.test(headingLine)) title = headingLine;
       const name = caption ? normalize(nodeText(caption)) : `${title} - table ${tables.length + 1}`;
-      const converted = tableFromGrid(grid, tableContext.join("\n"));
+      const converted = tableFromGrid(grid, tableContext.join("\n"), options.readingEdition ?? false);
       tableContext = [];
       let collectingNotes = false;
       for (const next of pieces.slice(i + 1)) {

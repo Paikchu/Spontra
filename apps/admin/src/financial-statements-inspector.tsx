@@ -166,19 +166,22 @@ export function FinancialStatementsInspector({ ticker, documents, onUnauthorized
 
   function reader(isExpanded: boolean) {
     if (!table || !category) return null;
+    const originalTitle = table.section.trim();
+    const title = translateStatementLabel(originalTitle) || STATEMENT_CATEGORY_LABELS[category];
+    const headingId = `${titleId}-${isExpanded ? "expanded" : "inline"}`;
     return <div className="fs-reader" data-density={dense ? "compact" : "comfortable"}>
       <div className="fs-reader-heading">
-        <div className="fs-heading-copy"><h3 id={`${titleId}-${isExpanded ? "expanded" : "inline"}`}>{STATEMENT_CATEGORY_LABELS[category]}</h3><p className="fs-original-title" lang="en">{table.section}</p></div>
+        <div className="fs-heading-copy"><h3 id={headingId} lang={title === originalTitle ? "en" : undefined}>{title}</h3>{originalTitle && title !== originalTitle && <p className="fs-original-title" lang="en">{originalTitle}</p>}</div>
         <div className="fs-reader-tools">
           <label className="fs-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索表内项目" placeholder="搜索项目" value={query} onChange={event => { setQuery(event.target.value); setMatchIndex(0); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} />{query && <button type="button" aria-label="清除搜索" onClick={() => { setQuery(""); setMatchIndex(0); }}><X size={14} /></button>}</label>
           {search && <span className="fs-match-count" role="status">{matches.length ? `${activeMatch + 1} / ${matches.length}` : "无匹配"}</span>}
-          <div className="fs-search-navigation"><button type="button" className="fs-icon-button" aria-label="上一项" disabled={!matches.length} onClick={() => moveMatch(-1)}><ArrowUp size={16} /></button><button type="button" className="fs-icon-button" aria-label="下一项" disabled={!matches.length} onClick={() => moveMatch(1)}><ArrowDown size={16} /></button></div>
+          {search && <div className="fs-search-navigation"><button type="button" className="fs-icon-button" aria-label="上一项" disabled={!matches.length} onClick={() => moveMatch(-1)}><ArrowUp size={16} /></button><button type="button" className="fs-icon-button" aria-label="下一项" disabled={!matches.length} onClick={() => moveMatch(1)}><ArrowDown size={16} /></button></div>}
           {isExpanded ? <button type="button" className="fs-button" onClick={() => setExpanded(false)}><X size={15} />收起</button> : <button type="button" className="fs-button" onClick={() => setExpanded(true)}><Maximize2 size={15} />展开</button>}
         </div>
       </div>
       <div className="fs-table-options">{unitCaption && <span>{unitCaption}</span>}<button type="button" className="fs-density" aria-pressed={dense} onClick={() => setDense(value => !value)}>紧凑</button></div>
-      <div className="fs-table-scroll" ref={isExpanded ? expandedGrid : grid} tabIndex={0} aria-label={STATEMENT_CATEGORY_LABELS[category]}>
-        <table className="fs-table" aria-labelledby={`${titleId}-${isExpanded ? "expanded" : "inline"}`}>
+      <div className="fs-table-scroll" ref={isExpanded ? expandedGrid : grid} tabIndex={0} role="region" aria-labelledby={headingId}>
+        <table className="fs-table" aria-labelledby={headingId}>
           <colgroup>{columns.map(column => <col key={column.index} data-column-kind={column.kind} />)}</colgroup>
           {headerRows > 0 && <thead>{renderRows(0, headerRows)}</thead>}
           <tbody>{renderRows(headerRows, table.rows.length)}</tbody>

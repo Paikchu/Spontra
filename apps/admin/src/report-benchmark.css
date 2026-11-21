@@ -26,6 +26,12 @@
   font-weight: 600;
   letter-spacing: -.01em;
 }
+.rb-title-row h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 650;
+}
 .rb-meta {
   display: flex;
   flex-wrap: wrap;
@@ -33,15 +39,21 @@
   color: var(--ink-muted);
   font-size: 12px;
 }
-.rb-score-hero {
+.rb-score,
+.rb-score dd {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
-  flex-shrink: 0;
+  gap: var(--space-2);
+  margin: 0;
 }
-.rb-score-num {
+.rb-score dt {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.rb-score strong {
   font-family: var(--mono);
-  font-size: 28px;
+  font-size: 17px;
   font-weight: 650;
   line-height: 1;
 }
@@ -98,11 +110,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   color: var(--ink-muted);
   font-size: 12px;
 }
 .rb-compare-control select {
   height: 28px;
+  max-width: 100%;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--sp-radius-sm);
@@ -117,13 +131,10 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px 16px;
-  padding: 10px 12px;
   margin-top: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--sp-radius-sm);
-  background: var(--surface);
   font-size: 13px;
 }
+.rb-goal-strip > div { min-width: 0; overflow-wrap: anywhere; }
 .rb-goal-strip strong { color: var(--ink-muted); font-size: 12px; font-weight: 600; margin-right: 8px; }
 .rb-veto-row {
   display: flex;
@@ -137,6 +148,7 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-3);
   padding: var(--space-4) 0;
+  margin: 0;
   border-bottom: 1px solid var(--line);
 }
 .rb-dim-cell {
@@ -148,16 +160,15 @@
 .rb-dim-label {
   color: var(--ink-muted);
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .rb-dim-value {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  margin: 0;
   font-family: var(--mono);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
 }
 .rb-dim-value small { color: var(--ink-muted); font-size: 12px; font-weight: 400; }
@@ -167,6 +178,7 @@
   overflow-x: auto;
   margin-top: var(--space-3);
 }
+.rb-views { margin-top: var(--space-4); }
 .rb-table {
   width: 100%;
   border-collapse: collapse;
@@ -184,6 +196,7 @@
 .rb-table td {
   padding: 9px 10px;
   border-bottom: 1px solid var(--line);
+  text-align: start;
   vertical-align: top;
 }
 .rb-table tr.rb-dim-divider td {
@@ -196,13 +209,24 @@
 .rb-table tr.rb-clickable { cursor: pointer; }
 .rb-table tr.rb-clickable:hover td { background: var(--fill); }
 .rb-table tr.rb-active td { background: var(--brand-soft); }
-.rb-num { font-family: var(--mono); white-space: nowrap; text-align: right; }
+.rb-history-select {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-align: left;
+  white-space: nowrap;
+}
+.rb-history-select:hover { text-decoration: underline; }
+.rb-table td.rb-num { font-family: var(--mono); white-space: nowrap; text-align: end; }
 .rb-evidence { color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
 
 .rb-article-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
@@ -226,6 +250,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-muted);
@@ -256,12 +282,7 @@
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
-.rb-feedback-item {
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--sp-radius-sm);
-  background: var(--surface);
-}
+.rb-feedback-item { padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
 .rb-feedback-head {
   display: flex;
   flex-wrap: wrap;
@@ -281,6 +302,7 @@
   color: var(--ink-muted);
   font-family: var(--mono);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .rb-empty-guide {
@@ -289,25 +311,28 @@
   flex-direction: column;
   gap: var(--space-4);
 }
-.rb-empty-banner {
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--sp-radius-sm);
-  background: var(--surface);
-}
-.rb-empty-banner h2 {
+.rb-empty-state { margin: 0; padding: var(--space-3) var(--space-4); color: var(--ink-muted); font-size: 13px; }
+.rb-empty-intro { padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
+.rb-empty-intro h1 {
   margin: 0 0 6px;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
 }
-.rb-empty-banner p {
+.rb-empty-intro p {
   margin: 0;
   color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
+.rb-empty-intro details { margin-top: var(--space-2); color: var(--ink-muted); font-size: 12px; }
+.rb-empty-intro details p { margin-top: var(--space-2); }
 
 @media (max-width: 1024px) {
   .rb-dim-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rb-article-grid.split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .rb-version-pill, .rb-compare-control select, .rb-history-select,
+  .rb-views .ra-segmented > button, .rb-article-toolbar .fm-button { min-height: 44px; }
 }

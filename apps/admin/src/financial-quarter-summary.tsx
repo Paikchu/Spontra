@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "@/shared/analysis-contract/financial-maintenance";
 import { displayFinancialValue } from "./financial-maintenance-state";
@@ -59,7 +59,6 @@ function periodLabel(period: FinancialMaintenancePeriod) {
 }
 
 export function FinancialQuarterSummary({ periods }: { periods: FinancialMaintenancePeriod[] }) {
-  const headingId = useId();
   const [chosenPeriod, setChosenPeriod] = useState("");
   const [chosenComparison, setChosenComparison] = useState("");
   const [group, setGroup] = useState<"income" | "business">("income");
@@ -83,8 +82,7 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
   const firstUnit = shownMetrics[0]?.unit;
   const commonCurrency = firstUnit && currencies[firstUnit] && shownMetrics.every(metric => metric.unit === firstUnit && scaleExponent(metric.scale) !== null && decimalPattern.test(metric.value!)) ? firstUnit : null;
 
-  return <section className="fqs-summary" aria-labelledby={headingId}>
-    <div className="fqs-heading"><div><h3 id={headingId}>季度摘要</h3></div></div>
+  return <section className="fqs-summary" aria-label="季度摘要">
     {!current ? <p className="fqs-empty">无季度数据</p> : <>
       <div className="fqs-controls">
         <label><span>查看季度</span><select aria-label="季度摘要查看季度" value={current.periodEnd} onChange={event => {
@@ -98,7 +96,7 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
         <div className="fqs-groups" role="group" aria-label="季度摘要内容"><button type="button" aria-pressed={group === "income"} onClick={() => setGroup("income")}>利润与费用</button><button type="button" aria-pressed={group === "business"} onClick={() => setGroup("business")}>业务收入</button></div>
         <label className="fqs-search"><Search size={15} aria-hidden="true" /><input aria-label="搜索季度摘要项目" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索项目" /></label>
       </div>
-      <div className="fqs-table-meta"><span>{group === "income" ? "利润与费用" : "业务收入"}</span><span>{commonCurrency ? `单位：${millions ? "百万" : ""}${currencies[commonCurrency]}` : "单位随金额列示"}</span></div>
+      {commonCurrency && <p className="fqs-table-meta">单位：{millions ? "百万" : ""}{currencies[commonCurrency]}</p>}
       <div className="fqs-table-scroll" tabIndex={0} role="region" aria-label="季度摘要比较表">
         <table><thead><tr><th scope="col">项目</th>{visiblePeriods.map(period => <th scope="col" key={period.periodEnd}><strong>{period.fiscalLabel || period.periodEnd}</strong><span>{period.periodStart ? `${period.periodStart} — ${period.periodEnd}` : `截至 ${period.periodEnd}`}</span></th>)}</tr></thead>
           <tbody>{rows.map(row => <tr key={row.id} data-total={totals.has(row.id)}><th scope="row">{row.label}</th>{metricMaps.map((metrics, index) => {

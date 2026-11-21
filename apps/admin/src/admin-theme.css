@@ -67,8 +67,8 @@ html:has(.report-admin) {
   --sp-radius-sm: calc(var(--radius) - 2px);
   --sp-radius-md: var(--radius);
   --sp-radius-lg: calc(var(--radius) + 2px);
-  --sans: 'Roboto Slab Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --display: 'Public Sans Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --sans: 'Public Sans Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --display: var(--sans);
   --shadow-press: none;
   --glow-accent: none;
   --sheen: transparent;

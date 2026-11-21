@@ -241,7 +241,7 @@ export async function callWorkerSecModel(
  * name when a caller leaves it out.
  */
 export type ModelCallTuning = {
-  maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
+  maxTokens?: number; reasoning?: ReasoningEffort | "off"; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
   ticker?: string; runId?: string; kind?: string;
   /** The reader and conversation a stage call served, for the ledger. */
   userHash?: string; conversationId?: string;
@@ -284,16 +284,16 @@ async function requestWorkerSecModelContent(
     { role: "assistant", content: options.repair },
     { role: "user", content: "Repair the previous response into one complete JSON object matching the original schema. Preserve its substantive analysis and evidence; fix syntax and complete missing fields from the original inputs. Do not replace the report with a summary. Output the complete repaired object only." },
   );
-  const effort = connected?.thinkingLevel ?? reasoningEffort(model, options?.reasoning ?? "high");
+  const effort = options?.reasoning === "off" ? null : connected?.thinkingLevel ?? reasoningEffort(model, options?.reasoning ?? "high");
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
-  metrics.reasoning = effort;
+  metrics.reasoning = effort ?? "off";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   let stream: Stream<ChatCompletionChunk>;
   try {
-    const request: ChatCompletionCreateParamsStreaming & { thinking: { type: "enabled" } } = {
+    const request: ChatCompletionCreateParamsStreaming & { thinking: { type: "enabled" | "disabled" } } = {
       model, messages,
-      thinking: { type: "enabled" },
-      reasoning_effort: effort as ChatCompletionCreateParamsStreaming["reasoning_effort"],
+      thinking: { type: effort === null ? "disabled" : "enabled" },
+      ...(effort === null ? {} : { reasoning_effort: effort as ChatCompletionCreateParamsStreaming["reasoning_effort"] }),
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
       ...(options?.continuation ? {} : { response_format: { type: "json_object" } }),
       stream: true,

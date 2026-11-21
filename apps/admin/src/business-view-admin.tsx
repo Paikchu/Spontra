@@ -67,8 +67,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     // An old path is replaced by its page's own, keeping the company it named.
     const { pathname, search } = window.location;
     if (pathname === PAGES[section].path) return;
-    const ticker = new URLSearchParams(search).get("ticker");
-    try { window.history.replaceState(null, "", `${PAGES[section].path}${ticker ? `?${new URLSearchParams({ ticker })}` : ""}`); } catch { /* Sandboxed preview. */ }
+    try { window.history.replaceState(null, "", `${PAGES[section].path}${search}${window.location.hash}`); } catch { /* Sandboxed preview. */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Page switches and pages' own levels are pushed into history, so back and forward also move between pages. A page
   // that reads its address starts again from the one moved to; left this way, it no longer knows its address, so it
@@ -107,7 +106,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   return <SidebarProvider className="report-admin" mobileBreakpoint={769} persistState={false} keyboardShortcut={null}>
     <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} mapOrigin={mapOrigin} />
     <SidebarInset className="min-w-0" aria-label={page.title}>
-      <AdminMobileNavigation />
+      <AdminMobileNavigation title={page.title} />
       <div className="ra-main" data-section={section}>
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
       {opened.map(key => {

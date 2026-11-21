@@ -1,3 +1,6 @@
+.ra-workspace.fm2-workspace {
+  grid-template-columns: 216px 216px minmax(0, 1fr);
+}
 .fm2-workspace .ra-detail {
   display: flex;
   flex-direction: column;
@@ -23,6 +26,25 @@
   font-size: 17px;
   font-weight: 600;
 }
+.fm2-report-list .fm2-report-list-caption {
+  min-height: 40px;
+  padding-block: var(--space-3) var(--space-2);
+}
+.fm2-report-list .fm2-report-row {
+  display: grid;
+  gap: 3px;
+}
+.fm2-report-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.fm2-report-row-head strong { font-size: 14px; }
+.fm2-report-row :is(.fm2-report-row-date, code) {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.fm2-report-row code { overflow-wrap: anywhere; }
 .fm2-meta {
   display: flex;
   flex-wrap: wrap;
@@ -40,34 +62,9 @@
   background: var(--fill);
   color: var(--ink);
 }
-.fm2-badge.ready, .fm2-badge.approved { background: color-mix(in srgb, #16a34a 15%, transparent); color: #16a34a; }
-.fm2-badge.preparing, .fm2-badge.pending { background: color-mix(in srgb, #d97706 15%, transparent); color: #d97706; }
-.fm2-badge.blocked, .fm2-badge.rejected { background: color-mix(in srgb, #dc2626 15%, transparent); color: #dc2626; }
-.fm2-review-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface, var(--paper));
-}
-.fm2-review-input {
-  min-width: 200px;
-  padding: 5px 9px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 12px;
-}
-.fm2-btn.danger {
-  border-color: color-mix(in srgb, #dc2626 45%, var(--line));
-  color: #dc2626;
-}
+.fm2-badge.ready { background: var(--fill); color: var(--ink-muted); }
+.fm2-badge.preparing { background: var(--caution-soft); color: var(--caution); }
+.fm2-badge.blocked { background: var(--danger-soft); color: var(--danger); }
 .fm2-filters {
   display: flex;
   flex-wrap: wrap;
@@ -85,7 +82,7 @@
 .fm2-filter-pill[aria-pressed="true"] {
   background: var(--brand);
   border-color: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
 }
 .fm2-panel {
   flex: 1;
@@ -128,15 +125,74 @@
   color: var(--ink);
   font-weight: 600;
 }
-.fm2-md-pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--ink);
+.fm2-report-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3) 2px var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
+.fm2-report {
+  max-width: 74rem;
+  margin-inline: auto;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.fm2-report > :first-child { margin-top: 0; }
+.fm2-report :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--ink);
+  line-height: 1.3;
+  scroll-margin-top: var(--space-3);
+}
+.fm2-report :is(h1, h2, h3) { text-wrap: balance; }
+.fm2-report h1 { font-size: 1.65rem; }
+.fm2-report h2 { font-size: 1.25rem; margin-top: 1.8em; }
+.fm2-report h3 { font-size: 1.05rem; margin-top: 1.5em; }
+.fm2-report :is(h4, h5, h6) { font-size: .95rem; }
+.fm2-report :is(p, ul, ol) { margin-block: .75em; }
+.fm2-report :is(p, blockquote) { max-inline-size: 72ch; text-wrap: pretty; }
+.fm2-report :is(ul, ol) { padding-inline-start: 1.5em; }
+.fm2-report ul { list-style-type: disc; }
+.fm2-report ol { list-style-type: decimal; }
+.fm2-report li > :is(ul, ol) { margin-block: .25em; }
+.fm2-report a { text-decoration: underline; text-underline-offset: .18em; }
+.fm2-report blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1em;
+  border-inline-start: 2px solid var(--line-strong);
+  color: var(--ink-muted);
+}
+.fm2-report hr { border: 0; border-top: 1px solid var(--line); }
+.fm2-report pre {
+  overflow: auto;
+  max-height: 24rem;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--fill);
+  font-size: 12px;
+}
+.fm2-report :not(pre) > code { padding-inline: .2em; background: var(--fill); }
+.fm2-report-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: 1em;
+}
+.fm2-report-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.fm2-report-table :is(th, td) {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.fm2-report-table th { background: var(--fill); }
+.fm2-report-scroll > .fm2-btn { margin-top: var(--space-3); }
 .fm2-bar {
   display: flex;
   flex-wrap: wrap;
@@ -178,11 +234,6 @@
   flex-direction: column;
   gap: 10px;
 }
-.fm2-card h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
 .fm2-actions {
   display: flex;
   flex-wrap: wrap;
@@ -204,44 +255,20 @@
 .fm2-btn.primary {
   background: var(--brand);
   border-color: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
 }
 .fm2-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.fm2-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-}
-.fm2-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-.fm2-field label { color: var(--ink-muted); font-weight: 500; }
-.fm2-field input,
-.fm2-field textarea {
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 12px;
-}
-.fm2-checks {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-}
-.fm2-check-box {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 @media (max-width: 960px) {
   .fm2-split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1200px) {
+  .ra-workspace.fm2-workspace { grid-template-columns: 180px 190px minmax(0, 1fr); }
+}
+@media (max-width: 1040px) {
+  .ra-workspace.fm2-workspace { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+  .fm2-workspace > .ra-list:first-child { border-inline-end: 1px solid var(--line); }
+  .fm2-workspace > .ra-list { border-bottom: 1px solid var(--line); }
+  .fm2-workspace > .ra-list .ra-list-scroll { max-height: 12rem; }
+  .fm2-workspace > .ra-detail { grid-column: 1 / -1; }
 }

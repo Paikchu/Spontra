@@ -168,7 +168,7 @@ export function ReportBenchmark() {
   }
 
   return (
-    <div className="ra-workspace">
+    <div className="ra-workspace rb-workspace">
       <aside className="ra-list" aria-label="评测标的列表">
         <div className="ra-filters">
           <label className="ra-search">
@@ -183,14 +183,11 @@ export function ReportBenchmark() {
           </label>
         </div>
         <div className="ra-list-caption">
-          <span>Benchmark 标的</span>
-          <span className="ra-mono">{benchmarks.length}</span>
+          <span>{filtered.length} 个评测标的</span>
         </div>
         <div className="ra-list-scroll">
           {filtered.length === 0 ? (
-            <div className="ra-empty" style={{ minHeight: 160, padding: "24px 12px" }}>
-              <span style={{ fontSize: 12 }}>暂无已打分标的</span>
-            </div>
+            <p className="rb-empty-state">{benchmarks.length ? "没有匹配的标的" : "暂无评测记录"}</p>
           ) : (
             filtered.map(entry => {
               const sorted = [...entry.versions].sort((a, b) => a.versionNumber - b.versionNumber);
@@ -225,20 +222,21 @@ export function ReportBenchmark() {
       <section className="ra-detail" aria-label="报告评测详情">
         {!activeEntry || !activeVersion ? (
           <div className="rb-empty-guide">
-            <div className="rb-empty-banner">
-              <h2>报告评测 Benchmark 已就绪（尚无历史打分记录）</h2>
-              <p>
-                当前未对任何文章预填分数。后续在完成优化与 AI 金融分析师质检后，将基线（<code>v0 Baseline</code>）与各迭代版本的原始文章、18 小项明细分及负反馈诊断写入仓库文件{" "}
-                <code>benchmarks/filing-analysis-benchmark.json</code>（字段说明与评委 Prompt 见 <code>docs/filing-analysis-eval-guide.md</code>），本页将自动展示版本演进、逐项 Δ 对比与原文对照。
-              </p>
-            </div>
+            <header className="rb-empty-intro">
+              <h1>暂无评测记录</h1>
+              <p>完成报告质检后，将基线和迭代版本写入 <code>benchmarks/filing-analysis-benchmark.json</code>。</p>
+              <details>
+                <summary>记录字段与评分指引</summary>
+                <p><code>docs/filing-analysis-eval-guide.md</code> 说明如何录入原文、分项得分和反馈。</p>
+              </details>
+            </header>
 
             <div>
-              <div className="rb-title-row" style={{ marginBottom: 8 }}>
-                <h1>一票否决红线（P0 Hard Veto）</h1>
-                <span className="ra-badge" data-status="failed">触发任一总分封顶 59</span>
+              <div className="rb-title-row">
+                <h2>评分红线</h2>
+                <span className="rb-meta">触发任一项时总分上限为 59 分</span>
               </div>
-              <div className="rb-table-wrap">
+              <div className="rb-table-wrap" role="region" aria-label="评分红线" tabIndex={0}>
                 <table className="rb-table">
                   <thead>
                     <tr>
@@ -261,11 +259,11 @@ export function ReportBenchmark() {
             </div>
 
             <div>
-              <div className="rb-title-row" style={{ marginBottom: 8 }}>
-                <h1>18 个细分小项评分矩阵（满分 100 分）</h1>
-                <span className="ra-badge">{DATASET.rubricVersion}</span>
+              <div className="rb-title-row">
+                <h2>评分项目</h2>
+                <span className="rb-meta">{rubric.subItems.length} 项 · 满分 100 分 · {DATASET.rubricVersion}</span>
               </div>
-              <div className="rb-table-wrap">
+              <div className="rb-table-wrap" role="region" aria-label="评分项目" tabIndex={0}>
                 <table className="rb-table">
                   <thead>
                     <tr>
@@ -304,7 +302,7 @@ export function ReportBenchmark() {
                   <span className="ra-badge" data-status={gradeStatus(activeVersion.grade, activeVersion.veto.triggered)}>
                     {activeVersion.veto.triggered ? "红线触发 · FAIL" : `评级 ${activeVersion.grade}`}
                   </span>
-                  {activeVersion.isBaseline && <span className="ra-badge">Baseline 基线</span>}
+                  {activeVersion.isBaseline && <span className="ra-badge">基线</span>}
                 </div>
                 <div className="rb-meta">
                   <span>版本 <code className="ra-mono">v{activeVersion.versionNumber}</code></span>
@@ -315,14 +313,16 @@ export function ReportBenchmark() {
                 </div>
               </div>
 
-              <div className="rb-score-hero">
-                <span className="rb-score-num">{activeVersion.totalScore}</span>
-                <span className="rb-score-max">/ 100</span>
-                {compareVersion && (() => {
-                  const d = formatDelta(activeVersion.totalScore - compareVersion.totalScore);
-                  return <span className={`rb-delta ${d.cls}`}>vs v{compareVersion.versionNumber}: {d.text}</span>;
-                })()}
-              </div>
+              <dl className="rb-score">
+                <dt>总分</dt>
+                <dd>
+                  <strong>{activeVersion.totalScore}</strong><span className="rb-score-max"> / 100</span>
+                  {compareVersion && (() => {
+                    const d = formatDelta(activeVersion.totalScore - compareVersion.totalScore);
+                    return <span className={`rb-delta ${d.cls}`}>较 v{compareVersion.versionNumber} {d.text}</span>;
+                  })()}
+                </dd>
+              </dl>
             </header>
 
             <div className="rb-version-bar">
@@ -381,7 +381,7 @@ export function ReportBenchmark() {
               })}
             </div>
 
-            <div className="rb-dim-grid">
+            <dl className="rb-dim-grid">
               {rubric.dimensions.map(dim => {
                 const score = activeVersion.dimensions?.[dim.id]?.score ?? computeDimensionScore(dim.id, subItemMap);
                 const prevScore = compareVersion
@@ -390,28 +390,28 @@ export function ReportBenchmark() {
                 const d = formatDelta(prevScore != null ? score - prevScore : null);
                 return (
                   <div key={dim.id} className="rb-dim-cell">
-                    <span className="rb-dim-label">{dim.id} · {dim.name}</span>
-                    <div className="rb-dim-value">
+                    <dt className="rb-dim-label">{dim.name}</dt>
+                    <dd className="rb-dim-value">
                       <span>{score}</span>
                       <small>/ {dim.max}</small>
                       {prevScore != null && <span className={`rb-delta ${d.cls}`}>{d.text}</span>}
-                    </div>
+                    </dd>
                   </div>
                 );
               })}
-            </div>
+            </dl>
 
-            <div className="ra-tabbar" style={{ marginTop: 16 }}>
-              <div role="tablist" aria-label="评测视图切换">
-                <button type="button" role="tab" aria-selected={tab === "subitems"} onClick={() => setTab("subitems")}>18 小项评分明细</button>
-                <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>历史版本演进 ({versions.length})</button>
-                <button type="button" role="tab" aria-selected={tab === "article"} onClick={() => setTab("article")}>原始文章对照</button>
-                <button type="button" role="tab" aria-selected={tab === "feedback"} onClick={() => setTab("feedback")}>负反馈建议 ({activeVersion.negativeFeedback?.length ?? 0})</button>
+            <div className="ra-tabbar rb-views">
+              <div className="ra-segmented" role="group" aria-label="评测视图">
+                <button type="button" aria-pressed={tab === "subitems"} onClick={() => setTab("subitems")}>评分明细</button>
+                <button type="button" aria-pressed={tab === "history"} onClick={() => setTab("history")}>历史版本</button>
+                <button type="button" aria-pressed={tab === "article"} onClick={() => setTab("article")}>原文对照</button>
+                <button type="button" aria-pressed={tab === "feedback"} onClick={() => setTab("feedback")}>负反馈{activeVersion.negativeFeedback?.length ? ` (${activeVersion.negativeFeedback.length})` : ""}</button>
               </div>
             </div>
 
             {tab === "subitems" && (
-              <div className="rb-table-wrap">
+              <div className="rb-table-wrap" role="region" aria-label="分项评分" tabIndex={0}>
                 <table className="rb-table">
                   <thead>
                     <tr>
@@ -453,7 +453,7 @@ export function ReportBenchmark() {
             )}
 
             {tab === "history" && (
-              <div className="rb-table-wrap">
+              <div className="rb-table-wrap" role="region" aria-label="版本历史" tabIndex={0}>
                 <table className="rb-table">
                   <thead>
                     <tr>
@@ -477,7 +477,7 @@ export function ReportBenchmark() {
                           className={`rb-clickable${v.versionId === activeVersion.versionId ? " rb-active" : ""}`}
                           onClick={() => setSelectedVersionId(v.versionId)}
                         >
-                          <td className="ra-mono" style={{ whiteSpace: "nowrap" }}>v{v.versionNumber}{v.isBaseline ? " (基线)" : ""}</td>
+                          <td><button type="button" className="rb-history-select ra-mono" aria-pressed={v.versionId === activeVersion.versionId}>v{v.versionNumber}{v.isBaseline ? "（基线）" : ""}</button></td>
                           <td>{v.goal}</td>
                           <td className="rb-num">{v.totalScore}</td>
                           <td className="rb-num"><span className={`rb-delta ${d.cls}`}>{d.text}</span></td>
@@ -501,11 +501,8 @@ export function ReportBenchmark() {
 
             {tab === "article" && (
               <div>
-                <div className="rb-article-toolbar">
-                  <span style={{ color: "var(--ink-muted)", fontSize: 12 }}>
-                    当前查看：v{activeVersion.versionNumber} 原始文章（格式 {activeVersion.rawArticle.format}）
-                  </span>
-                  {compareVersion && (
+                {compareVersion && (
+                  <div className="rb-article-toolbar">
                     <button
                       type="button"
                       className="fm-button"
@@ -514,8 +511,8 @@ export function ReportBenchmark() {
                     >
                       {splitArticle ? "切回单栏阅读" : `与 v${compareVersion.versionNumber} 并排对照`}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
                 <div className={`rb-article-grid${splitArticle && compareVersion ? " split" : ""}`}>
                   {splitArticle && compareVersion && (
                     <div className="rb-article-pane">
@@ -529,7 +526,7 @@ export function ReportBenchmark() {
                   <div className="rb-article-pane">
                     <div className="rb-article-pane-head">
                       <span>当前版本 v{activeVersion.versionNumber}{activeVersion.isBaseline ? " (Baseline)" : ""}</span>
-                      <span className="ra-mono">{activeVersion.totalScore} 分 · {activeVersion.grade}</span>
+                      <span className="ra-mono">{activeVersion.rawArticle.format} · {activeVersion.totalScore} 分 · {activeVersion.grade}</span>
                     </div>
                     <ArticleView version={activeVersion} />
                   </div>
@@ -540,9 +537,7 @@ export function ReportBenchmark() {
             {tab === "feedback" && (
               <div className="rb-feedback-list">
                 {(activeVersion.negativeFeedback ?? []).length === 0 ? (
-                  <div className="ra-empty" style={{ minHeight: 160 }}>
-                    <span>该版本暂无待处理的负反馈建议</span>
-                  </div>
+                  <p className="rb-empty-state">该版本暂无负反馈</p>
                 ) : (
                   (activeVersion.negativeFeedback ?? []).map(fb => (
                     <article key={`${fb.priority}-${fb.rootCause}`} className="rb-feedback-item">

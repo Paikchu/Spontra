@@ -31,10 +31,10 @@ export function CompanyUsage({ ticker, rows, onUnauthorized }: { ticker: string;
   useOnReturn(() => setRefresh(n => n + 1));
   const data = state.status === 'ready' ? state.data : null;
   return <section className="bm-usage" aria-label={`${ticker} Token 用量`} aria-busy={state.status === 'loading'}>
-    <header><h4>Token 记录</h4><button className="ra-icon-button" type="button" aria-label="刷新 Token 用量" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></header>
+    <header><h4>Token 用量</h4><button className="ra-icon-button" type="button" aria-label="刷新 Token 用量" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></header>
     {state.status === 'error' && <p className="ra-error" role="alert">Token 读取失败</p>}
     <div className="bm-usage-scroll" tabIndex={0} role="region" aria-label="各板块 Token 用量">
-      <table className="bm-usage-table" aria-description="累计已归属该公司的用量，不含缺失的历史记录。"><thead><tr><th scope="col">板块</th><th scope="col">状态</th><th scope="col">输入（含缓存）</th><th scope="col">输出</th><th scope="col">合计</th></tr></thead>
+      <table className="bm-usage-table bm-usage-table--tokens" aria-description="累计已归属该公司的用量，不含缺失的历史记录。"><thead><tr><th scope="col">板块</th><th scope="col">状态</th><th scope="col">输入（含缓存）</th><th scope="col">输出</th><th scope="col">合计</th></tr></thead>
         <tbody>{rows.map(row => {
           const usage = data?.layers[row.layer], recorded = !!usage && usage.calls > usage.callsWithoutTokens;
           return <tr key={row.layer}><th scope="row">{row.label}</th><td aria-live="polite">{row.state ? <span className="bm-layer-status" data-state={row.state.code}>{row.state.label}</span> : '—'}</td>

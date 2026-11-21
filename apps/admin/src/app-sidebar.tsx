@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FileMagnifyingGlassIcon as FileSearch, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
+import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FileMagnifyingGlassIcon as FileSearch, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, ListIcon as List, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
 import Link from "@/packages/web/src/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader,
@@ -13,9 +13,14 @@ const NAV_GROUPS: Array<{ title: string; items: Array<[Section, Icon]> }> = [
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
 
-export function AdminMobileNavigation() {
-  const { setOpenMobile } = useSidebar();
-  return <div className="ra-mobile-navigation"><button type="button" className="fm-button" aria-label="打开导航" onClick={() => setOpenMobile(true)}>导航</button></div>;
+export function AdminMobileNavigation({ title }: { title: string }) {
+  const { openMobile, setOpenMobile } = useSidebar();
+  return <div className="ra-mobile-navigation">
+    <button type="button" className="ra-icon-button" aria-label="打开导航" aria-haspopup="dialog" aria-expanded={openMobile} onClick={() => setOpenMobile(true)}>
+      <List size={20} aria-hidden="true" />
+    </button>
+    <strong>{title}</strong>
+  </div>;
 }
 
 type AppSidebarProps = {
@@ -82,8 +87,8 @@ export function AppSidebar({ section, activeSection, pages, navigate, unread, li
     <SidebarFooter>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton onClick={toggleTheme} aria-pressed={light}>
-            {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}<span>{light ? "深色主题" : "浅色主题"}</span>
+          <SidebarMenuButton onClick={toggleTheme}>
+            {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}<span>{light ? "切换到深色" : "切换到浅色"}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>

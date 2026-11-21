@@ -3,11 +3,11 @@ import type { TelemetryRange, TelemetrySummary } from "@/apps/business-site/src/
 import { UsageBoard, type UsageLabels } from "@/apps/business-site/src/usage-board";
 
 const labels: UsageLabels = {
-  title: "产品使用情况",
-  empty: "暂无数据",
-  unavailable: "统计读取失败",
+  title: "使用统计",
+  empty: "此时间范围内暂无使用数据",
+  unavailable: "无法加载使用统计",
   retry: "重试",
-  utc: "UTC",
+  utc: "统计时区 UTC",
   sessions: "独立会话",
   pageViews: "浏览量",
   companies: "访问最多的公司",
@@ -18,7 +18,7 @@ const labels: UsageLabels = {
   none: "暂无",
   ranges: { "24h": "近 24 小时", "7d": "近 7 天", "4w": "近 4 周" },
   eventName: {
-    page_view: "页面浏览事件",
+    page_view: "浏览页面",
     search_submit: "提交搜索",
     search_select: "选中搜索结果",
     company_tab_view: "切换报表",
@@ -30,7 +30,7 @@ const labels: UsageLabels = {
     error_shown: "显示错误",
     web_vitals: "性能采样",
   },
-  vitals: "加载性能 p75",
+  vitals: "页面性能（第 75 百分位）",
   samples: "样本数",
   vitalRoute: { company: "公司页", home: "首页" },
   vitalName: { content: "主图出现", lcp: "LCP", fcp: "FCP", ttfb: "TTFB", inp: "INP", cls: "CLS" },
@@ -73,5 +73,6 @@ export function AnalyticsPanel() {
   }, [range, attempt]);
   return <div className="ra-analytics">
     <UsageBoard summary={summary} range={range} onRange={changeRange} labels={labels} pending={pending} failed={failed} onRetry={() => { reload(); setAttempt(value => value + 1); }} />
+    {pending && <p className="ra-analytics-loading" role="status">正在加载使用统计…</p>}
   </div>;
 }

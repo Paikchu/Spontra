@@ -70,23 +70,25 @@ export function CompanyReports({ ticker, onUnauthorized }: { ticker: string; onU
   const reports = state.status === 'ready' ? state.reports : [];
   return <section className="bm-usage" aria-label={`${ticker} SEC 文件分析`} aria-busy={state.status === 'loading'}>
     <header><h4>SEC 文件分析</h4><button className="ra-icon-button" type="button" aria-label="刷新 SEC 文件分析" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></header>
+    {state.status === 'loading' && <p className="bm-empty" role="status">读取文件列表</p>}
     {state.status === 'error' && <p className="ra-error" role="alert">文件列表读取失败</p>}
     {state.status === 'ready' && !reports.length && <p className="bm-empty">无文件</p>}
     {reports.length > 0 && <div className="bm-usage-scroll" tabIndex={0} role="region" aria-label="SEC 文件与分析状态">
-      <table className="bm-usage-table"><thead><tr><th scope="col">文件</th><th scope="col">报告期</th><th scope="col">提交日</th><th scope="col">状态</th><th scope="col">生成于</th><th scope="col"><span className="sr-only">操作</span></th></tr></thead>
+      <table className="bm-usage-table bm-usage-table--reports"><thead><tr><th scope="col">文件</th><th scope="col">报告期</th><th scope="col">提交日</th><th scope="col">状态</th><th scope="col">生成日期</th><th scope="col">操作</th></tr></thead>
         <tbody>{reports.map(r => <Fragment key={r.accessionNumber}><tr>
           <th scope="row"><span className="ra-mono" title={r.accessionNumber}>{r.form}</span></th>
           <td>{r.reportDate || '—'}</td>
           <td>{r.filingDate}</td>
           <td aria-live="polite" title={r.errorCode ?? undefined}><span className="bm-layer-status" data-state={r.status}>{STATUS[r.status]}{r.status === 'processing' && r.stage ? ` · ${r.stage}` : ''}{r.status === 'failed' && r.errorCode ? ` · ${r.errorCode}` : ''}</span></td>
           <td>{r.generatedAt?.slice(0, 10) ?? '—'}</td>
-          <td>{sent[r.accessionNumber] && <small role="status">{sent[r.accessionNumber]} </small>}
+          <td><div className="bm-report-actions">
             <button className="fm-button" type="button" disabled={!r.canRegenerate || r.status === 'processing' || sent[r.accessionNumber] === '提交中'} onClick={() => void regenerate(r)} aria-label={`重新生成 ${r.form} ${r.reportDate}`}>重新生成</button>
             {r.generatedAt && /^(10-[QK]|20-F|40-F)/.test(r.form) && <button className="fm-button" type="button" disabled={!r.canRegenerate || r.status === 'processing' || sent[r.accessionNumber] === '提交中'} onClick={() => void regenerate(r, 'revise')} aria-label={`修订 ${r.form} ${r.reportDate}`}>修订</button>}
             {r.generatedAt && <button className="fm-button" type="button" disabled={sent[r.accessionNumber] === '核对中'} onClick={() => void recheck(r)} aria-label={`核对 ${r.form} ${r.reportDate}`}>核对</button>}
-            {r.workflowInstanceId && <button className="fm-button" type="button" aria-expanded={viewing === r.accessionNumber} onClick={() => void view(r)}>过程</button>}</td>
-        </tr>{rechecked[r.accessionNumber]?.length ? <tr><td colSpan={6}><ul className="bm-usage-caption ra-mono">{rechecked[r.accessionNumber]!.map((i, n) => <li key={n}>{i.block} · {i.ref} · {i.shown} · {i.reason}</li>)}</ul></td></tr> : null}
-        {viewing === r.accessionNumber && <tr><td colSpan={6}><RunProcess process={process} /></td></tr>}</Fragment>)}</tbody>
+            {r.workflowInstanceId && <button className="fm-button" type="button" aria-expanded={viewing === r.accessionNumber} aria-controls={viewing === r.accessionNumber ? `bm-run-${ticker}-${r.accessionNumber}` : undefined} onClick={() => void view(r)}>过程</button>}
+          </div>{sent[r.accessionNumber] && <small role="status">{sent[r.accessionNumber]}</small>}</td>
+        </tr>{rechecked[r.accessionNumber]?.length ? <tr className="bm-report-detail"><td colSpan={6}><ul className="bm-usage-caption ra-mono">{rechecked[r.accessionNumber]!.map((i, n) => <li key={n}>{i.block} · {i.ref} · {i.shown} · {i.reason}</li>)}</ul></td></tr> : null}
+        {viewing === r.accessionNumber && <tr className="bm-report-detail" id={`bm-run-${ticker}-${r.accessionNumber}`}><td colSpan={6}><RunProcess process={process} /></td></tr>}</Fragment>)}</tbody>
       </table>
     </div>}
   </section>;
@@ -114,8 +116,8 @@ function RunProcess({ process }: { process: ReportRunProcess | 'loading' | 'erro
       {session.trail.map((entry, index) => <details key={index}>
         <summary><span className="ra-mono">{entry.turn} · {entry.action}</span>{entry.failed && <span className="ra-error"> 失败</span>}</summary>
         {entry.thought && <p>{entry.thought}</p>}
-        {entry.input && <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.input}</pre>}
-        <pre style={{ whiteSpace: 'pre-wrap' }}>{entry.observation}</pre>
+        {entry.input && <pre>{entry.input}</pre>}
+        <pre>{entry.observation}</pre>
       </details>)}
     </div>)}
   </div>;

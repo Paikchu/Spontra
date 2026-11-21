@@ -9,6 +9,7 @@ import { overrideLink, readLinksView, requestLinks } from "../business-classific
 import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
 import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialSnapshot } from "../filing-material/index.ts";
 import { findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
+import { prepareFilingReadingEdition, readFilingReadingEdition } from "../filing-material/reading-edition.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { materialRecoveryKey, materialPilotKey, isPilotMaterial } from "../filing-material/store.ts";
@@ -106,6 +107,25 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       ]);
       await flushOutbox(env);
       return json(pending, 202);
+    }
+    if (parts[3] === "reading-edition") {
+      if (state.status !== "ready") return json({ error: "财报材料尚未就绪。" }, 409);
+      const version = url.searchParams.get("version") ?? state.ref.version;
+      if (!/^[a-f0-9]{64}$/.test(version)) return json({ error: "无效的材料版本。" }, 400);
+      const snapshot = await readMaterialSnapshot(env, { ...state.ref, version });
+      if (request.method === "POST" && parts.length === 4) {
+        try {
+          const edition = await prepareFilingReadingEdition(env, snapshot);
+          return json(edition, edition.status === "preparing" ? 202 : 200);
+        } catch (error) {
+          return json({ error: error instanceof Error ? error.message : String(error) }, 409);
+        }
+      }
+      const edition = parts[4];
+      if (request.method === "GET" && parts.length === 5 && (edition === "preprocessed" || edition === "organized")) {
+        const markdown = await readFilingReadingEdition(env, snapshot, edition);
+        return markdown === null ? json({ error: "这份阅读稿尚未生成。" }, 404) : json({ markdown });
+      }
     }
     if (request.method === "GET") {
       if (parts.length === 3) {
