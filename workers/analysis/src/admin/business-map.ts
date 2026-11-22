@@ -92,7 +92,7 @@ const DIRECTORY_PAGE = 50;
  * on; a query ranks by ticker and name over the whole directory.
  */
 function directoryPage(entries: IssuerEntry[], etf: (ticker: string) => boolean, layers: (ticker: string) => Record<Layer, boolean>,
-  query: string, filter: 'on' | 'all', page: number): BusinessMapDirectory {
+  scheduled: (ticker: string) => boolean, query: string, filter: 'on' | 'scheduled' | 'all', page: number): BusinessMapDirectory {
   const issuers = new Map<string, { entry: IssuerEntry; classes: string[] }>();
   for (const entry of entries) {
     if (etf(entry[0])) continue;
@@ -105,7 +105,7 @@ function directoryPage(entries: IssuerEntry[], etf: (ticker: string) => boolean,
     rows = rows.filter(r => order.has(r.entry[0])).sort((a, b) => order.get(a.entry[0])! - order.get(b.entry[0])!);
   }
   const shaped = rows.map(({ entry: [ticker, name, exchange, cik], classes }) => ({ ticker, name, exchange, cik, classes, layers: layers(ticker) }));
-  const kept = filter === 'on' ? shaped.filter(r => r.layers.map) : shaped;
+  const kept = filter === 'on' ? shaped.filter(r => r.layers.map) : filter === 'scheduled' ? shaped.filter(r => r.layers.map && scheduled(r.ticker)) : shaped;
   if (!query.trim()) kept.sort((a, b) => Number(b.layers.map) - Number(a.layers.map) || a.ticker.localeCompare(b.ticker));
   const pages = Math.max(1, Math.ceil(kept.length / DIRECTORY_PAGE)), at = Math.min(Math.max(1, page), pages);
   return { total: kept.length, page: at, pages, rows: kept.slice((at - 1) * DIRECTORY_PAGE, at * DIRECTORY_PAGE) };
@@ -117,15 +117,17 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
   try {
     if (path === '/admin/business-map/directory' && request.method === 'GET') {
       const params = new URL(request.url).searchParams;
-      const filter = params.get('filter') === 'all' ? 'all' : 'on';
+      const rawFilter = params.get('filter');
+      const filter = rawFilter === 'all' ? 'all' : rawFilter === 'scheduled' ? 'scheduled' : 'on';
       let entries: IssuerEntry[];
       try { entries = await issuerDirectory(db, edgarListings(env, { delayMs: 0 })); }
       catch { return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503); }
       const security = await securities(db).catch(() => () => null);
+      const pauses = filter === 'scheduled' ? await scheduledAnalysisPauses(db) : null;
       const data = new Set(dataTickersFor(env));
       const lists = Object.fromEntries(FEATURES.map(f => [f, new Set(featureCompaniesFor(env, f))])) as Record<Feature, Set<string>>;
       const layers = (ticker: string) => Object.fromEntries(LAYERS.map(l => [l, l === 'map' ? data.has(ticker) : lists[l].has(ticker)])) as Record<Layer, boolean>;
-      return json(directoryPage(entries, t => security(t)?.etf ?? false, layers, params.get('q') ?? '', filter, Number(params.get('page')) || 1) satisfies BusinessMapDirectory);
+      return json(directoryPage(entries, t => security(t)?.etf ?? false, layers, t => pauses ? pauses.at(t) === null : true, params.get('q') ?? '', filter, Number(params.get('page')) || 1) satisfies BusinessMapDirectory);
     }
     if (path === '/admin/business-map/companies' && request.method === 'GET') {
       const list = await listFinancialCompanies(env);

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { WarningIcon as AlertTriangle, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { WarningIcon as AlertTriangle, CaretDownIcon as ChevronDown, CheckIcon as Check, CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search, SlidersHorizontalIcon as SlidersHorizontal } from "@phosphor-icons/react";
 import type { BusinessMapCompanies, BusinessMapCompany, BusinessMapDirectory, DirectoryCompany } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, LAYER_REQUIRES, LAYERS, type Feature, type Layer } from '@/shared/analysis-contract/business-features';
 import { layersAbove } from '@/shared/analysis-runtime/business-features';
@@ -8,7 +8,6 @@ import { adminApi, AdminApiError } from './admin-api';
 import { pendingRequestId, completeRequestId } from './financial-maintenance-state';
 import { financialDate } from './financial-update-history';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/packages/web/src/ui/tooltip';
 import { runElapsed, runView } from './run-progress';
 import { ValuationInputs } from './valuation-inputs';
 import { CompanyUsage } from './company-usage';
@@ -75,7 +74,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   // The directory: every listed issuer, paged and searched on the server; by default the companies with layer 1 on.
   const [directory,setDirectory]=useState<BusinessMapDirectory|null>(null);
   const [query,setQuery]=useState(()=>addressTicker(window.location.search)),[typed,setTyped]=useState(query);
-  const [scope,setScope]=useState<'on'|'all'>('on'),[page,setPage]=useState(1);
+  const [scope,setScope]=useState<'on'|'scheduled'|'all'>('on'),[page,setPage]=useState(1);
   // The company the page was opened for (a message's link): its row opens and comes into view once, when the list arrives.
   const [focus,setFocus]=useState(()=>addressTicker(window.location.search));
   const [loadError,setLoadError]=useState('');
@@ -180,6 +179,41 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     catch(err){setData(d=>d&&move(d,before));if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
     finally{pending.current.delete(key);setRefresh(n=>n+1);}
   }
+  /** Move a company's five-layer ladder directly to `target` (0 = off, 1..5 = up to LAYERS[target-1]). */
+  async function setLayerDepth(symbol:string,layers:Record<Layer,boolean>,target:number) {
+    const current=layerDepth(layers);
+    if(target===current)return;
+    if(target===0){await mutate(symbol,false);return;}
+    if(target<current){await switchFeature(symbol,LAYERS[target] as Feature,false);return;}
+    if(lock.current||pendingCompanies.current.has(symbol))return;
+    lock.current=true;pendingCompanies.current.add(symbol);setBusy(symbol);setError('');setNotice('');
+    try {
+      if(current===0){
+        const key=`business-map:${symbol}:true`,requestId=pendingRequestId(key,storage());
+        try {
+          await adminApi(`business-map/companies/${symbol}`,{method:'POST',headers:{'idempotency-key':requestId},body:JSON.stringify({enabled:true,requestId})});
+          completeRequestId(key,storage());
+          setDirectory(d=>d&&{...d,rows:d.rows.map(r=>r.ticker!==symbol?r:{...r,layers:{...r.layers,map:true}})});
+        } catch(err) {
+          if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
+          throw err;
+        }
+      }
+      for(let i=Math.max(1,current);i<target;i++){
+        const feature=LAYERS[i] as Feature;
+        await adminApi(`business-map/companies/${symbol}/features/${feature}`,{method:'POST',body:JSON.stringify({on:true})});
+        setData(d=>d&&applySwitch(d,symbol,feature,true));
+        setDirectory(d=>d&&{...d,rows:d.rows.map(r=>r.ticker!==symbol?r:{...r,layers:applyLayers(r.layers,feature,true)})});
+      }
+      switched.current++;
+      setNotice(`${symbol} 已调整至${LAYER_LABEL[LAYERS[target-1]!]}`);
+    } catch(err) {
+      if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();
+      else setError((err as Error).message);
+    } finally {
+      lock.current=false;pendingCompanies.current.delete(symbol);setBusy('');setRefresh(n=>n+1);
+    }
+  }
   async function judge(symbol:string) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
     try {await adminApi(`business-map/companies/${symbol}/presentation`,{method:'POST',body:'{}'});setRefresh(n=>n+1);setNotice(`${symbol} 重新判定已提交`);}
@@ -188,14 +222,17 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   }
   const details=new Map(data?.companies.map(c=>[c.ticker,c])??[]);
   const rows=directory?.rows??[];
+  const globalPaused=data?FEATURES.filter(f=>!data.generation[f]).length+(data.stageEnabled?0:1)+(data.scheduledAnalysis?0:1):0;
   return <section className="bm-admin" aria-label="公司">
     <header className="ra-page-header bm-directory-toolbar">
       <label className="bm-admin-search"><span className="bm-admin-sr">搜索公司</span><span className="ra-search bm-admin-query"><Search size={16}/><input aria-label="搜索公司" placeholder="代码或公司名" value={typed} onChange={e=>setTyped(e.target.value.toUpperCase())}/></span></label>
       <div className="bm-admin-filter">
         <div className="bm-admin-scope" role="group" aria-label="范围">
           <button aria-pressed={!query&&scope==='on'} disabled={!!query} onClick={()=>{setScope('on');setPage(1);}}>已开启</button>
+          <button aria-pressed={!query&&scope==='scheduled'} disabled={!!query} onClick={()=>{setScope('scheduled');setPage(1);}}>定时分析</button>
           <button aria-pressed={!!query||scope==='all'} disabled={!!query} onClick={()=>{setScope('all');setPage(1);}}>全部美股</button>
         </div>
+        <GlobalControls data={data} pausedCount={globalPaused} onFeature={(f,on)=>void switchFeature(null,f,on)} onStage={on=>void switchStage(null,on)} onScheduled={on=>void switchScheduledAnalysis(null,on)}/>
         <span>{directory?`${directory.total.toLocaleString('en-US')} 家`:''}</span>
         <button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button>
       </div>
@@ -204,19 +241,21 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
     {data&&scheduledNote(data)&&<p className="bm-admin-warning">{scheduledNote(data)}</p>}
     {data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
-    <p className="bm-admin-sr" id="bm-switch-guide">表头开关控制自动生成，提问表头开关控制全部公司的提问入口；每行开关控制该公司的对应功能。财报关闭后保留原始文件，隐藏摘要和解读。</p>
+    <p className="bm-admin-sr" id="bm-switch-guide">分析层级为线性阶梯，选择目标层级会自动开启前置层或关闭上层；全局自动生成与运行入口开关位于顶部全局控制菜单。</p>
     {!directory&&!loadError&&<div className="bm-admin-loading" role="status"><span>加载公司</span>{Array.from({length:6},(_,i)=><div key={i} aria-hidden="true"/>)}</div>}
     {rows.length>0&&<div className="bm-admin-table-wrap" tabIndex={0} role="region" aria-label="公司功能管理" aria-describedby="bm-switch-guide"><table className="bm-admin-table bm-company-table">
-      <thead><tr><th scope="col">公司</th>
-        {LAYERS.map(l=><th scope="col" key={l} className="bm-admin-feature-col"><span className="bm-admin-feature-head"><Tooltip><TooltipTrigger asChild><span className="bm-admin-feature-label" tabIndex={0}>{LAYER_LABEL[l]}</span></TooltipTrigger><TooltipContent>{LAYER_LOCATION[l]}</TooltipContent></Tooltip>{l!=='map'&&<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[l]} aria-label={`${LAYER_LABEL[l]}自动生成（全部公司）`} title={data?.generation[l]?'全部公司自动生成已开启 · 点击暂停':'全部公司自动生成已暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,l,!data?.generation[l])}><span/></button>}</span></th>)}
-        <th scope="col" className="bm-admin-feature-col"><span className="bm-admin-feature-head"><span className="bm-admin-feature-label">提问</span><button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.stageEnabled} aria-label="提问（全部公司）" title={data?.stageEnabled?'提问入口已开启 · 点击暂停':'提问入口已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchStage(null,!data?.stageEnabled)}><span/></button></span></th>
-        <th scope="col" className="bm-admin-feature-col"><span className="bm-admin-feature-head"><span className="bm-admin-feature-label">定时分析</span><button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.scheduledAnalysis} aria-label="定时分析（全部公司）" title={data?.scheduledAnalysis?'全部公司定时分析已开启 · 点击暂停':'全部公司定时分析已暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchScheduledAnalysis(null,!data?.scheduledAnalysis)}><span/></button></span></th>
-        <th scope="col">操作</th></tr></thead>
+      <thead><tr>
+        <th scope="col">公司</th>
+        <th scope="col">分析层级</th>
+        <th scope="col" className="bm-admin-feature-col">提问</th>
+        <th scope="col" className="bm-admin-feature-col">定时分析</th>
+        <th scope="col">操作</th>
+      </tr></thead>
       {rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
-        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onToggle={()=>void mutate(company.ticker,!row.layers.map)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onStage={on=>void switchStage(company.ticker,on)} stagePaused={!data?.stageEnabled} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
-        :<Listed key={row.ticker} row={row} busy={!!busy} onMap={()=>void mutate(row.ticker,!row.layers.map)} onFeature={(feature,on)=>void switchFeature(row.ticker,feature,on)}/>;})}
+        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onDepth={depth=>void setLayerDepth(company.ticker,{...row.layers,...Object.fromEntries(FEATURES.map(f=>[f,company.features[f].on]))} as Record<Layer,boolean>,depth)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onStage={on=>void switchStage(company.ticker,on)} stagePaused={!data?.stageEnabled} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
+        :<Listed key={row.ticker} row={row} busy={!!busy} onDepth={depth=>void setLayerDepth(row.ticker,row.layers,depth)}/>;})}
     </table></div>}
-    {directory&&!rows.length&&<div className="ra-empty" role="status"><Search size={24} aria-hidden="true"/><h3>无匹配公司</h3></div>}
+    {directory&&!rows.length&&<div className="ra-empty" role="status"><Search size={24} aria-hidden="true"/><h3>{scope==='scheduled'&&!query?'暂无开启定时分析的公司':'无匹配公司'}</h3></div>}
     {directory&&directory.pages>1&&<nav className="bm-admin-pages" aria-label="分页">
       <button className="ra-icon-button" aria-label="上一页" disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button>
       <span className="ra-mono">{directory.page} / {directory.pages}</span>
@@ -224,18 +263,121 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     </nav>}
   </section>;
 }
-/** The five switches of one company in the order of the layers: each opens only over the one below it. */
-function LayerSwitches({ticker,layers,failed,title,disabled,onMap,onFeature}:{ticker:string;layers:Record<Layer,boolean>;failed?:(l:Feature)=>boolean;title?:(l:Feature)=>string|undefined;disabled:boolean;onMap:()=>void;onFeature:(f:Feature,on:boolean)=>void}) {
-  return <>{LAYERS.map(l=>{const below=LAYER_REQUIRES[l],blocked=!layers[l]&&!!below&&!layers[below];
-    return <td key={l} className="bm-admin-feature-col"><button className="bm-switch" role="switch" data-failed={l!=='map'&&failed?.(l)||undefined} aria-checked={layers[l]} aria-label={`${ticker} ${LAYER_LABEL[l]}`}
-      title={blocked?`先开启${LAYER_LABEL[below!]}`:l!=='map'&&title?title(l):LAYER_LABEL[l]} disabled={disabled||blocked} onClick={()=>l==='map'?onMap():onFeature(l,!layers[l])}><span/></button></td>;})}</>;
+/** Highest contiguous active layer (0 = off, 1..5 = map..valuation). */
+function layerDepth(layers:Record<Layer,boolean>):number {
+  let depth=0;
+  for(const l of LAYERS){if(!layers[l])break;depth++;}
+  return depth;
 }
-/** A listed company without a financial map yet: its name and the five switches, layer 1 the only one it can open. */
-function Listed({row,busy,onMap,onFeature}:{row:DirectoryCompany;busy:boolean;onMap:()=>void;onFeature:(f:Feature,on:boolean)=>void}) {
+/** Portal-positioned popover anchored to its trigger button; flips upward near the viewport bottom. */
+function Dropdown({open,onOpenChange,align='left',trigger,children}:{open:boolean;onOpenChange:(open:boolean)=>void;align?:'left'|'right';trigger:(ref:React.RefObject<HTMLButtonElement|null>)=>ReactNode;children:ReactNode}) {
+  const anchor=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null);
+  const [pos,setPos]=useState<React.CSSProperties|null>(null);
+  useLayoutEffect(()=>{
+    if(!open||!anchor.current){setPos(null);return;}
+    const rect=anchor.current.getBoundingClientRect();
+    const spaceBelow=window.innerHeight-rect.bottom,up=spaceBelow<290&&rect.top>spaceBelow;
+    setPos({
+      position:'fixed',
+      ...(align==='right'?{right:Math.max(8,window.innerWidth-rect.right)}:{left:Math.max(8,rect.left)}),
+      ...(up?{bottom:window.innerHeight-rect.top+6}:{top:rect.bottom+6}),
+    });
+  },[open,align]);
+  useEffect(()=>{
+    if(!open)return;
+    const onPointer=(e:MouseEvent)=>{
+      const t=e.target as Node;
+      if(anchor.current?.contains(t)||panel.current?.contains(t))return;
+      onOpenChange(false);
+    };
+    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')onOpenChange(false);};
+    const onScroll=(e:Event)=>{if(panel.current?.contains(e.target as Node))return;onOpenChange(false);};
+    document.addEventListener('mousedown',onPointer);
+    document.addEventListener('keydown',onKey);
+    window.addEventListener('scroll',onScroll,true);
+    window.addEventListener('resize',onScroll);
+    return()=>{
+      document.removeEventListener('mousedown',onPointer);
+      document.removeEventListener('keydown',onKey);
+      window.removeEventListener('scroll',onScroll,true);
+      window.removeEventListener('resize',onScroll);
+    };
+  },[open,onOpenChange]);
+  return <>{trigger(anchor)}{open&&pos&&createPortal(<div ref={panel} className="bm-popover" style={pos} role="dialog">{children}</div>,document.body)}</>;
+}
+/** Project-wide switches moved out of the table header into a single toolbar menu. */
+function GlobalControls({data,pausedCount,onFeature,onStage,onScheduled}:{data:BusinessMapCompanies|null;pausedCount:number;onFeature:(f:Feature,on:boolean)=>void;onStage:(on:boolean)=>void;onScheduled:(on:boolean)=>void}) {
+  const [open,setOpen]=useState(false);
+  return <Dropdown open={open} onOpenChange={setOpen} align="right" trigger={ref=><button ref={ref} className="bm-global-trigger" aria-expanded={open} aria-haspopup="dialog" disabled={!data} onClick={()=>setOpen(o=>!o)}>
+    <SlidersHorizontal size={14} aria-hidden="true"/>
+    <span>全局控制</span>
+    {pausedCount>0&&<span className="bm-global-badge" title={`${pausedCount} 项全局开关已暂停`}>{pausedCount}</span>}
+    <ChevronDown size={12} aria-hidden="true"/>
+  </button>}>
+    <div className="bm-popover-section">
+      <div className="bm-popover-title">自动生成（全部公司）</div>
+      {FEATURES.map(f=>{const on=!!data?.generation[f];return <div key={f} className="bm-popover-row">
+        <div><strong>{FEATURE_LABEL[f]}</strong><small>{LAYER_LOCATION[f]}</small></div>
+        <button className="bm-switch bm-switch-sm" role="switch" aria-checked={on} aria-label={`${FEATURE_LABEL[f]}自动生成（全部公司）`} onClick={()=>onFeature(f,!on)}><span/></button>
+      </div>;})}
+    </div>
+    <div className="bm-popover-section">
+      <div className="bm-popover-title">运行入口（全部公司）</div>
+      <div className="bm-popover-row">
+        <div><strong>提问</strong><small>所有已开启公司的前台提问入口</small></div>
+        <button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.stageEnabled} aria-label="提问（全部公司）" onClick={()=>onStage(!data?.stageEnabled)}><span/></button>
+      </div>
+      <div className="bm-popover-row">
+        <div><strong>定时分析</strong><small>后台周期性财报与分析更新</small></div>
+        <button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.scheduledAnalysis} aria-label="定时分析（全部公司）" onClick={()=>onScheduled(!data?.scheduledAnalysis)}><span/></button>
+      </div>
+    </div>
+  </Dropdown>;
+}
+/** Single ladder dropdown for a company's five analysis layers. */
+function LayerSelect({ticker,layers,features,disabled,onSelect}:{ticker:string;layers:Record<Layer,boolean>;features?:BusinessMapCompany['features'];disabled:boolean;onSelect:(depth:number)=>void}) {
+  const [open,setOpen]=useState(false);
+  const depth=layerDepth(layers);
+  const failedFeature=features?FEATURES.find(f=>!!features[f].failure):undefined;
+  const activeLabel=depth===0?'未开启':LAYER_LABEL[LAYERS[depth-1]!];
+  return <Dropdown open={open} onOpenChange={setOpen} align="left" trigger={ref=><button ref={ref} className="bm-layer-trigger" data-empty={depth===0||undefined} data-failed={!!failedFeature||undefined} aria-expanded={open} aria-haspopup="listbox" aria-label={`${ticker} 分析层级：${activeLabel}`} disabled={disabled} onClick={()=>setOpen(o=>!o)}>
+    <span className="bm-layer-pips" aria-hidden="true">
+      {LAYERS.map((l,i)=>{const isFailed=l!=='map'&&!!features?.[l].failure;return <i key={l} data-state={isFailed?'failed':i<depth?'on':'off'}/>;})}
+    </span>
+    <span className="bm-layer-name">{activeLabel}</span>
+    {failedFeature?<span className="bm-layer-alert">{FEATURE_LABEL[failedFeature]}异常</span>:<span className="bm-layer-count ra-mono">{depth}/{LAYERS.length}</span>}
+    <ChevronDown size={12} className="bm-layer-caret" aria-hidden="true"/>
+  </button>}>
+    <div className="bm-layer-menu" role="listbox" aria-label={`${ticker} 选择分析层级`}>
+      <button role="option" aria-selected={depth===0} className="bm-layer-option" data-active={depth===0||undefined} onClick={()=>{setOpen(false);onSelect(0);}}>
+        <span className="bm-layer-mark">{depth===0?<Check size={13}/>:null}</span>
+        <span className="bm-layer-option-text"><strong>未开启</strong><small>关闭全部 5 层分析</small></span>
+        <span className="bm-layer-step ra-mono">0/5</span>
+      </button>
+      {LAYERS.map((l,i)=>{
+        const level=i+1,selected=depth===level,included=level<depth;
+        const feat=l!=='map'?features?.[l]:undefined;
+        const isFailed=!!feat?.failure,isRunning=feat?.run!==null&&feat?.run!==undefined;
+        return <button key={l} role="option" aria-selected={selected} className="bm-layer-option" data-active={selected||undefined} data-included={included||undefined} data-failed={isFailed||undefined} onClick={()=>{setOpen(false);onSelect(level);}}>
+          <span className="bm-layer-mark">{selected?<Check size={13}/>:included?<i className="bm-layer-dot"/>:null}</span>
+          <span className="bm-layer-option-text">
+            <strong>{LAYER_LABEL[l]}{isFailed&&<em>失败 · 点击重试</em>}{!isFailed&&isRunning&&<em data-tone="run">运行中</em>}</strong>
+            <small>{LAYER_LOCATION[l]}</small>
+          </span>
+          <span className="bm-layer-step ra-mono">{level}/5</span>
+        </button>;
+      })}
+    </div>
+  </Dropdown>;
+}
+/** A listed company without a financial map yet: can be enabled straight to any layer from the dropdown. */
+function Listed({row,busy,onDepth}:{row:DirectoryCompany;busy:boolean;onDepth:(depth:number)=>void}) {
   return <tbody><tr className="bm-admin-row" aria-label={row.ticker}>
     <td><div className="bm-admin-company-cell"><span className="bm-admin-toggle-gap"/><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{row.ticker}</strong><small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></td>
-    <LayerSwitches ticker={row.ticker} layers={row.layers} disabled={busy} onMap={onMap} onFeature={onFeature}/>
-    <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={false} aria-label={`${row.ticker} 提问`} title="先开启财务报表" disabled><span/></button></td><td/><td/>
+    <td><LayerSelect ticker={row.ticker} layers={row.layers} disabled={busy} onSelect={onDepth}/></td>
+    <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={false} aria-label={`${row.ticker} 提问`} title="先开启财务报表" disabled><span/></button></td>
+    <td className="bm-admin-feature-col"><span className="bm-admin-dash">—</span></td>
+    <td/>
   </tr></tbody>;
 }
 /** Layer switches after one moved: closing a layer closes every layer above it. */
@@ -306,8 +448,8 @@ function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol
   return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,...Object.fromEntries(affected.map(f=>[f,old.features[f]]))}})};
 }
 
-/** One company as a table row: its map state, one switch per feature and the actions; the row opens to the details. */
-function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onStage,stagePaused,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onStage:(on:boolean)=>void;stagePaused:boolean;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
+/** One company as a table row: its layer dropdown, independent switches and actions; the row opens to the details. */
+function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onStage,stagePaused,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onDepth:(depth:number)=>void;onPrepare:()=>void;onJudge:()=>void;onStage:(on:boolean)=>void;stagePaused:boolean;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -321,15 +463,16 @@ function Company({company:c,layers,busy,onToggle,onPrepare,onJudge,onFeature,onS
   useEffect(()=>{if(!focused)return;body.current?.scrollIntoView({block:'start'});onFocused();},[focused,onFocused]);
   const problems=groupIssues(issues);
   const runs=FEATURES.flatMap(feature=>(c.features[feature].progress??[]).map((run,_,all)=>({feature,run,count:all.length})));
+  const currentLayers={...layers,...Object.fromEntries(FEATURES.map(f=>[f,c.features[f].on]))} as Record<Layer,boolean>;
   return <tbody ref={body} data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
-      <LayerSwitches ticker={c.ticker} layers={{...layers,...Object.fromEntries(FEATURES.map(f=>[f,c.features[f].on]))} as Record<Layer,boolean>} failed={f=>!!c.features[f].failure} title={f=>c.layerStatuses?.[f].label} disabled={busy} onMap={onToggle} onFeature={onFeature}/>
+      <td><LayerSelect ticker={c.ticker} layers={currentLayers} features={c.features} disabled={busy} onSelect={onDepth}/></td>
       <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.stageEnabled} aria-label={`${c.ticker} 提问`} title={stagePaused?'提问已全局暂停':c.stageEnabled?'提问入口已开启':'提问入口已关闭'} disabled={busy||!c.dataEnabled} onClick={()=>onStage(!c.stageEnabled)}><span/></button></td>
       <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.scheduledAnalysis} aria-label={`${c.ticker} 定时分析`} title={c.scheduledAnalysis?'定时分析已开启':'定时分析已暂停'} onClick={()=>onScheduled(!c.scheduledAnalysis)}><span/></button></td>
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button></div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={LAYERS.length+4}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={5}><div className="bm-detail">
       <CompanyUsage ticker={c.ticker} onUnauthorized={onUnauthorized} rows={LAYERS.map(layer => ({ layer, label: LAYER_LABEL[layer], state: c.layerStatuses?.[layer] }))}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}
