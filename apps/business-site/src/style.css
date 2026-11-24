@@ -1437,17 +1437,22 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .skel-bar, .skel-doc-block, .skel-flow-band { animation: none; }
 }
 
-/* The app supplies the statement selector. These figures flow vertically with the document. */
+/* The app supplies the statement selector. The figure scrolls with the document. */
 body:has(.statement-chart-page) { overflow: auto; }
-.statement-chart-page { height: auto; min-height: 100%; padding: 12px 16px 20px; }
-.statement-chart-figure { max-width: 680px; margin: 0 auto; }
+.statement-chart-page { height: auto; min-height: 100%; padding: 12px 12px 20px; }
+.statement-chart-figure { max-width: 1440px; margin: 0 auto; }
 .statement-chart-figure figcaption { margin: 0 0 14px; color: var(--muted-foreground); font-size: 13px; font-variant-numeric: tabular-nums; }
 .statement-chart-status { margin: 24px auto; color: var(--muted-foreground); font-size: 14px; text-align: center; }
 .statement-chart-status button { min-height: 44px; padding: 6px 16px; }
-.portrait-profit svg { display: block; max-width: 100%; height: auto; }
-.portrait-profit-label { paint-order: stroke; stroke: var(--background); stroke-width: 3px; stroke-linejoin: round; }
-.portrait-chart-name { color: var(--muted-foreground); fill: var(--muted-foreground); font-size: 13px; font-weight: 520; }
-.portrait-chart-amount { color: var(--foreground); fill: var(--foreground); font-size: 16px; font-weight: 640; font-variant-numeric: tabular-nums; }
-.pool[data-compact] { position: relative; inset: auto; height: auto; width: 100%; }
+.chart.statement-chart-content { margin: 0; overflow: auto hidden; }
+.statement-chart-content .chart-fallback { position: relative; padding-top: 0; }
+.fc[data-inline] { position: relative; inset: auto; width: max(100%, var(--inline-width)); aspect-ratio: var(--ratio); }
+.fc[data-inline] .fc-label[data-stacked] { paint-order: stroke; stroke: var(--background); stroke-width: 2px; stroke-linejoin: round; }
+.statement-chart-content .pool[data-compact] { position: relative; inset: auto; height: auto; width: 100%; }
 .portrait-pool-label { display: flex; flex-direction: column; justify-content: center; min-height: 100%; line-height: 1.15; overflow-wrap: break-word; }
 .portrait-pool-label[data-side="source"] { text-align: right; }
+.portrait-pool-label .fc-name { color: var(--muted-foreground); font-size: 13px; }
+.portrait-pool-label .fc-value { color: var(--foreground); font-size: 15px; font-variant-numeric: tabular-nums; }
+.portrait-pool-amount { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
+.portrait-pool-label[data-side="source"] .portrait-pool-amount { justify-content: flex-end; }
+.portrait-pool-label .pool-share { color: var(--muted-foreground); font-size: 11px; }

@@ -21,7 +21,7 @@ const TONE: Record<PoolTone, string> = {
   productive: "var(--biz-4)", cash: "var(--chart-1)", invest: "var(--chart-4)", other: "var(--biz-0)",
 };
 const BAR = 16, SLOT = 40, GAP = 10, TOP = 44, BOTTOM = 12, NAME = 12.5, VALUE = 16;
-const COMPACT_SLOT = 52;
+const COMPACT_SLOT = 64;
 type Placed = PoolItem & { side: "source" | "use"; x: number; y: number; h: number; poolY: number };
 const r = (v: number) => Math.round(v * 10) / 10;
 
@@ -102,21 +102,24 @@ export function PoolChart({ pool, money, label, spotlight = null, compact = fals
   const focused = active || (spotlight && layout?.nodes.some(n => spotlight.has(n.key)));
   const [tip, setTip] = useState<{ x: number; y: number; item: Placed } | null>(null);
   const share = (v: number) => pool.total ? `${Math.round(v / pool.total * 100)}%` : "";
-  const point = (event: React.MouseEvent, item: Placed) => {
+  const point = (event: { clientX: number; clientY: number }, item: Placed) => {
     const rect = box.current!.getBoundingClientRect();
     setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, item });
   };
+  const highlight = (event: { clientX: number; clientY: number }, item: Placed) => { setActive(item.key); point(event, item); };
+  const clear = () => { setActive(null); setTip(null); };
   const minHeight = Math.max(216, TOP + BOTTOM + (COMPACT_SLOT + GAP) * Math.max(pool.sources.length, pool.uses.length));
   return <div className="pool" data-compact={compact || undefined} style={compact ? { minHeight } : undefined}>
     <div className="pool-canvas" ref={box}>
-      {size && layout && <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={focused ? "" : undefined}>
+      {size && layout && <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role={compact ? "group" : "img"} aria-label={label} data-focus={focused ? "" : undefined}
+        onClick={compact ? e => { if (!(e.target instanceof Element) || !e.target.closest("[data-pool-item]")) clear(); } : undefined}>
         <g>
           {layout.nodes.map(n => {
             const d = n.side === "source"
               ? band(n.x + layout.bar, n.y, layout.center, n.poolY, n.h, n.value * layout.scale)
-              : band(layout.center + BAR, n.poolY, n.x, n.y, n.value * layout.scale, n.h);
-            return <path key={n.key} className="fc-band" d={d} style={{ fill: TONE[n.tone] }} data-lit={lit(n.key) ? "on" : undefined}
-              onMouseMove={compact ? undefined : e => { setActive(n.key); point(e, n); }} onMouseLeave={compact ? undefined : () => { setActive(null); setTip(null); }} />;
+              : band(layout.center + layout.bar, n.poolY, n.x, n.y, n.value * layout.scale, n.h);
+            return <path key={n.key} className="fc-band" data-pool-item={n.key} d={d} style={{ fill: TONE[n.tone] }} data-lit={lit(n.key) ? "on" : undefined}
+              onMouseMove={e => highlight(e, n)} onMouseLeave={clear} onClick={compact ? e => highlight(e, n) : undefined} />;
           })}
         </g>
         <g className="fc-node pool-total" style={{ "--c": "var(--flow-revenue)" } as CSSProperties}>
@@ -127,16 +130,26 @@ export function PoolChart({ pool, money, label, spotlight = null, compact = fals
         </g>
         {layout.nodes.map(n => {
           const mid = n.y + n.h / 2, x = n.side === "source" ? n.x - 10 : n.x + layout.bar + 10, anchor = n.side === "source" ? "end" : "start";
-          return <g key={n.key} className="fc-node" data-tone={n.tone} data-lit={lit(n.key) ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
-            onMouseMove={compact ? undefined : e => { setActive(n.key); point(e, n); }} onMouseLeave={compact ? undefined : () => { setActive(null); setTip(null); }}>
-            <title>{m.itemTitle(n.label, money(n.value), share(n.value), pool.title)}</title>
+          const itemTitle = m.itemTitle(n.label, money(n.value), share(n.value), pool.title);
+          const focus = (element: SVGGElement) => {
+            const rect = element.getBoundingClientRect();
+            highlight({ clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2 }, n);
+          };
+          return <g key={n.key} className="fc-node" data-pool-item={n.key} data-tone={n.tone} data-lit={lit(n.key) ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
+            onMouseMove={e => highlight(e, n)} onMouseLeave={clear}
+            {...(compact ? { role: "button", tabIndex: 0, "aria-label": itemTitle, onClick: (e: React.MouseEvent) => highlight(e, n),
+              onFocus: (e: React.FocusEvent<SVGGElement>) => focus(e.currentTarget), onBlur: clear,
+              onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); focus(e.currentTarget); } },
+            } : {})}>
+            <title>{itemTitle}</title>
             <rect className="fc-hit" x={n.x - 6} y={Math.min(n.y, mid - SLOT / 2)} width={layout.bar + 12} height={Math.max(n.h, SLOT)} />
             <rect className="fc-bar" x={n.x} y={n.y} width={layout.bar} height={n.h} rx={Math.min(3, n.h / 2)} />
             {compact ? <foreignObject x={n.side === "source" ? 0 : size.w - layout.side + 6} y={mid - COMPACT_SLOT / 2}
               width={layout.side - 6} height={COMPACT_SLOT}>
               <div className="portrait-pool-label" data-side={n.side}>
-                <span className="portrait-chart-name">{n.label}</span>
-                <strong className="portrait-chart-amount">{money(n.value)}</strong>
+                <span className="fc-name">{n.label}</span>
+                <span className="portrait-pool-amount"><strong className="fc-value">{money(n.value)}</strong>
+                  <small className="fc-change pool-share">{share(n.value)}</small></span>
               </div>
             </foreignObject> : <>
             <text className="fc-label" x={r(x)} y={r(mid - 4)} textAnchor={anchor}><tspan className="fc-name" style={{ fontSize: NAME }}>{n.label}</tspan></text>
@@ -147,7 +160,10 @@ export function PoolChart({ pool, money, label, spotlight = null, compact = fals
           </g>;
         })}
       </svg>}
-      {size && tip && <div className="fc-tip" role="presentation" style={{ transform: `translate(${tip.x > size.w - 260 ? tip.x - 16 : tip.x + 16}px, ${tip.y + 16}px) translateX(${tip.x > size.w - 260 ? "-100%" : "0"})` }}>
+      {size && tip && <div className="fc-tip" role="tooltip" style={compact
+        ? { left: Math.max(8, Math.min(tip.x - 136, size.w - Math.min(272, size.w - 16) - 8)), width: Math.min(272, size.w - 16), top: tip.y > size.h / 2 ? Math.max(tip.y - 8, 100) : tip.y + 12,
+          transform: tip.y > size.h / 2 ? "translateY(-100%)" : undefined }
+        : { transform: `translate(${tip.x > size.w - 260 ? tip.x - 16 : tip.x + 16}px, ${tip.y + 16}px) translateX(${tip.x > size.w - 260 ? "-100%" : "0"})` }}>
         <div className="fc-tip-title"><i style={{ background: TONE[tip.item.tone] }} />{tip.item.label}</div>
         <div className="fc-tip-row"><span>{m.amount}</span><b>{money(tip.item.value)}</b></div>
         <div className="fc-tip-row"><span>{m.shareOf(pool.title)}</span><b>{share(tip.item.value)}</b></div>

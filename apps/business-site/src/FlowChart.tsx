@@ -4,7 +4,7 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, ty
 import { peekChartBox } from "./chart-box";
 import { markContent } from "./vitals";
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
-import { estimateTextWidth, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
+import { estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { priorMarks } from "@/packages/web/src/model/business-flow-compare";
 import { layoutMindMap, type MindItem, type MindMapLayout } from "./mindmap-layout";
 import { MindLayer, type MindMapInput } from "./MindMap";
@@ -34,6 +34,10 @@ const geometryFor = (k: number) => ({ labelHeight: 62 * k, sideLabelHeight: 56 *
 const SCREEN_VALUE_PX = 17;
 const valueSize = (n: PlacedNode, k: number) => n.name === "net" ? typeFor(k).net : typeFor(k).value;
 const EMPTY: InfographicLayout = { width: 1, height: 1, nodeWidth: 22, nodes: [], links: [] };
+const INLINE_LABEL_GAP = 5;
+const INLINE_REVENUE_HEIGHT = 180;
+type LabelLine = { content: string; kind: "name" | "value" | "change"; size: number; advance: number };
+type Fitted = { layout: InfographicLayout; k: number; stacked?: Map<string, LabelLine[]>; editorial?: InfographicLayout };
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const linkKey = (l: { source: string; target: string }) => `${l.source}>${l.target}`;
 const r = (v: number) => Math.round(v * 10) / 10;
@@ -55,6 +59,74 @@ function labelWidth(n: PlacedNode, text: NodeCopy, k: number) {
 
 export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1, geometry: Partial<InfographicGeometry> = {}): InfographicLayout | null {
   return layoutInfographic(graph, n => labelWidth(n, copy(n), k), { ...geometryFor(k), ...geometry });
+}
+
+function wrapLabel(text: string, width: number, size: number, bold: boolean) {
+  const parts = text.match(/[^\s\u2e80-\u9fff]+|[\u2e80-\u9fff]|\s+/gu) ?? [];
+  const lines: string[] = [];
+  let line = "";
+  for (const part of parts.flatMap(word => estimateTextWidth(word, size, bold) > width ? [...word] : [word])) {
+    if (line && estimateTextWidth(line + part, size, bold) > width) {
+      lines.push(line.trimEnd());
+      line = "";
+    }
+    line += line ? part : part.trimStart();
+  }
+  if (line) lines.push(line.trimEnd());
+  return lines;
+}
+
+function inlineLabel(copy: NodeCopy, width: number, emphasis: boolean): LabelLine[] {
+  const widthAtOne = estimateTextWidth(copy.value, 1, true);
+  const valueSize = Math.max(12, Math.min(emphasis ? 15 : 14, Math.floor(width / widthAtOne * 10) / 10));
+  const splitValue = copy.value.match(/^([−+\-]?[0-9.,]+[万亿兆]*)([\u2e80-\u9fff]+)$/u);
+  const styles: { kind: LabelLine["kind"]; text: string; size: number }[] = [
+    { kind: "name", text: copy.name, size: 12 },
+    { kind: "value", text: copy.value, size: valueSize },
+    { kind: "change", text: copy.change?.label ?? "", size: 11 },
+  ];
+  return styles.flatMap(({ kind, text, size }) => {
+    const lines = kind === "value" && splitValue && estimateTextWidth(text, size, true) > width
+      ? [splitValue[1], splitValue[2]].flatMap(part => wrapLabel(part, width, size, true))
+      : wrapLabel(text, width, size, kind !== "name");
+    return lines.map(content => ({ content, kind, size, advance: size + 3 }));
+  });
+}
+
+const inlineLabelHeight = (lines: LabelLine[]) => INLINE_LABEL_GAP + lines.reduce((sum, line) => sum + line.advance, 0);
+
+/** Keep the editorial layout at ample widths; on a phone the full labels stack within each original column. */
+function inlineLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, width: number): Fitted | null {
+  const editorial = layoutFor(graph, copy);
+  if (!editorial) return null;
+  if (editorial.width <= width) return { layout: editorial, k: 1 };
+  const columns = new Set(graph.nodes.map(node => node.depth)).size;
+  const step = Math.max(52, Math.floor(width / columns));
+  const labelGap = 6;
+  const stackWidth = step - labelGap;
+  const stacked = new Map(editorial.nodes.map(node => [node.name, inlineLabel(copy(node), stackWidth, node.name === "net")]));
+  const layout = layoutInfographic(graph, () => stackWidth, {
+    minStep: step, nodeWidth: 8, revenueHeight: INLINE_REVENUE_HEIGHT, lift: 16, drop: 18, margin: 3, labelGap, gap: 18,
+  }, node => inlineLabelHeight(stacked.get(node.name) ?? []));
+  return layout && { layout, k: 1, stacked, editorial };
+}
+
+/** Transfer the editorial mark geometry onto its narrower bar, including any span outside the bar. */
+function fittedMarks(layout: InfographicLayout, reference: InfographicLayout | undefined, priorOf: (n: PlacedNode) => number | null) {
+  if (!reference) return priorMarks(layout, priorOf);
+  const originals = new Map(reference.nodes.map(node => [node.name, node]));
+  const fitted = new Map(layout.nodes.map(node => [node.name, node]));
+  return priorMarks(reference, priorOf).flatMap(mark => {
+    const original = originals.get(mark.name), node = fitted.get(mark.name);
+    if (!original || !node) return [];
+    const at = (value: number) => {
+      const offset = value - original.y;
+      const within = Math.max(0, Math.min(original.h, offset));
+      return node.y + within * node.h / original.h + (offset - within) * INLINE_REVENUE_HEIGHT / INFOGRAPHIC.revenueHeight;
+    };
+    const span = (ends: [number, number] | null): [number, number] | null => ends && [at(ends[0]), at(ends[1])];
+    return [{ ...mark, tick: at(mark.tick), gain: span(mark.gain), short: span(mark.short) }];
+  });
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -180,7 +252,8 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
 export type CompareBasis = { change: string; prior: string };
 const qoq = (): CompareBasis => ({ change: qoqLabel(getLocale()), prior: m.lastQuarter });
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, basis = qoq() }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, basis = qoq(), inline = false }: {
+  inline?: boolean;
   businessDetails?: ReactNode;
   /** The picked business broken down into product lines, products and how each earns, drawn beside the written details. */
   mindMap?: MindMapInput | null;
@@ -211,32 +284,42 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const box = useRef<HTMLDivElement>(null);
   // The pane measured before this chart mounted, so the first paint is already fitted.
-  const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(() => inline ? null : peekChartBox());
   useEffect(() => { if (size) markContent("company"); }, [size]);
   useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;
+    const measured = inline ? element.closest(".statement-chart-content") ?? element : element;
     const measure = () => {
-      const w = Math.round(element.clientWidth / 8) * 8, h = Math.round(element.clientHeight / 8) * 8;
+      const w = inline ? measured.clientWidth : Math.round(element.clientWidth / 8) * 8;
+      const h = inline ? 1 : Math.round(element.clientHeight / 8) * 8;
       if (w > 0 && h > 0) setSize(old => old?.w === w && old.h === h ? old : { w, h });
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(element);
+    observer.observe(measured);
     return () => observer.disconnect();
-  }, []);
+  }, [inline]);
   const narrowPane = useMedia("(max-width: 960px)");
-  const fitted = useMemo(() => fitLayout(graph, copy, size, narrowPane), [graph, copy, size, narrowPane]);
+  const fitted = useMemo<Fitted | null>(() => inline && size ? inlineLayout(graph, copy, size.w)
+    : fitLayout(graph, copy, size, narrowPane), [graph, copy, size, narrowPane, inline]);
   const [tip, setTip] = useState<{ x: number; y: number; width: number; tip: Tip } | null>(null);
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
   const w = layout.nodeWidth;
-  const markOf = useMemo(() => new Map(priorOf ? priorMarks(layout, priorOf).map(m => [m.name, m]) : []), [layout, priorOf]);
+  const editorial = fitted?.editorial;
+  const markOf = useMemo(() => new Map(priorOf ? fittedMarks(layout, editorial, priorOf).map(m => [m.name, m]) : []),
+    [layout, priorOf, editorial]);
   const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const mind = useMemo(() => mindMap && fitted && productBusiness
     ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
   const expanded = Boolean(productTarget);
-  const world: World = useMemo(() => worldOf(mind, layout), [mind, layout]);
+  const world: World = useMemo(() => {
+    const bounds = worldOf(mind, layout);
+    if (!inline) return bounds;
+    return { ...bounds, y0: Math.min(bounds.y0, ...[...markOf.values()].map(mark => mark.tick - 3)),
+      y1: Math.max(bounds.y1, ...[...markOf.values()].map(mark => mark.tick + 3)) };
+  }, [mind, layout, inline, markOf]);
   const worldW = world.x1 - world.x0, worldH = world.y1 - world.y0;
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
   const [scrolling, setScrolling] = useState(false);
@@ -285,7 +368,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   // The mouse wheel, a trackpad pinch (a ctrl-wheel in Chrome and Firefox, gesture events in Safari) zoom the chart, not the page.
   useEffect(() => {
     const element = box.current;
-    if (!element) return;
+    if (!element || inline) return;
     let gesture: number | null = null;
     const onWheel = (e: WheelEvent) => {
       if (scrollsSideways(element) || e.deltaY === 0) return;
@@ -308,7 +391,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       element.removeEventListener("wheel", onWheel);
       for (const type of ["gesturestart", "gesturechange", "gestureend"]) element.removeEventListener(type, onGesture);
     };
-  }, []);
+  }, [inline]);
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; pointerId: number } | null>(null);
   // Two fingers on a touch screen pinch-zoom about their midpoint.
   const touches = useRef(new Map<number, { x: number; y: number }>());
@@ -334,8 +417,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     setAimed({ camera: focusCamera, key: revealKey });
     if (reducedMotion()) setCamera(focusCamera);
   }
-  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]);
-  const viewportWidth = worldW / camera.zoom, viewportHeight = worldH / camera.zoom;
+  useEffect(() => { if (!inline) { drag.current = null; flyTo(focusCamera); } }, [focusCamera, revealKey, inline]);
+  const cameraForView = inline ? home(world) : camera;
+  const viewportWidth = worldW / cameraForView.zoom, viewportHeight = worldH / cameraForView.zoom;
+  const chartHeight = inline ? worldH * Math.max(size?.w ?? 0, worldW) / worldW : size?.h ?? 0;
 
 
   const bands: Band[] = useMemo(() => layout.links.map(l => {
@@ -400,14 +485,16 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   };
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
-  return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (22 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+  return <div className="fc" data-inline={inline || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined}
+    style={{ "--ratio": `${worldW} / ${worldH}`, "--inline-width": `${worldW}px`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (22 * k))}px` } as CSSProperties}
+    onMouseLeave={() => { setTip(null); onHover(null); }}>
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={m.details(productTarget.label)}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
     {size && <svg key={revealKey} onPointerDown={e => {
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
-        if (box.current && scrollsSideways(box.current)) return;
+        if (inline || box.current && scrollsSideways(box.current)) return;
         if (e.pointerType === "touch") {
           touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
           if (touches.current.size === 2) {
@@ -442,7 +529,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${cameraForView.x} ${cameraForView.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver}
+      onClick={inline ? e => { if (!(e.target instanceof Element) || !e.target.closest("[data-owner]")) { setTip(null); onHover(null); } } : undefined}
+      data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -465,7 +554,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         <g className="fc-bands">
           {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
-            {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
+            data-pick={byName.get(b.owner)?.segmentId && !inline ? "" : undefined}
+            onClick={inline ? e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [[m.flow, money(l.value)]] }); } : byName.get(b.owner)?.segmentId ? () => onPick(byName.get(b.owner)!) : undefined}
             data-lit={litLinks ? (litLinks.has(b.key) ? (focus?.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
             onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [[m.flow, money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
@@ -487,15 +577,22 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const text = copy(n), vs = valueSize(n, k), gap = geometryFor(k).labelOffset;
           const mark = markOf.get(n.name);
           const { x, y, valueY, anchor, box: labelBox } = nodeLabel(n, text, k, w);
+          const stack = fitted?.stacked?.get(n.name);
+          let lineY = stack && n.side === "top" ? n.y - inlineLabelHeight(stack) : n.y + n.h + INLINE_LABEL_GAP;
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
           // The node in focus names its comparison amount beside the tick, where its own label does not sit.
           const prior = mark && n.name === active ? priorOf?.(n) ?? null : null;
           const priorText = prior != null && (n.side === "top" || n.side === "bottom" || mark!.tick < labelBox.y0 - type.change || mark!.tick > labelBox.y1 + type.change) ? `${basis.prior} ${money(prior)}` : null;
-          const interactive = Boolean(n.segmentId) || n.name === "revenue";
+          const interactive = inline || Boolean(n.segmentId) || n.name === "revenue";
+          const select = (event: { clientX: number; clientY: number }) => {
+            if (!inline) { onPick(n); return; }
+            onHover(n.name);
+            point(event, tipFor(n));
+          };
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
-            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: (e: React.FocusEvent<SVGGElement>) => { onHover(n.name); const rect = e.currentTarget.getBoundingClientRect(); point({ clientX: rect.x + rect.width / 2, clientY: rect.y }, tipFor(n)); }, onBlur: () => { onHover(null); setTip(null); } } : {})}>
+            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: select, onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); select({ clientX: rect.x + rect.width / 2, clientY: rect.y }); } }, onFocus: (e: React.FocusEvent<SVGGElement>) => { onHover(n.name); const rect = e.currentTarget.getBoundingClientRect(); point({ clientX: rect.x + rect.width / 2, clientY: rect.y }, tipFor(n)); }, onBlur: () => { onHover(null); setTip(null); } } : {})}>
             <title>{n.label}: {text.value}</title>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
@@ -504,12 +601,18 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               {mark.short && <rect className="fc-prior-short" x={n.x} y={r(mark.short[0])} width={w} height={r(mark.short[1] - mark.short[0])} fill={`url(#${uid}${n.tone === "expense" ? "shortn" : "short"})`} />}
               <path className="fc-prior-halo" d={`M${r(n.x - 5 * k)},${r(mark.tick)}H${r(n.x + w + 5 * k)}`} />
               <path className="fc-prior-tick" d={`M${r(n.x - 5 * k)},${r(mark.tick)}H${r(n.x + w + 5 * k)}`} />
-              {priorText && <text className="fc-prior-label" x={r(n.side === "left" ? n.x - gap : n.x + w + gap)} y={r(mark.tick + type.change * 0.36)} textAnchor={n.side === "left" ? "end" : "start"} style={{ fontSize: type.change }}>{priorText}</text>}
+              {priorText && !stack && <text className="fc-prior-label" x={r(n.side === "left" ? n.x - gap : n.x + w + gap)} y={r(mark.tick + type.change * 0.36)} textAnchor={n.side === "left" ? "end" : "start"} style={{ fontSize: type.change }}>{priorText}</text>}
             </g>}
-            <text className="fc-label" textAnchor={anchor}>
+            {stack ? <text className="fc-label" data-stacked textAnchor="middle">
+              {stack.map((line, index) => {
+                lineY += line.advance;
+                return <tspan key={index} className={`fc-${line.kind}`} x={r(n.x + w / 2)} y={r(lineY - 3)}
+                  data-trend={line.kind === "change" ? text.change?.trend : undefined} style={{ fontSize: line.size }}>{line.content}</tspan>;
+              })}
+            </text> : <text className="fc-label" textAnchor={anchor}>
               <tspan className="fc-name" x={r(x)} y={r(y)} style={{ fontSize: type.name }}>{text.name}</tspan>
               <tspan className="fc-value" x={r(x)} y={r(valueY)} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
-            </text>
+            </text>}
           </g>;
         })}
       </g>
@@ -519,13 +622,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       </g>}
       {focus?.slot && revenue && <g className="fc-slot" key={active}>
         <rect className="fc-slot-glow" x={revenue.x - 4} y={focus.slot.y} width={w + 8} height={Math.max(2, focus.slot.h)} rx={3} style={{ fill: colorOf(active!) }} filter={`url(#${uid}glow)`} />
-        {slotLabel && <g transform={`translate(${r(revenue.x + w + 10 * k)},${r(focus.slot.y + focus.slot.h / 2)})`}>
+        {slotLabel && !fitted?.stacked && <g transform={`translate(${r(revenue.x + w + 10 * k)},${r(focus.slot.y + focus.slot.h / 2)})`}>
           <rect className="fc-slot-pill" x={0} y={-type.pill} width={estimateTextWidth(slotLabel, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} style={{ stroke: colorOf(active!) }} />
           <text className="fc-slot-text" x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}>{slotLabel}</text>
         </g>}
       </g>}
     </svg>}
-    {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width} height={size?.h ?? 0}>
+    {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width} height={chartHeight} inline={inline}>
       <div className="fc-tip-title"><i style={{ background: tip.tip.color }} />{tip.tip.title}</div>
       {tip.tip.rows.map(([k, v]) => <div className="fc-tip-row" key={k}><span>{k}</span><b>{v}</b></div>)}
     </Tooltip>}
@@ -533,8 +636,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   </div>;
 }
 
-function Tooltip({ x, y, width, height, children }: { x: number; y: number; width: number; height: number; children: ReactNode }) {
+function Tooltip({ x, y, width, height, children, inline }: { x: number; y: number; width: number; height: number; children: ReactNode; inline: boolean }) {
   const flip = x > width - 240;
   const above = y > height - 180;
+  if (inline) {
+    const maxWidth = Math.min(288, width - 16);
+    const left = Math.max(8, Math.min(x - maxWidth / 2, width - maxWidth - 8));
+    return <div className="fc-tip" role="tooltip" style={{ left, width: maxWidth, top: above ? y - 10 : y + 10, transform: above ? "translateY(-100%)" : undefined }}>{children}</div>;
+  }
   return <div className="fc-tip" role="tooltip" style={{ transform: `translate(${flip ? x - 16 : x + 16}px, ${above ? y - 16 : y + 16}px) translate(${flip ? "-100%" : "0"}, ${above ? "-100%" : "0"})` }}>{children}</div>;
 }

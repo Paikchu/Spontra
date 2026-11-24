@@ -285,9 +285,11 @@ function leaveFilingEdition() {
   window.dispatchEvent(new Event("spontra:filing-navigation"));
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnly = false, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnly = false, chartOnlyView, chartFunding, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   revisions?: MapRevisions;
   statementsOnly?: boolean;
+  chartOnlyView?: StatementView;
+  chartFunding?: CapitalQuarter | null;
   /** Display choices for the current analysis layers. */
   layers?: Record<Layer, boolean>;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
@@ -401,7 +403,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   const graph = trunk && trunked ? trunked.graph : fullGraph;
   const folded = useMemo(() => trunk && trunked ? trunked.folded : new Map<string, string>(), [trunk, trunked]);
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
-  const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
+  const funding = chartOnlyView ? chartFunding ?? null : capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !statementsOnly && !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
@@ -414,10 +416,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   // Start with the income statement; valuation remains an explicit tab or deep link.
   const homeView: View = "profit";
   const [chosenView, setView] = useState(() => requestedView(new URLSearchParams(location.search).get("view"), statementsOnly));
-  const view: View = chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  const view: View = chartOnlyView ?? (chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit");
   // The statement the figures under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
   useEffect(() => {
+    if (chartOnlyView) return;
     const restore = () => {
       const params = new URLSearchParams(location.search), requested = params.get("view");
       setReportId(params.get("report")); setEventId(params.get("event")); setFocusId(params.get("finding"));
@@ -428,10 +431,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
-  }, [quarters, statementsOnly]);
+  }, [quarters, statementsOnly, chartOnlyView]);
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   useEffect(() => {
+    if (chartOnlyView) return;
     const url = new URL(location.href);
     if (quarter && quarter.id !== quarters[0]?.id) url.searchParams.set("period", quarter.periodEnd); else url.searchParams.delete("period");
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
@@ -446,7 +450,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
     const next = withRailTabs(url.search, railTabs);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [quarter, quarters, current, focusId, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs]);
+  }, [quarter, quarters, current, focusId, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs, chartOnlyView]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focusId, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focusId, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
@@ -665,6 +669,21 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   const chartRef = useRef<HTMLDivElement>(null);
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
+  const diagram = moduleErrors.includes("company") ? <ModuleFailure resource="company" retry={onRetryModule} /> : (view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} compact={Boolean(chartOnlyView)} />
+          : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
+          : proportional && layout ? <FlowChart inline={Boolean(chartOnlyView)} graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
+                ? <MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)}>
+                  {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.business, c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
+                </MindLens>
+                : <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} links={nodeLinks} section={openSection} />}
+              focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word}
+              onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
+              label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>;
+
+  if (chartOnlyView) return <div className="chart statement-chart-content" ref={chartRef} data-view={chartOnlyView}>{diagram}</div>;
+
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
   const viewToggle = (statementsOnly || !!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
@@ -805,18 +824,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
           </Button>
         </div>}
         {chartScroll.overflow && <div className="chart-hint-rail" aria-hidden={!chartScroll.hint}><span className="chart-hint" data-shown={chartScroll.hint || undefined}>{m.swipe}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M3 12h18" /></svg></span></div>}
-        {moduleErrors.includes("company") ? <ModuleFailure resource="company" retry={onRetryModule} /> : (view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
-          : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
-                ? <MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)}>
-                  {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.business, c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
-                </MindLens>
-                : <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} links={nodeLinks} section={openSection} />}
-              focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word}
-              onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
-              label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
-          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
+        {diagram}
       </div>
 
       {/* With the breakdown on the stage, the business panel beside it takes the room the trend would. */}
@@ -872,10 +880,10 @@ function poolOf(view: PoolView, funding: CapitalQuarter): Pool {
   return view === "balance" ? balancePool(funding.balanceSheet!) : cashPool(cashOf(funding));
 }
 
-function CapitalChart({ view, funding, ticker, spotlight = null }: { view: PoolView; funding: CapitalQuarter; ticker: string; spotlight?: Set<string> | null }) {
+function CapitalChart({ view, funding, ticker, spotlight = null, compact = false }: { view: PoolView; funding: CapitalQuarter; ticker: string; spotlight?: Set<string> | null; compact?: boolean }) {
   const pool = useMemo(() => poolOf(view, funding), [view, funding]);
   const money = useMemo(() => { const format = capitalMoney(funding); return (v: number) => format(v); }, [funding]);
-  return <PoolChart key={view + funding.periodEnd} pool={pool} money={money} spotlight={spotlight}
+  return <PoolChart key={view + funding.periodEnd} compact={compact} pool={pool} money={money} spotlight={spotlight}
     label={view === "balance" ? m.balanceChart(ticker, funding.periodEnd) : m.cashChart(ticker, cashPeriod(funding))} />;
 }
 

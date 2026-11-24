@@ -37,18 +37,18 @@ export type InfographicGeometry = { [K in keyof typeof INFOGRAPHIC]: number };
 
 const groupRank = (n: PlacedNode) => n.tone === "expense" ? 1 : 0;
 
-function gapBetween(a: PlacedNode, b: PlacedNode, g: InfographicGeometry) {
+function gapBetween(a: PlacedNode, b: PlacedNode, g: InfographicGeometry, heightOf: (node: PlacedNode) => number) {
   if (a.side === "left" || a.side === "right") return Math.max(g.gap, g.sideLabelHeight - a.h);
-  return g.gap + (a.side === "bottom" ? g.labelHeight : 0) + (b.side === "top" ? g.labelHeight : 0);
+  return g.gap + (a.side === "bottom" ? heightOf(a) : 0) + (b.side === "top" ? heightOf(b) : 0);
 }
 
 /** Keeps column order, separates neighbours by their label space, and optionally recentres on the ideal positions. */
-function resolve(column: PlacedNode[], ideal: Map<string, number>, recentre: boolean, g: InfographicGeometry) {
+function resolve(column: PlacedNode[], ideal: Map<string, number>, recentre: boolean, gap: (a: PlacedNode, b: PlacedNode) => number) {
   let cursor = -Infinity;
   column.forEach((n, i) => {
     const want = ideal.get(n.name) ?? -Infinity;
     n.y = i === 0 ? (Number.isFinite(want) ? want : 0) : Math.max(Number.isFinite(want) ? want : -Infinity, cursor);
-    if (i < column.length - 1) cursor = n.y + n.h + gapBetween(n, column[i + 1], g);
+    if (i < column.length - 1) cursor = n.y + n.h + gap(n, column[i + 1]);
   });
   if (!recentre) return;
   const finite = column.filter(n => Number.isFinite(ideal.get(n.name) ?? NaN));
@@ -98,9 +98,16 @@ function labelSpan(n: PlacedNode, width: number, g: InfographicGeometry): [numbe
   return n.side === "left" ? [-labelOffset - width, 0] : n.side === "right" ? [0, nodeWidth + labelOffset + width] : [nodeWidth / 2 - width / 2, nodeWidth / 2 + width / 2];
 }
 
-export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedNode) => number = defaultLabelWidth, geometry: Partial<InfographicGeometry> = {}): InfographicLayout | null {
+export function layoutInfographic(
+  graph: FinancialGraph,
+  labelWidth: (n: PlacedNode) => number = defaultLabelWidth,
+  geometry: Partial<InfographicGeometry> = {},
+  stackedLabels?: (n: PlacedNode) => number,
+): InfographicLayout | null {
   if (!graph.links.length || !graph.nodes.length) return null;
   const g: InfographicGeometry = { ...INFOGRAPHIC, ...geometry };
+  const heightOf = stackedLabels ?? (() => g.labelHeight);
+  const gap = (a: PlacedNode, b: PlacedNode) => gapBetween(a, b, g, heightOf);
   const depths = [...new Set(graph.nodes.map(n => n.depth))].sort((a, b) => a - b);
   const columnOf = new Map(depths.map((d, i) => [d, i]));
   const last = depths.length - 1;
@@ -114,7 +121,9 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
     const tone: FlowTone = n.loss ? "loss" : n.credit ? "source" : n.expense ? "expense" : n.segmentId || n.name === "revenue" || column < revenueColumn ? "source" : "profit";
     // A deficit source enters from below, so its label sits under it like a cost's.
     const deficitSource = tone === "loss" && !graph.links.some(l => l.target === n.name);
-    const side: LabelSide = column === 0 && column < revenueColumn ? "left" : column === last && column > revenueColumn ? "right" : tone === "expense" || deficitSource ? "bottom" : "top";
+    const side: LabelSide = !stackedLabels && column === 0 && column < revenueColumn ? "left"
+      : !stackedLabels && column === last && column > revenueColumn ? "right"
+      : tone === "expense" || deficitSource ? "bottom" : "top";
     return { ...n, column, tone, side, x: 0, y: 0, h: Math.max(2, n.value * scale) };
   });
   const byName = new Map(nodes.map(n => [n.name, n]));
@@ -130,7 +139,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   if (revenue && revenueColumn >= 0) {
     const fromTree = (n: PlacedNode) => incoming(n.name).some(l => byName.get(l.source)!.column < revenueColumn) ? 0 : 1;
     let below = byName.get("revenue")!;
-    for (const n of columns[revenueColumn].filter(n => n.name !== "revenue").sort((a, b) => fromTree(a) - fromTree(b))) { n.y = below.y + below.h + gapBetween(below, n, g); below = n; }
+    for (const n of columns[revenueColumn].filter(n => n.name !== "revenue").sort((a, b) => fromTree(a) - fromTree(b))) { n.y = below.y + below.h + gap(below, n); below = n; }
   }
   for (let c = revenueColumn - 1; c >= 0; c--) {
     const ideal = new Map<string, number>();
@@ -146,7 +155,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
       ideal.set(n.name, target.y + before - above);
     }
     columns[c].sort((a, b) => (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
-    resolve(columns[c], ideal, true, g);
+    resolve(columns[c], ideal, true, gap);
   }
 
   const outStart = (n: PlacedNode) => n.offset ? n.h - outgoing(n.name).reduce((sum, l) => sum + linkHeight(l.value), 0) : 0;
@@ -177,21 +186,22 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
     const deficits = columns[c].filter(n => n.tone === "loss" && !incoming(n.name).length);
     const anchored = columns[c].filter(n => !floating.includes(n) && !deficits.includes(n));
     anchored.sort((a, b) => groupRank(a) - groupRank(b) || (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
-    resolve(anchored, ideal, false, g);
+    resolve(anchored, ideal, false, gap);
     let below = anchored[0];
     for (const n of floating.reverse()) {
-      n.y = below ? below.y - gapBetween(n, below, g) - n.h : 0;
+      n.y = below ? below.y - gap(n, below) - n.h : 0;
       below = n;
     }
     let above = anchored.at(-1);
     for (const n of deficits) {
-      n.y = above ? above.y + above.h + gapBetween(above, n, g) : 0;
+      n.y = above ? above.y + above.h + gap(above, n) : 0;
       above = n;
     }
   }
 
   // Vertical bounds include the label blocks, then everything is shifted onto the canvas.
-  const extent = (n: PlacedNode): [number, number] => n.side === "top" ? [n.y - g.labelHeight, n.y + n.h] : n.side === "bottom" ? [n.y, n.y + n.h + g.labelHeight] : [n.y, n.y + Math.max(n.h, g.sideLabelHeight)];
+  const extent = (n: PlacedNode): [number, number] => n.side === "top" ? [n.y - heightOf(n), n.y + n.h]
+    : n.side === "bottom" ? [n.y, n.y + n.h + heightOf(n)] : [n.y, n.y + Math.max(n.h, g.sideLabelHeight)];
   const top = Math.min(...nodes.map(n => extent(n)[0]));
   const shift = g.margin - top;
   for (const n of nodes) n.y += shift;
