@@ -34,7 +34,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		4B6264AEF66E927C73179E62 /* Sources */ = {
+		4B6264AEF66E927C73179E62 /* SpontraApp */ = {
 			isa = PBXGroup;
 			children = (
 				B22ED93D7DB6BD8E6F6878DE /* App */,
@@ -44,7 +44,7 @@
 				C043F69B15CF44C661AFDA4C /* Store */,
 				50F9B25FB6AFBB968403DD04 /* Views */,
 			);
-			path = Sources;
+			path = SpontraApp;
 			sourceTree = "<group>";
 		};
 		50F9B25FB6AFBB968403DD04 /* Views */ = {
@@ -94,7 +94,7 @@
 		C24F12B68D7975D04214D0C2 = {
 			isa = PBXGroup;
 			children = (
-				4B6264AEF66E927C73179E62 /* Sources */,
+				4B6264AEF66E927C73179E62 /* SpontraApp */,
 				9D0C464AB354064E70429216 /* Spontra.app */,
 			);
 			sourceTree = "<group>";
@@ -110,9 +110,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2B07F9C5F34AF580137A47B9 /* Spontra-ios */ = {
+		2B07F9C5F34AF580137A47B9 /* SpontraApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 6B24627ABA4B35585B0B5620 /* Build configuration list for PBXNativeTarget "Spontra-ios" */;
+			buildConfigurationList = 6B24627ABA4B35585B0B5620 /* Build configuration list for PBXNativeTarget "SpontraApp" */;
 			buildPhases = (
 				3C61CA50DCCE9F7E8696CE6A /* Sources */,
 			);
@@ -120,10 +120,10 @@
 			);
 			dependencies = (
 			);
-			name = "Spontra-ios";
+			name = "SpontraApp";
 			packageProductDependencies = (
 			);
-			productName = "Spontra-ios";
+			productName = "SpontraApp";
 			productReference = 9D0C464AB354064E70429216 /* Spontra.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -136,7 +136,7 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2720;
 			};
-			buildConfigurationList = 10C24DF567F638DF6BC87BC3 /* Build configuration list for PBXProject "Spontra-ios" */;
+			buildConfigurationList = 10C24DF567F638DF6BC87BC3 /* Build configuration list for PBXProject "SpontraApp" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -150,7 +150,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				2B07F9C5F34AF580137A47B9 /* Spontra-ios */,
+				2B07F9C5F34AF580137A47B9 /* SpontraApp */,
 			);
 		};
 /* End PBXProject section */
@@ -366,7 +366,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		10C24DF567F638DF6BC87BC3 /* Build configuration list for PBXProject "Spontra-ios" */ = {
+		10C24DF567F638DF6BC87BC3 /* Build configuration list for PBXProject "SpontraApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				505860B83FCB3F5A0B8F0946 /* Debug */,
@@ -375,7 +375,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		6B24627ABA4B35585B0B5620 /* Build configuration list for PBXNativeTarget "Spontra-ios" */ = {
+		6B24627ABA4B35585B0B5620 /* Build configuration list for PBXNativeTarget "SpontraApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D8939527D04C4127B22AFFFC /* Debug */,

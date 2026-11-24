@@ -1,4 +1,4 @@
-name: Spontra-ios
+name: SpontraApp
 options:
   bundleIdPrefix: com.spontra
   deploymentTarget:
@@ -6,11 +6,11 @@ options:
   xcodeVersion: "16.0"
 
 targets:
-  Spontra-ios:
+  SpontraApp:
     type: application
     platform: iOS
     sources:
-      - path: Sources
+      - path: SpontraApp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spontra.ios
@@ -30,10 +30,10 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
 
 schemes:
-  Spontra-ios:
+  SpontraApp:
     build:
       targets:
-        Spontra-ios: all
+        SpontraApp: all
     run:
       config: Debug
     profile:

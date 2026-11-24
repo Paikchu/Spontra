@@ -17,8 +17,8 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2B07F9C5F34AF580137A47B9"
                BuildableName = "Spontra.app"
-               BlueprintName = "Spontra-ios"
-               ReferencedContainer = "container:Spontra-ios.xcodeproj">
+               BlueprintName = "SpontraApp"
+               ReferencedContainer = "container:SpontraApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,8 +46,8 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2B07F9C5F34AF580137A47B9"
             BuildableName = "Spontra.app"
-            BlueprintName = "Spontra-ios"
-            ReferencedContainer = "container:Spontra-ios.xcodeproj">
+            BlueprintName = "SpontraApp"
+            ReferencedContainer = "container:SpontraApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -63,8 +63,8 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2B07F9C5F34AF580137A47B9"
             BuildableName = "Spontra.app"
-            BlueprintName = "Spontra-ios"
-            ReferencedContainer = "container:Spontra-ios.xcodeproj">
+            BlueprintName = "SpontraApp"
+            ReferencedContainer = "container:SpontraApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
