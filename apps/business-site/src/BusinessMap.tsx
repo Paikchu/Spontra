@@ -144,6 +144,8 @@ const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend:
 type View = "profit" | "cash" | "balance" | "valuation" | "company";
 type StatementView = Exclude<View, "valuation" | "company">;
 const VIEWS: readonly View[] = ["valuation", "company", "profit", "cash", "balance"];
+const requestedView = (value: string | null, statementsOnly: boolean): View => VIEWS.find(option =>
+  option === value && (!statementsOnly || option !== "company" && option !== "valuation")) ?? "profit";
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
 const basisWords = (basis: Basis, locale: Locale): CompareBasis & { period: string } => basis === "yoy"
@@ -288,8 +290,9 @@ function leaveFilingEdition() {
   window.dispatchEvent(new Event("spontra:filing-navigation"));
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnly = false, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   revisions?: MapRevisions;
+  statementsOnly?: boolean;
   /** Display choices for the current analysis layers. */
   layers?: Record<Layer, boolean>;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
@@ -405,21 +408,17 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
-  const valuationShown = !!valuation && valuation.availability !== "hidden";
+  const valuationShown = !statementsOnly && !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
   const [companyReportRetry, setCompanyReportRetry] = useState(0);
-  const companyArtifact = usePublishedArtifactRead(ticker, layers?.findings === false ? null : "company-analysis", revisions.company, companyReportRetry);
-  const companyPreview = usePreview("company-analysis", layers?.findings === false ? null : ticker);
+  const companyArtifact = usePublishedArtifactRead(ticker, statementsOnly || layers?.findings === false ? null : "company-analysis", revisions.company, companyReportRetry);
+  const companyPreview = usePreview("company-analysis", statementsOnly || layers?.findings === false ? null : ticker);
   const companyReport = companyPreview ?? companyArtifact.artifact;
   // A reader's report drafted for the visual review opens on the stage by itself.
-  const stageDraft = usePreview("stage-report", "*");
+  const stageDraft = usePreview("stage-report", statementsOnly ? null : "*");
   // Start with the income statement; valuation remains an explicit tab or deep link.
   const homeView: View = "profit";
-  const [chosenView, setView] = useState<View>(() => {
-    const params = new URLSearchParams(location.search), v = params.get("view");
-    if (VIEWS.includes(v as View)) return v as View;
-    return homeView;
-  });
+  const [chosenView, setView] = useState(() => requestedView(new URLSearchParams(location.search).get("view"), statementsOnly));
   const view: View = chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
@@ -428,13 +427,13 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       const params = new URLSearchParams(location.search), requested = params.get("view");
       setReportId(params.get("report")); setEventId(params.get("event")); setFocusId(params.get("finding"));
       setSelected(params.get("business")); setDetail(params.has("detail"));
-      setView(VIEWS.includes(requested as View) ? requested as View : "profit");
+      setView(requestedView(requested, statementsOnly));
       const end = params.get("period");
       setPeriod(end ? quarters.find(quarter => Math.abs(Date.parse(quarter.periodEnd) - Date.parse(end)) <= 20 * 86_400_000)?.id ?? null : null);
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
-  }, [quarters]);
+  }, [quarters, statementsOnly]);
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   useEffect(() => {
@@ -525,10 +524,20 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   // The valuation is the company's own mode: a finding, flag, report or event takes the stage back to the statements.
   const leaveValuation = () => { if (chosenView === "valuation" || chosenView === "company") setView("profit"); };
+  const capitalPeriod = (next: "cash" | "balance") => quarters.find(q =>
+    capital?.quarters.some(c => c.periodEnd === q.periodEnd && (next === "cash" ? c.cashFlow || c.yearToDate : c.balanceSheet)));
+  const cashPeriodAvailable = statementsOnly && !cash ? capitalPeriod("cash") : null;
+  const balancePeriodAvailable = statementsOnly && !funding?.balanceSheet ? capitalPeriod("balance") : null;
   const pickView = (next: View) => {
     leaveFilingEdition();
     if (next === "valuation" || next === "company") { onNavigate?.(); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); }
-    crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
+    crossfade(() => {
+      stageChartBox();
+      track("company_tab_view", { ticker, view: next });
+      const available = next === "cash" ? cashPeriodAvailable : next === "balance" ? balancePeriodAvailable : null;
+      if (available) setPeriod(available.id);
+      setView(next);
+    });
   };
   const showFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setSplit(false); } };
   const focusFinding = (id: string | null) => { leaveFilingEdition(); onNavigate?.(); showFinding(id); if (id) track("finding_expand", { ticker }); };
@@ -662,19 +671,19 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
-  const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
+  const viewToggle = (statementsOnly || !!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
       {valuationShown && <ToggleGroupItem value="valuation" data-view-choice="valuation" role="radio" aria-checked={view === "valuation"} onPointerEnter={preloadValuationPanel} onFocus={preloadValuationPanel}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
       {companyReport && <ToggleGroupItem value="company" data-view-choice="company" role="radio" aria-checked={view === "company"}>{VIEW_LABEL.company}</ToggleGroupItem>}
       <ToggleGroupItem value="profit" data-view-choice="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
-      {cash && <ToggleGroupItem value="cash" data-view-choice="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
-      {funding?.balanceSheet && <ToggleGroupItem value="balance" data-view-choice="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
+      {(cash || cashPeriodAvailable) && <ToggleGroupItem value="cash" data-view-choice="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
+      {(funding?.balanceSheet || balancePeriodAvailable) && <ToggleGroupItem value="balance" data-view-choice="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
     </span>
   </ToggleGroup>;
   // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tabs stand at its top right.
   const lensUp = !!stageOverride || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
+    {!statementsOnly && <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={railFoot}>
       {/* The businesses, open from the start: the company's revenue and change, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
@@ -729,7 +738,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
           <div><dt>{m.consolidated}</dt><dd>{formatReconciliation(revenue, quarter)}</dd></div>
         </dl>
       </details>}
-    </Rail>
+    </Rail>}
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind}
       aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>

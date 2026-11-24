@@ -19,6 +19,9 @@ button { cursor: pointer; }
     var(--background);
 }
 
+main[data-statement-embed] .map { grid-template-columns: minmax(0, 1fr); padding: 0; }
+main[data-statement-embed] .stage > .stage-tabs { --stage-tabs-top: 8px; }
+
 /* ---------- Floating rail ---------- */
 .rail {
   position: relative; z-index: 2; display: flex; flex-direction: column; min-height: 0; overflow: hidden;

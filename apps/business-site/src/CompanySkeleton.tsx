@@ -163,7 +163,7 @@ function StatementChartSkeleton() {
  * Same frame and view geometry as the loaded page: rail header, businesses, research guidance,
  * stream filter tabs, quarter timeline, bottom Ask slot, 5-tab stage bar, and view-matched stage body.
  */
-export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
+export function CompanySkeleton({ ticker, tools, statementsOnly = false }: { ticker: string; tools: ReactNode; statementsOnly?: boolean }) {
   const view = openingSkeletonView();
   const statement = view === "profit" || view === "cash" || view === "balance";
   const stageView = view === "lens" ? "profit" : view;
@@ -177,7 +177,7 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
   );
   return (
     <div className="map map--loading" role="status" aria-label={m.loading} aria-busy="true">
-      <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={foot}>
+      {!statementsOnly && <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} foot={foot}>
         <section className="biz" data-section="business" aria-hidden="true">
           <div className="biz-head">
             <span className="biz-total">
@@ -204,13 +204,13 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
           </div>
         </section>
         <CompanyDetailsSkeleton />
-      </Rail>
+      </Rail>}
 
       <section className="stage" data-view={stageView} data-trend={statement ? "" : undefined} aria-hidden="true">
         {view !== "lens" && (
           <div className="stage-tabs">
             <span className="trend-views stage-views">
-              {SKELETON_TABS.map(v => (
+              {SKELETON_TABS.filter(v => !statementsOnly || (v !== "valuation" && v !== "company")).map(v => (
                 <button key={v} type="button" role="radio" tabIndex={-1} aria-checked={v === view}>{VIEW_LABEL[v]}</button>
               ))}
             </span>

@@ -72,9 +72,9 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
   code: string;
   ticker?: string | null;
   companies: Array<{ ticker: string; name: string }>;
-  onHome: () => void;
+  onHome?: () => void;
   onRetry?: () => void;
-  onSearch: () => void;
+  onSearch?: () => void;
   /** Title to put back when this page leaves, so a recovered company does not keep the error title. */
   restoredTitle?: string;
 }) {
@@ -115,12 +115,11 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
       <div className="error-icon" aria-hidden="true">{ICONS[kind]}</div>
       <h1>{title}</h1>
       <p className="error-body">{body}</p>
-      <div className="error-actions">
-        <button type="button" className="error-primary" onClick={onHome}>{m.backHome}</button>
-        {reloadable
-          ? <button type="button" className="error-secondary" onClick={onRetry}>{m.retry}</button>
-          : <button type="button" className="error-secondary" onClick={onSearch}>{m.searchOther}</button>}
-      </div>
+      {(onHome || (reloadable ? onRetry : onSearch)) && <div className="error-actions">
+        {onHome && <button type="button" className="error-primary" onClick={onHome}>{m.backHome}</button>}
+        {reloadable ? onRetry && <button type="button" className="error-secondary" onClick={onRetry}>{m.retry}</button>
+          : onSearch && <button type="button" className="error-secondary" onClick={onSearch}>{m.searchOther}</button>}
+      </div>}
       {listed && <>
         <h2>{m.covered}</h2>
         <ul className="error-picks">

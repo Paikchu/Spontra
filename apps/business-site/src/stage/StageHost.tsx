@@ -57,8 +57,8 @@ export type StageHost = {
  * overlay fades and the stage takes the question: its turn while it runs, then its result. The map's own view is
  * untouched while the stage is closed or unreachable, and the reader's own picks on the map always win.
  */
-export function useStageHost(ticker: string, data: CompanyData): StageHost {
-  const enabled = data.publication?.stageEnabled !== false;
+export function useStageHost(ticker: string, data: CompanyData, available = true): StageHost {
+  const enabled = available && data.publication?.stageEnabled !== false;
   const [open, setOpen] = useState<{ open: boolean; reader: boolean } | null>(null);
   const [state, dispatch] = useReducer(overlay, new URLSearchParams(location.search).has("c") || reopening() ? "open" : "closed");
   const [StageRuntime, reloadRuntime] = useReducer(freshRuntime, undefined, freshRuntime);

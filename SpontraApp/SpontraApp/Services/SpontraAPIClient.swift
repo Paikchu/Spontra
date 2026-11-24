@@ -67,24 +67,12 @@ actor SpontraAPIClient {
         try await request(companyPath(ticker, resource: "/events"))
     }
 
-    func fetchIncomeStatements(ticker: String) async throws -> [StatementPeriod] {
-        let publication: IncomeStatementPublication = try await request(companyPath(ticker, resource: ""))
-        return publication.periods()
-    }
-
-    func fetchCapitalStatements(ticker: String) async throws -> CapitalStatementPublication.Periods {
-        let publication: CapitalStatementPublication = try await request(
-            companyPath(ticker, resource: "/capital"), unavailableStatus: 503
-        )
-        return publication.periods()
-    }
-
     private func companyPath(_ ticker: String, resource: String) -> String {
         let encoded = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ticker
         return "/api/business/v1/companies/\(encoded)\(resource)?schema=\(readSchema)&lang=\(locale)"
     }
 
-    private func request<T: Decodable>(_ path: String, unavailableStatus: Int? = nil) async throws -> T {
+    private func request<T: Decodable>(_ path: String) async throws -> T {
         guard let url = URL(string: baseURL + path) else {
             throw SpontraAPIError.invalidURL
         }
@@ -93,8 +81,7 @@ actor SpontraAPIClient {
         req.setValue("SpontraIOS/1.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse,
-           !(200...299).contains(http.statusCode), http.statusCode != unavailableStatus {
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw SpontraAPIError.httpStatus(http.statusCode)
         }
         do {

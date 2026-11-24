@@ -36,8 +36,8 @@ const preloadCompanyPage = (search = typeof location !== "undefined" ? location.
 class CompanyRouteBoundary extends Component<{
   ticker: string;
   companies: Array<{ ticker: string; name: string }>;
-  onHome: () => void;
-  onSearch: () => void;
+  onHome?: () => void;
+  onSearch?: () => void;
   children: ReactNode;
 }, { failed: boolean }> {
   state = { failed: false };
@@ -85,6 +85,23 @@ function showTicker(next: string | null, set: (ticker: string | null) => void) {
   if ((document.querySelector("main.home") !== null) === (next === null)) set(next);
   else turnPage(() => set(next));
 }
+
+function EmbeddedStatements({ ticker }: { ticker: string }) {
+  const locale = useLocale();
+  const opening = useMemo(() => createCompanyOpening(ticker, locale), [ticker, locale]);
+  useEffect(() => {
+    const request = opening.start();
+    return () => request.abort();
+  }, [opening]);
+  return <main data-statement-embed aria-label={`${ticker} · ${m.title}`}>
+    <CompanyRouteBoundary ticker={ticker} companies={[]}>
+      <Suspense fallback={<CompanySkeleton ticker={ticker} tools={null} statementsOnly />}>
+        <Company ticker={ticker} opening={opening} tools={null} onSeen={() => {}} covered={undefined} companies={[]} statementsOnly />
+      </Suspense>
+    </CompanyRouteBoundary>
+  </main>;
+}
+
 function App() {
   const locale = useLocale();
   const focusRoute = useRef(false);
@@ -303,9 +320,12 @@ function App() {
   );
 }
 const articlePreview = typeof location !== "undefined" && location.pathname === "/article-preview";
+const embeddedTicker = typeof location !== "undefined" && new URLSearchParams(location.search).get("embed") === "statements" ? tickerFromUrl() : null;
+if (embeddedTicker) preloadCompanyPage();
 if (!articlePreview) startVitals();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {articlePreview ? <Suspense fallback={null}><ArticlePreview /></Suspense> : <App />}
+    {articlePreview ? <Suspense fallback={null}><ArticlePreview /></Suspense>
+      : embeddedTicker ? <EmbeddedStatements ticker={embeddedTicker} /> : <App />}
   </StrictMode>,
 );

@@ -70,8 +70,6 @@ final class SpontraStore {
     private let watchlistKey = "spontra.ios.watchlist.v1"
     private let themeKey = "spontra.ios.theme.v1"
     private let api = SpontraAPIClient.shared
-    @ObservationIgnored private var incomeStatementsByTicker: [String: [StatementPeriod]] = [:]
-    @ObservationIgnored private var capitalStatementsByTicker: [String: CapitalStatementPublication.Periods] = [:]
 
     init() {
         loadLocalPreferences()
@@ -290,20 +288,6 @@ final class SpontraStore {
             return detail
         }
         return nil
-    }
-
-    func incomeStatements(ticker: String, refresh: Bool) async throws -> [StatementPeriod] {
-        if !refresh, let cached = incomeStatementsByTicker[ticker] { return cached }
-        let periods = try await api.fetchIncomeStatements(ticker: ticker)
-        if !periods.isEmpty { incomeStatementsByTicker[ticker] = periods }
-        return periods
-    }
-
-    func capitalStatements(ticker: String, refresh: Bool) async throws -> CapitalStatementPublication.Periods {
-        if !refresh, let cached = capitalStatementsByTicker[ticker] { return cached }
-        let periods = try await api.fetchCapitalStatements(ticker: ticker)
-        if !periods.balance.isEmpty || !periods.cash.isEmpty { capitalStatementsByTicker[ticker] = periods }
-        return periods
     }
 
     // MARK: 将 /filings 与 /events 合并为网页同款按财季分组的时间线

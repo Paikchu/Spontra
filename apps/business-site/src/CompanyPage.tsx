@@ -15,7 +15,7 @@ import type { CompanyOpening } from "./company-opening";
 const m = messages({ title: "Business View" }, { title: "Business View" });
 
 class ChartBoundary extends Component<
-  { ticker: string; companies: Array<{ ticker: string; name: string }>; onHome: () => void; onSearch: () => void; children: ReactNode },
+  { ticker: string; companies: Array<{ ticker: string; name: string }>; onHome?: () => void; onSearch?: () => void; children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -30,7 +30,7 @@ class ChartBoundary extends Component<
     );
   }
 }
-export default function CompanyPage({ ticker, opening, tools, onSeen, covered, companies, onHome, onSearch }: {
+export default function CompanyPage({ ticker, opening, tools, onSeen, covered, companies, onHome, onSearch, statementsOnly = false }: {
   ticker: string;
   opening: CompanyOpening;
   tools: ReactNode;
@@ -38,12 +38,13 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   /** Whether the catalog lists the company: null when it could not load, undefined while it is being read. */
   covered: boolean | null | undefined;
   companies: Array<{ ticker: string; name: string }>;
-  onHome: () => void;
-  onSearch: () => void;
+  onHome?: () => void;
+  onSearch?: () => void;
+  statementsOnly?: boolean;
 }) {
   const { moduleErrors, retryModule, rateLimited, data, updates, revisions, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
   const { flow, publication, capital, findings, fundamentals, events, filings, valuation } = data;
-  const stage = useStageHost(ticker, data);
+  const stage = useStageHost(ticker, data, !statementsOnly);
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
   const [arrival] = useState(face);
@@ -68,6 +69,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           onRetryModule={retryModule}
           ticker={ticker}
           tools={tools}
+          statementsOnly={statementsOnly}
           flow={flow ?? { schemaVersion: "business-flow.v1", ticker, fetchedAt: null, quarters: [] }}
           revenueHistory={publication?.history ?? null}
           layers={publication?.layers}
@@ -93,5 +95,5 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
       </ChartBoundary>
     );
-  return <>{rateLimited && <RateNotice />}<CompanySkeleton ticker={ticker} tools={tools} /></>;
+  return <>{rateLimited && <RateNotice />}<CompanySkeleton ticker={ticker} tools={tools} statementsOnly={statementsOnly} /></>;
 }
