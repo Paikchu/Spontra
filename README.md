@@ -6,6 +6,8 @@ Spontra 是一个以 Discovery Agent 为核心的公司基本面研究平台。�
 
 研究不止于单份财报摘要或预设指标。Spontra 希望回答：这家公司如何创造价值，增长依赖什么，竞争优势是否成立，财务表现与经营现实是否一致，还有哪些重要问题尚未得到解释。
 
+iOS 客户端在 [SpontraApp](https://github.com/Paikchu/SpontraApp) 仓库独立维护。
+
 ## 产品方向
 
 ### 从公司全貌出发
