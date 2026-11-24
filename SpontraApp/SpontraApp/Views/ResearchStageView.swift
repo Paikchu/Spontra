@@ -6,6 +6,7 @@ enum ResearchStageKind {
 
 struct ResearchStageView: View {
     @Environment(SpontraStore.self) private var store
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let kind: ResearchStageKind
     @State private var selectedSummary: PublicReportSummaryDTO?
     @State private var sheetDetent: PresentationDetent = .medium
@@ -57,7 +58,10 @@ struct ResearchStageView: View {
                 .allowsHitTesting(false)
         }
         .sheet(item: $selectedSummary) { summary in
-            ResearchArticleSheet(summary: summary, isExpanded: sheetDetent == .large)
+            ResearchArticleSheet(
+                summary: summary,
+                isExpanded: verticalSizeClass == .compact || sheetDetent == .large
+            )
                 .environment(store)
                 .presentationDetents([.medium, .large], selection: $sheetDetent)
                 .presentationDragIndicator(.visible)

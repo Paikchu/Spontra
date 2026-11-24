@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompanyStreamStageView: View {
     @Environment(SpontraStore.self) private var store
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var enabledCategories: Set<StreamFilterCategory> = [.reports, .management]
     @State private var selectedItem: CompanyStreamItem?
     @State private var sheetDetent: PresentationDetent = .medium
@@ -51,7 +52,7 @@ struct CompanyStreamStageView: View {
                 .padding(.top, 2)
 
                 // 3. 按财季分组的 SEC 财报 & 管理层动态时间线（去卡片，纯平面列表 + 细分隔线）
-                if store.isLoadingCompanyData && store.currentStreamSections.isEmpty {
+                if (store.isBootstrapping || store.isLoadingCompanyData) && store.currentStreamSections.isEmpty {
                     loadingRow("正在同步 \(store.selectedTicker) 财报与管理层动态...")
                 } else if store.currentStreamSections.isEmpty {
                     emptyRow(store.companyError ?? "暂无 \(store.selectedTicker) 的最新申报记录，下拉重试。")
@@ -84,7 +85,7 @@ struct CompanyStreamStageView: View {
             CompanyStreamDetailSheet(
                 ticker: store.selectedTicker,
                 item: item,
-                isExpanded: sheetDetent == .large
+                isExpanded: verticalSizeClass == .compact || sheetDetent == .large
             )
             .environment(store)
             .presentationDetents([.medium, .large], selection: $sheetDetent)
@@ -330,7 +331,7 @@ struct CompanyStreamDetailSheet: View {
                 fallbackScrollContent
             }
 
-            // 仅在全屏（.large）时平滑浮现左上角返回按钮；半屏（.medium）仅保留原生控制条
+            // 全屏详情使用返回按钮，半屏详情使用系统拖动条。
             Button {
                 dismiss()
             } label: {

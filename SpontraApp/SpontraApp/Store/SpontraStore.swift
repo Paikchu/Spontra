@@ -91,7 +91,7 @@ final class SpontraStore {
     }
 
     var selectedCompany: HomeCompanyDTO? {
-        companies.first(where: { $0.ticker == selectedTicker }) ?? companies.first
+        companies.first(where: { $0.ticker == selectedTicker })
     }
 
     var watchlistCompanies: [HomeCompanyDTO] {

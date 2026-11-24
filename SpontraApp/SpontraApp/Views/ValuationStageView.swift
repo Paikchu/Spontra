@@ -3,6 +3,7 @@ import SwiftUI
 struct ValuationStageView: View {
     @Environment(SpontraStore.self) private var store
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var expandedScenario: ValuationScenarioImpactDTO?
     @State private var sheetDetent: PresentationDetent = .medium
@@ -12,7 +13,7 @@ struct ValuationStageView: View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 CompanyInlineModeBar()
 
-                if store.isLoadingCompanyData && store.currentValuation == nil {
+                if (store.isBootstrapping || store.isLoadingCompanyData) && store.currentValuation == nil {
                     loadingRow("正在加载 \(store.selectedTicker) 实时估值模型...")
                 } else if let val = store.currentValuation {
                     valuationContent(val)
@@ -32,7 +33,7 @@ struct ValuationStageView: View {
                 ticker: store.selectedTicker,
                 currency: store.currentValuation?.report?.currency ?? "USD",
                 scenario: scenario,
-                isExpanded: sheetDetent == .large
+                isExpanded: verticalSizeClass == .compact || sheetDetent == .large
             )
             .presentationDetents([.medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)

@@ -4,43 +4,64 @@ struct RootWorkspaceView: View {
     @Environment(SpontraStore.self) private var store
     @State private var dragTranslation: CGFloat = 0
     @State private var isDraggingDrawer: Bool = false
+    @State private var isDockedSidebarOpen = true
+    @ScaledMetric(relativeTo: .headline) private var headerTitleSize: CGFloat = 18
 
     var body: some View {
         @Bindable var bindableStore = store
 
         GeometryReader { geo in
-            let sidebarWidth = geo.size.width * DesignTokens.Layout.sidebarWidthRatio
-            let progress = drawerProgress(width: sidebarWidth)
+            let width = geo.size.width
+            let usesSplitLayout = width > geo.size.height && width >= 620
+            let drawerWidth = width * DesignTokens.Layout.sidebarWidthRatio
+            let dockedWidth = min(max(width * 0.28, 188), 280)
+            let progress = usesSplitLayout ? 0 : drawerProgress(width: drawerWidth)
+            let isDrawerOpen = !usesSplitLayout && store.isMenuOpen
 
-            ZStack(alignment: .leading) {
-                // MARK: Layer 1 — 底层主视图（重度高斯模糊 + 微缩放，深浅双模式均形成柔和磨砂透视）
-                mainContentLayer
+            HStack(spacing: 0) {
+                if usesSplitLayout && isDockedSidebarOpen {
+                    WorkspaceSidebar(
+                        sidebarWidth: dockedWidth,
+                        isDocked: true,
+                        onClose: { toggleSidebar(docked: true) }
+                    )
+                    .overlay(alignment: .trailing) {
+                        Rectangle()
+                            .fill(DesignTokens.Colors.hairline)
+                            .frame(width: 1)
+                            .allowsHitTesting(false)
+                    }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+
+                mainContentLayer(docked: usesSplitLayout)
                     .scaleEffect(1.0 - (1.0 - DesignTokens.Motion.mainRecedeScale) * progress)
                     .blur(radius: (store.colorSchemePreference == .dark ? 42 : 30) * progress)
-                    .allowsHitTesting(!store.isMenuOpen)
+                    .allowsHitTesting(!isDrawerOpen)
+                    .accessibilityHidden(isDrawerOpen)
+            }
+            .overlay(alignment: .leading) {
+                if !usesSplitLayout {
+                    ZStack {
+                        HorizontalSidebarVeilView(isDark: store.colorSchemePreference == .dark)
+                            .opacity(progress)
+                            .allowsHitTesting(isDrawerOpen)
+                            .onTapGesture { toggleMenu(open: false) }
 
-                // MARK: Layer 1.5 — 左侧 72% 烟熏毛玻璃 + 右侧平滑羽化遮罩（无硬边界线）
-                HorizontalSidebarVeilView(isDark: store.colorSchemePreference == .dark)
-                    .opacity(progress)
-                    .allowsHitTesting(store.isMenuOpen)
-                    .onTapGesture {
-                        toggleMenu(open: false)
+                        WorkspaceSidebar(
+                            sidebarWidth: drawerWidth,
+                            onClose: { toggleMenu(open: false) }
+                        )
+                        .offset(x: -drawerWidth * (1.0 - progress))
+                        .blur(radius: DesignTokens.Motion.menuEntryBlurRadius * (1.0 - progress))
+                        .opacity(progress)
+                        .allowsHitTesting(isDrawerOpen)
+                        .accessibilityHidden(!isDrawerOpen)
                     }
-
-                // MARK: Layer 2 — 左侧 70% 内容区 + 底部跨屏悬浮操作栏（从左侧平滑滑入）
-                FullScreenMenuOverlay(
-                    sidebarWidth: sidebarWidth,
-                    onClose: { toggleMenu(open: false) },
-                    onAddWatchlist: { store.isSearchSheetPresented = true },
-                    onToggleTheme: { store.toggleColorScheme() }
-                )
-                .offset(x: -sidebarWidth * (1.0 - progress))
-                .blur(radius: DesignTokens.Motion.menuEntryBlurRadius * (1.0 - progress))
-                .opacity(progress)
-                .allowsHitTesting(store.isMenuOpen)
+                }
             }
             .background(DesignTokens.Colors.canvas.ignoresSafeArea())
-            .simultaneousGesture(drawerGesture(width: sidebarWidth))
+            .simultaneousGesture(drawerGesture(width: drawerWidth), isEnabled: !usesSplitLayout)
             .animation(
                 isDraggingDrawer ? nil : DesignTokens.Motion.transitionSpring,
                 value: store.isMenuOpen
@@ -106,7 +127,7 @@ struct RootWorkspaceView: View {
 
     // MARK: - 主视图容器（移除底部 Dock，保留上下渐进模糊消失与顶部悬浮栏）
 
-    private var mainContentLayer: some View {
+    private func mainContentLayer(docked: Bool) -> some View {
         ZStack(alignment: .top) {
             DesignTokens.Colors.canvas.ignoresSafeArea()
 
@@ -134,20 +155,22 @@ struct RootWorkspaceView: View {
             VStack(spacing: 0) {
                 ProgressiveEdgeBlurView(
                     edge: .top,
-                    height: DesignTokens.Layout.topProgressiveBlurHeight
+                    height: docked
+                        ? DesignTokens.Layout.topSafeClearance
+                        : DesignTokens.Layout.topProgressiveBlurHeight
                 )
                 Spacer()
             }
             .ignoresSafeArea(edges: .top)
 
             // 顶部悬浮栏（已移除蓝色光晕，整体上移更贴近灵动岛）
-            topFloatingHeader
+            topFloatingHeader(docked: docked)
         }
     }
 
-    private var topFloatingHeader: some View {
+    private func topFloatingHeader(docked: Bool) -> some View {
         let isCompany = store.activeDestination == .company
-        let currentTicker = store.selectedCompany?.ticker ?? store.selectedTicker
+        let currentTicker = store.selectedTicker
         let headerTitle: String = switch store.activeDestination {
         case .macro: "宏观"
         case .industry: "行业"
@@ -155,13 +178,12 @@ struct RootWorkspaceView: View {
         }
 
         return HStack(alignment: .center) {
-            // 左上：独立圆形毛玻璃按钮（滑出 70% 侧边栏）
             Button {
-                toggleMenu(open: true)
+                toggleSidebar(docked: docked)
             } label: {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 16, weight: .semibold))
+                    Image(systemName: docked ? "sidebar.left" : "line.3.horizontal")
+                        .font(.system(size: docked ? 17 : 16, weight: .semibold))
                         .foregroundStyle(DesignTokens.Colors.textPrimary)
                         .frame(
                             width: DesignTokens.Layout.floatingButtonSize,
@@ -169,20 +191,22 @@ struct RootWorkspaceView: View {
                         )
                         .liquidGlass(Circle())
 
-                    Circle()
-                        .fill(DesignTokens.Colors.techCyan)
-                        .frame(width: 7, height: 7)
-                        .offset(x: -10, y: 11)
+                    if !docked {
+                        Circle()
+                            .fill(DesignTokens.Colors.techCyan)
+                            .frame(width: 7, height: 7)
+                            .offset(x: -10, y: 11)
+                    }
                 }
             }
             .buttonStyle(LiquidGlassPressStyle())
-            .accessibilityLabel("打开侧边栏")
+            .accessibilityLabel(docked && isDockedSidebarOpen ? "收起侧边栏" : "打开侧边栏")
 
             Spacer()
 
             // 正中：横向「圆角方形公司 Logo + Ticker 名称」（对齐上传参考图）
             Button {
-                toggleMenu(open: true)
+                toggleSidebar(docked: docked)
             } label: {
                 HStack(spacing: 8) {
                     if isCompany {
@@ -203,13 +227,13 @@ struct RootWorkspaceView: View {
                                 .frame(width: 28, height: 28)
 
                             Image(systemName: store.activeDestination == .macro ? "globe.asia.australia.fill" : "square.grid.2x2.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(size: docked ? 15 : 14, weight: .semibold))
                                 .foregroundStyle(.white)
                         }
                     }
 
                     Text(headerTitle)
-                        .font(.headline.weight(.bold).monospacedDigit())
+                        .font(docked ? .system(size: headerTitleSize, weight: .bold).monospacedDigit() : .headline.weight(.bold).monospacedDigit())
                         .foregroundStyle(DesignTokens.Colors.textPrimary)
                         .lineLimit(1)
                 }
@@ -232,7 +256,7 @@ struct RootWorkspaceView: View {
             } label: {
                 let starred = store.isWatched(currentTicker)
                 Image(systemName: isCompany ? (starred ? "star.fill" : "star") : "magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: docked ? 17 : 16, weight: .semibold))
                     .foregroundStyle(
                         isCompany && starred
                             ? DesignTokens.Colors.techCyan
@@ -248,7 +272,17 @@ struct RootWorkspaceView: View {
             .accessibilityLabel(isCompany ? "收藏或取消自选" : "搜索公司")
         }
         .padding(.horizontal, DesignTokens.Layout.horizontalPadding)
-        .padding(.top, -6)
+        .padding(.top, docked ? 4 : -6)
+    }
+
+    private func toggleSidebar(docked: Bool) {
+        if docked {
+            withAnimation(DesignTokens.Motion.transitionSpring) {
+                isDockedSidebarOpen.toggle()
+            }
+        } else {
+            toggleMenu(open: true)
+        }
     }
 
     private func toggleMenu(open: Bool) {

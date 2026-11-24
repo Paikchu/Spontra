@@ -1,146 +1,180 @@
 import SwiftUI
 
-// MARK: - 左侧 72% 内容区 + 底部跨屏悬浮操作栏（精准复刻参考图）
-
-struct FullScreenMenuOverlay: View {
+struct WorkspaceSidebar: View {
     @Environment(SpontraStore.self) private var store
+    @ScaledMetric(relativeTo: .headline) private var primaryTitleSize: CGFloat = 19
+    @ScaledMetric(relativeTo: .subheadline) private var companyTitleSize: CGFloat = 16
     let sidebarWidth: CGFloat
+    var isDocked = false
     let onClose: () -> Void
-    let onAddWatchlist: () -> Void
-    let onToggleTheme: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            HStack(spacing: 0) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 28) {
-                        // 顶部固定一级入口：宏观 / 行业（线性图标 + 粗体文字，垂直左对齐）
-                        VStack(alignment: .leading, spacing: 20) {
-                            primaryEntryRow(
-                                icon: "globe.asia.australia",
-                                title: "宏观",
-                                isActive: store.activeDestination == .macro
-                            ) {
-                                store.selectDestination(.macro)
-                            }
+        if isDocked {
+            VStack(spacing: 0) {
+                sidebarList
 
-                            primaryEntryRow(
-                                icon: "square.grid.2x2",
-                                title: "行业",
-                                isActive: store.activeDestination == .industry
-                            ) {
-                                store.selectDestination(.industry)
-                            }
-                        }
+                Divider().overlay(DesignTokens.Colors.hairline)
 
-                        // 中部列表区：仅保留「自选公司」纯文本列表
-                        VStack(alignment: .leading, spacing: 18) {
-                            Text("自选公司")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(DesignTokens.Colors.textSecondary)
-
-                            if store.watchlistCompanies.isEmpty {
-                                if store.isBootstrapping {
-                                    HStack(spacing: 8) {
-                                        ProgressView()
-                                            .scaleEffect(0.85)
-                                            .tint(DesignTokens.Colors.techCyan)
-                                        Text("加载自选...")
-                                            .font(.footnote)
-                                            .foregroundStyle(DesignTokens.Colors.textSecondary)
-                                    }
-                                } else {
-                                    Button {
-                                        onAddWatchlist()
-                                    } label: {
-                                        Text("点击下方添加自选公司")
-                                            .font(.footnote)
-                                            .foregroundStyle(DesignTokens.Colors.textTertiary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            } else {
-                                VStack(alignment: .leading, spacing: 18) {
-                                    ForEach(store.watchlistCompanies) { company in
-                                        let isSelected = store.activeDestination == .company
-                                            && company.ticker == store.selectedTicker
-
-                                        Button {
-                                            store.selectCompany(company.ticker)
-                                        } label: {
-                                            HStack(spacing: 10) {
-                                                CompanyLogoView(ticker: company.ticker, size: 22, cornerRadius: 6)
-
-                                                Text(company.ticker)
-                                                    .font(.subheadline.weight(isSelected ? .bold : .semibold).monospacedDigit())
-                                                    .foregroundStyle(DesignTokens.Colors.textPrimary)
-
-                                                Text(company.displayName)
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(
-                                                        isSelected
-                                                            ? DesignTokens.Colors.textPrimary
-                                                            : DesignTokens.Colors.textSecondary
-                                                    )
-                                                    .lineLimit(1)
-
-                                                if isSelected {
-                                                    Circle()
-                                                        .fill(DesignTokens.Colors.techBlue)
-                                                        .frame(width: 6, height: 6)
-                                                }
-
-                                                Spacer(minLength: 0)
-                                            }
-                                            .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                        .contextMenu {
-                                            Button(role: .destructive) {
-                                                store.toggleWatchlist(company.ticker)
-                                            } label: {
-                                                Label("移出自选", systemImage: "star.slash")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.leading, 26)
-                    .padding(.trailing, 14)
-                    .padding(.top, 26)
-                    .padding(.bottom, DesignTokens.Layout.menuBottomClearance + 20)
-                }
-                .frame(width: sidebarWidth)
-                .mask(
-                    VStack(spacing: 0) {
-                        Color.black
-                        LinearGradient(
-                            colors: [Color.black, Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 96)
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                )
-
-                // 右侧空白羽化区域：轻点即可收回侧边栏
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onClose)
+                bottomBar
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
             }
+            .frame(width: sidebarWidth)
+            .background(DesignTokens.Colors.canvas)
+        } else {
+            ZStack(alignment: .bottom) {
+                HStack(spacing: 0) {
+                    sidebarList
+                        .frame(width: sidebarWidth)
+                        .mask(
+                            VStack(spacing: 0) {
+                                Color.black
+                                LinearGradient(
+                                    colors: [Color.black, Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .frame(height: 96)
+                            }
+                            .ignoresSafeArea(edges: .bottom)
+                        )
 
-            // 底部跨屏悬浮操作栏（左下高亮蓝胶囊 + 右下独立深浅主题切换圆钮，已移除刷新按钮）
-            MenuBottomFloatingBar(
-                onAddWatchlist: onAddWatchlist,
-                onToggleTheme: onToggleTheme
-            )
-            .padding(.horizontal, 26)
-            .padding(.bottom, 16)
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onClose)
+                }
+
+                bottomBar
+                    .padding(.horizontal, 26)
+                    .padding(.bottom, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var bottomBar: some View {
+        MenuBottomFloatingBar(
+            onAddWatchlist: { store.isSearchSheetPresented = true },
+            onToggleTheme: { store.toggleColorScheme() }
+        )
+    }
+
+    private var sidebarList: some View {
+        let companyLabelLayout = isDocked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(spacing: 10))
+
+        return ScrollView(showsIndicators: isDocked) {
+            VStack(alignment: .leading, spacing: isDocked ? 12 : 28) {
+                // 顶部固定一级入口：宏观 / 行业（线性图标 + 粗体文字，垂直左对齐）
+                VStack(alignment: .leading, spacing: isDocked ? 0 : 20) {
+                    primaryEntryRow(
+                        icon: "globe.asia.australia",
+                        title: "宏观",
+                        isActive: store.activeDestination == .macro
+                    ) {
+                        store.selectDestination(.macro)
+                    }
+
+                    primaryEntryRow(
+                        icon: "square.grid.2x2",
+                        title: "行业",
+                        isActive: store.activeDestination == .industry
+                    ) {
+                        store.selectDestination(.industry)
+                    }
+                }
+
+                // 中部列表区：仅保留「自选公司」纯文本列表
+                VStack(alignment: .leading, spacing: isDocked ? 4 : 18) {
+                    Text("自选公司")
+                        .font(isDocked ? .footnote.weight(.semibold) : .caption.weight(.semibold))
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+
+                    if store.watchlistCompanies.isEmpty {
+                        if store.isBootstrapping {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.85)
+                                    .tint(DesignTokens.Colors.techCyan)
+                                Text("加载自选...")
+                                    .font(isDocked ? .subheadline : .footnote)
+                                    .foregroundStyle(DesignTokens.Colors.textSecondary)
+                            }
+                        } else {
+                            Button {
+                                store.isSearchSheetPresented = true
+                            } label: {
+                                Text("点击下方添加自选公司")
+                                    .font(isDocked ? .subheadline : .footnote)
+                                    .foregroundStyle(DesignTokens.Colors.textTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: isDocked ? 0 : 18) {
+                            ForEach(store.watchlistCompanies) { company in
+                                let isSelected = store.activeDestination == .company
+                                    && company.ticker == store.selectedTicker
+
+                                let tickerWeight: Font.Weight = isSelected ? .bold : .semibold
+                                let tickerFont: Font = isDocked
+                                    ? .system(size: companyTitleSize, weight: tickerWeight)
+                                    : .subheadline.weight(tickerWeight)
+
+                                Button {
+                                    store.selectCompany(company.ticker)
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        CompanyLogoView(ticker: company.ticker, size: 22, cornerRadius: 6)
+
+                                        companyLabelLayout {
+                                            Text(company.ticker)
+                                                .font(tickerFont.monospacedDigit())
+                                                .foregroundStyle(DesignTokens.Colors.textPrimary)
+                                                .fixedSize(horizontal: true, vertical: false)
+
+                                            Text(company.displayName)
+                                                .font(isDocked ? .caption : .subheadline)
+                                                .foregroundStyle(
+                                                    isSelected
+                                                        ? DesignTokens.Colors.textPrimary
+                                                        : DesignTokens.Colors.textSecondary
+                                                )
+                                                .lineLimit(isDocked ? 2 : 1)
+                                        }
+                                        .layoutPriority(1)
+
+                                        if isSelected {
+                                            Circle()
+                                                .fill(DesignTokens.Colors.techBlue)
+                                                .frame(width: 6, height: 6)
+                                        }
+
+                                        Spacer(minLength: 0)
+                                    }
+                                    .frame(minHeight: isDocked ? 44 : nil)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        store.toggleWatchlist(company.ticker)
+                                    } label: {
+                                        Label("移出自选", systemImage: "star.slash")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.leading, isDocked ? 14 : 26)
+            .padding(.trailing, 14)
+            .padding(.top, isDocked ? 8 : 26)
+            .padding(.bottom, isDocked ? 8 : DesignTokens.Layout.menuBottomClearance + 20)
+        }
     }
 
     private func primaryEntryRow(
@@ -152,12 +186,12 @@ struct FullScreenMenuOverlay: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .regular))
+                    .font(.system(size: isDocked ? 19 : 18, weight: .regular))
                     .foregroundStyle(isActive ? DesignTokens.Colors.techCyan : DesignTokens.Colors.textPrimary)
                     .frame(width: 24, alignment: .center)
 
                 Text(title)
-                    .font(.headline.weight(.bold))
+                    .font(isDocked ? .system(size: primaryTitleSize, weight: .bold) : .headline.weight(.bold))
                     .foregroundStyle(isActive ? DesignTokens.Colors.techCyan : DesignTokens.Colors.textPrimary)
 
                 if isActive {
@@ -168,9 +202,11 @@ struct FullScreenMenuOverlay: View {
 
                 Spacer()
             }
+            .frame(minHeight: isDocked ? 44 : nil)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 
