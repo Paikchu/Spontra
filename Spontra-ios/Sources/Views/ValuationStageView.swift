@@ -5,6 +5,7 @@ struct ValuationStageView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var expandedScenario: ValuationScenarioImpactDTO?
+    @State private var sheetDetent: PresentationDetent = .medium
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -30,11 +31,16 @@ struct ValuationStageView: View {
             ScenarioDetailSheet(
                 ticker: store.selectedTicker,
                 currency: store.currentValuation?.report?.currency ?? "USD",
-                scenario: scenario
+                scenario: scenario,
+                isExpanded: sheetDetent == .large
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.medium, .large], selection: $sheetDetent)
             .presentationDragIndicator(.visible)
             .presentationBackground(DesignTokens.Colors.canvas)
+            .presentationBackgroundInteraction(.disabled)
+        }
+        .onChange(of: expandedScenario?.id) { _, newValue in
+            if newValue != nil { sheetDetent = .medium }
         }
     }
 
@@ -372,10 +378,13 @@ struct ScenarioDetailSheet: View {
     let ticker: String
     let currency: String
     let scenario: ValuationScenarioImpactDTO
+    let isExpanded: Bool
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ZStack(alignment: .topLeading) {
+            DesignTokens.Colors.canvas.ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(scenario.labelZh)
@@ -404,17 +413,30 @@ struct ScenarioDetailSheet: View {
                         bulletSection(title: "情景证伪条件", items: invalidations, tint: DesignTokens.Colors.financialDown)
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, isExpanded ? 64 : 22)
+                .padding(.bottom, 32)
             }
-            .background(DesignTokens.Colors.canvas.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
-                        .foregroundStyle(DesignTokens.Colors.techCyan)
-                }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .liquidGlass(Circle())
             }
+            .buttonStyle(LiquidGlassPressStyle())
+            .accessibilityLabel("返回")
+            .padding(.leading, 16)
+            .padding(.top, 14)
+            .opacity(isExpanded ? 1 : 0)
+            .scaleEffect(isExpanded ? 1.0 : 0.84)
+            .blur(radius: isExpanded ? 0 : 6)
+            .allowsHitTesting(isExpanded)
         }
+        .animation(DesignTokens.Motion.transitionSpring, value: isExpanded)
     }
 
     private func bulletSection(title: String, items: [String], tint: Color) -> some View {

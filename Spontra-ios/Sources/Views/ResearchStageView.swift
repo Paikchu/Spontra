@@ -8,6 +8,7 @@ struct ResearchStageView: View {
     @Environment(SpontraStore.self) private var store
     let kind: ResearchStageKind
     @State private var selectedSummary: PublicReportSummaryDTO?
+    @State private var sheetDetent: PresentationDetent = .medium
 
     private var filteredReports: [PublicReportSummaryDTO] {
         switch kind {
@@ -47,9 +48,25 @@ struct ResearchStageView: View {
         .refreshable {
             await store.refreshAll()
         }
-        .fullScreenCover(item: $selectedSummary) { summary in
-            ResearchArticleSheet(summary: summary)
+        .overlay(alignment: .bottom) {
+            DesignTokens.Colors.canvas
+                .frame(height: 44)
+                .ignoresSafeArea(edges: .bottom)
+                .opacity(selectedSummary != nil ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: selectedSummary != nil)
+                .allowsHitTesting(false)
+        }
+        .sheet(item: $selectedSummary) { summary in
+            ResearchArticleSheet(summary: summary, isExpanded: sheetDetent == .large)
                 .environment(store)
+                .presentationDetents([.medium, .large], selection: $sheetDetent)
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DesignTokens.Colors.canvas)
+                .presentationBackgroundInteraction(.disabled)
+                .presentationContentInteraction(.scrolls)
+        }
+        .onChange(of: selectedSummary?.id) { _, newValue in
+            if newValue != nil { sheetDetent = .medium }
         }
     }
 
@@ -135,13 +152,16 @@ struct ResearchArticleSheet: View {
     @Environment(SpontraStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let summary: PublicReportSummaryDTO
+    let isExpanded: Bool
 
     @State private var detail: PublicReportDetailDTO?
     @State private var isLoading = true
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ZStack(alignment: .topLeading) {
+            DesignTokens.Colors.canvas.ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 6) {
                         Text(summary.isMacro ? "宏观报告" : "行业报告")
@@ -190,22 +210,34 @@ struct ResearchArticleSheet: View {
                         }
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, isExpanded ? 64 : 22)
+                .padding(.bottom, 32)
             }
-            .background(DesignTokens.Colors.canvas.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
-                        .foregroundStyle(DesignTokens.Colors.techCyan)
-                        .fontWeight(.semibold)
-                }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .liquidGlass(Circle())
             }
-            .task {
-                isLoading = true
-                detail = await store.loadResearchDetail(for: summary)
-                isLoading = false
-            }
+            .buttonStyle(LiquidGlassPressStyle())
+            .accessibilityLabel("返回")
+            .padding(.leading, 16)
+            .padding(.top, 14)
+            .opacity(isExpanded ? 1 : 0)
+            .scaleEffect(isExpanded ? 1.0 : 0.84)
+            .blur(radius: isExpanded ? 0 : 6)
+            .allowsHitTesting(isExpanded)
+        }
+        .animation(DesignTokens.Motion.transitionSpring, value: isExpanded)
+        .task {
+            isLoading = true
+            detail = await store.loadResearchDetail(for: summary)
+            isLoading = false
         }
     }
 

@@ -4,6 +4,7 @@ struct CompanyStreamStageView: View {
     @Environment(SpontraStore.self) private var store
     @State private var enabledCategories: Set<StreamFilterCategory> = [.reports, .management]
     @State private var selectedItem: CompanyStreamItem?
+    @State private var sheetDetent: PresentationDetent = .medium
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -70,9 +71,32 @@ struct CompanyStreamStageView: View {
         .refreshable {
             await store.loadCompanyBundle(ticker: store.selectedTicker, force: true)
         }
-        .fullScreenCover(item: $selectedItem) { item in
-            CompanyStreamDetailSheet(ticker: store.selectedTicker, item: item)
-                .environment(store)
+        .overlay(alignment: .bottom) {
+            // iOS 26/27 悬浮 Sheet 底部有微弱圆角间隙，弹窗开启时遮蔽最底缘避免底层文字漏出
+            DesignTokens.Colors.canvas
+                .frame(height: 44)
+                .ignoresSafeArea(edges: .bottom)
+                .opacity(selectedItem != nil ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: selectedItem != nil)
+                .allowsHitTesting(false)
+        }
+        .sheet(item: $selectedItem) { item in
+            CompanyStreamDetailSheet(
+                ticker: store.selectedTicker,
+                item: item,
+                isExpanded: sheetDetent == .large
+            )
+            .environment(store)
+            .presentationDetents([.medium, .large], selection: $sheetDetent)
+            .presentationDragIndicator(.visible)
+            .presentationBackground(DesignTokens.Colors.canvas)
+            .presentationBackgroundInteraction(.disabled)
+            .presentationContentInteraction(.scrolls)
+        }
+        .onChange(of: selectedItem?.id) { _, newValue in
+            if newValue != nil {
+                sheetDetent = ProcessInfo.processInfo.arguments.contains("-expandArticle") ? .large : .medium
+            }
         }
         .onChange(of: store.currentStreamSections.count) { _, _ in
             openFirstArticleIfRequested()
@@ -255,74 +279,83 @@ struct CompanyStreamDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     let ticker: String
     let item: CompanyStreamItem
+    let isExpanded: Bool
 
     @State private var detail: FilingDetailAPIResponse?
     @State private var isLoadingArticle = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                DesignTokens.Colors.canvas.ignoresSafeArea()
+        ZStack(alignment: .topLeading) {
+            DesignTokens.Colors.canvas.ignoresSafeArea()
 
-                if isLoadingArticle {
-                    VStack(spacing: 10) {
-                        ProgressView().tint(DesignTokens.Colors.techCyan)
-                        Text("正在加载线上文章...")
-                            .font(.footnote)
+            if isLoadingArticle {
+                VStack(spacing: 10) {
+                    ProgressView().tint(DesignTokens.Colors.techCyan)
+                    Text("正在加载线上文章...")
+                        .font(.footnote)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let html = detail?.artifact?.html, !html.isEmpty {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(item.metaLine)
+                            .font(.caption2.monospacedDigit())
                             .foregroundStyle(DesignTokens.Colors.textSecondary)
-                    }
-                } else if let html = detail?.artifact?.html, !html.isEmpty {
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(item.metaLine)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(DesignTokens.Colors.textSecondary)
 
-                            ArtifactBlocksView(html: html)
+                        ArtifactBlocksView(html: html)
 
-                            if let raw = item.edgarUrl, let url = URL(string: raw) {
-                                Divider().overlay(DesignTokens.Colors.hairline)
-                                    .padding(.top, 6)
-                                Link(destination: url) {
-                                    HStack {
-                                        Image(systemName: "safari")
-                                        Text("在 SEC EDGAR 查看原始申报")
-                                            .font(.footnote.weight(.semibold))
-                                        Spacer()
-                                        Image(systemName: "arrow.up.right")
-                                            .font(.caption2.weight(.bold))
-                                    }
-                                    .foregroundStyle(DesignTokens.Colors.techCyan)
-                                    .padding(.vertical, 6)
+                        if let raw = item.edgarUrl, let url = URL(string: raw) {
+                            Divider().overlay(DesignTokens.Colors.hairline)
+                                .padding(.top, 6)
+                            Link(destination: url) {
+                                HStack {
+                                    Image(systemName: "safari")
+                                    Text("在 SEC EDGAR 查看原始申报")
+                                        .font(.footnote.weight(.semibold))
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.caption2.weight(.bold))
                                 }
+                                .foregroundStyle(DesignTokens.Colors.techCyan)
+                                .padding(.vertical, 6)
                             }
                         }
-                        .padding(.horizontal, 18)
-                        .padding(.top, 8)
-                        .padding(.bottom, 36)
                     }
-                } else {
-                    fallbackScrollContent
+                    .padding(.horizontal, 18)
+                    .padding(.top, isExpanded ? 64 : 22)
+                    .padding(.bottom, 36)
                 }
+            } else {
+                fallbackScrollContent
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(DesignTokens.Colors.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
-                        .foregroundStyle(DesignTokens.Colors.techCyan)
-                        .fontWeight(.semibold)
-                }
+
+            // 仅在全屏（.large）时平滑浮现左上角返回按钮；半屏（.medium）仅保留原生控制条
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .liquidGlass(Circle())
             }
-            .task(id: item.id) {
-                guard let accession = item.accessionNumber else { return }
-                isLoadingArticle = true
-                detail = await store.loadFilingDetail(ticker: ticker, accession: accession)
-                isLoadingArticle = false
-            }
+            .buttonStyle(LiquidGlassPressStyle())
+            .accessibilityLabel("返回")
+            .padding(.leading, 16)
+            .padding(.top, 14)
+            .opacity(isExpanded ? 1 : 0)
+            .scaleEffect(isExpanded ? 1.0 : 0.84)
+            .blur(radius: isExpanded ? 0 : 6)
+            .allowsHitTesting(isExpanded)
         }
-        .background(DesignTokens.Colors.canvas.ignoresSafeArea())
+        .animation(DesignTokens.Motion.transitionSpring, value: isExpanded)
+        .task(id: item.id) {
+            guard let accession = item.accessionNumber else { return }
+            isLoadingArticle = true
+            detail = await store.loadFilingDetail(ticker: ticker, accession: accession)
+            isLoadingArticle = false
+        }
     }
 
     private var fallbackScrollContent: some View {
@@ -377,7 +410,8 @@ struct CompanyStreamDetailSheet: View {
                     .padding(.top, 4)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, isExpanded ? 64 : 22)
             .padding(.bottom, 32)
         }
         .background(DesignTokens.Colors.canvas.ignoresSafeArea())
