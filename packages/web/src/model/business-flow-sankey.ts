@@ -25,6 +25,13 @@ export type SankeyLink = { source:string; target:string; value:number };
 /** `deficit` graphs draw a loss as funding: every link is a positive flow, and the net loss is a source. */
 export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; signed?:boolean; deficit?:boolean };
 
+/** The loss graph shows the costs paid by revenue, credits and the shortfall. */
+export function statementGraph(quarter: BusinessFlowQuarter): FinancialGraph {
+  return (numeric(quarter.figures.net) ?? 0) < 0
+    ? deficitFinancialGraph(quarter) ?? financialGraph(quarter)
+    : financialGraph(quarter);
+}
+
 function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
   if (!nodes.length || nodes.length > 64 || links.length > 128) return false;
   const ids=new Set(nodes.map(n=>n.name));

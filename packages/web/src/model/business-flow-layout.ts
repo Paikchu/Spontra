@@ -4,6 +4,26 @@ import { compactMoney, compactNumber, MINUS } from "@/shared/analysis-runtime/lo
 import { getLocale } from "@/packages/web/src/i18n/core";
 import { flowWords } from "./business-flow-model";
 
+/** Translate only unambiguous statement terms; preserve issuer-specific lines verbatim. */
+export function statementLabel(name: string): string {
+  if (getLocale() !== "zh-CN") return name;
+  const known: Record<string, string> = {
+    "depreciation and amortization": "折旧与摊销",
+    "research and development": "研发费用",
+    "selling, general and administrative": "销售及管理费用",
+    "general and administrative": "管理费用",
+    "sales and marketing": "销售及市场费用",
+    "income / (loss) from equity method investments": "权益法投资损益",
+    "interest income": "利息收入",
+    "interest expense": "利息费用",
+    "other income, net": "其他收入净额",
+    "other expense, net": "其他支出净额",
+    "income tax expense": "所得税费用",
+    "income tax benefit": "所得税收益",
+  };
+  return known[name.trim().toLowerCase()] ?? name;
+}
+
 export type FlowTone = "source" | "profit" | "expense" | "loss";
 export type LabelSide = "top" | "bottom" | "left" | "right";
 export type PlacedNode = SankeyNode & { x: number; y: number; h: number; column: number; tone: FlowTone; side: LabelSide };
@@ -215,7 +235,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
 
 const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$", TWD: "NT$" };
 /** Short label for the diagram only; exact amounts stay in the ledger. Chinese counts in 万 and 亿 ("757亿美元"). */
-export function compactFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
+export function compactFlowValue(value: number | null, quarter: Pick<BusinessFlowQuarter, "currency" | "scale">): string {
   if (value == null || !Number.isFinite(value)) return flowWords.notDisclosed;
   const amount = value * quarter.scale;
   if (getLocale() === "zh-CN") return compactMoney(amount, quarter.currency, "zh-CN");

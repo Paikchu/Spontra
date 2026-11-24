@@ -24,6 +24,7 @@ const m = messages({
 
 const loadCompanyPage = () => import("./CompanyPage");
 const Company = lazy(loadCompanyPage);
+const StatementChart = lazy(() => import("./StatementChartPage"));
 const PublicResearch = lazy(() => import("./PublicResearchPage"));
 const ArticlePreview = lazy(() => import("./ArtifactPreviewPage"));
 // Speculative loading must not surface an error before the reader opens the route.
@@ -320,12 +321,14 @@ function App() {
   );
 }
 const articlePreview = typeof location !== "undefined" && location.pathname === "/article-preview";
-const embeddedTicker = typeof location !== "undefined" && new URLSearchParams(location.search).get("embed") === "statements" ? tickerFromUrl() : null;
-if (embeddedTicker) preloadCompanyPage();
+const embed = typeof location !== "undefined" ? new URLSearchParams(location.search).get("embed") : null;
+const embeddedTicker = embed === "statements" || embed === "statement-chart" ? tickerFromUrl() : null;
+if (embeddedTicker && embed === "statements") preloadCompanyPage();
 if (!articlePreview) startVitals();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {articlePreview ? <Suspense fallback={null}><ArticlePreview /></Suspense>
+      : embeddedTicker && embed === "statement-chart" ? <Suspense fallback={null}><StatementChart ticker={embeddedTicker} /></Suspense>
       : embeddedTicker ? <EmbeddedStatements ticker={embeddedTicker} /> : <App />}
   </StrictMode>,
 );

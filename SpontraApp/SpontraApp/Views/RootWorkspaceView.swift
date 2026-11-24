@@ -11,7 +11,6 @@ struct RootWorkspaceView: View {
         GeometryReader { geo in
             let sidebarWidth = geo.size.width * DesignTokens.Layout.sidebarWidthRatio
             let progress = drawerProgress(width: sidebarWidth)
-            let onStatements = store.activeDestination == .company && store.companySubView == .statements
 
             ZStack(alignment: .leading) {
                 // MARK: Layer 1 — 底层主视图（重度高斯模糊 + 微缩放，深浅双模式均形成柔和磨砂透视）
@@ -41,7 +40,7 @@ struct RootWorkspaceView: View {
                 .allowsHitTesting(store.isMenuOpen)
             }
             .background(DesignTokens.Colors.canvas.ignoresSafeArea())
-            .simultaneousGesture(drawerGesture(width: sidebarWidth), isEnabled: store.isMenuOpen || !onStatements)
+            .simultaneousGesture(drawerGesture(width: sidebarWidth))
             .animation(
                 isDraggingDrawer ? nil : DesignTokens.Motion.transitionSpring,
                 value: store.isMenuOpen
@@ -122,8 +121,8 @@ struct RootWorkspaceView: View {
                     switch store.companySubView {
                     case .stream:
                         CompanyStreamStageView()
-                    case .statements:
-                        CompanyStatementsStageView(ticker: store.selectedTicker)
+                    case .statement(let statement):
+                        CompanyStatementsStageView(ticker: store.selectedTicker, statement: statement)
                     case .valuation:
                         ValuationStageView()
                     }
@@ -323,7 +322,15 @@ struct CompanyInlineModeBar: View {
     @Environment(SpontraStore.self) private var store
 
     var body: some View {
-        HStack(spacing: 20) {
+        ViewThatFits(in: .horizontal) {
+            tabs.fixedSize(horizontal: true, vertical: false)
+            ScrollView(.horizontal, showsIndicators: false) { tabs }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 10) {
             ForEach(CompanySubView.allCases) { tab in
                 let isSelected = store.companySubView == tab
                 Button {
@@ -345,13 +352,12 @@ struct CompanyInlineModeBar: View {
                             .fill(isSelected ? DesignTokens.Colors.techCyan : Color.clear)
                             .frame(width: 22, height: 2)
                     }
-                    .frame(minHeight: 44)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
-            Spacer()
         }
     }
 }

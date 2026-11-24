@@ -7,12 +7,12 @@ import { DocumentSkeleton, ValuationSkeleton } from "./CompanySkeleton";
 import { Button } from "@/packages/web/src/ui/button";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import { deficitFinancialGraph, financialGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
-import { compactFlowValue, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
+import { statementGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
+import { compactFlowValue, statementLabel, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
 import { adjustmentName, formatFlowValue, formatReconciliation, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
-import { FlowChart, layoutFor, statementLabel, type CompareBasis, type NodeCopy, type Tip } from "./FlowChart";
+import { FlowChart, layoutFor, type CompareBasis, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
@@ -155,11 +155,6 @@ const periodName = (ticker: string, q: BusinessFlowQuarter) => {
   const labels = fiscalPhrase(ticker, q.periodEnd, q.periodStart);
   return labels.primary ?? labels.unknown;
 };
-
-/** A loss quarter is drawn as funding (revenue plus the net loss pay every cost); any other quarter as the statement bridge. */
-function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
-  return (numeric(q.figures.net) ?? 0) < 0 ? deficitFinancialGraph(q) ?? financialGraph(q) : financialGraph(q);
-}
 
 /** The share of all costs and expenses that revenue paid for in a loss quarter; the net loss paid the rest. */
 function revenueCoverage(graph: FinancialGraph, revenue: number) {

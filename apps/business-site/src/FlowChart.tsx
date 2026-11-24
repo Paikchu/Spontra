@@ -21,26 +21,6 @@ const m = messages({
   flow: "金额", lastQuarter: "上季度",
 });
 
-/** Translate only unambiguous statement terms; preserve issuer-specific lines verbatim. */
-export function statementLabel(name: string): string {
-  if (getLocale() !== "zh-CN") return name;
-  const known: Record<string, string> = {
-    "depreciation and amortization": "折旧与摊销",
-    "research and development": "研发费用",
-    "selling, general and administrative": "销售及管理费用",
-    "general and administrative": "管理费用",
-    "sales and marketing": "销售及市场费用",
-    "income / (loss) from equity method investments": "权益法投资损益",
-    "interest income": "利息收入",
-    "interest expense": "利息费用",
-    "other income, net": "其他收入净额",
-    "other expense, net": "其他支出净额",
-    "income tax expense": "所得税费用",
-    "income tax benefit": "所得税收益",
-  };
-  return known[name.trim().toLowerCase()] ?? name;
-}
-
 /** `change` is the comparable change against the comparison quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
 export type Tip = { title: string; color: string; rows: Array<[string, string]> };

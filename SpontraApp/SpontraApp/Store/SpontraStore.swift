@@ -9,16 +9,30 @@ enum WorkspaceDestination: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum CompanySubView: String, CaseIterable, Identifiable {
+enum CompanyStatement: String, CaseIterable {
+    case profit, cash, balance
+
+    var label: String {
+        switch self {
+        case .profit: "利润"
+        case .cash: "现金流"
+        case .balance: "资产负债表"
+        }
+    }
+}
+
+enum CompanySubView: CaseIterable, Identifiable, Hashable {
     case stream     // 公司动态（财报 + 管理层动态）
-    case statements
+    case statement(CompanyStatement)
     case valuation  // 公司估值
-    var id: String { rawValue }
+
+    static var allCases: [Self] { [.stream] + CompanyStatement.allCases.map(Self.statement) + [.valuation] }
+    var id: Self { self }
 
     var label: String {
         switch self {
         case .stream: "动态"
-        case .statements: "三大表"
+        case .statement(let statement): statement.label
         case .valuation: "估值"
         }
     }

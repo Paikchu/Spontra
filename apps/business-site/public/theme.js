@@ -1,5 +1,6 @@
 try {
-  if (new URLSearchParams(location.search).get("embed") === "statements") {
+  const embed = new URLSearchParams(location.search).get("embed");
+  if (embed === "statements" || embed === "statement-chart") {
     const preference = matchMedia("(prefers-color-scheme: light)");
     const apply = ({ matches }) => {
       document.documentElement.classList.toggle("light", matches);

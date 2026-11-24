@@ -21,6 +21,7 @@ const TONE: Record<PoolTone, string> = {
   productive: "var(--biz-4)", cash: "var(--chart-1)", invest: "var(--chart-4)", other: "var(--biz-0)",
 };
 const BAR = 16, SLOT = 40, GAP = 10, TOP = 44, BOTTOM = 12, NAME = 12.5, VALUE = 16;
+const COMPACT_SLOT = 52;
 type Placed = PoolItem & { side: "source" | "use"; x: number; y: number; h: number; poolY: number };
 const r = (v: number) => Math.round(v * 10) / 10;
 
@@ -40,29 +41,30 @@ function fit(items: PoolItem[], room: number, total: number, side: Placed["side"
   return [...items.filter(i => !fold.has(i.key)), merged];
 }
 
-function layoutPool(full: Pool, width: number, height: number, money: (v: number) => string) {
+function layoutPool(full: Pool, width: number, height: number, money: (v: number) => string, compact: boolean) {
   const room = Math.max(120, height - TOP - BOTTOM);
-  const pool = { ...full, sources: fit(full.sources, room, full.total, "source"), uses: fit(full.uses, room, full.total, "use") };
+  const pool = compact ? full : { ...full, sources: fit(full.sources, room, full.total, "source"), uses: fit(full.uses, room, full.total, "use") };
   const labelWidth = (item: PoolItem) => Math.max(estimateTextWidth(item.label, NAME), estimateTextWidth(money(item.value) + " 00%", VALUE, true));
-  const side = Math.min(width * 0.3, Math.max(110, ...[...pool.sources, ...pool.uses].map(labelWidth)) + 14);
-  const avail = Math.max(120, height - TOP - BOTTOM);
-  const need = (items: PoolItem[], scale: number) => items.reduce((sum, item) => sum + Math.max(item.value * scale, SLOT), 0) + GAP * Math.max(0, items.length - 1);
+  const side = compact ? width * 0.32 : Math.min(width * 0.3, Math.max(110, ...[...pool.sources, ...pool.uses].map(labelWidth)) + 14);
+  const bar = compact ? 8 : BAR, minSlot = compact ? COMPACT_SLOT : SLOT;
+  const avail = room;
+  const need = (items: PoolItem[], scale: number) => items.reduce((sum, item) => sum + Math.max(item.value * scale, minSlot), 0) + GAP * Math.max(0, items.length - 1);
   // The largest scale at which both sides, with their label slots, fit; label slots alone always fit after folding.
   let low = 0, high = avail / Math.max(pool.total, 1e-9);
   for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (Math.max(need(pool.sources, mid), need(pool.uses, mid)) <= avail) low = mid; else high = mid; }
   const scale = low;
   const poolH = pool.total * scale, poolY = TOP + (avail - poolH) / 2;
-  const left = side, center = width / 2 - BAR / 2, right = width - side - BAR;
+  const left = side, center = width / 2 - bar / 2, right = width - side - bar;
   const stack = (items: PoolItem[], kind: Placed["side"], x: number): Placed[] => {
     let y = TOP + (avail - need(items, scale)) / 2, into = poolY;
     return items.map(item => {
-      const h = Math.max(2, item.value * scale), slot = Math.max(h, SLOT);
+      const h = Math.max(2, item.value * scale), slot = Math.max(h, minSlot);
       const placed = { ...item, side: kind, x, y: y + (slot - h) / 2, h, poolY: into };
       y += slot + GAP; into += item.value * scale;
       return placed;
     });
   };
-  return { scale, poolH, poolY, center, nodes: [...stack(pool.sources, "source", left), ...stack(pool.uses, "use", right)] };
+  return { scale, poolH, poolY, center, bar, side, nodes: [...stack(pool.sources, "source", left), ...stack(pool.uses, "use", right)] };
 }
 
 function band(x0: number, y0: number, x1: number, y1: number, h0: number, h1: number) {
@@ -74,9 +76,11 @@ function band(x0: number, y0: number, x1: number, y1: number, h0: number, h1: nu
  * Sources on the left fill one pool; uses on the right drain it. Both sides add up to the same total,
  * so every band is a disclosed amount, and a loss or a cash draw-down appears as a source or use, never a gap.
  */
-export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool; money: (v: number) => string; label: string;
+export function PoolChart({ pool, money, label, spotlight = null, compact = false }: { pool: Pool; money: (v: number) => string; label: string;
   /** Item keys a finding is about; they stay lit while the pointer is elsewhere. */
-  spotlight?: Set<string> | null }) {
+  spotlight?: Set<string> | null;
+  compact?: boolean;
+}) {
   useEffect(() => { markContent("company"); }, []);
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
@@ -92,7 +96,7 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const layout = useMemo(() => size ? layoutPool(pool, size.w, size.h, money) : null, [pool, size, money]);
+  const layout = useMemo(() => size ? layoutPool(pool, size.w, size.h, money, compact) : null, [pool, size, money, compact]);
   const [active, setActive] = useState<string | null>(null);
   const lit = (key: string) => active ? active === key : Boolean(spotlight?.has(key));
   const focused = active || (spotlight && layout?.nodes.some(n => spotlight.has(n.key)));
@@ -102,35 +106,44 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
     const rect = box.current!.getBoundingClientRect();
     setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, item });
   };
-  return <div className="pool">
+  const minHeight = Math.max(216, TOP + BOTTOM + (COMPACT_SLOT + GAP) * Math.max(pool.sources.length, pool.uses.length));
+  return <div className="pool" data-compact={compact || undefined} style={compact ? { minHeight } : undefined}>
     <div className="pool-canvas" ref={box}>
       {size && layout && <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={focused ? "" : undefined}>
         <g>
           {layout.nodes.map(n => {
             const d = n.side === "source"
-              ? band(n.x + BAR, n.y, layout.center, n.poolY, n.h, n.value * layout.scale)
+              ? band(n.x + layout.bar, n.y, layout.center, n.poolY, n.h, n.value * layout.scale)
               : band(layout.center + BAR, n.poolY, n.x, n.y, n.value * layout.scale, n.h);
             return <path key={n.key} className="fc-band" d={d} style={{ fill: TONE[n.tone] }} data-lit={lit(n.key) ? "on" : undefined}
-              onMouseMove={e => { setActive(n.key); point(e, n); }} onMouseLeave={() => { setActive(null); setTip(null); }} />;
+              onMouseMove={compact ? undefined : e => { setActive(n.key); point(e, n); }} onMouseLeave={compact ? undefined : () => { setActive(null); setTip(null); }} />;
           })}
         </g>
         <g className="fc-node pool-total" style={{ "--c": "var(--flow-revenue)" } as CSSProperties}>
-          <rect className="fc-bar" x={layout.center} y={layout.poolY} width={BAR} height={Math.max(2, layout.poolH)} rx={3} />
-          <text className="fc-label" x={r(layout.center + BAR / 2)} y={r(layout.poolY - 12)} textAnchor="middle">
+          <rect className="fc-bar" x={layout.center} y={layout.poolY} width={layout.bar} height={Math.max(2, layout.poolH)} rx={3} />
+          <text className="fc-label" x={r(layout.center + layout.bar / 2)} y={compact ? 21 : r(layout.poolY - 12)} textAnchor="middle">
             <tspan className="fc-name" style={{ fontSize: NAME + 1 }}>{pool.title}</tspan><tspan className="fc-value" dx={8} style={{ fontSize: VALUE + 4 }}>{money(pool.total)}</tspan>
           </text>
         </g>
         {layout.nodes.map(n => {
-          const mid = n.y + n.h / 2, x = n.side === "source" ? n.x - 10 : n.x + BAR + 10, anchor = n.side === "source" ? "end" : "start";
+          const mid = n.y + n.h / 2, x = n.side === "source" ? n.x - 10 : n.x + layout.bar + 10, anchor = n.side === "source" ? "end" : "start";
           return <g key={n.key} className="fc-node" data-tone={n.tone} data-lit={lit(n.key) ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
-            onMouseMove={e => { setActive(n.key); point(e, n); }} onMouseLeave={() => { setActive(null); setTip(null); }}>
+            onMouseMove={compact ? undefined : e => { setActive(n.key); point(e, n); }} onMouseLeave={compact ? undefined : () => { setActive(null); setTip(null); }}>
             <title>{m.itemTitle(n.label, money(n.value), share(n.value), pool.title)}</title>
-            <rect className="fc-hit" x={n.x - 6} y={Math.min(n.y, mid - SLOT / 2)} width={BAR + 12} height={Math.max(n.h, SLOT)} />
-            <rect className="fc-bar" x={n.x} y={n.y} width={BAR} height={n.h} rx={Math.min(3, n.h / 2)} />
+            <rect className="fc-hit" x={n.x - 6} y={Math.min(n.y, mid - SLOT / 2)} width={layout.bar + 12} height={Math.max(n.h, SLOT)} />
+            <rect className="fc-bar" x={n.x} y={n.y} width={layout.bar} height={n.h} rx={Math.min(3, n.h / 2)} />
+            {compact ? <foreignObject x={n.side === "source" ? 0 : size.w - layout.side + 6} y={mid - COMPACT_SLOT / 2}
+              width={layout.side - 6} height={COMPACT_SLOT}>
+              <div className="portrait-pool-label" data-side={n.side}>
+                <span className="portrait-chart-name">{n.label}</span>
+                <strong className="portrait-chart-amount">{money(n.value)}</strong>
+              </div>
+            </foreignObject> : <>
             <text className="fc-label" x={r(x)} y={r(mid - 4)} textAnchor={anchor}><tspan className="fc-name" style={{ fontSize: NAME }}>{n.label}</tspan></text>
             <text className="fc-label" x={r(x)} y={r(mid + VALUE - 1)} textAnchor={anchor}>
               <tspan className="fc-value" style={{ fontSize: VALUE }}>{money(n.value)}</tspan><tspan className="fc-change pool-share" dx={6} style={{ fontSize: 12 }}>{share(n.value)}</tspan>
             </text>
+            </>}
           </g>;
         })}
       </svg>}
