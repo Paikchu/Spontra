@@ -118,10 +118,13 @@ struct RootWorkspaceView: View {
                 case .industry:
                     ResearchStageView(kind: .industry)
                 case .company:
-                    if store.companySubView == .valuation {
-                        ValuationStageView()
-                    } else {
+                    switch store.companySubView {
+                    case .stream:
                         CompanyStreamStageView()
+                    case .statements:
+                        CompanyStatementsStageView(ticker: store.selectedTicker)
+                    case .valuation:
+                        ValuationStageView()
                     }
                 }
             }
@@ -313,7 +316,7 @@ struct CompanyLogoView: View {
     }
 }
 
-// MARK: - 公司页内轻量「动态 / 估值」平面切换栏（无卡片，替代移除的底部 Dock）
+// MARK: - 公司页内切换栏
 
 struct CompanyInlineModeBar: View {
     @Environment(SpontraStore.self) private var store
@@ -341,8 +344,11 @@ struct CompanyInlineModeBar: View {
                             .fill(isSelected ? DesignTokens.Colors.techCyan : Color.clear)
                             .frame(width: 22, height: 2)
                     }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
             Spacer()
         }
