@@ -377,6 +377,7 @@ struct CompanyEventDTO: Codable, Identifiable, Sendable {
     let form: String
     let filedAt: String
     let eventDate: String?
+    let items: [String]?
     let eventClass: String?
     let description: String?
     let title: String?
@@ -386,7 +387,7 @@ struct CompanyEventDTO: Codable, Identifiable, Sendable {
     let insider: InsiderTransactionDTO?
 
     enum CodingKeys: String, CodingKey {
-        case id, ticker, form, filedAt, eventDate
+        case id, ticker, form, filedAt, eventDate, items
         case eventClass = "class"
         case description, title, importance, edgarUrl, summary, insider
     }
@@ -444,11 +445,23 @@ struct CompanyStreamItem: Identifiable, Hashable, Sendable {
     let edgarUrl: String?
 }
 
-struct CompanyStreamQuarterSection: Identifiable, Hashable, Sendable {
-    var id: String { "\(quarterHeading)-\(periodEndLabel)" }
-    let quarterHeading: String
-    let periodEndLabel: String
-    let items: [CompanyStreamItem]
+enum CompanyStreamBlock: Identifiable, Hashable, Sendable {
+    case quarter(id: String, quarterHeading: String, periodEndLabel: String, items: [CompanyStreamItem])
+    case standalone(CompanyStreamItem)
+
+    var id: String {
+        switch self {
+        case .quarter(let id, _, _, _): id
+        case .standalone(let item): item.id
+        }
+    }
+
+    var items: [CompanyStreamItem] {
+        switch self {
+        case .quarter(_, _, _, let items): items
+        case .standalone(let item): [item]
+        }
+    }
 }
 
 // MARK: - 6. 数字与日期格式化工具

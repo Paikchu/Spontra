@@ -71,7 +71,7 @@ final class SpontraStore {
 
     // MARK: 当前公司的估值与动态流缓存
     var valuationsByTicker: [String: ValuationAPIResponse] = [:]
-    var streamSectionsByTicker: [String: [CompanyStreamQuarterSection]] = [:]
+    var streamBlocksByTicker: [String: [CompanyStreamBlock]] = [:]
     var filingDetailsByKey: [String: FilingDetailAPIResponse] = [:]
 
     // MARK: 加载与错误状态
@@ -108,8 +108,8 @@ final class SpontraStore {
         valuationsByTicker[selectedTicker]
     }
 
-    var currentStreamSections: [CompanyStreamQuarterSection] {
-        streamSectionsByTicker[selectedTicker] ?? []
+    var currentStreamBlocks: [CompanyStreamBlock] {
+        streamBlocksByTicker[selectedTicker] ?? []
     }
 
     func isWatched(_ ticker: String) -> Bool {
@@ -252,7 +252,7 @@ final class SpontraStore {
     func loadCompanyBundle(ticker: String, force: Bool) async {
         if !force,
            valuationsByTicker[ticker] != nil,
-           streamSectionsByTicker[ticker] != nil {
+           streamBlocksByTicker[ticker] != nil {
             return
         }
 
@@ -272,9 +272,9 @@ final class SpontraStore {
 
         let filings = filingsResp?.filings?.filings ?? []
         let events = eventsResp?.events?.events ?? []
-        let assembled = Self.buildStreamSections(filings: filings, events: events)
+        let assembled = Self.buildStreamBlocks(filings: filings, events: events)
         if !assembled.isEmpty {
-            streamSectionsByTicker[ticker] = assembled
+            streamBlocksByTicker[ticker] = assembled
         } else if val == nil {
             companyError = "无法读取 \(ticker) 的最新公开数据，请下拉重试。"
         }
@@ -304,41 +304,49 @@ final class SpontraStore {
         return nil
     }
 
-    // MARK: 将 /filings 与 /events 合并为网页同款按财季分组的时间线
+    // MARK: 将 /filings 与 /events 合并为网页同款时间线（仅财报与业绩 8-K 归入财季框，其余按时间倒序独立排列）
 
-    private static func buildStreamSections(
+    private struct RawStreamEntry {
+        let item: CompanyStreamItem
+        let isPeriodicReport: Bool
+        let periodEnd: String?
+        let explicitQuarterHeading: String?
+    }
+
+    private static func buildStreamBlocks(
         filings: [PublicFilingDigestDTO],
         events: [CompanyEventDTO]
-    ) -> [CompanyStreamQuarterSection] {
-        var items: [CompanyStreamItem] = []
+    ) -> [CompanyStreamBlock] {
+        let periodicFilings = filings.filter { $0.periodEnd != nil && !($0.periodEnd?.isEmpty ?? true) }
+        var nonPeriodicByAcc: [String: PublicFilingDigestDTO] = [:]
+        for f in filings where f.periodEnd == nil || f.periodEnd?.isEmpty == true {
+            nonPeriodicByAcc[f.accessionNumber] = f
+        }
+
+        let reportPeriodEnds = periodicFilings.compactMap(\.periodEnd)
+        let anchorPeriodEnd = reportPeriodEnds.max()
+
+        // 预先收集所有业绩公告的披露日，用于 releasedPeriod 去重判断（对齐 Web event-noise.ts）
+        let earningsReleaseDates: [(id: String, date: String)] = events.compactMap { e in
+            guard isEarningsRelease(e) else { return nil }
+            return (e.id, e.filedAt)
+        }
+
+        var entries: [RawStreamEntry] = []
         var seenAccessions = Set<String>()
 
-        // 1. 财报与 8-K 摘要
-        for f in filings.prefix(40) {
+        // 1. 定期财报（10-Q / 10-K / 20-F / 40-F）
+        for f in periodicFilings.prefix(40) {
             seenAccessions.insert(f.accessionNumber)
-            let headline = (f.headline?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-                ?? "\(f.form) 申报文件"
+            let periodEnd = f.periodEnd!
+            let headline = trimmedNonEmpty(f.headline) ?? "\(f.form) 申报文件"
             let dateStr = f.date ?? f.filingDate
             let md = FinanceFormat.shortMonthDay(dateStr)
-            let quarter = f.periodLabel ?? inferQuarterHeading(from: f.periodEnd ?? f.reportDate ?? dateStr)
-            let periodEnd = FinanceFormat.dotDate(f.periodEnd ?? f.reportDate ?? dateStr)
+            let quarter = trimmedNonEmpty(f.periodLabel) ?? inferQuarterHeading(from: periodEnd)
+            let periodEndLabel = FinanceFormat.dotDate(periodEnd)
+            let metaParts = [md, "财报", f.periodLabel, f.form].compactMap { $0 }.filter { !$0.isEmpty }
 
-            let kindTag = (f.form.contains("10-") || f.form.contains("20-F")) ? "财报" : "业绩"
-            let metaParts = [md, kindTag, f.periodLabel, f.form].compactMap { $0 }.filter { !$0.isEmpty }
-
-            var detailLines: [String] = []
-            if let view = f.analystView, !view.isEmpty { detailLines.append(view) }
-            if let risks = f.risks, !risks.isEmpty {
-                detailLines.append("主要风险：\n" + risks.map { "• \($0)" }.joined(separator: "\n"))
-            }
-            if let guidance = f.guidance, !guidance.isEmpty {
-                detailLines.append("指引要点：\n" + guidance.map { "• \($0)" }.joined(separator: "\n"))
-            }
-            if detailLines.isEmpty {
-                detailLines.append("该份 SEC \(f.form) 文件已收录，完整原始文本可通过 EDGAR 链接核验。")
-            }
-
-            items.append(CompanyStreamItem(
+            let item = CompanyStreamItem(
                 id: "filing-\(f.accessionNumber)",
                 accessionNumber: f.accessionNumber,
                 category: .reports,
@@ -348,15 +356,21 @@ final class SpontraStore {
                 metaLine: metaParts.joined(separator: " · "),
                 sortDate: dateStr,
                 quarterHeading: quarter,
-                periodEndLabel: periodEnd,
-                detailBody: detailLines.joined(separator: "\n\n"),
+                periodEndLabel: periodEndLabel,
+                detailBody: buildFilingDetailBody(f),
                 sourceLabel: "SEC \(f.form) · 披露日 \(dateStr)",
                 edgarUrl: f.edgarUrl
+            )
+            entries.append(RawStreamEntry(
+                item: item,
+                isPeriodicReport: true,
+                periodEnd: periodEnd,
+                explicitQuarterHeading: quarter
             ))
         }
 
-        // 2. 管理层动态（Form 4 内部人交易）与未在 filings 中出现的重大事件
-        for e in events.prefix(60) {
+        // 2. 事件（8-K 业绩公告 / 重大公告 / Form 4 内部人交易）
+        for e in events.prefix(120) {
             if let insider = e.insider {
                 let soldShares = insider.sold?.shares ?? 0
                 let boughtShares = insider.bought?.shares ?? 0
@@ -395,7 +409,7 @@ final class SpontraStore {
                     detailParts.append("交易计划：依据 Rule 10b5-1 预设交易计划执行。")
                 }
 
-                items.append(CompanyStreamItem(
+                let item = CompanyStreamItem(
                     id: "event-\(e.id)",
                     accessionNumber: nil,
                     category: .management,
@@ -409,15 +423,50 @@ final class SpontraStore {
                     detailBody: detailParts.joined(separator: "\n\n"),
                     sourceLabel: "SEC Form \(e.form) · 披露日 \(e.filedAt)",
                     edgarUrl: e.edgarUrl
+                )
+                entries.append(RawStreamEntry(
+                    item: item,
+                    isPeriodicReport: false,
+                    periodEnd: nil,
+                    explicitQuarterHeading: nil
                 ))
-            } else if !seenAccessions.contains(e.id), let headline = e.summary?.headline, !headline.isEmpty {
-                let md = FinanceFormat.shortMonthDay(e.filedAt)
-                let isMgmt = e.eventClass == "executive" || e.eventClass == "vote"
-                let classWord = eventClassLabel(e.eventClass)
-                let quarter = inferQuarterHeading(from: e.eventDate ?? e.filedAt)
-                let periodEnd = inferQuarterEnd(from: e.eventDate ?? e.filedAt)
+            } else if !seenAccessions.contains(e.id) {
+                let matchingFiling = nonPeriodicByAcc[e.id]
+                let earnings = isEarningsRelease(e)
+                let headline = trimmedNonEmpty(e.summary?.headline)
+                    ?? trimmedNonEmpty(matchingFiling?.headline)
+                    ?? (earnings ? "\(e.form) 业绩公告" : nil)
+                guard let headline else { continue }
 
-                items.append(CompanyStreamItem(
+                seenAccessions.insert(e.id)
+                let md = FinanceFormat.shortMonthDay(e.filedAt)
+                // 对齐 Web event-noise.ts：仅 executive 与 insider 归入管理层动态，其余归入财报/公告
+                let isMgmt = e.eventClass == "executive"
+                let classWord = eventClassLabel(e.eventClass)
+                let matchedPeriod = earnings
+                    ? releasedPeriod(
+                        filed: e.filedAt,
+                        eventId: e.id,
+                        reportPeriodEnds: reportPeriodEnds,
+                        anchor: anchorPeriodEnd,
+                        earningsReleaseDates: earningsReleaseDates
+                    )
+                    : nil
+                let quarter = matchedPeriod.map(inferQuarterHeading(from:))
+                    ?? inferQuarterHeading(from: e.eventDate ?? e.filedAt)
+                let periodEndLabel = matchedPeriod.map(FinanceFormat.dotDate)
+                    ?? FinanceFormat.dotDate(e.eventDate ?? e.filedAt)
+
+                let detailBody: String
+                if let view = trimmedNonEmpty(e.summary?.analystView) {
+                    detailBody = view
+                } else if let matchingFiling {
+                    detailBody = buildFilingDetailBody(matchingFiling)
+                } else {
+                    detailBody = headline
+                }
+
+                let item = CompanyStreamItem(
                     id: "event-\(e.id)",
                     accessionNumber: e.id,
                     category: isMgmt ? .management : .reports,
@@ -427,36 +476,183 @@ final class SpontraStore {
                     metaLine: "\(md) · \(classWord) · \(e.form)",
                     sortDate: e.filedAt,
                     quarterHeading: quarter,
-                    periodEndLabel: periodEnd,
-                    detailBody: (e.summary?.analystView?.isEmpty == false ? e.summary!.analystView! : headline),
+                    periodEndLabel: periodEndLabel,
+                    detailBody: detailBody,
                     sourceLabel: "SEC \(e.form) · 披露日 \(e.filedAt)",
-                    edgarUrl: e.edgarUrl
+                    edgarUrl: e.edgarUrl ?? matchingFiling?.edgarUrl
+                )
+                entries.append(RawStreamEntry(
+                    item: item,
+                    isPeriodicReport: false,
+                    periodEnd: matchedPeriod,
+                    explicitQuarterHeading: nil
                 ))
             }
         }
 
-        // 按日期倒序，再按财季分组（保持最新财季在前）
-        let sorted = items.sorted { $0.sortDate > $1.sortDate }
-        var groupOrder: [String] = []
-        var grouped: [String: (periodEnd: String, items: [CompanyStreamItem])] = [:]
-
-        for item in sorted {
-            let key = item.quarterHeading
-            if grouped[key] == nil {
-                groupOrder.append(key)
-                grouped[key] = (item.periodEndLabel, [])
-            }
-            grouped[key]?.items.append(item)
-        }
-
-        return groupOrder.compactMap { key in
-            guard let entry = grouped[key] else { return nil }
-            return CompanyStreamQuarterSection(
-                quarterHeading: key,
-                periodEndLabel: entry.periodEnd,
-                items: entry.items
+        // 3. 兜底：若 /filings 中有带标题的非定期报告未出现在 /events 中，也纳入时间线
+        for f in filings where !seenAccessions.contains(f.accessionNumber) {
+            guard let headline = trimmedNonEmpty(f.headline) else { continue }
+            seenAccessions.insert(f.accessionNumber)
+            let dateStr = f.date ?? f.filingDate
+            let md = FinanceFormat.shortMonthDay(dateStr)
+            let item = CompanyStreamItem(
+                id: "filing-\(f.accessionNumber)",
+                accessionNumber: f.accessionNumber,
+                category: .reports,
+                iconName: "doc.text",
+                isNegativeSignal: false,
+                title: headline,
+                metaLine: "\(md) · 公告 · \(f.form)",
+                sortDate: dateStr,
+                quarterHeading: inferQuarterHeading(from: dateStr),
+                periodEndLabel: FinanceFormat.dotDate(dateStr),
+                detailBody: buildFilingDetailBody(f),
+                sourceLabel: "SEC \(f.form) · 披露日 \(dateStr)",
+                edgarUrl: f.edgarUrl
             )
+            entries.append(RawStreamEntry(
+                item: item,
+                isPeriodicReport: false,
+                periodEnd: nil,
+                explicitQuarterHeading: nil
+            ))
         }
+
+        // 4. 按披露日期倒序排列（同日定期财报优先），对齐 Web streamBlocks()：
+        //    仅同一财季的定期财报与业绩 8-K 合并进财季框，其余条目保持在各自披露日期位置
+        let sorted = entries.sorted { lhs, rhs in
+            if lhs.item.sortDate != rhs.item.sortDate {
+                return lhs.item.sortDate > rhs.item.sortDate
+            }
+            if lhs.isPeriodicReport != rhs.isPeriodicReport {
+                return lhs.isPeriodicReport
+            }
+            return lhs.item.id < rhs.item.id
+        }
+
+        var blocks: [CompanyStreamBlock] = []
+        var quarterIndices: [(periodEnd: String, blockIndex: Int)] = []
+
+        for entry in sorted {
+            guard let periodEnd = entry.periodEnd else {
+                blocks.append(.standalone(entry.item))
+                continue
+            }
+
+            if let match = quarterIndices.first(where: { sameQuarter($0.periodEnd, periodEnd) }),
+               case .quarter(let id, let existingHeading, let existingPeriodLabel, var existingItems) = blocks[match.blockIndex] {
+                existingItems.append(entry.item)
+                let resolvedHeading = entry.explicitQuarterHeading ?? existingHeading
+                blocks[match.blockIndex] = .quarter(
+                    id: id,
+                    quarterHeading: resolvedHeading,
+                    periodEndLabel: existingPeriodLabel,
+                    items: existingItems
+                )
+            } else {
+                let heading = entry.explicitQuarterHeading ?? inferQuarterHeading(from: periodEnd)
+                let periodLabel = FinanceFormat.dotDate(periodEnd)
+                let blockIndex = blocks.count
+                blocks.append(.quarter(
+                    id: "quarter-\(periodEnd)",
+                    quarterHeading: heading,
+                    periodEndLabel: periodLabel,
+                    items: [entry.item]
+                ))
+                quarterIndices.append((periodEnd, blockIndex))
+            }
+        }
+
+        return blocks
+    }
+
+    private static func trimmedNonEmpty(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func buildFilingDetailBody(_ f: PublicFilingDigestDTO) -> String {
+        var detailLines: [String] = []
+        if let view = trimmedNonEmpty(f.analystView) { detailLines.append(view) }
+        if let risks = f.risks, !risks.isEmpty {
+            detailLines.append("主要风险：\n" + risks.map { "• \($0)" }.joined(separator: "\n"))
+        }
+        if let guidance = f.guidance, !guidance.isEmpty {
+            detailLines.append("指引要点：\n" + guidance.map { "• \($0)" }.joined(separator: "\n"))
+        }
+        if detailLines.isEmpty {
+            detailLines.append("该份 SEC \(f.form) 文件已收录，完整原始文本可通过 EDGAR 链接核验。")
+        }
+        return detailLines.joined(separator: "\n\n")
+    }
+
+    private static func isEarningsRelease(_ e: CompanyEventDTO) -> Bool {
+        guard e.eventClass == "earnings" else { return false }
+        return (e.items ?? []).contains("2.02") || !e.form.hasPrefix("8-K")
+    }
+
+    /// 对齐 Web event-noise.ts 的 releasedPeriod()：业绩 8-K 归属到披露日之前最近结束的财季
+    private static func releasedPeriod(
+        filed: String,
+        eventId: String,
+        reportPeriodEnds: [String],
+        anchor: String?,
+        earningsReleaseDates: [(id: String, date: String)]
+    ) -> String? {
+        var ends = reportPeriodEnds.filter { $0 < filed }
+        if let anchor {
+            var step = 0
+            while let candidate = addMonths(anchor, months: 3 * step), candidate >= filed, step > -400 {
+                step -= 1
+            }
+            while let candidate = addMonths(anchor, months: 3 * (step + 1)), candidate < filed, step < 400 {
+                step += 1
+            }
+            if let candidate = addMonths(anchor, months: 3 * step), candidate < filed {
+                ends.append(candidate)
+            }
+        }
+        guard let quarter = ends.max() else { return nil }
+        let hasEarlierRelease = earningsReleaseDates.contains { other in
+            other.id != eventId && other.date > quarter && other.date < filed
+        }
+        return hasEarlierRelease ? nil : quarter
+    }
+
+    private static func sameQuarter(_ a: String, _ b: String) -> Bool {
+        guard let dateA = parseISODate(a), let dateB = parseISODate(b) else {
+            return a == b
+        }
+        return abs(dateA.timeIntervalSince(dateB)) <= 10 * 86_400
+    }
+
+    private static func addMonths(_ iso: String, months: Int) -> String? {
+        let parts = iso.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        guard let base = cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              let rangeBase = cal.range(of: .day, in: .month, for: base),
+              let shiftedFirst = cal.date(byAdding: .month, value: months, to: cal.date(from: DateComponents(year: parts[0], month: parts[1], day: 1))!),
+              let rangeTarget = cal.range(of: .day, in: .month, for: shiftedFirst) else {
+            return nil
+        }
+        let targetComps = cal.dateComponents([.year, .month], from: shiftedFirst)
+        let isLastDay = parts[2] == rangeBase.count
+        let targetDay = isLastDay ? rangeTarget.count : min(parts[2], rangeTarget.count)
+        guard let y = targetComps.year, let m = targetComps.month else { return nil }
+        return String(format: "%04d-%02d-%02d", y, m, targetDay)
+    }
+
+    private static func parseISODate(_ iso: String) -> Date? {
+        let parts = iso.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 
     private static func eventClassLabel(_ raw: String?) -> String {

@@ -51,16 +51,35 @@ struct CompanyStreamStageView: View {
                 }
                 .padding(.top, 2)
 
-                // 3. 按财季分组的 SEC 财报 & 管理层动态时间线（去卡片，纯平面列表 + 细分隔线）
-                if (store.isBootstrapping || store.isLoadingCompanyData) && store.currentStreamSections.isEmpty {
+                // 3. 按网页同款时间线渲染：同财季定期财报与业绩 8-K 成组，其余事件按披露日倒序排列
+                if (store.isBootstrapping || store.isLoadingCompanyData) && store.currentStreamBlocks.isEmpty {
                     loadingRow("正在同步 \(store.selectedTicker) 财报与管理层动态...")
-                } else if store.currentStreamSections.isEmpty {
+                } else if store.currentStreamBlocks.isEmpty {
                     emptyRow(store.companyError ?? "暂无 \(store.selectedTicker) 的最新申报记录，下拉重试。")
                 } else {
-                    ForEach(store.currentStreamSections) { section in
-                        let visible = section.items.filter { enabledCategories.contains($0.category) }
-                        if !visible.isEmpty {
-                            quarterSectionView(section: section, items: visible)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(store.currentStreamBlocks) { block in
+                            switch block {
+                            case .quarter(_, let heading, let periodEnd, let items):
+                                let visible = items.filter { enabledCategories.contains($0.category) }
+                                if !visible.isEmpty {
+                                    quarterSectionView(
+                                        quarterHeading: heading,
+                                        periodEndLabel: periodEnd,
+                                        items: visible
+                                    )
+                                    Divider()
+                                        .overlay(DesignTokens.Colors.hairline)
+                                        .padding(.top, 4)
+                                }
+                            case .standalone(let item):
+                                if enabledCategories.contains(item.category) {
+                                    streamItemRow(item)
+                                    Divider()
+                                        .overlay(DesignTokens.Colors.hairline)
+                                        .padding(.leading, 28)
+                                }
+                            }
                         }
                     }
                 }
@@ -99,21 +118,29 @@ struct CompanyStreamStageView: View {
                 sheetDetent = ProcessInfo.processInfo.arguments.contains("-expandArticle") ? .large : .medium
             }
         }
-        .onChange(of: store.currentStreamSections.count) { _, _ in
-            openFirstArticleIfRequested()
+        .onChange(of: store.currentStreamBlocks.count) { _, _ in
+            openArticleIfRequested()
         }
         .onAppear {
-            openFirstArticleIfRequested()
+            openArticleIfRequested()
         }
     }
 
-    private func openFirstArticleIfRequested() {
-        guard ProcessInfo.processInfo.arguments.contains("-openFirstArticle"),
-              selectedItem == nil,
-              let first = store.currentStreamSections.first?.items.first(where: { $0.accessionNumber != nil }) else {
+    private func openArticleIfRequested() {
+        guard selectedItem == nil else { return }
+        let args = ProcessInfo.processInfo.arguments
+        let allItems = store.currentStreamBlocks.flatMap(\.items)
+        if let idx = args.firstIndex(of: "-openAccession"), idx + 1 < args.count {
+            let target = args[idx + 1]
+            if let match = allItems.first(where: { $0.accessionNumber == target }) {
+                selectedItem = match
+            }
             return
         }
-        selectedItem = first
+        if args.contains("-openFirstArticle"),
+           let first = allItems.first(where: { $0.accessionNumber != nil }) {
+            selectedItem = first
+        }
     }
 
     private func companyOverviewSection(_ company: HomeCompanyDTO) -> some View {
@@ -188,55 +215,25 @@ struct CompanyStreamStageView: View {
     }
 
     private func quarterSectionView(
-        section: CompanyStreamQuarterSection,
+        quarterHeading: String,
+        periodEndLabel: String,
         items: [CompanyStreamItem]
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(section.quarterHeading)
+                Text(quarterHeading)
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(DesignTokens.Colors.textPrimary)
-                Text("截至 \(section.periodEndLabel)")
+                Text("截至 \(periodEndLabel)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(DesignTokens.Colors.textSecondary)
             }
-            .padding(.top, 8)
+            .padding(.top, 10)
             .padding(.bottom, 2)
 
             VStack(spacing: 0) {
                 ForEach(items) { item in
-                    Button {
-                        selectedItem = item
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: item.iconName)
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundStyle(
-                                    item.isNegativeSignal
-                                        ? DesignTokens.Colors.textSecondary
-                                        : DesignTokens.Colors.textPrimary
-                                )
-                                .frame(width: 18, alignment: .center)
-                                .padding(.top, 2)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.title)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(DesignTokens.Colors.textPrimary)
-                                    .multilineTextAlignment(.leading)
-                                    .lineLimit(2)
-
-                                Text(item.metaLine)
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 4)
-                        }
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    streamItemRow(item)
 
                     if item.id != items.last?.id {
                         Divider()
@@ -246,6 +243,41 @@ struct CompanyStreamStageView: View {
                 }
             }
         }
+    }
+
+    private func streamItemRow(_ item: CompanyStreamItem) -> some View {
+        Button {
+            selectedItem = item
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: item.iconName)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(
+                        item.isNegativeSignal
+                            ? DesignTokens.Colors.textSecondary
+                            : DesignTokens.Colors.textPrimary
+                    )
+                    .frame(width: 18, alignment: .center)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(DesignTokens.Colors.textPrimary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+
+                    Text(item.metaLine)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggleCategory(_ category: StreamFilterCategory) {
