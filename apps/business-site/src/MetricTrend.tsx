@@ -84,8 +84,10 @@ function formatter(trend: MetricTrend) {
  * flow hang below it), and for amounts a growth line on the right axis. Rates are already in points, so their change is
  * stated in points and drawn as no second line. Gaps stay gaps.
  */
-export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod, ticker }: {
+export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod, ticker, comparisonLag, showLegend = true }: {
   trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void; ticker: string;
+  comparisonLag?: 1 | 4;
+  showLegend?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
@@ -94,7 +96,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   // Amounts tick without the currency, stated once in the legend; rates, multiples, per-share and share counts keep their unit.
   const amounts = trend.unitFamily === "currency";
   const rate = trend.unitFamily !== "percent";
-  const lag = chosenLag ?? (metricChanges(trend, 4).filter(v => v != null).length >= 2 ? 4 : 1);
+  const lag = comparisonLag ?? chosenLag ?? (metricChanges(trend, 4).filter(v => v != null).length >= 2 ? 4 : 1);
   const changes = useMemo(() => metricChanges(trend, lag), [trend, lag]);
   const ticks = metricTicks(trend);
   const lo = ticks[0], hi = ticks[3];
@@ -102,13 +104,15 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   const rateAxis = useMemo(() => rate ? rateTicks(changes) : null, [rate, changes]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
   const rateName = lag === 4 ? m.yoyGrowth : m.qoqGrowth;
-  const known = trend.points.filter(p => p.value != null);
-  const last = trend.history.at(-1)?.value ?? null, yearAgo = trend.history.at(-5)?.value ?? null;
-  const change = (a: number | null, b: number | null) => rate ? percent(growth(a, b)) : a != null && b != null ? points(a - b) : "—";
-  const changeTrend = (a: number | null, b: number | null) => direction(rate ? growth(a, b) : a != null && b != null ? a - b : null);
   // The quarter shown in the flow chart; the newest when the series does not reach it.
   const shown = currentPeriod ? trend.points.findIndex(p => sameQuarter(p.periodEnd, currentPeriod)) : -1;
   const current = shown >= 0 ? shown : trend.points.length - 1;
+  const known = (comparisonLag ? trend.points.slice(0, current + 1) : trend.points).filter(p => p.value != null);
+  const last = trend.history.at(-1)?.value ?? null, yearAgo = trend.history.at(-5)?.value ?? null;
+  const changeOf = (a: number | null, b: number | null) => rate ? growth(a, b) : a != null && b != null ? a - b : null;
+  const comparison = comparisonLag ? changes[current] : changeOf(last, yearAgo);
+  const span = changeOf(known.at(-1)?.value ?? null, known[0]?.value ?? null);
+  const changeLabel = rate ? percent : points;
   const flowPeriod = (end: string) => [...periods].find(p => sameQuarter(p, end)) ?? null;
   const config = useMemo<ChartConfig>(() => ({ [trend.key]: { label: trend.label, color: "var(--biz-0)" }, growth: { label: rateName, color: "var(--foreground)" } }), [trend, rateName]);
 
@@ -116,18 +120,18 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading"><h2>{m.wholeCompany}</h2>{picker}</div>
-        <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
+        {showLegend && <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
           {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName}</span>}
           <span className="trend-basis">{m.secXbrl}</span>
           {amounts && <span className="trend-sub">{axisUnit(trend.currency || "USD", getLocale())}</span>}
-        </div></ChartLegendContent>
+        </div></ChartLegendContent>}
       </div>
       <div className="trend-kpis">
         <dl>
-          <div><dt>{yoyLabel(getLocale())}</dt><dd data-trend={changeTrend(last, yearAgo)}>{change(last, yearAgo)}</dd></div>
-          {known.length > 1 && <div><dt>{m.since(shortPeriod(known[0].periodEnd))}</dt><dd data-trend={changeTrend(known.at(-1)!.value, known[0].value)}>{change(known.at(-1)!.value, known[0].value)}</dd></div>}
+          <div><dt>{comparisonLag === 1 ? qoqLabel(getLocale()) : yoyLabel(getLocale())}</dt><dd data-trend={direction(comparison)}>{changeLabel(comparison)}</dd></div>
+          {known.length > 1 && <div><dt>{m.since(shortPeriod(known[0].periodEnd))}</dt><dd data-trend={direction(span)}>{changeLabel(span)}</dd></div>}
         </dl>
-        {rate && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={String(lag)} onValueChange={next => { if (next) setLag(next === "4" ? 4 : 1); }} asChild>
+        {rate && !comparisonLag && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={String(lag)} onValueChange={next => { if (next) setLag(next === "4" ? 4 : 1); }} asChild>
           <span className="periods periods--small" role="radiogroup" aria-label={m.comparisonBase}>
             <ToggleGroupItem value="4" role="radio" aria-checked={lag === 4}>{yoyLabel(getLocale())}</ToggleGroupItem>
             <ToggleGroupItem value="1" role="radio" aria-checked={lag === 1}>{qoqLabel(getLocale())}</ToggleGroupItem>

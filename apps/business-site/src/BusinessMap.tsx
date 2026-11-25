@@ -21,7 +21,8 @@ import { MindLens, mindNodeItem, namedNodes, type MindMapInput } from "./MindMap
 import type { MindItem } from "./mindmap-layout";
 import { TrendPanel } from "./TrendPanel";
 import { MetricPicker, MetricTrendPanel, PROFIT_PAIR, ProfitToggle } from "./MetricTrend";
-import { REVENUE_METRIC, metricOptions, metricTrend } from "./metric-model";
+import { OPERATING_INCOME_METRIC, REVENUE_METRIC, metricChanges, metricOptions, metricTrend, statementOperatingTrend } from "./metric-model";
+import type { FundamentalMetricCategory } from "@/shared/analysis-contract/fundamentals";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
@@ -143,6 +144,22 @@ const percent = (v: number | null) => v == null || !Number.isFinite(v) ? "—" :
 const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null });
 type View = "profit" | "cash" | "balance" | "valuation" | "company";
 type StatementView = Exclude<View, "valuation" | "company">;
+type EmbeddedStatement = {
+  view: StatementView;
+  caption: string;
+  periodEnd: string;
+  periods: Set<string>;
+  onPickPeriod: (end: string) => void;
+  funding?: CapitalQuarter;
+};
+const STATEMENT_TREND_CATEGORIES: Record<StatementView, readonly FundamentalMetricCategory[]> = {
+  profit: ["income_statement", "per_share", "ratio"],
+  cash: ["cash_flow"],
+  balance: ["balance_sheet"],
+};
+const STATEMENT_TREND_DEFAULT: Record<StatementView, string> = {
+  profit: OPERATING_INCOME_METRIC, cash: "operating_cash_flow", balance: "total_assets",
+};
 const VIEWS: readonly View[] = ["valuation", "company", "profit", "cash", "balance"];
 const requestedView = (value: string | null, statementsOnly: boolean): View => VIEWS.find(option =>
   option === value && (!statementsOnly || option !== "company" && option !== "valuation")) ?? "profit";
@@ -285,11 +302,10 @@ function leaveFilingEdition() {
   window.dispatchEvent(new Event("spontra:filing-navigation"));
 }
 
-export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnly = false, chartOnlyView, chartFunding, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnly = false, embeddedStatement, explainer = null, tree = null, capital = null, findings = null, peers = null, passages = null, dossiers = null, fundamentals = null, events = null, filings = null, valuation = null, layers, updates = 0, revisions = {}, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; /** Findings whose analysis is a published dossier artifact, with when it was published. */ dossiers?: Record<string, string> | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   revisions?: MapRevisions;
   statementsOnly?: boolean;
-  chartOnlyView?: StatementView;
-  chartFunding?: CapitalQuarter | null;
+  embeddedStatement?: EmbeddedStatement;
   /** Display choices for the current analysis layers. */
   layers?: Record<Layer, boolean>;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view. */
@@ -310,10 +326,12 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   onRetryEvents?: () => void;
 }) {
   const locale = useLocale();
+  const embeddedView = embeddedStatement?.view;
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   // `?period=` opens a report other than the latest (a home card links straight to the quarter it reports).
   const [period, setPeriod] = useState<string | null>(() => { const end = new URLSearchParams(location.search).get("period"); return end ? quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(end)) <= 20 * 86_400_000)?.id ?? null : null; });
-  const quarter = quarters.find(q => q.id === period) ?? quarters[0];
+  const quarter = (embeddedStatement ? quarters.find(q => q.periodEnd === embeddedStatement.periodEnd)
+    : quarters.find(q => q.id === period)) ?? quarters[0];
   // YoY by default; QoQ when the year-ago quarter was not collected but the one before was.
   const [chosenBasis, setBasis] = useState<Basis | null>(null);
   const yearAgo = useMemo(() => quarter ? yearAgoQuarter(quarter, quarters) : null, [quarter, quarters]);
@@ -350,13 +368,20 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   // The visual review opens a report draft through a preview link before the filing has a published report.
   const [previewing] = useState(() => new URLSearchParams(location.search).has("artifact-preview"));
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
-  const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
-  const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
-  const [metricKey, setMetricKey] = useState<string>(() => new URLSearchParams(location.search).get("metric") ?? REVENUE_METRIC);
+  const categories = embeddedView ? STATEMENT_TREND_CATEGORIES[embeddedView] : undefined;
+  const currency = quarter?.currency;
+  const operating = useMemo(() => embeddedView === "profit" && currency ? statementOperatingTrend(quarters, currency) : null,
+    [embeddedView, quarters, currency]);
+  const metricGroups = useMemo(() => metricOptions(fundamentals, categories, operating), [fundamentals, categories, operating]);
+  const hasRevenueTrend = (!embeddedView || embeddedView === "profit") && !!revenueHistory && revenueHistory.quarters.length >= 2;
+  const [metricKey, setMetricKey] = useState<string>(() => embeddedView ? STATEMENT_TREND_DEFAULT[embeddedView]
+    : new URLSearchParams(location.search).get("metric") ?? REVENUE_METRIC);
   const metricSeries = metricKey === REVENUE_METRIC ? null : fundamentals?.series.find(s => s.metricKey === metricKey && metricGroups.some(g => g.options.some(o => o.key === s.metricKey)));
-  const metric = useMemo(() => metricSeries ? metricTrend(metricSeries) : null, [metricSeries]);
+  const metric = useMemo(() => metricKey === OPERATING_INCOME_METRIC && operating ? operating : metricSeries ? metricTrend(metricSeries) : null,
+    [metricKey, metricSeries, operating]);
   const firstMetric = metricGroups[0]?.options[0]?.key;
-  const fallbackMetric = !metric && !hasRevenueTrend && firstMetric ? metricTrend(fundamentals!.series.find(s => s.metricKey === firstMetric)!) : null;
+  const fallbackSeries = !metric && !hasRevenueTrend && firstMetric ? fundamentals?.series.find(s => s.metricKey === firstMetric) : undefined;
+  const fallbackMetric = fallbackSeries ? metricTrend(fallbackSeries) : null;
   const shownMetric = metric ?? fallbackMetric;
   const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const [preview, setPreview] = useState<string | null>(null);
@@ -403,7 +428,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   const graph = trunk && trunked ? trunked.graph : fullGraph;
   const folded = useMemo(() => trunk && trunked ? trunked.folded : new Map<string, string>(), [trunk, trunked]);
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
-  const funding = chartOnlyView ? chartFunding ?? null : capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
+  const funding = embeddedStatement ? embeddedStatement.funding ?? null : capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !statementsOnly && !!valuation && valuation.availability !== "hidden";
   // The company analysis, composed as an artifact; a preview link shows its draft in its place.
@@ -416,11 +441,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   // Start with the income statement; valuation remains an explicit tab or deep link.
   const homeView: View = "profit";
   const [chosenView, setView] = useState(() => requestedView(new URLSearchParams(location.search).get("view"), statementsOnly));
-  const view: View = chartOnlyView ?? (chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit");
+  const view: View = embeddedView ?? (chosenView === "company" ? "company" : chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit");
   // The statement the figures under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" || view === "company" ? "profit" : view;
   useEffect(() => {
-    if (chartOnlyView) return;
+    if (embeddedView) return;
     const restore = () => {
       const params = new URLSearchParams(location.search), requested = params.get("view");
       setReportId(params.get("report")); setEventId(params.get("event")); setFocusId(params.get("finding"));
@@ -431,11 +456,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
-  }, [quarters, statementsOnly, chartOnlyView]);
+  }, [quarters, statementsOnly, embeddedView]);
   // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   useEffect(() => {
-    if (chartOnlyView) return;
+    if (embeddedView) return;
     const url = new URL(location.href);
     if (quarter && quarter.id !== quarters[0]?.id) url.searchParams.set("period", quarter.periodEnd); else url.searchParams.delete("period");
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
@@ -450,7 +475,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
     const next = withRailTabs(url.search, railTabs);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [quarter, quarters, current, focusId, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs, chartOnlyView]);
+  }, [quarter, quarters, current, focusId, focusedEvent, focusedReport, metric, detail, view, homeView, railTabs, embeddedView]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focusId, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focusId, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
@@ -669,9 +694,9 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
   const chartRef = useRef<HTMLDivElement>(null);
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
-  const diagram = moduleErrors.includes("company") ? <ModuleFailure resource="company" retry={onRetryModule} /> : (view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} compact={Boolean(chartOnlyView)} />
+  const diagram = moduleErrors.includes("company") ? <ModuleFailure resource="company" retry={onRetryModule} /> : (view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} compact={Boolean(embeddedView)} />
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
-          : proportional && layout ? <FlowChart inline={Boolean(chartOnlyView)} graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
+          : proportional && layout ? <FlowChart inline={Boolean(embeddedView)} graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
                 ? <MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)}>
                   {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.business, c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
                 </MindLens>
@@ -682,7 +707,34 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
               label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>;
 
-  if (chartOnlyView) return <div className="chart statement-chart-content" ref={chartRef} data-view={chartOnlyView}>{diagram}</div>;
+  const trendPeriod = embeddedStatement?.periodEnd ?? quarter?.periodEnd ?? null;
+  const trendPeriods = embeddedStatement?.periods ?? new Set(quarters.map(q => q.periodEnd));
+  const pickTrendPeriod = embeddedStatement?.onPickPeriod ?? ((end: string) => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null));
+  const sharedLag = !embeddedView ? undefined : embeddedView === "profit" || chosenBasis
+    ? basis === "yoy" ? 4 : 1
+    : shownMetric && metricChanges(shownMetric, 4).filter(value => value != null).length >= 2 ? 4 : 1;
+  const trend = breakdownShown ? null
+    : shownMetric ? <MetricTrendPanel ticker={ticker} trend={shownMetric} currentPeriod={trendPeriod} periods={trendPeriods}
+      onPickPeriod={pickTrendPeriod} comparisonLag={sharedLag} showLegend={!embeddedView}
+      picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{profitToggle}</>} />
+    : hasRevenueTrend && revenueHistory ? <TrendPanel ticker={ticker} history={revenueHistory} items={items} selected={current} currentPeriod={trendPeriod}
+      periods={trendPeriods} onPickPeriod={pickTrendPeriod} hue={hue} comparisonLag={sharedLag} showLegend={!embeddedView}
+      picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{metricsUnavailable}</>} /> : null;
+
+  if (embeddedStatement) return <>
+    <figcaption>
+      <span>{embeddedStatement.caption}</span>
+      {(trend || (embeddedView === "profit" && (yearAgo || lastQuarter))) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={String(sharedLag)}
+        onValueChange={next => { if (next) setBasis(next === "4" ? "yoy" : "qoq"); }} asChild>
+        <span className="periods periods--small" role="radiogroup" aria-label={m.comparisonBase}>
+          <ToggleGroupItem value="4" role="radio" aria-checked={sharedLag === 4}>{yoyLabel(locale)}</ToggleGroupItem>
+          <ToggleGroupItem value="1" role="radio" aria-checked={sharedLag === 1}>{qoqLabel(locale)}</ToggleGroupItem>
+        </span>
+      </ToggleGroup>}
+    </figcaption>
+    <div className="chart statement-chart-content" ref={chartRef} data-view={embeddedView}>{diagram}</div>
+    {trend}
+  </>;
 
   // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
   const viewToggle = (statementsOnly || !!funding && !!(cash || funding.balanceSheet) || valuationShown || !!companyReport) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
@@ -828,13 +880,7 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, statementsOnl
       </div>
 
       {/* With the breakdown on the stage, the business panel beside it takes the room the trend would. */}
-      {breakdownShown ? null
-      : shownMetric ? <MetricTrendPanel ticker={ticker} trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
-        onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
-        picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{profitToggle}</>} />
-      : hasRevenueTrend && <TrendPanel ticker={ticker} history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
-        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue}
-        picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{metricsUnavailable}</>} />}
+      {trend}
 
       </>}
     </section>

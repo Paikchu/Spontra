@@ -63,7 +63,7 @@ function layerColor(layer: Layer, hue: (slot: number) => string) {
  * Up to five quarterly bars (fewer for a short disclosure history) that morph rather than remount: every column always renders every layer, and a
  * focus change only moves heights, so "all businesses" collapses into the selected business continuously.
  */
-export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, picker = null, ticker }: {
+export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, picker = null, ticker, comparisonLag, showLegend = true }: {
   history: RevenueHistory;
   /** Metric picker beside the heading; switching away from revenue replaces this panel with a company-level metric. */
   picker?: ReactNode;
@@ -74,6 +74,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   onPickPeriod: (periodEnd: string) => void;
   hue: (slot: number) => string;
   ticker: string;
+  comparisonLag?: 1 | 4;
+  showLegend?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   /** Which series the pointer is on; it and its axis stay lit while the other recedes. */
@@ -91,22 +93,23 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const scale = ticks.at(-1)!;
   const unit = historySlots.at(-1)!.quarter!;
   const money = (v: number | null) => flowMoney(v, unit.currency, unit.scale);
-  const known = columns.filter(c => c.total != null);
-  const last = historyColumns.at(-1)?.total ?? null, yearAgo = historyColumns.at(-5)?.total ?? null;
+  const index = columnIndex(columns, currentPeriod);
+  const historyIndex = index + historyColumns.length - columns.length;
+  const known = (comparisonLag ? columns.slice(0, index + 1) : columns).filter(c => c.total != null);
+  const kpiIndex = comparisonLag ? historyIndex : historyColumns.length - 1;
+  const last = historyColumns[kpiIndex], prior = historyColumns[kpiIndex - (comparisonLag ?? 4)];
   // A business's change is read within one segment basis only; the company's total is the same on any basis.
   const comparable = (a: Column | undefined, b: Column | undefined) => !selected || (!!a && !!b && onSameBasis(a, b));
-  const yoy = comparable(historyColumns.at(-1), historyColumns.at(-5)) ? growth(last, yearAgo) : null;
+  const change = comparable(last, prior) ? growth(last?.total ?? null, prior?.total ?? null) : null;
   const span = known.length > 1 && comparable(known.at(-1), known[0]) ? growth(known.at(-1)!.total, known[0].total) : null;
   const mode = selected?.key ?? "all";
   const legend = useMemo(() => selected ? (columns.find(c => c.layers.length > 1)?.layers ?? [])
     : [...new Map([...columns].reverse().flatMap(column => column.layers.filter(layer => layer.tone !== "total")).map(layer => [layer.key, layer])).values()], [selected, columns]);
-  const index = columnIndex(columns, currentPeriod);
-  const historyIndex = index + historyColumns.length - columns.length;
   // Year over year unless that quarter is missing, until the reader picks a base.
-  const lag = chosenLag ?? (buildBridge(historyColumns, historyIndex, 4) ? 4 : 1);
+  const lag = comparisonLag ?? chosenLag ?? (buildBridge(historyColumns, historyIndex, 4) ? 4 : 1);
   const bridge = useMemo(() => buildBridge(historyColumns, historyIndex, lag), [historyColumns, historyIndex, lag]);
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
-  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4, !!selected).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
+  const lineLag = comparisonLag ?? chosenLag ?? (growthSeries(historyColumns, 4, !!selected).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
   const rates = useMemo(() => growthSeries(historyColumns, lineLag, !!selected).slice(-visible), [historyColumns, lineLag, visible, selected]);
   // A re-segmentation inside the bars drawn: the first quarter on the current basis after one on an earlier basis.
   const rebased = columns.some(c => c.segmentBasis === "earlier") && columns.some(c => c.segmentBasis === "current");
@@ -143,22 +146,22 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
             </span>
           </ToggleGroup>
         </div>
-        <ChartLegendContent asChild key={"legend" + mode + view}><div className="trend-legend">
+        {showLegend && <ChartLegendContent asChild key={"legend" + mode + view}><div className="trend-legend">
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: chartConfig[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span>)}
           {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName}</span>}
           {view === "trend" && <span className="trend-sub">{axisUnit(unit.currency, getLocale())}</span>}
           {view === "bridge" && bridge && bridge.reason !== "split" && <span className="trend-basis">{m.totalsOnly}</span>}
-        </div></ChartLegendContent>
+        </div></ChartLegendContent>}
       </div>
       {view === "trend" ? <div className="trend-kpis">
         <dl>
-          <div><dt>{yoyLabel(getLocale())}</dt><dd data-trend={trend(yoy)}>{percent(yoy)}</dd></div>
+          <div><dt>{comparisonLag === 1 ? qoqLabel(getLocale()) : yoyLabel(getLocale())}</dt><dd data-trend={trend(change)}>{percent(change)}</dd></div>
           <div><dt>{known.length > 1 ? m.since(shortPeriod(known[0].slot.periodEnd)) : m.period}</dt><dd data-trend={trend(span)}>{percent(span)}</dd></div>
         </dl>
-        {lagSwitch(lineLag)}
+        {!comparisonLag && lagSwitch(lineLag)}
       </div> : <div className="trend-kpis">
         {bridge && <dl><div><dt>{m.change(lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale()))}</dt><dd data-trend={trend(bridge.change)}>{signed(bridge.change, money)}<small>{percent(bridge.percent)}</small></dd></div></dl>}
-        {lagSwitch(lag)}
+        {!comparisonLag && lagSwitch(lag)}
       </div>}
     </header>
     {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={lag === 4 ? m.noYearAgo : m.noPrior} subject={revenueName} hue={hue} money={money} /> : <>

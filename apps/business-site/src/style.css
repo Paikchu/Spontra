@@ -1441,7 +1441,7 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 body:has(.statement-chart-page) { overflow: auto; }
 .statement-chart-page { height: auto; min-height: 100%; padding: 12px 12px 20px; }
 .statement-chart-figure { max-width: 1440px; margin: 0 auto; }
-.statement-chart-figure figcaption { margin: 0 0 14px; color: var(--muted-foreground); font-size: 13px; font-variant-numeric: tabular-nums; }
+.statement-chart-figure > figcaption { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 14px; color: var(--muted-foreground); font-size: 13px; font-variant-numeric: tabular-nums; }
 .statement-chart-status { margin: 24px auto; color: var(--muted-foreground); font-size: 14px; text-align: center; }
 .statement-chart-status button { min-height: 44px; padding: 6px 16px; }
 .chart.statement-chart-content { margin: 0; overflow: auto hidden; }
