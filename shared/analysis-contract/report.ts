@@ -149,6 +149,7 @@ export type SecFiling = {
   companyName: string;
   form: string;
   filingDate: string;
+  acceptedAt?: string;
   reportDate: string;
   accessionNumber: string;
   primaryDocument: string;

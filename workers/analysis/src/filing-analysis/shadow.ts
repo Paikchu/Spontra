@@ -1,3 +1,4 @@
+import { earningsReleasePeriod, latestEarningsHandoff } from "./earnings-handoff.ts";
 import { AI_MODELS, AI_EFFORTS, type AiModel, type AiEffort } from "../../../../shared/analysis-contract/ai-models-admin.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { createAnalysisOperations } from "../operations.ts";
@@ -7,6 +8,7 @@ import { freezeCompanyResearch, companyResearchDependencyStatements } from "../p
 import { D1SecRepository } from "../sec/d1.ts";
 import { trackedTickersFor } from "../core.ts";
 import { profileFor } from "./profiles.ts";
+import { disclosureCutoff, freezeFilingExpectations } from "./expectations.ts";
 import { filingOpening } from "./start.ts";
 import { filingSummary, type FilingSpec, type FilingWork, type FilingOperatorAuthor } from "./recipe.ts";
 import type { ResearchUse } from "../company-research/context-tools.ts";
@@ -33,7 +35,8 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
     let parsed: unknown;
     try { parsed = rawBody.trim() ? JSON.parse(rawBody) : {}; } catch { return reply({ error: "Invalid shadow options JSON" }, 400); }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return reply({ error: "Shadow options must be an object" }, 400);
-    const options = parsed as { model?: AiModel; effort?: AiEffort };
+    const options = parsed as { model?: AiModel; effort?: AiEffort; earningsSourceRunId?:string };
+    if(options.earningsSourceRunId!==undefined && (typeof options.earningsSourceRunId!=="string"||!/^shadow-[A-Z0-9.-]+-[0-9-]+-[a-f0-9-]{36}$/.test(options.earningsSourceRunId)))return reply({error:"Invalid shadow earnings source"},400);
     if ((options.model !== undefined && !AI_MODELS.includes(options.model)) || (options.effort !== undefined && !AI_EFFORTS.includes(options.effort))) return reply({ error: "Unknown shadow model or effort" }, 400);
     const id = `shadow-${ticker}-${accession}-${requestId}`;
     const existing = await repository.getCache<ShadowRun>(key(id));
@@ -47,13 +50,14 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
     if (!sessions) return reply({ error: "Research sessions unavailable" }, 503);
     const now = new Date().toISOString();
     const snapshot = await readMaterialSnapshot(env, material.ref);
-    const publicResearch = await freezeCompanyResearch(env, ticker, now);
-    const spec: FilingSpec = { ticker, filing, profile: profile.id, sessionId: id, jobId: id, jobVersion: "shadow.v1", requestedBy: "manual", material: material.ref, mode: "rewrite", shadow: true, shadowModel: options.model, shadowEffort: options.effort, publicResearch };
+    const [publicResearch,expectations] = await Promise.all([freezeCompanyResearch(env,ticker,disclosureCutoff(filing)),freezeFilingExpectations(env,filing,snapshot)]);
+    const copyFlow={releasePeriod:earningsReleasePeriod(filing,snapshot),handoff:await latestEarningsHandoff(env,filing,options.earningsSourceRunId)};
+    const spec: FilingSpec = { copyFlow, ticker, filing, profile: profile.id, sessionId: id, jobId: id, jobVersion: "shadow.v1", requestedBy: "manual", material: material.ref, mode: "rewrite", shadow: true, shadowModel: options.model, shadowEffort: options.effort, expectations, publicResearch };
     const current = await db.prepare("SELECT published_version FROM analysis_artifacts WHERE artifact_id=?").bind(artifactId("filing-report", ticker, accession)).first<{ published_version: number | null }>();
-    const run: ShadowRun = { runId: id, ticker, accession, createdAt: now, baseVersion: current?.published_version ?? null, callsReserved: 0, maxCalls: 140, spec };
+    const run: ShadowRun = { runId: id, ticker, accession, createdAt: now, baseVersion: current?.published_version ?? null, callsReserved: 0, maxCalls: profile.turns, spec };
     const inserted = await db.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO NOTHING").bind(key(id), JSON.stringify(run), now).run();
     if (!inserted.meta.changes) return reply({ status: "accepted", runId: id, replay: true }, 202);
-    try { await sessions.start(id, "filing", spec, filingOpening(filing, snapshot, "rewrite"), `${id}:shadow`); }
+    try { await sessions.start(id, "filing", spec, filingOpening(filing, snapshot, "rewrite", expectations,copyFlow), `${id}:shadow`); }
     catch (error) { await env.SEC_FILINGS.put(`research-shadow/${id}/failed.json`, JSON.stringify({ status: "failed", reason: "Session dispatch failed", at: now })); throw error; }
     return reply({ status: "accepted", runId: id, baseVersion: run.baseVersion, publicReportUnchanged: true }, 202);
   }
@@ -69,8 +73,9 @@ export async function handleFilingShadow(request: Request, env: AnalysisEnv, tic
   if(operator&&action==="promote"&&operator.status!=="validated")return reply({error:"No fully validated operator shadow to review"},409);
   if (action === "checkpoint" || action === "resume") return handleShadowRecovery(request, env, run, action);
   if (action === "stop" && request.method === "POST") {
-    await filingSessions(env)?.stop(runId);
     await env.SEC_FILINGS.put(`research-shadow/${runId}/failed.json`, JSON.stringify({ status: "stopped", reason: "Stopped by administrator", at: new Date().toISOString() }));
+    const sessions=filingSessions(env);
+    await sessions?.stop(runId);
     return reply({ status: "stopped", runId });
   }
   const validatedKey=operator&&"validatedKey"in operator&&typeof operator.validatedKey==="string"?operator.validatedKey:`research-shadow/${runId}/validated.json`;

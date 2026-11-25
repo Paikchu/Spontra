@@ -1,3 +1,5 @@
+import { comparisonSections, filingChanges, financialMovers, type ComparisonSection } from "./comparisons.ts";
+import type { FilingExpectations } from "./expectations.ts";
 import { impactCalculationTool } from "../price-impact/tool.ts";
 import type { ImpactCalculation } from "../../../../shared/analysis-contract/price-impact.ts";
 import { impactResultValues, impactUnitIssue, isSensitivityCalculation } from "../../../../shared/analysis-runtime/price-impact.ts";
@@ -17,15 +19,15 @@ import { handTool, type HandResult } from "../pi/hand-tools.ts";
 import type { SecFiling } from "../sec/sec.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { registerSource, type ComposerState } from "../artifact/document.ts";
-import { computedText, factLine, factSourceText, namesIn, replayComputed, type Computed, type StoredFact, type FactQuery } from "./facts.ts";
+import { computedText, countUnitConflict, factLine, factSourceText, namesIn, replayComputed, type Computed, type StoredFact, type FactQuery } from "./facts.ts";
 import { excerpts, transcripts } from "./research.ts";
 import { sha256 } from "../sha256.ts";
 
 export type Evidence = { id: string; section: string; ordinal: number; statement: string; quote: string; facts: string[]; origin: "session" };
 const evidenceHash = (entry: Evidence) => sha256(JSON.stringify(entry, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
-export type Lead = { id: string; source: "session"; priority: "high" | "normal"; question: string; why: string; refs: string[];
+export type Lead = { id: string; source: "session" | "earnings-release"; priority: "high" | "normal"; question: string; why: string; refs: string[];
   verdict?: "highlight" | "risk" | "nothing unusual" | "open"; finding?: string; evidence?: string[] };
-export type InvestmentChain = { id: string; priorAssumption: string; newEvidence: string; revisedAssumption: string; financialEffect: string; valuationEffect: string; quantificationStatus: "quantifiable" | "sensitivity_only" | "not_quantifiable"; sourceIds: string[]; computationRefs: string[]; missingInputs: string[]; counterEvidence: string; verification: string; window: string };
+export type InvestmentChain = { modelAnchor?: {version:string;driver:string}; id: string; priorAssumption: string; newEvidence: string; revisedAssumption: string; financialEffect: string; valuationEffect: string; quantificationStatus: "quantifiable" | "sensitivity_only" | "not_quantifiable"; sourceIds: string[]; computationRefs: string[]; missingInputs: string[]; counterEvidence: string; verification: string; window: string };
 export type PeriodicState = {
   investmentChains?: InvestmentChain[];
   impactComputations?: Record<string, ImpactCalculation>;
@@ -47,8 +49,8 @@ const str = (v: unknown) => typeof v === "string" ? v.trim() : typeof v === "num
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const strings = { type: "array", items: { type: "string" } };
 
-export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; priorSnapshots?: MaterialSnapshot[]; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
-  tools: AnyTool<S>[]; resolve(id: string, state: S): Promise<boolean>;
+export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; expectations?: FilingExpectations; priorSnapshots?: MaterialSnapshot[]; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
+  tools: AnyTool<S>[]; restore(state: S): Promise<void>; resolve(id: string, state: S): Promise<boolean>;
   figure(id: string, state: S): Promise<number[] | null>;
   read(id: string, state: S): { title: string; text: string } | null;
   precheck(state: S): string | null; impactPrecheck(state: S): string | null; detail(state: S): Record<string, unknown>; standing(state: S): string;
@@ -75,6 +77,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   addSnapshot(snapshot);
   const typedFact = (id: string): ArithmeticInput | null => {
     const fact = indexedFacts.get(id);
+    if (fact) {const conflict=countUnitConflict(fact);if(conflict)throw Error(conflict);}
     return fact ? { value: fact.value, unit: fact.unit, kind: "fact", material: fact.material } : null;
   };
   const checkedComputed = (id: string, state: S) => replayComputed(id, p(state).computed, typedFact);
@@ -90,7 +93,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     .map(f => indexedFacts.get(f.factId)!);
   const history = async (state: S) => {
     await restore(state);
-    for (const material of await listFilingMaterials(deps.env, ticker)) if (material.status === "ready" && material.filing.filedAt <= filing.filingDate && !snapshots.has(material.ref.accession)) {
+    for (const material of await listFilingMaterials(deps.env, ticker)) if (material.status === "ready" && (deps.expectations ? material.filing.filedAt < filing.filingDate : material.filing.filedAt <= filing.filingDate) && !snapshots.has(material.ref.accession)) {
       addSnapshot(await readMaterialSnapshot(deps.env, material.ref));
     }
     remember(state);
@@ -112,6 +115,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (other) await requestFilingMaterial(deps.env, filingMaterialMeta(other));
         throw new Error(`FILING_MATERIAL_PENDING: ${key}. Its complete material must be prepared before it can be read.`);
       }
+      if(deps.expectations && material.filing.filedAt.slice(0,10) >= filing.filingDate.slice(0,10)) throw new Error("That comparison was not verifiably public before this filing.");
       addSnapshot(await readMaterialSnapshot(deps.env, material.ref));
     }
     const found = snapshots.get(key)!;
@@ -120,8 +124,22 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   };
   const resolve = async (id: string, state: S, readEnv = deps.env): Promise<boolean> => {
     const s = p(state);
+    const bound=indexedFacts.get(id);
+    if(bound){const conflict=countUnitConflict(bound);if(conflict)throw Error(conflict);}
     if (s.computed[id] !== undefined) { checkedComputed(id, state); return true; }
     if (s.facts[id] !== undefined || s.texts[id] !== undefined) return true;
+    const expected = deps.expectations;
+    const pinned = [expected?.watch, expected?.model].find(value => value?.ref === id);
+    if (pinned) {
+      s.texts[id] = JSON.stringify(pinned);
+      registerSource(state.composer,id,{title:"source" in pinned ? pinned.source : "Previous published watch list",url:null,kind:"data"});
+      return true;
+    }
+    const guide = expected?.guidance.find(item => item.anchor === id);
+    if (guide && !snapshots.has(guide.material.accession)) {
+      addSnapshot(await readMaterialSnapshot(deps.env, guide.material));
+      remember(state);
+    }
     for (const ref of s.materials) if (!snapshots.has(ref.accession)) addSnapshot(await readMaterialSnapshot(deps.env, ref));
     for (const material of snapshots.values()) {
       const found = await sourceText(readEnv, material, id);
@@ -206,8 +224,19 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     },
   });
   const tools: AnyTool<S>[] = [impact,
+    handTool<S>({ name: "financial_movers", description: "Rank comparable columns of the three primary statements within their unit, accounting duration and end dates. Each value has its original fact id. Null relative change means the denominator or sign makes a growth percentage misleading.", input_schema: object({}) },
+      () => ok(JSON.stringify(financialMovers(snapshot)))),
+    handTool<S>({ name: "diff_prior_filing", description: "Find non-identical paragraphs in a named section of this and the frozen earlier filing. Open the anchors to decide what changed. Candidate comparisons do not establish deletions.", input_schema: object({section:{type:"string",enum:comparisonSections},cursor:{type:"integer",minimum:0}},["section"]) },
+      async (args,state) => {
+        const name=str(args.section);
+        if(!comparisonSections.includes(name))return fail("Choose a listed comparison section.");
+        const ref=deps.expectations?.comparison;
+        if(ref && !snapshots.has(ref.accession))addSnapshot(await readMaterialSnapshot(deps.env,ref));
+        remember(state);
+        return ok(JSON.stringify(await filingChanges(deps.env,snapshot,ref?snapshots.get(ref.accession):undefined,name as ComparisonSection,Math.max(0,Number(args.cursor)||0))));
+      }),
     handTool<S>({ name: "record_investment_impact", description: "Record one evidence-to-investment chain before writing. Keep facts, revised assumptions, financial transmission and valuation limits explicit. Quantifiable/sensitivity results reference existing compute results; unavailable valuation names missing inputs. Reuse id to revise a chain, not duplicate it.",
-      input_schema: object({ id: { type: "string" }, priorAssumption: { type: "string" }, newEvidence: { type: "string" }, revisedAssumption: { type: "string" }, financialEffect: { type: "string" }, valuationEffect: { type: "string" }, quantificationStatus: { type: "string", enum: ["quantifiable", "sensitivity_only", "not_quantifiable"] }, sourceIds: strings, computationRefs: strings, missingInputs: strings, counterEvidence: { type: "string" }, verification: { type: "string" }, window: { type: "string" } }, ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "quantificationStatus", "sourceIds", "computationRefs", "missingInputs", "counterEvidence", "verification", "window"]) },
+      input_schema: object({ id: { type: "string" }, modelDriver: {type:"string",description:"Optional dot path in the frozen Spontra base-case drivers, e.g. path.operatingMargin, when this assumption is addressed."}, priorAssumption: { type: "string" }, newEvidence: { type: "string" }, revisedAssumption: { type: "string" }, financialEffect: { type: "string" }, valuationEffect: { type: "string" }, quantificationStatus: { type: "string", enum: ["quantifiable", "sensitivity_only", "not_quantifiable"] }, sourceIds: strings, computationRefs: strings, missingInputs: strings, counterEvidence: { type: "string" }, verification: { type: "string" }, window: { type: "string" } }, ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "quantificationStatus", "sourceIds", "computationRefs", "missingInputs", "counterEvidence", "verification", "window"]) },
       async (args, state) => {
         const textFields = ["id", "priorAssumption", "newEvidence", "revisedAssumption", "financialEffect", "valuationEffect", "counterEvidence", "verification", "window"] as const;
         if (textFields.some(key => !str(args[key]))) return fail("Every chain needs the assumption change, financial and valuation implications, counter-evidence, verification and applicable window.");
@@ -224,6 +253,14 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (status !== "not_quantifiable" && !computationRefs.length) return fail("A quantitative or sensitivity chain needs computed results.");
         if (status !== "quantifiable" && !missingInputs.length) return fail("List specific missing inputs that prevent a full valuation result.");
         const chain: InvestmentChain = { ...Object.fromEntries(textFields.map(key => [key, str(args[key])])) as Pick<InvestmentChain, typeof textFields[number]>, quantificationStatus: status as InvestmentChain["quantificationStatus"], sourceIds, computationRefs, missingInputs };
+        const driver = str(args.modelDriver);
+        if (driver) {
+          const model = deps.expectations?.model;
+          let value: unknown = model?.drivers;
+          for (const key of driver.split(".")) value = value && typeof value === "object" && Object.hasOwn(value,key) ? Reflect.get(value,key) : undefined;
+          if (!model || value === undefined) return fail("Select a driver in the frozen valuation model.");
+          chain.modelAnchor = {version:model.version,driver};
+        }
         p(state).investmentChains = [...(p(state).investmentChains ?? []).filter(c => c.id !== chain.id), chain];
         return ok(JSON.stringify(chain));
       }),
@@ -267,7 +304,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         const facts = material.facts.filter(f => (f.passageId === block?.id || f.passageId === result.table.tableId) && (f.row === null || (f.row >= start && f.row < end)));
         for (const fact of facts) await resolve(fact.factId, state);
         if (material.ref.accession === accession) p(state).tablesRead = [...new Set([...p(state).tablesRead, result.table.tableId])];
-        return ok(`${JSON.stringify({ ref: result.ref, tableId: result.table.tableId, sourceId: result.sourceId, rowStart: result.rowStart, rowEnd: result.rowEnd, columns: result.columns, cellReference: result.cellReference, filename: result.table.filename, description: result.table.description, unit: result.table.table.unit, notes: result.table.table.notes, source: result.table.sourceUrl, nextCursor: result.nextCursor })}\n\n${result.csv}\n\n${facts.map(f => `${f.factId} row ${f.row} col ${f.col} = ${f.value} ${f.unit}`).join("\n")}`);
+        return ok(`${JSON.stringify({ ref: result.ref, tableId: result.table.tableId, sourceId: result.sourceId, rowStart: result.rowStart, rowEnd: result.rowEnd, columns: result.columns, cellReference: result.cellReference, filename: result.table.filename, description: result.table.description, unit: result.table.table.unit, notes: result.table.table.notes, source: result.table.sourceUrl, nextCursor: result.nextCursor })}\n\n${result.csv}\n\n${facts.map(f => countUnitConflict(f) ?? `${f.factId} row ${f.row} col ${f.col} = ${f.value} ${f.unit}`).join("\n")}`);
       }),
     handTool<S>({ name: "grep", description: "Search the fixed filing Markdown by words or phrases. Returns block anchors to read with read_filing_markdown. scope earlier or all searches prepared earlier materials too.",
       input_schema: object({ terms: strings, scope: { type: "string", enum: ["filing", "earlier", "all"] }, cursor: { type: "string" } }, ["terms"]) },
@@ -398,7 +435,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     handTool<S>({ name: "read_transcript", description: "An earnings call around the terms you give. Without a periodEnd: the calls on file. The excerpt becomes a source you can cite.",
       input_schema: object({ periodEnd: { type: "string" }, focus: strings }) },
       async (args, state) => {
-        const calls = await transcripts(db, ticker, 8);
+        const calls = await transcripts(db, ticker, 8, deps.expectations?.asOf);
         const wanted = str(args.periodEnd);
         if (!wanted) return ok(calls.length ? calls.map(c => `${c.periodEnd} | ${c.title} | ${c.content.length} characters`).join("\n") : "No earnings call is on file.");
         const call = calls.find(c => c.periodEnd === wanted);
@@ -475,7 +512,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
   ];
 
   return {
-    tools, resolve,
+    tools, restore, resolve,
     figure: async (id, state) => { const s = p(state); return s.impactComputations?.[id] ? Object.values(s.impactComputations[id]!.values) : s.computed[id] ? [checkedComputed(id, state).value] : s.facts[id] ? [s.facts[id]!.value] : null; },
     read: (id, state) => {
       const s = p(state);

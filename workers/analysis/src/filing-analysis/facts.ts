@@ -6,7 +6,16 @@ export { arithmeticNames as namesIn, evaluateArithmetic as evaluate } from "../.
 export type StoredFact = FilingFactRow & { documentId: string };
 export type FactQuery = { label?: string; anchor?: string; periodEnd?: string; months?: number };
 
-export const factLine = (f: StoredFact) => `${f.factId} | ${f.label} | ${factText(f)} | ${periodText(f)}${f.dimensions ? ` | ${f.dimensions}` : ""}${f.tagged ? "" : " | untagged"} | printed "${f.shown}"`;
+/** A mixed financial/KPI table can carry a monetary header over a row counting entities.
+ * Keep the frozen record intact and direct the reader to the printed cell for its count. */
+export function countUnitConflict(f: FilingFactRow): string | null {
+  if (f.tagged || !/^[A-Z]{3}(?:thousands|millions|billions)?$/.test(f.unit)) return null;
+  const label=f.label.split(" > ").at(-1)!.replace(/\([^()]*\)/g, "").trim();
+  if (!/^(?:(?:number of|total|paying|active|new|large|enterprise|registered|unique) )*(?:customers|users|subscribers|stores|locations|employees)$/i.test(label)) return null;
+  return `${f.label} is a count. Its printed cell is "${f.shown}" in ${f.passageId}. The untagged fact inherited the table's currency; cite the printed cell and do not calculate with that currency value.`;
+}
+
+export const factLine = (f: StoredFact) => countUnitConflict(f) ?? `${f.factId} | ${f.label} | ${factText(f)} | ${periodText(f)}${f.dimensions ? ` | ${f.dimensions}` : ""}${f.tagged ? "" : " | untagged"} | printed "${f.shown}"`;
 /** What a cited fact is checked against: the number and how the filing prints it. */
 export const factSourceText = (f: StoredFact) => `${f.label}: ${f.value} ${f.unit}, ${periodText(f)}. Printed as ${f.shown}.`;
 

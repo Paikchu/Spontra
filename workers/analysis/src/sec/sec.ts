@@ -66,6 +66,7 @@ export type SecFiling = {
   companyName: string;
   form: string;
   filingDate: string;
+  acceptedAt?: string;
   reportDate: string;
   accessionNumber: string;
   primaryDocument: string;
@@ -175,6 +176,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
   const accessions = asArray(recent?.accessionNumber);
   const forms = asArray(recent?.form);
   const filingDates = asArray(recent?.filingDate);
+  const accepted = asArray(recent?.acceptanceDateTime);
   const reportDates = asArray(recent?.reportDate);
   const primaryDocuments = asArray(recent?.primaryDocument);
   const descriptions = asArray(recent?.primaryDocDescription);
@@ -194,6 +196,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
       companyName,
       form,
       filingDate: String(filingDates[index] ?? ""),
+      ...(typeof accepted[index] === "string" ? { acceptedAt: String(accepted[index]) } : {}),
       reportDate: String(reportDates[index] ?? ""),
       accessionNumber,
       primaryDocument,

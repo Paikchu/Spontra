@@ -147,7 +147,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       if (!saved) return null;
       // Publication snapshots must carry source identity, never nest the old analysis recursively.
       return { ticker: saved.ticker, cik: saved.cik, cikNumber: saved.cikNumber, companyName: saved.companyName,
-        form: saved.form, filingDate: saved.filingDate, reportDate: saved.reportDate, accessionNumber: saved.accessionNumber,
+        form: saved.form, acceptedAt: saved.acceptedAt, filingDate: saved.filingDate, reportDate: saved.reportDate, accessionNumber: saved.accessionNumber,
         primaryDocument: saved.primaryDocument, description: saved.description, items: saved.items,
         documentUrl: saved.documentUrl, indexUrl: saved.indexUrl };
     },
@@ -217,6 +217,7 @@ function toStoredFiling(filing: SecFilingFeed["filings"][number]): SecFiling {
     companyName: filing.companyName,
     form: filing.form,
     filingDate: filing.filingDate,
+    acceptedAt: filing.acceptedAt,
     reportDate: filing.reportDate,
     accessionNumber: filing.accessionNumber,
     primaryDocument: filing.primaryDocument,

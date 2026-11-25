@@ -37,6 +37,8 @@ type PublicFilingRow = {
   indexUrl: string;
   companyName?: string | null;
   sortDate?: string;
+  acceptedAt?: string;
+  items?: string;
 };
 
 /** A published report or 8-K summary, announced in the same batch: the event rail attaches the summary to its filing. */
@@ -50,17 +52,18 @@ export function filingIndexInsert(filing: SecFiling): { sql: string; values: unk
   return { sql: `
       INSERT INTO sec_filings (
         filing_id, ticker, accession_number, cik, form, filing_date, report_date,
-        document_url, index_url, parser_version, ingest_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec-structure.v1', 'indexed')
+        document_url, index_url, accepted_at, items, parser_version, ingest_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec-structure.v1', 'indexed')
       ON CONFLICT(filing_id) DO UPDATE SET
         ticker = excluded.ticker, accession_number = excluded.accession_number,
         cik = excluded.cik, form = excluded.form, filing_date = excluded.filing_date,
         report_date = excluded.report_date, document_url = excluded.document_url,
-        index_url = excluded.index_url, ingest_status = CASE
+        index_url = excluded.index_url, accepted_at = COALESCE(excluded.accepted_at, sec_filings.accepted_at),
+        items = COALESCE(NULLIF(excluded.items, ''),sec_filings.items), ingest_status = CASE
           WHEN sec_filings.ingest_status = 'analyzed' THEN sec_filings.ingest_status
           ELSE excluded.ingest_status END
     `, values: [filing.accessionNumber, filing.ticker, filing.accessionNumber, filing.cik,
-      filing.form, filing.filingDate, filing.reportDate, filing.documentUrl, filing.indexUrl] };
+      filing.form, filing.filingDate, filing.reportDate, filing.documentUrl, filing.indexUrl, filing.acceptedAt ?? null, filing.items ?? ""] };
 }
 
 export class D1SecRepository implements SecRepository {
@@ -230,7 +233,7 @@ export class D1SecRepository implements SecRepository {
       : [ticker, limit + 1];
     const rows = await this.database.prepare(`
       SELECT filing_id AS filingId, ticker, accession_number AS accessionNumber, cik, form,
-        filing_date AS filingDate, report_date AS reportDate, document_url AS documentUrl,
+        filing_date AS filingDate, accepted_at AS acceptedAt, items, report_date AS reportDate, document_url AS documentUrl,
         index_url AS indexUrl, filing_date AS sortDate
       FROM sec_filings ${where}
       ORDER BY filing_date DESC, accession_number DESC LIMIT ?
@@ -308,7 +311,8 @@ export class D1SecRepository implements SecRepository {
       accessionNumber: row.accessionNumber,
       primaryDocument: row.documentUrl.split("/").at(-1) ?? "",
       description: row.form,
-      items: "",
+      items: row.items ?? "",
+      ...(row.acceptedAt ? { acceptedAt: row.acceptedAt } : {}),
       documentUrl: row.documentUrl,
       indexUrl: row.indexUrl,
       summary: summaries.get(row.accessionNumber) ?? null,
@@ -326,7 +330,7 @@ export class D1SecRepository implements SecRepository {
   async getPublicFiling(rawTicker: string, rawAccession: string): Promise<SecFilingWithSummary | null> {
     const row = await this.database.prepare(`
       SELECT filing_id AS filingId, ticker, accession_number AS accessionNumber, cik, form,
-        filing_date AS filingDate, report_date AS reportDate, document_url AS documentUrl,
+        filing_date AS filingDate, accepted_at AS acceptedAt, items, report_date AS reportDate, document_url AS documentUrl,
         index_url AS indexUrl
       FROM sec_filings
       WHERE ticker = ? AND accession_number = ?
@@ -347,7 +351,8 @@ export class D1SecRepository implements SecRepository {
       accessionNumber: row.accessionNumber,
       primaryDocument: row.documentUrl.split("/").at(-1) ?? "",
       description: row.form,
-      items: "",
+      items: row.items ?? "",
+      ...(row.acceptedAt ? { acceptedAt: row.acceptedAt } : {}),
       documentUrl: row.documentUrl,
       indexUrl: row.indexUrl,
     };

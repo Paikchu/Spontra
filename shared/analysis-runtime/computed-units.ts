@@ -78,16 +78,18 @@ export function computedDisplayIssue(computed: { value: number; unit: string }, 
     if (binding.value === null || !Number.isFinite(Number(binding.value))) return "A computed figure needs its numeric value attribute";
     const declared = arithmeticValueInUnit({ value: Number(binding.value), unit: binding.unit ?? computed.unit }, computed.unit);
     if (Math.abs(declared - computed.value) > Number.EPSILON * 32 * Math.max(1, Math.abs(computed.value))) return `Figure value ${binding.value} ${binding.unit ?? computed.unit} differs from computed ${computed.value} ${computed.unit}`;
-    const match = /(-?\d[\d,]*(?:\.\d+)?)\s*(trillions?|billions?|millions?|thousands?|bn|mn|mm|[mbk])?(?:\b|(?=%))/i.exec(binding.text);
+    // In financial tables the scale may sit outside the accounting parentheses, e.g. $(303)m.
+    const display = binding.text.replace(/^(\s*[$€£¥]?)\(\s*(\d[\d,]*(?:\.\d+)?)\s*\)(?=\s*(?:[a-z%]|$))/i, "$1-$2").replace(/−/g, "-");
+    const match = /(-?\d[\d,]*(?:\.\d+)?)\s*(trillions?|billions?|millions?|thousands?|bn|mn|mm|[mbk])?(?:\b|(?=%))/i.exec(display);
     if (!match) return null;
-    const explicitCurrency = binding.text.toUpperCase().match(/\b[A-Z]{3}(?=\s*[-+]?\s*\d|\b)/g)?.find(value => CURRENCIES.has(value));
-    const money = !!explicitCurrency || /[$€£¥]|\b(?:dollars?|euros?)\b/i.test(binding.text), percent = /%|\bpercent\b/i.test(binding.text), shares = /\bshares?\b/i.test(binding.text), perShare = /\bper\s+shares?\b|\/\s*shares?\b/i.test(binding.text);
+    const explicitCurrency = display.toUpperCase().match(/\b[A-Z]{3}(?=\s*[-+]?\s*\d|\b)/g)?.find(value => CURRENCIES.has(value));
+    const money = !!explicitCurrency || /[$€£¥]|\b(?:dollars?|euros?)\b/i.test(display), percent = /%|\bpercent\b/i.test(display), shares = /\bshares?\b/i.test(display), perShare = /\bper\s+shares?\b|\/\s*shares?\b/i.test(display);
     if (!money && !percent && !shares && !match[2]) return null;
     const suffix = (match[2] ?? "").toLowerCase(), multiplier = /^t/.test(suffix) ? 1e12 : /^(b|bn|billions?)$/.test(suffix) ? 1e9 : /^(m|mn|mm|millions?)$/.test(suffix) ? 1e6 : /^(k|thousands?)$/.test(suffix) ? 1e3 : 1;
     const currency = /^[A-Z]{3}(?=\/|$)/.exec(source.baseUnit)?.[0];
     const displayedUnit = percent ? "percent" : money && (explicitCurrency || currency) ? `${explicitCurrency ?? currency}${perShare ? "/shares" : ""}` : shares ? "shares" : currency ? source.baseUnit : computed.unit;
     if (money && !currency) return "A monetary display cannot cite a non-monetary computation";
-    const prefix = binding.text.slice(0, match.index), negative = !match[1]!.startsWith("-") && (/[-−]\s*[$€£¥]\s*$/.test(prefix) || /^\s*\([^)]*$/.test(prefix) && /\)\s*$/.test(binding.text));
+    const prefix = display.slice(0, match.index), negative = !match[1]!.startsWith("-") && (/[-−]\s*[$€£¥]\s*$/.test(prefix) || /^\s*\([^)]*$/.test(prefix) && /\)\s*$/.test(display));
     const displayed = Number(match[1]!.replace(/,/g, "")) * multiplier * (negative ? -1 : 1);
     const normalized = arithmeticValueInUnit({ value: displayed, unit: displayedUnit }, computed.unit) * source.scale;
     const decimals = match[1]!.split(".")[1]?.length ?? 0;

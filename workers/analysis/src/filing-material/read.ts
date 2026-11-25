@@ -18,6 +18,7 @@ export function withPreparedMaterialReadCache<T extends MaterialReadEnv>(env:T,s
 
 export const filingMaterialMeta = (filing: SecFiling): MaterialFiling => ({
   ticker: filing.ticker, accession: filing.accessionNumber, cik: filing.cik, form: filing.form,
+  ...(filing.acceptedAt ? { acceptedAt: filing.acceptedAt } : {}), ...(filing.items ? { items: filing.items } : {}),
   filedAt: filing.filingDate, reportDate: filing.reportDate, companyName: filing.companyName,
   primaryDocument: filing.primaryDocument, documentUrl: filing.documentUrl, indexUrl: filing.indexUrl,
 });

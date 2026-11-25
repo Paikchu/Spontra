@@ -1,6 +1,6 @@
 export type Transcript = { id: string; periodEnd: string; title: string; filedAt: string; content: string };
-export async function transcripts(db: D1Database, ticker: string, limit = 6): Promise<Transcript[]> {
-  const rows = await db.prepare("SELECT id, period_end, title, filed_at, content FROM company_transcripts WHERE ticker = ? AND status = 'ready' AND content IS NOT NULL ORDER BY period_end DESC LIMIT ?").bind(ticker, limit)
+export async function transcripts(db: D1Database, ticker: string, limit = 6, before = "9999-12-31"): Promise<Transcript[]> {
+  const rows = await db.prepare("SELECT id, period_end, title, filed_at, content FROM company_transcripts WHERE ticker = ? AND status = 'ready' AND content IS NOT NULL AND filed_at < ? ORDER BY period_end DESC LIMIT ?").bind(ticker, before, limit)
     .all<{ id: string; period_end: string; title: string | null; filed_at: string; content: string }>();
   return rows.results.map(r => ({ id: r.id, periodEnd: r.period_end, title: r.title ?? `${ticker} earnings call`, filedAt: r.filed_at, content: r.content }));
 }

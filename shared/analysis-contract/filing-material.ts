@@ -8,6 +8,7 @@ export type MaterialRef = { ticker: string; accession: string; version: string }
 export type MaterialFiling = {
   ticker: string; accession: string; cik: string; form: string; filedAt: string; reportDate: string;
   companyName: string; primaryDocument: string; documentUrl: string; indexUrl: string;
+  acceptedAt?: string; items?: string;
 };
 export type MaterialSource = {
   id: string; filename: string; type: string; url: string; contentType: string;
