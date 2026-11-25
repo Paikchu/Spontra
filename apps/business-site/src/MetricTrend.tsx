@@ -111,6 +111,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   const last = trend.history.at(-1)?.value ?? null, yearAgo = trend.history.at(-5)?.value ?? null;
   const changeOf = (a: number | null, b: number | null) => rate ? growth(a, b) : a != null && b != null ? a - b : null;
   const comparison = comparisonLag ? changes[current] : changeOf(last, yearAgo);
+  const statementComparison = comparisonLag ? trend.comparisons?.[comparisonLag][current] : null;
   const span = changeOf(known.at(-1)?.value ?? null, known[0]?.value ?? null);
   const changeLabel = rate ? percent : points;
   const flowPeriod = (end: string) => [...periods].find(p => sameQuarter(p, end)) ?? null;
@@ -128,7 +129,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
       </div>
       <div className="trend-kpis">
         <dl>
-          <div><dt>{comparisonLag === 1 ? qoqLabel(getLocale()) : yoyLabel(getLocale())}</dt><dd data-trend={direction(comparison)}>{changeLabel(comparison)}</dd></div>
+          <div><dt>{comparisonLag === 1 ? qoqLabel(getLocale()) : yoyLabel(getLocale())}</dt><dd data-trend={statementComparison?.trend ?? direction(comparison)}>{statementComparison?.comparable ? statementComparison.label : changeLabel(comparison)}</dd></div>
           {known.length > 1 && <div><dt>{m.since(shortPeriod(known[0].periodEnd))}</dt><dd data-trend={direction(span)}>{changeLabel(span)}</dd></div>}
         </dl>
         {rate && !comparisonLag && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={String(lag)} onValueChange={next => { if (next) setLag(next === "4" ? 4 : 1); }} asChild>

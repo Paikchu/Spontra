@@ -3,7 +3,7 @@ import { getLocale, labels } from "@/packages/web/src/i18n";
 import type { FundamentalMetricCategory, FundamentalUnitFamily } from "@/shared/analysis-contract/fundamentals";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { FindingFundamentals, FindingFundamentalSeries } from "@/shared/analysis-runtime/findings";
-import { compareAmount, numeric, previousQuarter, yearAgoQuarter } from "@/packages/web/src/model/business-flow-model";
+import { compareAmount, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { SLOTS, growth, monthEnd, monthIndex, rateTicks } from "./trend-model";
 
 /** The trend's own revenue view, stacked by business from the disclosure history; every other metric is a company-level SEC series. */
@@ -23,7 +23,7 @@ export type MetricTrend = {
   points: MetricPoint[];
   /** The visible quarters plus up to four earlier ones, so the first visible quarter still has a year-ago base. */
   history: MetricPoint[];
-  comparisons?: Record<1 | 4, Array<number | null>>;
+  comparisons?: Record<1 | 4, Array<FlowChange | null>>;
 };
 type TrendSeries = Pick<FindingFundamentalSeries, "metricKey" | "label" | "unitFamily" | "currency" | "points">;
 
@@ -79,7 +79,7 @@ export function statementOperatingTrend(quarters: BusinessFlowQuarter[], currenc
   if (!trend) return null;
   const changes = (prior: typeof previousQuarter) => trend.points.map(point => {
     const quarter = byEnd.get(point.periodEnd);
-    return quarter ? compareAmount(quarter, prior(quarter, quarters), "operating").percent : null;
+    return quarter ? compareAmount(quarter, prior(quarter, quarters), "operating") : null;
   });
   return { ...trend, comparisons: { 1: changes(previousQuarter), 4: changes(yearAgoQuarter) } };
 }
@@ -107,7 +107,7 @@ export function metricOptions(fundamentals: FindingFundamentals | null, groups: 
  * percentage-point change for rates, which are already in points. Visible quarters only, aligned with `points`.
  */
 export function metricChanges(trend: MetricTrend, lag: 1 | 4): Array<number | null> {
-  if (trend.comparisons) return trend.comparisons[lag];
+  if (trend.comparisons) return trend.comparisons[lag].map(change => change?.percent ?? null);
   const offset = trend.history.length - trend.points.length;
   return trend.points.map((point, i) => {
     const base = trend.history[offset + i - lag];
