@@ -1,8 +1,8 @@
-import { MATERIAL_VERSION, MATERIAL_LAYOUT_VERSION, type MaterialBlock, type MaterialCoverage, type MaterialFiling, type MaterialSnapshot, type MaterialSource, type MaterialState, type MaterialTable, type ParsedMaterialDocument } from "../../../../shared/analysis-contract/filing-material.ts";
+import { MATERIAL_VERSION, MATERIAL_LAYOUT_VERSION, type MaterialBlock, type MaterialCoverage, type MaterialExtractFile, type MaterialFiling, type MaterialSnapshot, type MaterialSource, type MaterialState, type MaterialTable, type ParsedMaterialDocument } from "../../../../shared/analysis-contract/filing-material.ts";
 import { MATERIAL_PARSER_VERSION, documentCoverage, tableCatalogEntry, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import type { MaterialKeptBlock } from "../../../../shared/analysis-runtime/filing-material-document.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { archiveMaterialEntry, archiveZipEntries, loadMaterialManifest, readSourceBytes, referencedMaterialEntries, saveMaterialManifest } from "./archive.ts";
+import { archiveMaterialEntry, archiveZipEntries, loadMaterialManifest, manifestKey, readSourceBytes, referencedMaterialEntries, saveMaterialManifest, type MaterialManifest } from "./archive.ts";
 import { extractMaterialDocument } from "./formats.ts";
 import { MATERIAL_PREFIX, MATERIAL_PREPARATION_VERSION, materialRecoveryKey, materialReconciliationKey, claimMaterialLease, getFilingMaterial, materialBase, materialDigest, materialSnapshotKey, ownsMaterialLease, publishMaterialState, releaseMaterialLease, requestFilingMaterial, writeMaterialState } from "./store.ts";
 import { writeMaterialMarkdown } from "./markdown.ts";
@@ -21,6 +21,41 @@ function submissionHeader(source: MaterialSource, bytes: Uint8Array, end: number
 }
 
 export const parsedKey = (filing: MaterialFiling, source: MaterialSource) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/extracted/${EXTRACTOR_VERSION}/${source.id}/${source.sha256}.json`;
+
+async function listExtractedDocIds(env: Pick<AnalysisEnv, "SEC_FILINGS">, filing: MaterialFiling): Promise<Set<string>> {
+  const prefix = `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/extracted/${EXTRACTOR_VERSION}/`;
+  const ids = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const listed = await env.SEC_FILINGS.list({ prefix, ...(cursor ? { cursor } : {}) });
+    for (const obj of listed.objects) {
+      const rel = obj.key.slice(prefix.length);
+      const slash = rel.indexOf("/");
+      if (slash <= 0) continue;
+      const docId = rel.slice(0, slash);
+      const tail = rel.slice(slash + 1);
+      if (tail.endsWith(".json") || tail.endsWith(".recovered")) ids.add(docId);
+    }
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+  return ids;
+}
+
+export async function readExtractionFiles(env: Pick<AnalysisEnv, "SEC_FILINGS">, filing: MaterialFiling): Promise<MaterialExtractFile[]> {
+  const stored = await env.SEC_FILINGS.get(manifestKey(filing));
+  if (!stored) return [];
+  const manifest: MaterialManifest = JSON.parse(await stored.text());
+  const doneIds = await listExtractedDocIds(env, filing);
+  return Promise.all(manifest.entries.map(async entry => {
+    const id = `d${(await materialDigest(entry.url)).slice(0, 24)}`;
+    return {
+      filename: entry.filename,
+      type: entry.type,
+      status: doneIds.has(id) ? "done" : "pending",
+      container: entry.container,
+    } satisfies MaterialExtractFile;
+  }));
+}
 
 const completeExtraction = (document: ParsedMaterialDocument) => {
   const c = document.coverage;
@@ -135,38 +170,92 @@ export async function prepareFilingMaterial(env: AnalysisEnv, filing: MaterialFi
 async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, owner: string, options: PrepareMaterialOptions): Promise<MaterialState> {
   const existing = await getFilingMaterial(env, filing.ticker, filing.accession);
   if (existing?.status === "ready") return existing;
-  const progress = async (message: string): Promise<MaterialState> => {
-    const state: MaterialState = { status: "preparing", filing, progress: message };
+  const files: MaterialExtractFile[] = [];
+  const fileMap = new Map<string, MaterialExtractFile>();
+  const registerFile = (filename: string, type: string, status: MaterialExtractFile["status"], container: string | null = null): MaterialExtractFile => {
+    const key = `${container ?? ""}::${filename}`;
+    const existingItem = fileMap.get(key);
+    if (existingItem) return existingItem;
+    const item: MaterialExtractFile = { filename, type, status, ...(container ? { container } : {}) };
+    fileMap.set(key, item);
+    files.push(item);
+    return item;
+  };
+  const progress = async (message: string, currentFiles?: MaterialExtractFile[]): Promise<MaterialState> => {
+    const state: MaterialState = {
+      status: "preparing",
+      filing,
+      progress: message,
+      ...(currentFiles ? { files: currentFiles.map(f => ({ ...f })) } : {}),
+      updatedAt: new Date().toISOString(),
+    };
     if (!await ownsMaterialLease(env, filing, owner)) return await getFilingMaterial(env, filing.ticker, filing.accession) ?? state;
     await writeMaterialState(env, state); return state;
   };
   try {
     const manifest = await loadMaterialManifest(env, filing, { fetcher: options.fetcher });
+    const extractedIds = await listExtractedDocIds(env, filing);
+    for (const entry of manifest.entries) {
+      const id = `d${(await materialDigest(entry.url)).slice(0, 24)}`;
+      registerFile(entry.filename, entry.type, extractedIds.has(id) ? "done" : "pending", entry.container);
+    }
+    await progress("已获取 SEC 文件清单，开始提取", files);
+
     const submissionBytes = await readSourceBytes(env, manifest.submission);
     const sources: MaterialSource[] = [manifest.submission], parsed: ParsedMaterialDocument[] = [submissionHeader(manifest.submission, submissionBytes, manifest.headerEnd)];
     let processed = 0;
     const budget = options.maxDocuments ?? 8;
     for (let index = 0; index < manifest.entries.length; index++) {
       const entry = manifest.entries[index]!;
+      const item = registerFile(entry.filename, entry.type, "pending", entry.container);
       const source = await archiveMaterialEntry(env, manifest, entry, submissionBytes, { fetcher: options.fetcher });
       const bytes = await readSourceBytes(env, source), alreadyParsed = (await extractionReceipt(env, filing, source, options.recoverySources?.[source.filename] ?? options.recoveryRequestId)).document;
-      if (!alreadyParsed && processed >= budget) return progress(`extracting source ${index + 1} of ${manifest.entries.length}`);
-      const document = alreadyParsed ?? await extractOnce(env, filing, source, bytes, options.recoverySources?.[source.filename] ?? options.recoveryRequestId, options.recoverySources?.[source.filename] ? options.recoveryRequestId : undefined);
-      if (!alreadyParsed) processed++;
+      let document: ParsedMaterialDocument;
+      if (alreadyParsed) {
+        item.status = completeExtraction(alreadyParsed) ? "done" : "failed";
+        document = alreadyParsed;
+      } else {
+        if (processed >= budget) return progress(`extracting source ${index + 1} of ${manifest.entries.length}`, files);
+        item.status = "extracting";
+        await progress(`extracting ${entry.filename} (${index + 1}/${manifest.entries.length})`, files);
+        document = await extractOnce(env, filing, source, bytes, options.recoverySources?.[source.filename] ?? options.recoveryRequestId, options.recoverySources?.[source.filename] ? options.recoveryRequestId : undefined);
+        processed++;
+        item.status = completeExtraction(document) ? "done" : "failed";
+        await progress(`extracted ${entry.filename} (${index + 1}/${manifest.entries.length})`, files);
+      }
       sources.push(source); parsed.push(document);
       const added = referencedMaterialEntries(manifest, source, bytes);
-      if (added.length) { manifest.entries.push(...added); await saveMaterialManifest(env, manifest); }
+      if (added.length) {
+        manifest.entries.push(...added);
+        for (const extra of added) registerFile(extra.filename, extra.type, "pending", extra.container);
+        await saveMaterialManifest(env, manifest);
+      }
       if (source.contentType === "application/zip" || /\.zip$/i.test(source.filename)) {
         const children = await archiveZipEntries(env, filing, source, bytes);
         for (const child of children) {
+          registerFile(child.filename, child.type, extractedIds.has(child.id) ? "done" : "pending", source.filename);
+        }
+        for (const child of children) {
+          const childItem = registerFile(child.filename, child.type, "pending", source.filename);
           const cached = (await extractionReceipt(env, filing, child, options.recoverySources?.[child.filename] ?? options.recoveryRequestId)).document;
-          if (!cached && processed >= budget) return progress(`extracting ZIP entry ${child.filename}`);
-          const childDocument = cached ?? await extractOnce(env, filing, child, await readSourceBytes(env, child), options.recoverySources?.[child.filename] ?? options.recoveryRequestId, options.recoverySources?.[child.filename] ? options.recoveryRequestId : undefined);
-          if (!cached) processed++;
+          let childDocument: ParsedMaterialDocument;
+          if (cached) {
+            childItem.status = completeExtraction(cached) ? "done" : "failed";
+            childDocument = cached;
+          } else {
+            if (processed >= budget) return progress(`extracting ZIP entry ${child.filename}`, files);
+            childItem.status = "extracting";
+            await progress(`extracting ZIP entry ${child.filename}`, files);
+            childDocument = await extractOnce(env, filing, child, await readSourceBytes(env, child), options.recoverySources?.[child.filename] ?? options.recoveryRequestId, options.recoverySources?.[child.filename] ? options.recoveryRequestId : undefined);
+            processed++;
+            childItem.status = completeExtraction(childDocument) ? "done" : "failed";
+            await progress(`extracted ZIP entry ${child.filename}`, files);
+          }
           sources.push(child); parsed.push(childDocument);
         }
       }
     }
+    await progress("所有文件已提取，正在组装 L1 Markdown 与表格...", files);
     const blocks = parsed.flatMap(document => document.blocks), tables = parsed.flatMap(document => document.tables), facts = parsed.flatMap(document => document.facts);
     const issues = parsed.flatMap(document => {
       const c = document.coverage, out = c.issues.map(issue => `${c.filename}: ${issue}`);
@@ -176,7 +265,7 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       if (c.retainedPages < c.pages) out.push(`${c.filename}: uncovered pages`);
       return out;
     });
-    if (issues.length) { const state: MaterialState = { status: "blocked", filing, issues }; await writeMaterialState(env, state); return state; }
+    if (issues.length) { const state: MaterialState = { status: "blocked", filing, issues, ...(files.length ? { files } : {}) }; await writeMaterialState(env, state); return state; }
     const reconciliations = parsed.flatMap(document => document.coverage.reconciliation ? [document.coverage.reconciliation] : []);
     const version = await materialDigest(JSON.stringify({ ...(reconciliations.length ? {reconciliations} : {}), version: MATERIAL_VERSION, extractor: EXTRACTOR_VERSION, layout: LAYOUT_VERSION,
       inventory: { version: manifest.inventory.inventoryVersion, sha256: manifest.inventory.directory.sha256 }, sources: sources.map(source => [source.id, source.sha256]) }));
@@ -188,11 +277,11 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
       checkedCells += check.checkedCells;
       issues.push(...check.issues.map(issue => `${table.tableId}:${issue}`));
     }
-    if (issues.length) { const state: MaterialState = { status: "blocked", filing, issues }; await writeMaterialState(env, state); return state; }
+    if (issues.length) { const state: MaterialState = { status: "blocked", filing, issues, ...(files.length ? { files } : {}) }; await writeMaterialState(env, state); return state; }
     const coverage: MaterialCoverage = { expectedDocuments: sources.length, archivedDocuments: sources.length, documents: parsed.map(document => document.coverage),
       sourceBlocks: blocks.length, retainedBlocks: organized.kept.length, duplicates: organized.duplicates, excluded: organized.excluded,
       tableCells: tables.reduce((count, table) => count + table.table.columns.length + 1 + table.table.rows.reduce((n, row) => n + row.cells.length + 1, 0), 0), checkedCells, issues, archiveInventory: manifest.inventory };
-    if (!await ownsMaterialLease(env, filing, owner)) return progress("awaiting active material preparation");
+    if (!await ownsMaterialLease(env, filing, owner)) return progress("awaiting active material preparation", files);
     const snapshotKey = materialSnapshotKey(ref), markdownKey = `${base}/filing.md`;
     const document = await writeMaterialMarkdown(env, markdownKey, filing, sources, tables, blocks, organized.kept, organized.duplicates, organized.excluded);
     for (const table of tables) {
@@ -215,9 +304,9 @@ async function prepareOwnedMaterial(env: AnalysisEnv, filing: MaterialFiling, ow
     }
     const state: MaterialState = { status: "ready", ref, filing, snapshotKey, markdownKey, preparedAt: snapshot.createdAt, preparationVersion: MATERIAL_PREPARATION_VERSION };
     if (await publishMaterialState(env, state, owner, options.causeId)) return state;
-    return await getFilingMaterial(env, filing.ticker, filing.accession) ?? progress("awaiting active material preparation");
+    return await getFilingMaterial(env, filing.ticker, filing.accession) ?? progress("awaiting active material preparation", files);
   } catch (error) {
-    const state: MaterialState = { status: "blocked", filing, issues: [error instanceof Error ? error.message : String(error)] };
+    const state: MaterialState = { status: "blocked", filing, issues: [error instanceof Error ? error.message : String(error)], ...(files.length ? { files } : {}) };
     if (await ownsMaterialLease(env, filing, owner)) { await writeMaterialState(env, state); return state; }
     return await getFilingMaterial(env, filing.ticker, filing.accession) ?? { status: "preparing", filing, progress: "awaiting active material preparation" };
   }

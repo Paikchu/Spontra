@@ -143,9 +143,15 @@ export type MaterialSnapshot = {
   coverage: MaterialCoverage;
   brief?: { key: string; markdownKey: string; model: string; generatedAt: string; metricsCount: number; signalsCount: number };
 };
+export type MaterialExtractFile = {
+  filename: string;
+  type: string;
+  status: "pending" | "extracting" | "done" | "failed";
+  container?: string | null;
+};
 export type MaterialState =
-  | { status: "preparing"; filing: MaterialFiling; progress: string }
-  | { status: "blocked"; filing: MaterialFiling; issues: string[] }
+  | { status: "preparing"; filing: MaterialFiling; progress: string; files?: MaterialExtractFile[]; updatedAt?: string }
+  | { status: "blocked"; filing: MaterialFiling; issues: string[]; files?: MaterialExtractFile[] }
   | { status: "ready"; ref: MaterialRef; filing: MaterialFiling; snapshotKey: string; markdownKey: string; preparedAt: string; preparationVersion: string };
 
 export type MaterialPage = {

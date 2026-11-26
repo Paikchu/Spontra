@@ -62,8 +62,8 @@
   background: var(--fill);
   color: var(--ink);
 }
-.fm2-badge.ready { background: var(--fill); color: var(--ink-muted); }
-.fm2-badge.preparing { background: var(--caution-soft); color: var(--caution); }
+.fm2-badge.ready { background: var(--gain-soft); color: var(--gain); }
+.fm2-badge.preparing { background: var(--fill); color: var(--ink-muted); }
 .fm2-badge.blocked { background: var(--danger-soft); color: var(--danger); }
 .fm2-filters {
   display: flex;
@@ -333,6 +333,102 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.fm2-todo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fm2-todo-head-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.fm2-todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.fm2-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.fm2-todo-item:last-child {
+  border-bottom: 0;
+}
+.fm2-todo-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-muted);
+}
+.fm2-todo-check.done {
+  border-color: var(--gain);
+  background: var(--gain-soft);
+  color: var(--gain);
+}
+.fm2-todo-check.extracting {
+  border-color: var(--ink-muted);
+  background: var(--fill);
+  color: var(--ink);
+}
+.fm2-todo-check.failed {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.fm2-todo-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.fm2-todo-name code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fm2-todo-container {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.fm2-todo-type {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.fm2-todo-issues {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--danger);
+  font-size: 12px;
+}
+@keyframes fm2-spin {
+  to { transform: rotate(360deg); }
+}
+.fm2-spin {
+  animation: fm2-spin 1s linear infinite;
 }
 @media (max-width: 960px) {
   .fm2-split { grid-template-columns: 1fr; }

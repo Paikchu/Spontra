@@ -1,7 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowsClockwiseIcon as RefreshCw, CheckIcon as Check, CopyIcon as Copy, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import {
+  ArrowsClockwiseIcon as RefreshCw,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  MagnifyingGlassIcon as Search,
+  SpinnerGapIcon as LoaderCircle,
+  XIcon as X,
+} from "@phosphor-icons/react";
 import type {
   MaterialBriefResponse,
+  MaterialExtractFile,
   MaterialPage,
   MaterialSnapshot,
   MaterialState,
@@ -9,7 +17,7 @@ import type {
 } from "@/shared/analysis-contract/filing-material";
 import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { adminApi, AdminApiError } from "./admin-api";
-import { usePageActive } from "./admin-page";
+import { useOnReturn, usePageActive } from "./admin-page";
 import "./filing-materials.css";
 
 const FilingMarkdown = lazy(async () => ({ default: (await import("./filing-markdown")).FilingMarkdown }));
@@ -51,6 +59,12 @@ const TOC_GROUP_LABEL = {
 
 function materialKey(m: MaterialState) {
   return `${m.filing.ticker}:${m.filing.accession}`;
+}
+
+function stripStateFiles(m: MaterialState): MaterialState {
+  if (m.status === "ready" || !("files" in m) || !m.files) return m;
+  const { files: _files, ...rest } = m;
+  return rest as MaterialState;
 }
 
 function baseSourceId(id: string) {
@@ -106,16 +120,51 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     else setError(e instanceof Error ? e.message : String(e));
   }, []);
 
-  useEffect(() => {
-    const c = new AbortController();
-    void adminApi<{ materials: MaterialState[] }>("library", { signal: c.signal }).then(res => {
+  const fetchMaterials = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await adminApi<{ materials: MaterialState[] }>("library", { signal });
+      if (signal?.aborted) return;
       const sorted = [...res.materials].sort((a, b) => (b.filing.filedAt || "").localeCompare(a.filing.filedAt || ""));
       setMaterials(sorted);
       setError("");
       callbacks.current.onAuthenticated();
-    }).catch(e => { if (!c.signal.aborted) fail(e); });
+    } catch (e) {
+      if (!signal?.aborted) fail(e);
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    const c = new AbortController();
+    void fetchMaterials(c.signal);
     return () => c.abort();
-  }, [refresh, fail]);
+  }, [refresh, fetchMaterials]);
+
+  useOnReturn(() => {
+    void fetchMaterials();
+  });
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (visible.current && document.visibilityState === "visible") void fetchMaterials();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [fetchMaterials, visible]);
+
+  const hasPreparing = useMemo(() => (materials ?? []).some(m => m.status === "preparing"), [materials]);
+
+  useEffect(() => {
+    const intervalMs = hasPreparing ? 3000 : 15000;
+    const timer = window.setInterval(() => {
+      if (!visible.current || document.visibilityState !== "visible") return;
+      void fetchMaterials();
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [hasPreparing, fetchMaterials, visible]);
 
   const companies = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -138,7 +187,9 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     ? reports.find(report => report.filing.accession === selection.accession)
     : undefined;
   const selectedMaterial = requestedReport ?? reports[0] ?? null;
-  const selectedKey = selectedMaterial ? materialKey(selectedMaterial) : "";
+  const selectedTicker = selectedMaterial?.filing.ticker ?? "";
+  const selectedAccession = selectedMaterial?.filing.accession ?? "";
+  const selectedKey = selectedTicker && selectedAccession ? `${selectedTicker}:${selectedAccession}` : "";
 
   const loadBrief = useCallback(async (material: ReadyMaterial, signal?: AbortSignal) => {
     const { ticker, accession } = material.filing;
@@ -204,8 +255,16 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     }
   }, [fail]);
 
+  const readyDetail = detail && materialKey(detail) === selectedKey && detail.status === "ready" ? detail : null;
+  const readyKey = readyDetail ? selectedKey : "";
+  const readyVersion = readyDetail ? readyDetail.ref.version : "";
+  const readyDetailRef = useRef<ReadyMaterial | null>(null);
+  readyDetailRef.current = readyDetail;
+
+  const currentStatus = (detail && materialKey(detail) === selectedKey ? detail.status : selectedMaterial?.status) ?? null;
+
   useEffect(() => {
-    if (!selectedMaterial) {
+    if (!selectedKey || !selectedTicker || !selectedAccession) {
       setDetail(null);
       setSnapshot(null);
       setBriefData(null);
@@ -214,7 +273,6 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       setLoadedTable(null);
       return;
     }
-    const { ticker, accession } = selectedMaterial.filing;
     setActionNote("");
     setDetail(null);
     setSnapshot(null);
@@ -230,23 +288,48 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     const c = new AbortController();
     materialRequest.current = c;
 
-    void adminApi<MaterialState>(`library/materials/${ticker}/${accession}`, { signal: c.signal })
+    void adminApi<MaterialState>(`library/materials/${selectedTicker}/${selectedAccession}`, { signal: c.signal })
       .then(d => {
-        if (c.signal.aborted) return;
-        setDetail(d);
-        if (d.status === "ready") {
-          void adminApi<MaterialSnapshot>(`library/materials/${ticker}/${accession}/index?version=${encodeURIComponent(d.ref.version)}`, { signal: c.signal })
-            .then(idx => { if (!c.signal.aborted) setSnapshot(idx); })
-            .catch(e => { if (!c.signal.aborted) fail(e); });
-          void loadBrief(d, c.signal);
-          void loadMarkdown(d, c.signal);
-          void loadTables(d, "", "", c.signal);
-        }
+        if (!c.signal.aborted) setDetail(d);
       })
       .catch(e => { if (!c.signal.aborted) fail(e); });
 
     return () => c.abort();
-  }, [selectedMaterial, fail, loadBrief, loadMarkdown, loadTables]);
+  }, [selectedKey, selectedTicker, selectedAccession, fail]);
+
+  useEffect(() => {
+    if (!selectedKey || !selectedTicker || !selectedAccession || currentStatus !== "preparing") return;
+    const controller = new AbortController();
+    const pollDetail = () => {
+      if (!visible.current || document.visibilityState !== "visible") return;
+      void adminApi<MaterialState>(`library/materials/${selectedTicker}/${selectedAccession}`, { signal: controller.signal })
+        .then(next => {
+          if (controller.signal.aborted) return;
+          setDetail(next);
+          setMaterials(prev => prev ? prev.map(m => materialKey(m) === selectedKey ? stripStateFiles(next) : m) : prev);
+        })
+        .catch(() => { /* retry next interval */ });
+    };
+    const timer = window.setInterval(pollDetail, 2500);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [selectedKey, selectedTicker, selectedAccession, currentStatus, visible]);
+
+  useEffect(() => {
+    const current = readyDetailRef.current;
+    if (!readyKey || !readyVersion || !current) return;
+    const c = new AbortController();
+    const { ticker, accession } = current.filing;
+    void adminApi<MaterialSnapshot>(`library/materials/${ticker}/${accession}/index?version=${encodeURIComponent(readyVersion)}`, { signal: c.signal })
+      .then(idx => { if (!c.signal.aborted) setSnapshot(idx); })
+      .catch(e => { if (!c.signal.aborted) fail(e); });
+    void loadBrief(current, c.signal);
+    void loadMarkdown(current, c.signal);
+    void loadTables(current, "", "", c.signal);
+    return () => c.abort();
+  }, [readyKey, readyVersion, fail, loadBrief, loadMarkdown, loadTables]);
 
   useEffect(() => {
     if (!detail || detail.status !== "ready" || materialKey(detail) !== selectedKey) return;
@@ -262,10 +345,11 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   }, [detail, selectedKey, briefData?.state.status, loadBrief]);
 
   useEffect(() => {
-    if (briefData?.state.status === "ready" && detail?.status === "ready") {
-      void loadTables(detail, tableQuery, "", materialRequest.current?.signal);
+    const current = readyDetailRef.current;
+    if (briefData?.state.status === "ready" && current && readyKey) {
+      void loadTables(current, tableQuery, "", materialRequest.current?.signal);
     }
-  }, [briefData?.state.status, detail, tableQuery, loadTables]);
+  }, [briefData?.state.status, readyKey, readyVersion, tableQuery, loadTables]);
 
   useEffect(() => {
     if (!detail || detail.status !== "ready" || materialKey(detail) !== selectedKey || !selectedTableId || tab !== "tables") return;
@@ -275,19 +359,11 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   }, [detail, selectedKey, selectedTableId, tab, loadTableDetail]);
 
   useEffect(() => {
-    if (!selectedMaterial || !visible.current) return;
+    if (!selectedTicker || !selectedAccession || !visible.current) return;
     try {
-      window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams({ ticker: selectedMaterial.filing.ticker, accession: selectedMaterial.filing.accession })}`);
+      window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams({ ticker: selectedTicker, accession: selectedAccession })}`);
     } catch { /* ignore */ }
-  }, [selectedMaterial, visible]);
-
-  useEffect(() => {
-    if (selectedMaterial?.status !== "preparing" && detail?.status !== "preparing") return;
-    const timer = window.setInterval(() => {
-      setRefresh(n => n + 1);
-    }, 4000);
-    return () => window.clearInterval(timer);
-  }, [selectedMaterial?.status, detail?.status]);
+  }, [selectedTicker, selectedAccession, visible]);
 
   async function syncCompany(ticker: string) {
     const upper = ticker.trim().toUpperCase();
@@ -302,7 +378,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       );
       setActionNote(`已触发 ${upper} 财报 L1 拉取与提取（${res.requested.length} 份）。`);
       setSelection({ ticker: upper, accession: res.requested[0]?.accession ?? "" });
-      setRefresh(n => n + 1);
+      void fetchMaterials();
     } catch (e) {
       fail(e);
     } finally {
@@ -313,18 +389,25 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   async function triggerPrepare(retryFailedSources: boolean) {
     if (!selectedMaterial) return;
     const { ticker, accession } = selectedMaterial.filing;
+    const key = materialKey(selectedMaterial);
     setActionBusy(true);
     setActionNote("");
     try {
       const body = retryFailedSources
         ? { retryFailedSources: true, requestId: crypto.randomUUID() }
         : {};
-      await adminApi(`library/materials/${ticker}/${accession}/prepare`, {
+      const next = await adminApi<MaterialState>(`library/materials/${ticker}/${accession}/prepare`, {
         method: "POST",
         body: JSON.stringify(body),
       });
+      setDetail(next);
+      setMaterials(prev => prev ? prev.map(m => materialKey(m) === key ? stripStateFiles(next) : m) : prev);
       setActionNote(retryFailedSources ? "已安排重试失败文件。" : "已安排重新整理材料。");
-      setRefresh(n => n + 1);
+      void adminApi<MaterialState>(`library/materials/${ticker}/${accession}`).then(d => {
+        setDetail(d);
+        setMaterials(prev => prev ? prev.map(m => materialKey(m) === key ? stripStateFiles(d) : m) : prev);
+      }).catch(() => { /* poll will refresh */ });
+      void fetchMaterials();
     } catch (e) {
       fail(e);
     } finally {
@@ -335,6 +418,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   async function triggerPilotPrepare() {
     if (!selectedMaterial) return;
     const { ticker, accession } = selectedMaterial.filing;
+    const key = materialKey(selectedMaterial);
     setActionBusy(true);
     setActionNote("");
     try {
@@ -343,7 +427,11 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
         body: JSON.stringify({ requestId: crypto.randomUUID(), retryFailedSources: false }),
       });
       setActionNote("已安排分批整理。");
-      setRefresh(n => n + 1);
+      void adminApi<MaterialState>(`library/materials/${ticker}/${accession}`).then(d => {
+        setDetail(d);
+        setMaterials(prev => prev ? prev.map(m => materialKey(m) === key ? stripStateFiles(d) : m) : prev);
+      }).catch(() => { /* poll will refresh */ });
+      void fetchMaterials();
     } catch (e) {
       fail(e);
     } finally {
@@ -442,6 +530,64 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     </span>
   ) : null;
 
+  const renderExtractionTodo = (material: Exclude<MaterialState, { status: "ready" }>, notice?: string) => {
+    const files: MaterialExtractFile[] = Array.isArray(material.files) ? material.files : [];
+    const doneCount = files.filter(f => f.status === "done").length;
+    return (
+      <div className="fm2-card">
+        {notice && <p className="fm2-meta" style={{ margin: 0 }}>{notice}</p>}
+        <div className="fm2-todo-head">
+          <div className="fm2-todo-head-left">
+            <strong>提取文件清单</strong>
+            <span className="fm2-meta">
+              {files.length ? `已完成 ${doneCount} / ${files.length}` : "等待获取 SEC 文件清单"}
+            </span>
+          </div>
+          {material.status === "preparing" && <span className="fm2-meta">自动刷新中</span>}
+        </div>
+        {material.status === "preparing" && material.progress && (
+          <div className="fm2-meta" role="status">{material.progress}</div>
+        )}
+        <ul className="fm2-todo-list" aria-label="L1 提取文件进度清单">
+          {files.length > 0 ? files.map((file, idx) => (
+            <li key={`${file.container ?? ""}:${file.filename}:${idx}`} className="fm2-todo-item">
+              <span className={`fm2-todo-check ${file.status}`} aria-label={file.status}>
+                {file.status === "done" && <Check size={12} weight="bold" />}
+                {file.status === "extracting" && <LoaderCircle size={12} className="fm2-spin" />}
+                {file.status === "failed" && <X size={12} weight="bold" />}
+              </span>
+              <span className="fm2-todo-name">
+                <code>{file.filename}</code>
+                {file.container ? <small className="fm2-todo-container">来自 {file.container}</small> : null}
+              </span>
+              <span className="fm2-todo-type">{file.type}</span>
+            </li>
+          )) : material.status === "preparing" ? (
+            <li className="fm2-todo-item">
+              <span className="fm2-todo-check extracting" aria-label="extracting">
+                <LoaderCircle size={12} className="fm2-spin" />
+              </span>
+              <span className="fm2-todo-name">
+                <span>获取 SEC 提交文件清单 (manifest.json)</span>
+              </span>
+              <span className="fm2-todo-type">MANIFEST</span>
+            </li>
+          ) : null}
+        </ul>
+        {material.status === "blocked" && material.issues.length > 0 && (
+          <ul className="fm2-todo-issues">{material.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}</ul>
+        )}
+        <div className="fm2-actions">
+          <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理 L1 材料</button>
+          {material.status === "blocked" && (
+            <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>重试失败文件</button>
+          )}
+          <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>分批整理 L1</button>
+        </div>
+      </div>
+    );
+  };
+
   const briefState = briefData?.state ?? { status: "idle" as const };
   const searchTicker = search.trim().toUpperCase();
   const canSyncSearchTicker = /^[A-Z][A-Z0-9.-]{0,11}$/.test(searchTicker) && !companies.some(([t]) => t === searchTicker);
@@ -516,7 +662,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
             <div className="fm2-head">
               <div className="fm2-title">
                 <h2>{currentMaterial.filing.ticker} · {currentMaterial.filing.companyName}</h2>
-                {currentMaterial.status !== "ready" && <span className={`fm2-badge ${currentMaterial.status}`}>{STATUS_LABEL[currentMaterial.status]}</span>}
+                <span className={`fm2-badge ${currentMaterial.status}`}>{STATUS_LABEL[currentMaterial.status]}</span>
               </div>
               <div className="fm2-meta">
                 <span>申报类型：<strong>{currentMaterial.filing.form}</strong></span>
@@ -536,20 +682,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
             {tab === "brief" && (
               <div className="fm2-panel">
                 {currentMaterial.status !== "ready" ? (
-                  <div className="fm2-card">
-                    <p className="fm2-meta">L1 原始材料尚未就绪，需先完成 L1 提取后才能启动 L2 事实卡片抽取。</p>
-                    {currentMaterial.status === "preparing" && <p className="fm2-meta" role="status">{currentMaterial.progress}</p>}
-                    {currentMaterial.status === "blocked" && (
-                      <ul>{currentMaterial.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}</ul>
-                    )}
-                    <div className="fm2-actions">
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理 L1 材料</button>
-                      {currentMaterial.status === "blocked" && (
-                        <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>重试失败文件</button>
-                      )}
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>分批整理 L1</button>
-                    </div>
-                  </div>
+                  renderExtractionTodo(currentMaterial, "L1 原始材料尚未就绪，需先完成 L1 提取后才能启动 L2 事实卡片抽取。")
                 ) : (
                   <>
                     <div className="fm2-bar">
@@ -724,19 +857,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
             {tab === "markdown" && (
               <div className="fm2-panel">
                 {currentMaterial.status !== "ready" ? (
-                  <div className="fm2-card">
-                    {currentMaterial.status === "preparing" && <p className="fm2-meta" role="status">{currentMaterial.progress}</p>}
-                    {currentMaterial.status === "blocked" && (
-                      <ul>{currentMaterial.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}</ul>
-                    )}
-                    <div className="fm2-actions">
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理材料</button>
-                      {currentMaterial.status === "blocked" && (
-                        <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>重试失败文件</button>
-                      )}
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>分批整理材料</button>
-                    </div>
-                  </div>
+                  renderExtractionTodo(currentMaterial)
                 ) : (
                   <>
                     {currentSnapshot && (
@@ -808,7 +929,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
             {tab === "tables" && (
               <div className="fm2-panel">
                 {currentMaterial.status !== "ready" ? (
-                  <p className="bs-empty">当前材料状态为「{STATUS_LABEL[currentMaterial.status]}」，尚未生成结构化表格。</p>
+                  renderExtractionTodo(currentMaterial, `当前材料状态为「${STATUS_LABEL[currentMaterial.status]}」，L1 提取完成后将展示结构化数据表格。`)
                 ) : (
                   <div className="fm2-split">
                     <aside className="fm2-toc" aria-label="表格列表">

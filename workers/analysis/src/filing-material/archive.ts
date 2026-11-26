@@ -14,7 +14,7 @@ export type MaterialManifest = { filing: MaterialFiling; entries: ManifestEntry[
 const directorySchema = z.object({ directory: z.object({ item: z.array(z.object({ name: z.string().min(1) })) }) });
 
 const receiptKey = (filing: MaterialFiling, id: string) => `filing-material:source:v1:${filing.ticker}:${filing.accession}:${id}`;
-const manifestKey = (filing: MaterialFiling) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/manifest.json`;
+export const manifestKey = (filing: MaterialFiling) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/manifest.json`;
 const filingRoot = (filing: MaterialFiling) => `${parseSecArchiveDocumentUrl(filing.documentUrl).archiveRoot}/`;
 const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const ascii = (bytes: Uint8Array) => {

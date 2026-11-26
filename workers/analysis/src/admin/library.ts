@@ -7,7 +7,7 @@ import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { overrideLink, readLinksView, requestLinks } from "../business-classification/index.ts";
 import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
-import { listFilingMaterials, materialStateKey, readFilingMaterialState, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState, requestFilingMaterial } from "../filing-material/index.ts";
+import { listFilingMaterials, materialStateKey, readExtractionFiles, readFilingMaterialState, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState, requestFilingMaterial } from "../filing-material/index.ts";
 import { filingMaterialMeta, findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
 import { aiToolEnvironment, modelFor } from "../ai-config.ts";
 import { withRuns } from "../durable-runs/binding.ts";
@@ -26,6 +26,12 @@ const materialReviewKey = (ticker: string, accession: string) => `filing-materia
 type MaterialReview = { decision: "approved" | "rejected"; version: string | null; note?: string; reviewedAt: string };
 const category = (value: string | null): IndustryCategory | undefined => value && Object.hasOwn(INDUSTRY_CATEGORIES, value) ? value as IndustryCategory : undefined;
 
+function stripStateFiles(state: MaterialState): MaterialState {
+  if (state.status === "ready" || !("files" in state) || !state.files) return state;
+  const { files: _files, ...rest } = state;
+  return rest as MaterialState;
+}
+
 async function attachMaterialReviews(db: D1Database, list: MaterialState[]): Promise<Array<MaterialState & { review: MaterialReview | null }>> {
   const prefix = "filing-material:review:v1:";
   const rows = await db.prepare("SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?")
@@ -34,7 +40,7 @@ async function attachMaterialReviews(db: D1Database, list: MaterialState[]): Pro
   for (const r of rows.results) {
     try { map.set(r.cache_key, JSON.parse(r.payload) as MaterialReview); } catch { /* ignore */ }
   }
-  return list.map(m => ({ ...m, review: map.get(materialReviewKey(m.filing.ticker, m.filing.accession)) ?? null }));
+  return list.map(m => ({ ...stripStateFiles(m), review: map.get(materialReviewKey(m.filing.ticker, m.filing.accession)) ?? null }));
 }
 
 export async function handleLibraryAdminRequest(request: Request, env: AnalysisEnv): Promise<Response> {
@@ -201,12 +207,20 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     }
     if (request.method === "GET") {
       if (parts.length === 3) {
-        const [pilot, revRow] = await Promise.all([
+        const [pilot, revRow, fallbackFiles] = await Promise.all([
           env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker,accession)).first<{payload:string}>(),
           env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialReviewKey(ticker,accession)).first<{payload:string}>(),
+          (state.status === "preparing" || state.status === "blocked") && (!state.files || state.files.length === 0)
+            ? readExtractionFiles(env, state.filing).catch(() => [])
+            : Promise.resolve(null),
         ]);
         const review = revRow ? JSON.parse(revRow.payload) as MaterialReview : null;
-        return json({ ...state, review, ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}) });
+        return json({
+          ...state,
+          ...(fallbackFiles && fallbackFiles.length ? { files: fallbackFiles } : {}),
+          review,
+          ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}),
+        });
       }
       if (state.status !== "ready") return json(state, 409);
       const snapshot = await readMaterialSnapshot(env, { ...state.ref, version: url.searchParams.get("version") ?? state.ref.version });

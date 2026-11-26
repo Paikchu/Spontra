@@ -1,4 +1,4 @@
-export { prepareFilingMaterial, type PrepareMaterialOptions } from "./prepare.ts";
+export { prepareFilingMaterial, readExtractionFiles, type PrepareMaterialOptions } from "./prepare.ts";
 export {
   requestFilingMaterial,
   readFilingMaterialState,
@@ -20,6 +20,7 @@ export type {
   MaterialRef,
   MaterialFiling,
   MaterialState,
+  MaterialExtractFile,
   MaterialSnapshot,
   MaterialTable,
   MaterialBlock,
