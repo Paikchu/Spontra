@@ -598,7 +598,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     );
   };
 
-  const briefState = briefData?.state ?? { status: "idle" as const };
+  const briefState = briefData?.state ?? null;
   const searchTicker = search.trim().toUpperCase();
   const canSyncSearchTicker = /^[A-Z][A-Z0-9.-]{0,11}$/.test(searchTicker) && !companies.some(([t]) => t === searchTicker);
 
@@ -693,6 +693,15 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
               <div className="fm2-panel">
                 {currentMaterial.status !== "ready" ? (
                   renderExtractionTodo(currentMaterial, "L1 原始材料尚未就绪，需先完成 L1 提取后才能启动 L2 事实卡片抽取。")
+                ) : !briefState ? (
+                  <div className="fm2-card" role="status">
+                    <div className="fm2-todo-head">
+                      <div className="fm2-todo-head-left">
+                        <span className="fm2-badge preparing">L2 状态：加载中…</span>
+                        <span className="fm2-meta">正在读取 L2 事实卡片状态…</span>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <div className="fm2-bar">
