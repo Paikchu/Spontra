@@ -10,6 +10,7 @@ import {
 } from "../../../../shared/analysis-contract/filing-material.ts";
 import { csvFromTable } from "../../../../shared/analysis-runtime/filing-material.ts";
 import { modelFor } from "../ai-config.ts";
+import { aiUsageFromMetrics } from "../ai-runs/usage.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { materialBlockId } from "./read.ts";
 import {
@@ -464,7 +465,10 @@ export async function executeMaterialBriefRun(env: AnalysisEnv, params: Material
       env.SEC_FILINGS.put(mdKey, markdown, { httpMetadata: { contentType: "text/markdown; charset=utf-8" } }),
     ]);
 
-    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+    const durationMs = Date.now() - started;
+    const usage = capturedMetrics
+      ? aiUsageFromMetrics(capturedMetrics, { at: generatedAt, durationMs, provider: "model", ticker: ref.ticker, runId: params.runId, kind: "filing-read" })
+      : null;
     const ready: MaterialBriefState = {
       status: "ready",
       runId: params.runId,
@@ -477,9 +481,9 @@ export async function executeMaterialBriefRun(env: AnalysisEnv, params: Material
       metricsCount: brief.metrics.length,
       signalsCount: brief.industrySignals.length,
       tablesDescribed: brief.tableCatalog.length,
-      ...(num(capturedMetrics?.inputTokens) !== undefined ? { inputTokens: num(capturedMetrics?.inputTokens) } : {}),
-      ...(num(capturedMetrics?.outputTokens) !== undefined ? { outputTokens: num(capturedMetrics?.outputTokens) } : {}),
-      durationMs: Date.now() - started,
+      ...(usage && usage.inputTokens > 0 ? { inputTokens: usage.inputTokens } : {}),
+      ...(usage && usage.outputTokens > 0 ? { outputTokens: usage.outputTokens } : {}),
+      durationMs,
     };
     await writeMaterialBriefState(env, ref, ready);
     return ready;
