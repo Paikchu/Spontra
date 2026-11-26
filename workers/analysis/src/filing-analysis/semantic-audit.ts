@@ -213,7 +213,9 @@ export function semanticIssuesOf(answer: AuditAnswer, state: FilingAuditState, i
     const semantics = input.report.find(block => block.id === issue.block);
     const texts = semantics ? [semantics.title, semantics.text, ...semantics.bindings.map(binding => binding.text), ...semantics.attributes.map(attribute => attribute.text), ...semantics.charts.flatMap(chartTexts)] : [];
     const quote = reportQuote(issue.quote, texts);
-    const chain = !quote ? input.investmentChains.find(chain => chain.usedBy.includes(issue.block) && issue.sources.includes(chain.id) && reportQuote(issue.quote, Object.values(chain).filter((value): value is string => typeof value === "string"))) : undefined;
+    const chainTexts = (item: (typeof input.investmentChains)[number]) =>
+      Object.values(item).flatMap(value => typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []);
+    const chain = !quote ? input.investmentChains.find(chain => chain.usedBy.includes(issue.block) && issue.sources.includes(chain.id) && reportQuote(issue.quote, chainTexts(chain))) : undefined;
     const question = !quote && !chain ? (input.earningsQuestions??[]).find(q=>q.owner===issue.block&&issue.sources.includes(q.id)&&reportQuote(issue.quote,[q.question,q.disclosure])) : undefined;
     if (!block || (!quote && !chain && !question) || !issue.problem.trim() || !issue.evidence.trim() || !issue.sources.length || issue.sources.some(id => !sourceIds.has(id))) throw new JudgeUnavailable("The independent audit did not identify a complete, grounded report or investment-chain issue");
     return { block: block.id, kind: "content", severity: "major", origin: "semantic", key: issueKey(block.id, issue.problem, quote ?? issue.quote), ...(quote ? { quote } : {}), problem: question ? `Earnings question ${question.id}: ${issue.problem}` : chain ? `Stored investment chain ${chain.id}: ${issue.problem}` : issue.problem,
