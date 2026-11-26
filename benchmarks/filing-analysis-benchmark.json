@@ -20,32 +20,376 @@
       }
     ],
     "dimensions": [
-      { "id": "D1", "name": "事实准确与口径严谨", "max": 20 },
-      { "id": "D2", "name": "核心异动与隐蔽风险召回", "max": 25 },
-      { "id": "D3", "name": "财务因果与三表传导深度", "max": 25 },
-      { "id": "D4", "name": "决策可读性与结论密度", "max": 15 },
-      { "id": "D5", "name": "溯源完整度与下游可消费性", "max": 15 }
+      {
+        "id": "D1",
+        "name": "事实准确与口径严谨",
+        "max": 20
+      },
+      {
+        "id": "D2",
+        "name": "核心异动与隐蔽风险召回",
+        "max": 25
+      },
+      {
+        "id": "D3",
+        "name": "财务因果与三表传导深度",
+        "max": 25
+      },
+      {
+        "id": "D4",
+        "name": "决策可读性与结论密度",
+        "max": 15
+      },
+      {
+        "id": "D5",
+        "name": "溯源完整度与下游可消费性",
+        "max": 15
+      }
     ],
     "subItems": [
-      { "id": "S1.1", "dimension": "D1", "name": "核心财务数字与单位零误差", "max": 6 },
-      { "id": "S1.2", "dimension": "D1", "name": "同比 / 环比 / 累计口径与期间严谨", "max": 5 },
-      { "id": "S1.3", "dimension": "D1", "name": "GAAP 与 Non-GAAP / Adjusted 界限清晰", "max": 5 },
-      { "id": "S1.4", "dimension": "D1", "name": "信息边界与未披露缺口诚实声明", "max": 4 },
-      { "id": "S2.1", "dimension": "D2", "name": "反直觉张力识别（增长质量背离）", "max": 7 },
-      { "id": "S2.2", "dimension": "D2", "name": "盈利质量与非经营项拆解", "max": 6 },
-      { "id": "S2.3", "dimension": "D2", "name": "指引与前瞻压力测算", "max": 6 },
-      { "id": "S2.4", "dimension": "D2", "name": "附注与表外风险挖掘", "max": 6 },
-      { "id": "S3.1", "dimension": "D3", "name": "业务/合同驱动到利润表的因果穿透", "max": 7 },
-      { "id": "S3.2", "dimension": "D3", "name": "利润表 → 现金流 → 资产负债表三表联动", "max": 7 },
-      { "id": "S3.3", "dimension": "D3", "name": "跨期边际变化聚焦", "max": 6 },
-      { "id": "S3.4", "dimension": "D3", "name": "关键假设与下季度可验证追踪指标", "max": 5 },
-      { "id": "S4.1", "dimension": "D4", "name": "标题与前 30 秒倒金字塔结论密度", "max": 6 },
-      { "id": "S4.2", "dimension": "D4", "name": "买方专业语感与零 AI 套话克制度", "max": 5 },
-      { "id": "S4.3", "dimension": "D4", "name": "表格 / 图表与核心论点的协同度", "max": 4 },
-      { "id": "S5.1", "dimension": "D5", "name": "核心论断原文/表格行可追溯锚点覆盖率", "max": 5 },
-      { "id": "S5.2", "dimension": "D5", "name": "关键附注与融资条款高保真摘录", "max": 5 },
-      { "id": "S5.3", "dimension": "D5", "name": "下游 Agent 消费友好度", "max": 5 }
+      {
+        "id": "S1.1",
+        "dimension": "D1",
+        "name": "核心财务数字与单位零误差",
+        "max": 6
+      },
+      {
+        "id": "S1.2",
+        "dimension": "D1",
+        "name": "同比 / 环比 / 累计口径与期间严谨",
+        "max": 5
+      },
+      {
+        "id": "S1.3",
+        "dimension": "D1",
+        "name": "GAAP 与 Non-GAAP / Adjusted 界限清晰",
+        "max": 5
+      },
+      {
+        "id": "S1.4",
+        "dimension": "D1",
+        "name": "信息边界与未披露缺口诚实声明",
+        "max": 4
+      },
+      {
+        "id": "S2.1",
+        "dimension": "D2",
+        "name": "反直觉张力识别（增长质量背离）",
+        "max": 7
+      },
+      {
+        "id": "S2.2",
+        "dimension": "D2",
+        "name": "盈利质量与非经营项拆解",
+        "max": 6
+      },
+      {
+        "id": "S2.3",
+        "dimension": "D2",
+        "name": "指引与前瞻压力测算",
+        "max": 6
+      },
+      {
+        "id": "S2.4",
+        "dimension": "D2",
+        "name": "附注与表外风险挖掘",
+        "max": 6
+      },
+      {
+        "id": "S3.1",
+        "dimension": "D3",
+        "name": "业务/合同驱动到利润表的因果穿透",
+        "max": 7
+      },
+      {
+        "id": "S3.2",
+        "dimension": "D3",
+        "name": "利润表 → 现金流 → 资产负债表三表联动",
+        "max": 7
+      },
+      {
+        "id": "S3.3",
+        "dimension": "D3",
+        "name": "跨期边际变化聚焦",
+        "max": 6
+      },
+      {
+        "id": "S3.4",
+        "dimension": "D3",
+        "name": "关键假设与下季度可验证追踪指标",
+        "max": 5
+      },
+      {
+        "id": "S4.1",
+        "dimension": "D4",
+        "name": "标题与前 30 秒倒金字塔结论密度",
+        "max": 6
+      },
+      {
+        "id": "S4.2",
+        "dimension": "D4",
+        "name": "买方专业语感与零 AI 套话克制度",
+        "max": 5
+      },
+      {
+        "id": "S4.3",
+        "dimension": "D4",
+        "name": "表格 / 图表与核心论点的协同度",
+        "max": 4
+      },
+      {
+        "id": "S5.1",
+        "dimension": "D5",
+        "name": "核心论断原文/表格行可追溯锚点覆盖率",
+        "max": 5
+      },
+      {
+        "id": "S5.2",
+        "dimension": "D5",
+        "name": "关键附注与融资条款高保真摘录",
+        "max": 5
+      },
+      {
+        "id": "S5.3",
+        "dimension": "D5",
+        "name": "下游 Agent 消费友好度",
+        "max": 5
+      }
     ]
   },
-  "benchmarks": []
+  "benchmarks": [
+    {
+      "benchmarkKey": "GOOGL:10-Q:2026-09-30",
+      "ticker": "GOOGL",
+      "form": "10-Q",
+      "periodEnd": "2026-09-30",
+      "title": "Alphabet Q3 2026 10-Q (Phase 2 Multi-Source + DeepSeek Semantic Audit)",
+      "versions": [
+        {
+          "versionId": "eval_googl_10q_2026q3_v000",
+          "versionNumber": 0,
+          "isBaseline": true,
+          "createdAt": "2026-11-26T16:46:00Z",
+          "goal": "Phase 2 多源财报归并（10-Q + 同季 8-K L2 Brief 优先 + L1 下钻）与 DeepSeek semantic-audit 首轮基线测评（Run 3c42815e，140 轮封顶前 Turn 138 终稿）",
+          "gitCommit": "63d5adf7",
+          "generatorModel": "deepseek-flash (author) + deepseek-flash (semantic-audit)",
+          "judgeModel": "antigravity-buy-side-cfa-judge",
+          "rawArticle": {
+            "format": "markdown",
+            "content": "## [summary] Cloud now carries the quarter, and its buildout needs outside capital\n\nCloud now carries the quarter, and its buildout needs outside capital\n\nThe operating business improved faster than the 26% fall in earnings per share suggests. Revenue of $127.6 billion rose 24.7% , operating margin reached 31.8% , and Google Cloud revenue rose to $30.7 billion from $15.2 billion a year earlier, at a 36.2% segment margin. The reported decline came from the portfolio, not the business: other income swung to a $8.2 billion expense from $12.8 billion of income a year earlier, largely net unrealized losses on marketable equity securities, mainly SpaceX, and lower net unrealized gains on non-marketable equity securities. Other income (expense), net \n\nWhat changed for a holder is the funding model. Nine-month capital expenditure more than doubled to $132.0 billion from $63.6 billion and exceeded operating cash flow of $127.1 billion , leaving free cash flow of -$4.8 billion , and the gap was funded with senior notes, a June equity offering, mandatory convertible preferred and at-the-market sales. Debt Common stock Preferred stock Equity sales \n\nOur judgment is to keep the position but read it as a capital-reinvestment story rather than a cash-return story. That rests on Cloud's incremental revenue keeping a segment margin near the reported level, on TPU hardware staying a minority of Cloud's increase, and on assets now under construction earning more than the debt and equity raised to fund them. The transmission is arithmetic: every 100 basis points of Cloud segment margin is worth about $1.23 billion of annualized segment operating income (not revenue) at the third-quarter revenue run-rate, or about $307 million a quarter; $298 million of preferred dividends and $967 million of quarterly interest expense sit between operating income and per-share earnings. Where the filing stops short of a number, the effect stays a sensitivity rather than a figure we can carry into a valuation.\n\n_(Bindings: 21, Sources: 21, Charts: none)_\n\n## [highlights] Cloud margin and Search growth lifted operating margin to 31.8%\n\nCloud margin and Search growth lifted operating margin to 31.8%\n\nGoogle Cloud earned $11.1 billion of operating income on $30.7 billion of revenue, a 36.2% margin against 23.7% a year earlier, and the segment's operating income rose $7.5 billion. The 10-Q attributes the increase to higher revenue, partly offset by inventory and related costs for TPU system sales and by technical infrastructure usage costs. Google Cloud segment profitability Cloud is now 24.1% of consolidated revenue versus 14.8% a year earlier, so the segment's margin now moves the group margin.\n\nGoogle Services grew revenue 10.6% to $96.3 billion and lifted its margin to 40.7% from 38.5% , helped by a lower legal charge and despite higher traffic acquisition costs. Legal settlements Search & other, still the largest line at $63.4 billion , grew 12.0% in the quarter and 15.8% over nine months; the traffic acquisition cost rate slipped to 20.0% from 20.1%. Cost of revenues \n\nQuarter ended September 30 2025 2026 \n \n\nRevenues ($m) 102,346 127,577 \n\nOperating income ($m) 31,228 40,576 \n\nOperating margin 30.5% 31.8% \n\nGoogle Cloud revenue ($m) 15,157 30,709 \n\nGoogle Cloud operating margin 23.7% 36.2% \n\nGoogle Search & other revenue ($m) 56,567 63,350 \n\nNet income available to common ($m) 34,979 26,170 \n\nDiluted EPS $2.87 $2.12 \n\n \n \n\nContracted demand backs the growth: remaining performance obligations were $567.7 billion , of which $560.8 billion sits in Google Cloud. Total backlog equals 1.11x annualised third-quarter revenue, though that ratio is not comparable with prior periods: the 10-Q discloses that in the first quarter of 2026 the company elected to also include contracts with an original expected term of one year or less. Revenue Backlog Google Cloud revenue Operating cash flow rose 13.2% to $127.1 billion over nine months even though a $5.2 billion European Commission fine and interest left the bank in July.\n\n_(Bindings: 40, Sources: 36, Charts: none)_\n\n## [versus-prior] No dated guidance was delivered, so only qualitative forward statements can be scored\n\nNo dated guidance was delivered, so only qualitative forward statements can be scored\n\nThe frozen expectations bundle attached to this filing contains no dated management guidance, no previously published watch condition, no model driver and no verified industry mapping, so those items are not measurable rather than met or missed. The only forward statements available are the company's own, inside the 10-Q, and two can be scored. Management said it expects to significantly increase 2026 investment in technical infrastructure relative to 2025; nine-month capital expenditure of $131,953 million against $63,596 million a year earlier is consistent with that, and the third quarter's $51.4 billion implies no slowdown. Management also repeated that existing cash and cash flows will fund commitments for at least the next twelve months; with free cash flow of -$4.8 billion over nine months, that statement now depends on continued access to debt and equity markets, used in June for an equity offering, a private placement and mandatory convertible preferred, and for senior notes issued during the nine months. Common stock Preferred stock Debt Capital expenditures Liquidity and capital resources \n\nThree evidence limits shape the comparison. No earnings call transcript is on file for this quarter, so management's reasoning cannot be tested against its own words beyond the 10-Q and the earnings release. The comparison tooling returned no earlier prepared filing for the commitments and liquidity sections, so wording changes against the prior 10-Q could not be diffed; prior-year figures here come from this filing's own comparative columns. The frozen public-research library holds no reports, with both macro and industry coverage marked uncovered, so no industry claim is adopted and no industry question is interpreted.\n\nOne judgment needs revising. Reading Cloud as a consumption business whose margin expansion is a durable run-rate is no longer safe: the segment's revenue now mixes platform consumption with TPU product sales, and the majority of the TPU agreements' revenue is scheduled for 2027. Google Cloud revenue The 36.2% margin should be read as a blended outcome for a quarter in which, on our reading, hardware sales contributed to revenue growth while, per the filing, inventory costs for TPU systems partly offset that increase in segment operating income. Google Cloud segment profitability Our revised assumption is a lower through-cycle Cloud margin than this quarter prints, with the direction of the mix disclosed only in 2027.\n\n_(Bindings: 12, Sources: 12, Charts: none)_\n\n## [overlooked] Cloud's growth includes TPU hardware that mostly lands in 2027\n\nCloud's growth includes TPU hardware that mostly lands in 2027\n\nThe cloud revenue discussion carries a disclosure the revenue table does not: Alphabet has signed a limited number of agreements to supply TPU systems to customers needing on-premises infrastructure, began recognising revenue from them in the second quarter of 2026, and expects the significant majority to be recognised in 2027. Google Cloud revenue The third-quarter explanation names TPU system sales as a driver of the $15.6 billion Cloud increase. Our reading is that hardware entered the quarterly comparison only in the last two quarters, but the filing does not quantify its share, so it may or may not be material; if it is, the 102.6% Cloud growth is partly a product-sale event with a gross margin the filing does not disclose, and revenue recognition pulls toward 2027. Every 100 basis points of Cloud segment margin is worth about $1.23 billion of annualized segment operating income (not revenue) at the third-quarter revenue run-rate, so the mix question is worth more than a footnote.\n\nCloud's growth also includes an acquisition the segment comparison cannot separate. The $29.5 billion Wiz acquisition closed on 11 March 2026 and its results are included in Google Cloud for the whole third quarter, while the year-earlier quarter contained none of it; the filing does not quantify Wiz's revenue contribution, and the filing does not disclose how much of the 102.6% segment growth was acquired rather than organic. Wiz acquisition Acquisitions and divestitures \n\nCash leaves before earnings arrive in two places. The 2018 Android decision was upheld on appeal on 2 July 2026, and the $5.2 billion fine and interest, already accrued, was paid in July, inside this quarter, so the earnings charge fell in an earlier period while the cash left operating cash flow in 2026. Separately, short-term accrued legal and regulatory fines and settlements were still $13.8 billion at 30 September 2026.\n\nThe preferred stock adds a per-share cost that the operating narrative hides. The 19 million 6.25% mandatory convertible preferred shares issued in June for $19.0 billion net took $298 million out of earnings available to common holders in the quarter, of which $234 million was cash paid and the rest accrual; the gap between the $26,468 million net income and the $26,170 million available to common is exactly that charge. Preferred and common dividends Dilution is already visible: basic weighted-average shares rose to 12,256 million from 12,086 million , up 1.4% , and $27.6 billion remains available under the at-the-market program.\n\nOther Bets is now partly financed on its own. Waymo signed a $5.0 billion senior secured term loan in October 2026 maturing in 2032 at Term SOFR plus 5.25%, secured by Waymo assets and expressly not guaranteed by Alphabet, so the borrowing now sits with Waymo's own creditors. The segment's quarterly operating loss widened to $2,047 million from $1,426 million .\n\n_(Bindings: 18, Sources: 17, Charts: none)_\n\n## [risks] A $21 billion decline in other income (expense), net accompanied a 26.1% EPS decline while operating income improved\n\nA $21 billion decline in other income (expense), net accompanied a 26.1% EPS decline while operating income improved\n\nThe per-share decline is an investment mark, not an operating one. Third-quarter other income (expense), net moved from $12,759 million of income to $(8,221) million of expense, as net losses on equity securities of $(8,664) million replaced prior-year gains of $10,734 million . Net income available to common fell to $26,170 million from $34,979 million and diluted EPS to $2.12 from $2.87 , a 26.1% decline, while operating income rose to $40,576 million from $31,228 million . Other income (expense), net The filing discloses no counterfactual EPS effect, and the swing is pre-tax and largely reverses with the market prices of the stakes held, so this is the one part of the quarter that says little about the business.\n\nCosts below the operating line are now real and recurring. Interest expense reached $967 million in the quarter, and the preferred shares, first issued in June 2026, declared and accrued $298 million of dividends, of which $234 million was paid in cash and the rest accrued. Both sit between operating income and earnings per share, and the dividend has no year-earlier counterpart, so the per-share translation of operating growth is now weaker than the segment margins imply. Mandatory convertible preferred \n\nCloud's 36.2% margin may not be a run-rate. Segment operating margin rose to 36.2% from 23.7% on revenue that doubled, and the filing says the significant majority of revenues from the limited number of TPU supply agreements will be recognized in 2027, with Cloud revenue already including TPU product sales. We assume the hardware portion carries a lower gross margin than the consumption business, which would pull the through-cycle margin below today's level; the filing does not disclose TPU revenue or its margin, so the size of the dilution is unknown. TPU supply agreements \n\nCapital spending now exceeds internal cash generation. Nine-month operating cash flow of $127,149 million fell short of $131,953 million of capital expenditure, leaving free cash flow of $(4,804) million , and $145,270 million of property and equipment is not yet in service and will begin depreciating as it is placed into use. Against that, material purchase commitments total $924.4 billion, of which $802.1 billion relates to multi-year commitments for technical infrastructure and inventory, energy take-or-pay contracts and content licenses and $213.4 billion of that total is due within twelve months. Leases signed but not yet commenced add $130.5 billion . Purchase commitments \n\nThe cushion is smaller than the headline cash balance. Cash, equivalents and short-term marketable securities were $265.1 billion , of which $75.2 billion is SpaceX shares subject to short-term restrictions on the ability to sell, so the immediately available cushion is smaller than that total. Beyond the contractual amounts, the filing discloses $75.7 billion of backstop obligations relating to data centers, including data center lease payments and associated energy costs: $48.0 billion is executed with third-party data center providers and accounted for as credit derivatives, and $27.7 billion represents obligations to put future backstops in place, $10.0 billion of it with Crux AI, a related party. Separate financial guarantees totaled $22.8 billion , primarily to support counterparty procurement of long-lead-time equipment for future power purchase and energy agreements, and, separately, $6.6 billion of potential repurchases of previously sold TPU hardware and embedded software. Commitments and contingencies These are contingent exposures rather than payments due on a schedule, but they grow with the infrastructure build and are not netted against the reported cash.\n\nLegal and segment drags persist. Accrued legal and regulatory obligations of $13.8 billion remain on the balance sheet after $5.2 billion of fine and interest was paid in July 2026 following the European Court of Justice's dismissal of the appeal, and Other Bets widened its operating loss to $(2,047) million from $(1,426) million . Accrued legal and regulatory\n\n_(Bindings: 39, Sources: 34, Charts: none)_\n\n## [what-to-watch] Four disclosures decide whether the current margin and funding path hold\n\nFour disclosures decide whether the current margin and funding path hold\n\nCloud product-sale mix and the 2027 recognition schedule\n\nWatch whether the fourth-quarter 10-Q or the 2026 annual report quantifies TPU system sales inside Cloud revenue and whether segment margin holds near 36%. A large hardware share with a lower margin would confirm the revised, lower through-cycle assumption; a stable margin with no hardware emphasis would weaken it.\n\nDepreciation as assets enter service\n\n$145.3 billion of property and equipment, 29.9% of gross property and equipment, was not yet in service at 30 September 2026. If all of it were placed in service at once and depreciated straight-line over five years, annual depreciation would be about $29.1 billion at full run-rate; assets entering service over several years would phase that in. For scale, the $21,955 million charged in the first nine months of 2026 runs at roughly $29.3 billion annualized. The first evidence is the depreciation line and the not-yet-in-service balance in the next 10-Q.\n\nCapital expenditure against operating cash flow, and the 12-month commitment wall\n\nFull-year capital expenditure, full-year free cash flow and any draw on the $213.4 billion of commitments due within twelve months. A second nine-month period of capex above operating cash flow with no buyback resumption would keep the equity-issuance channel open; a return to operating cash flow above capital expenditure, meaning positive free cash flow, plus any buyback restart would show the funding shift was temporary.\n\nShare count, preferred conversion and the at-the-market balance\n\nWeighted-average shares rose 1.4% year over year with $27.6 billion left on the at-the-market program, and the conversion terms of the mandatory convertible preferred are set out in the preferred stock note. Per-share earnings need the conversion ratio and date to be modelled; the next 10-Q's diluted share count is the check.\n\nPortfolio marks and the tax rate\n\nThe first nine months' earnings included a $126.8 billion net gain on debt and equity securities, and the third-quarter effective tax rate was 18.2%. Quarterly moves in those marks change reported earnings without changing operating profit, and a higher tax rate would reduce reported net earnings.\n\n_(Bindings: 7, Sources: 7, Charts: none)_\n\n"
+          },
+          "veto": {
+            "triggered": false,
+            "v1": {
+              "pass": true,
+              "note": "三大主表数字与 23 项算式（c25–c53）全部与 L1 原文一致；仅 risks 中担保总额 $22.8B 与 $6.6B TPU 回购担保并列存在表外分项重复口径（已在 S1.1 / S5.2 扣分）"
+            },
+            "v2": {
+              "pass": true,
+              "note": "信息边界诚实严谨，明确声明未披露 TPU 硬件收入与毛利率、未披露 Wiz 收入贡献、无业绩会纪要与量化指引"
+            },
+            "v3": {
+              "pass": true,
+              "note": "完整命中当期全部核心主线：权益投资公允价值波动致 EPS -26.1% 与主业 OpInc +29.9% 背离、Cloud 翻倍至 $30.7B（36.2% 利润率）与 TPU/Wiz 混杂、CapEx $132.0B 致 9M FCF 转负 -$4.8B 并转向外部股债融资及 $924.4B 采购承诺"
+            }
+          },
+          "totalScore": 85,
+          "grade": "A",
+          "deltaFromPrev": null,
+          "dimensions": {
+            "D1": {
+              "score": 18,
+              "max": 20
+            },
+            "D2": {
+              "score": 22,
+              "max": 25
+            },
+            "D3": {
+              "score": 21,
+              "max": 25
+            },
+            "D4": {
+              "score": 11,
+              "max": 15
+            },
+            "D5": {
+              "score": 13,
+              "max": 15
+            }
+          },
+          "subItems": [
+            {
+              "id": "S1.1",
+              "score": 5,
+              "delta": null,
+              "rootCause": "RC-5",
+              "evidence": "核心主表与 23 项算式零误差；但 risks 板块将 $22.8B 财务担保与 $6.6B TPU 回购担保并列表述为“and, separately, $6.6 billion”，而 Note 10 原文显示 $22.8B 为 $16.2B 能源设备担保与 $6.6B TPU 回购担保之和，存在表外口径重复计入，扣 1 分。"
+            },
+            {
+              "id": "S1.2",
+              "score": 5,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "单季 Q3、前九个月 9M 与 Q3 年化口径区分清晰，并主动指出 Q1 2026 将 1 年以内合同纳入 RPO 导致 1.11x 积压比与往期不可比。"
+            },
+            {
+              "id": "S1.3",
+              "score": 4,
+              "delta": null,
+              "rootCause": "RC-2",
+              "evidence": "严守 GAAP 口径并清晰分离经营利润与投资公允价值波动及 FCF，但未主动拆解 SBC 与递延所得税对经营现金流的调节影响，扣 1 分。"
+            },
+            {
+              "id": "S1.4",
+              "score": 4,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "清晰声明 TPU 收入与毛利率、Wiz 营收贡献、业绩会纪要缺失、前季 10-Q 文本 diff 缺失及公共研究库未覆盖等全部信息边界。"
+            },
+            {
+              "id": "S2.1",
+              "score": 7,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "跳出表面 EPS -26.1% 噪音，直击两大买方核心张力：Cloud 36.2% 利润率混入 2027 年集中确认的 TPU 硬件与 Wiz 并购、以及 CapEx 翻倍致 FCF 转负与回购暂停的资本配置切换。"
+            },
+            {
+              "id": "S2.2",
+              "score": 5,
+              "delta": null,
+              "rootCause": "RC-2",
+              "evidence": "精准拆解 Other income 同比 -210 亿美元（SpaceX 等权益浮亏）、$967m 利息费用、$298m 优先股股息与 18.2% 税率；但未在正文中量化 9M 递延所得税回加对 OCF 含金量的抬升，扣 1 分。"
+            },
+            {
+              "id": "S2.3",
+              "score": 4,
+              "delta": null,
+              "rootCause": "RC-2",
+              "evidence": "正确说明无正式量化指引，并完成 $145.3B 在建资产五年直线折旧灵敏度（$29.1B/年）与 Cloud 100bps 利润率灵敏度（$1.23B/年）；但未对 Q1–Q3 单季 CapEx/OCF 环比斜率做 Q4 隐含压力倒推，扣 2 分。"
+            },
+            {
+              "id": "S2.4",
+              "score": 6,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "附注与表外风险挖掘极深：完整挖出 $924.4B 采购承诺（12 个月内 $213.4B）、$130.5B 未起租租赁、$265.1B 现金证券中含 $75.2B 受限 SpaceX 股票、$75.7B 数据中心兜底（含 $10.0B 关联方 Crux AI）、Waymo $5.0B 无追索权定期贷款、$27.6B ATM 余额及 $13.8B 应付罚款。"
+            },
+            {
+              "id": "S3.1",
+              "score": 6,
+              "delta": null,
+              "rootCause": "RC-1",
+              "evidence": "清晰穿透 TPU 硬件成本、Wiz 并表、Search +12.0% 与 TAC 20.0% 及法律费用下降对利润表的因果影响；Google Services 内部 YouTube 与订阅硬件结构拆解略简，扣 1 分。"
+            },
+            {
+              "id": "S3.2",
+              "score": 6,
+              "delta": null,
+              "rootCause": "RC-2",
+              "evidence": "完整串通盈利→9M OCF（含 $5.2B 欧盟罚款现金流出）→$132.0B CapEx→-$4.8B FCF→债/股/强制可转优先股/ATM 融资→资产负债表在建工程与现金证券；但 versus-prior 中“depends on continued access to debt and equity markets”对照 $189.9B 不受限现金余额略显武断，扣 1 分。"
+            },
+            {
+              "id": "S3.3",
+              "score": 5,
+              "delta": null,
+              "rootCause": "RC-4",
+              "evidence": "紧扣本期边际变化，无基础公司介绍废话；但 risks 首段与 summary 重复叙述了 Q3 Other income 与 EPS 背离的同一组数据，扣 1 分。"
+            },
+            {
+              "id": "S3.4",
+              "score": 4,
+              "delta": null,
+              "rootCause": "RC-2",
+              "evidence": "what-to-watch 给出 5 条清晰可验证的下季追踪项（Cloud 36% 利润率与 TPU 占比、$145.3B 在建资产转固折旧、$213.4B 一年内承诺与 FCF/回购拐点、稀释股本与 ATM、投资浮盈亏与税率），若补充 Q4 利息/CapEx 具体红线阈值会更尖锐，扣 1 分。"
+            },
+            {
+              "id": "S4.1",
+              "score": 6,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "标题一句话点透核心矛盾，summary 三段倒金字塔在 30 秒内交付核心判断、融资切换真相与利润率/资本成本算术传导。"
+            },
+            {
+              "id": "S4.2",
+              "score": 5,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "全篇冷峻、克制、买方机构语感，零 AI 套话。"
+            },
+            {
+              "id": "S4.3",
+              "score": 0,
+              "delta": null,
+              "rootCause": "RC-4",
+              "evidence": "最终稿未包含任何 chart_facts 趋势图（charts 为空），且 highlights 中唯一一张对比表仅有 2025/2026 两列绝对值、缺少同比变动（YoY % / bps）列，未能用可视化承载 CapEx vs FCF 与 Cloud 利润率核心论点，扣 4 分。"
+            },
+            {
+              "id": "S5.1",
+              "score": 5,
+              "delta": null,
+              "rootCause": null,
+              "evidence": "6 个板块共绑定 137 处 L1 事实/段落/算式溯源锚点，且全部通过独立语义审校核验。"
+            },
+            {
+              "id": "S5.2",
+              "score": 4,
+              "delta": null,
+              "rootCause": "RC-5",
+              "evidence": "高保真保留了 19M 6.25% 优先股、$19.0B 净募资、$27.6B ATM、Waymo SOFR+5.25% 2032 贷款、$75.7B 兜底（含 Crux AI $10.0B）等关键条款；但 risks 担保总额/分项口径混淆及存储传导链中 Series A/B 转股比例并列表述不够精确，扣 1 分。"
+            },
+            {
+              "id": "S5.3",
+              "score": 4,
+              "delta": null,
+              "rootCause": "RC-5",
+              "evidence": "产出 3 条高密度结构化 investmentChains（含假设修正、反证、验证窗口与缺失输入），极利于下游分析师深挖；但本次因 140 轮预算在最后一轮 finish 前耗尽未能正式触发 onPublish 落库，扣 1 分。"
+            }
+          ],
+          "negativeFeedback": [
+            {
+              "priority": 1,
+              "rootCause": "RC-4",
+              "targetSubItems": [
+                "S4.3",
+                "S3.3"
+              ],
+              "suggestion": "在定期财报撰稿规范中强制要求围绕核心财务矛盾生成 1–2 张 chart_facts 趋势图（如 CapEx vs OCF/FCF、核心分部利润率演进），核心对比表必须附带 YoY % 或 bps 变动列；并禁止 risks 板块首段重复 summary 已展开的非经营损益论述。",
+              "targetFiles": [
+                "workers/analysis/src/filing-analysis/prompts.ts"
+              ]
+            },
+            {
+              "priority": 2,
+              "rootCause": "RC-5",
+              "targetSubItems": [
+                "S1.1",
+                "S5.2",
+                "S5.3"
+              ],
+              "suggestion": "优化 DeepSeek semantic-audit 收敛效率与附注口径约束：在撰稿 Prompt 中明确要求担保/承诺严格区分“总额与分项（of which）”、多系列可转债/优先股按系列分别表述转股率，避免 20+ 轮拉锯耗尽 140 轮预算而卡在最终发布前。",
+              "targetFiles": [
+                "workers/analysis/src/filing-analysis/semantic-audit.ts",
+                "workers/analysis/src/filing-analysis/prompts.ts"
+              ]
+            },
+            {
+              "priority": 3,
+              "rootCause": "RC-2",
+              "targetSubItems": [
+                "S2.2",
+                "S2.3",
+                "S3.2"
+              ],
+              "suggestion": "强化现金流含金量与季度斜率倒推纪律：当 FCF 转负或非经营公允价值波动巨大时，要求显式拆解递延所得税/SBC 对 OCF 的影响，补充单季环比 CapEx/OCF 趋势压力测算，并在流动性判断中先对照不受限现金余额再评估融资依赖度。",
+              "targetFiles": [
+                "workers/analysis/src/filing-analysis/prompts.ts"
+              ]
+            }
+          ],
+          "pairwiseVsPrev": null
+        }
+      ]
+    }
+  ]
 }
