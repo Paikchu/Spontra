@@ -3,7 +3,7 @@ import type { FindingPassage } from "../../../../shared/analysis-contract/findin
 import type { MaterialRef, MaterialSnapshot, MaterialTable } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { defineTool, type AnyTool } from "../tools/registry.ts";
-import { getFilingMaterial, listFilingMaterials, readMaterialSnapshot, requestFilingMaterial } from "./index.ts";
+import { getFilingMaterial, listFilingMaterials, readMaterialBrief, readMaterialSnapshot, requestFilingMaterial } from "./index.ts";
 import { filingMaterialMeta, findFilingTables, materialBlockId, readFilingMarkdown, readFilingTable, searchFilingMarkdown, sourceText } from "./read.ts";
 
 const tableDescription = (table: MaterialTable) => ({ tableId: table.tableId, name: table.title, description: table.description,
@@ -71,6 +71,16 @@ export function materialTools<S>(input: { env: AnalysisEnv; ticker: string | ((s
         .sort((a, b) => b.filing.filedAt.localeCompare(a.filing.filedAt)).slice(0, args.limit ?? 30)
         .map(item => ({ accession: item.filing.accession, form: item.filing.form, filedAt: item.filing.filedAt, reportDate: item.filing.reportDate, status: item.status, ...(item.status === "ready" ? { version: item.ref.version } : {}) })),
       observe: (_args, value) => JSON.stringify(value) }),
+    tool({ name: "read_filing_brief", description: "Read the structured L2 brief (key takeaways, standardized metrics, guidance/accounting changes, footnote risks, industry signals, and enriched table catalog) for a filing when generated. Use its cited sourceIds to drill down into L1 Markdown or CSV tables.",
+      parameters: z.object({ accession: z.string().optional(), format: z.enum(["markdown", "json"]).default("markdown") }), concurrencySafe: true,
+      execute: async (args, ctx) => {
+        const snapshot = await load(args.accession, ctx.state);
+        const result = await readMaterialBrief(input.env, snapshot.ref);
+        if (!result.brief) return { available: false, ref: snapshot.ref, status: result.state.status, reason: "L2 brief has not been generated for this filing yet; read L1 Markdown and CSV tables directly." };
+        return args.format === "json"
+          ? { available: true, ref: snapshot.ref, brief: result.brief }
+          : { available: true, ref: snapshot.ref, markdown: result.markdown };
+      }, observe: (_args, value) => "markdown" in value && value.markdown ? `${JSON.stringify({ available: value.available, ref: value.ref })}\n\n${value.markdown}` : JSON.stringify(value) }),
     tool({ name: "read_filing_markdown", description: "Read the complete prepared SEC disclosure, including every attachment, tables and notes. Pin its version. Continue with nextCursor until the requested content is read; nothing is silently omitted.",
       parameters: z.object({ accession: z.string().optional(), anchor: z.string().optional(), cursor: z.string().optional() }), concurrencySafe: true,
       execute: async (args, ctx) => {

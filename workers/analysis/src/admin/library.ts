@@ -7,9 +7,10 @@ import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { overrideLink, readLinksView, requestLinks } from "../business-classification/index.ts";
 import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
-import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialSnapshot } from "../filing-material/index.ts";
+import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState } from "../filing-material/index.ts";
 import { findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
-import { prepareFilingReadingEdition, readFilingReadingEdition } from "../filing-material/reading-edition.ts";
+import { aiToolEnvironment, modelFor } from "../ai-config.ts";
+import { withRuns } from "../durable-runs/binding.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { materialRecoveryKey, materialPilotKey, isPilotMaterial } from "../filing-material/store.ts";
@@ -108,23 +109,46 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       await flushOutbox(env);
       return json(pending, 202);
     }
-    if (parts[3] === "reading-edition") {
+    if (parts[3] === "brief" && parts.length === 4) {
       if (state.status !== "ready") return json({ error: "财报材料尚未就绪。" }, 409);
-      const version = url.searchParams.get("version") ?? state.ref.version;
-      if (!/^[a-f0-9]{64}$/.test(version)) return json({ error: "无效的材料版本。" }, 400);
-      const snapshot = await readMaterialSnapshot(env, { ...state.ref, version });
-      if (request.method === "POST" && parts.length === 4) {
-        try {
-          const edition = await prepareFilingReadingEdition(env, snapshot);
-          return json(edition, edition.status === "preparing" ? 202 : 200);
-        } catch (error) {
-          return json({ error: error instanceof Error ? error.message : String(error) }, 409);
+      let body: { version?: unknown; force?: unknown } = {};
+      if (request.method === "POST") {
+        const raw = await request.text();
+        if (raw) {
+          try { body = JSON.parse(raw) as { version?: unknown; force?: unknown }; }
+          catch { return json({ error: "无效的请求参数。" }, 400); }
         }
       }
-      const edition = parts[4];
-      if (request.method === "GET" && parts.length === 5 && (edition === "preprocessed" || edition === "organized")) {
-        const markdown = await readFilingReadingEdition(env, snapshot, edition);
-        return markdown === null ? json({ error: "这份阅读稿尚未生成。" }, 404) : json({ markdown });
+      const version = typeof body.version === "string" ? body.version : url.searchParams.get("version") ?? state.ref.version;
+      if (!/^[a-f0-9]{64}$/.test(version)) return json({ error: "无效的材料版本。" }, 400);
+      const ref = { ticker, accession, version };
+      await readMaterialSnapshot(env, ref);
+      if (request.method === "GET") {
+        return json(await readMaterialBrief(env, ref));
+      }
+      if (request.method === "POST") {
+        const force = body.force === true;
+        const current = await getMaterialBriefState(env, ref);
+        if (current.status === "running" && !force) return json({ state: current }, 202);
+        if (!force) {
+          const existing = await readMaterialBrief(env, ref);
+          if (existing.brief) return json(existing, 200);
+        }
+        const runEnv = withRuns(await aiToolEnvironment(env));
+        const binding = runEnv.MATERIAL_BRIEF_WORKFLOW;
+        if (!binding) return json({ error: "L2 抽取任务服务不可用。" }, 503);
+        const runId = `material-brief-${ticker}-${accession}-${Date.now()}`;
+        const model = modelFor(runEnv, "filing-read");
+        const running = { status: "running" as const, runId, model, startedAt: new Date().toISOString(), version };
+        await writeMaterialBriefState(env, ref, running);
+        try {
+          await binding.create({ id: runId, params: { ticker, accession, version, runId, force } });
+        } catch (error) {
+          const message = error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000);
+          await writeMaterialBriefState(env, ref, { status: "failed", runId, version, model, failedAt: new Date().toISOString(), error: message });
+          return json({ error: message }, 503);
+        }
+        return json({ state: running }, 202);
       }
     }
     if (request.method === "GET") {
@@ -142,12 +166,28 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       if (parts.length === 4 && parts[3] === "markdown") return json(await readFilingMarkdown(env, snapshot, {
         anchor: url.searchParams.get("anchor") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined,
       }));
-      if (parts.length === 4 && parts[3] === "tables") return json(findFilingTables(snapshot, {
-        name: url.searchParams.get("name") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined,
-      }));
-      if (parts.length === 5 && parts[3] === "tables") return json(readFilingTable(snapshot, parts[4]!, {
-        cursor: url.searchParams.get("cursor") ?? undefined,
-      }));
+      if (parts.length === 4 && parts[3] === "tables") {
+        const found = findFilingTables(snapshot, {
+          name: url.searchParams.get("name") ?? undefined, cursor: url.searchParams.get("cursor") ?? undefined,
+        });
+        const briefRes = await readMaterialBrief(env, snapshot.ref).catch(() => null);
+        const descMap = briefTableDescriptionMap(briefRes?.brief ?? null);
+        return json({
+          ...found,
+          tables: found.tables.map(table => {
+            const enriched = descMap.get(table.tableId);
+            return enriched ? { ...table, description: enriched } : table;
+          }),
+        });
+      }
+      if (parts.length === 5 && parts[3] === "tables") {
+        const page = readFilingTable(snapshot, parts[4]!, {
+          cursor: url.searchParams.get("cursor") ?? undefined,
+        });
+        const briefRes = await readMaterialBrief(env, snapshot.ref).catch(() => null);
+        const enriched = briefTableDescriptionMap(briefRes?.brief ?? null).get(page.table.tableId);
+        return json(enriched ? { ...page, table: { ...page.table, description: enriched } } : page);
+      }
     }
   }
   if (parts[0] === "links") {

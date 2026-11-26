@@ -1,7 +1,8 @@
 import type { FilingTable, FilingFactRow } from "./filing-content.ts";
 
 export const MATERIAL_VERSION = "filing-material.v1";
-export const MATERIAL_ORGANIZER_VERSION = "source-organizer.v3";
+export const MATERIAL_LAYOUT_VERSION = "deterministic-l1.v1";
+export const MATERIAL_BRIEF_VERSION = "material-brief.v1";
 export const MATERIAL_READ_BYTES = 64_000;
 export const MATERIAL_ARCHIVE_INVENTORY_VERSION = "sec-directory-union.v1";
 export type MaterialRef = { ticker: string; accession: string; version: string };
@@ -45,10 +46,83 @@ export type ParsedMaterialDocument = {
   blocks: MaterialBlock[]; tables: MaterialTable[]; facts: FilingFactRow[];
   coverage: MaterialDocumentCoverage;
 };
-export type MaterialDecision =
-  | { blockId: string; action: "keep"; section: string }
-  | { blockId: string; action: "duplicate"; target: string }
-  | { blockId: string; action: "boilerplate"; reason: string };
+export type MaterialBriefDisclosureMeta = {
+  coveredPeriodEnd: string | null;
+  fiscalPeriod: string | null;
+  disclosureKind: "earnings-release" | "periodic-report" | "amendment" | "non-earnings-event";
+  isEarningsRelease: boolean;
+  currency: string | null;
+};
+export type MaterialBriefMetric = {
+  name: string;
+  segment: string | null;
+  period: string;
+  calendarPeriod: string | null;
+  value: string;
+  unit: string | null;
+  basis: "GAAP" | "Non-GAAP" | "Operational" | "Other";
+  yoy: string | null;
+  qoq: string | null;
+  note: string | null;
+  sourceIds: string[];
+};
+export type MaterialBriefItem = {
+  topic: string;
+  summary: string;
+  quantitativeTerms: string | null;
+  sourceIds: string[];
+};
+export type MaterialBriefIndustrySignal = {
+  dimension: "demand" | "pricing" | "capacity_supply" | "capex" | "competition" | "macro_policy" | "other";
+  summary: string;
+  stance: "positive" | "negative" | "mixed" | "neutral";
+  sourceIds: string[];
+};
+export type MaterialBriefTableEntry = {
+  tableId: string;
+  description: string;
+  relatedSourceIds: string[];
+};
+export type MaterialBrief = {
+  format: typeof MATERIAL_BRIEF_VERSION;
+  ref: MaterialRef;
+  generatedAt: string;
+  model: string;
+  disclosureMeta: MaterialBriefDisclosureMeta;
+  headline: string;
+  keyTakeaways: Array<{ text: string; sourceIds: string[] }>;
+  metrics: MaterialBriefMetric[];
+  guidanceAndChanges: MaterialBriefItem[];
+  risksAndFootnotes: MaterialBriefItem[];
+  industrySignals: MaterialBriefIndustrySignal[];
+  tableCatalog: MaterialBriefTableEntry[];
+  invalidSourceIdsDropped: number;
+};
+export type MaterialBriefState =
+  | { status: "idle" }
+  | { status: "running"; runId: string; model: string; startedAt: string; version: string }
+  | {
+      status: "ready";
+      runId: string;
+      version: string;
+      briefVersion: string;
+      key: string;
+      markdownKey: string;
+      model: string;
+      generatedAt: string;
+      metricsCount: number;
+      signalsCount: number;
+      tablesDescribed: number;
+      inputTokens?: number;
+      outputTokens?: number;
+      durationMs?: number;
+    }
+  | { status: "failed"; runId: string; version: string; model: string; failedAt: string; error: string };
+export type MaterialBriefResponse = {
+  state: MaterialBriefState;
+  brief: MaterialBrief | null;
+  markdown: string | null;
+};
 export type MaterialArchiveInventory = {
   inventoryVersion: typeof MATERIAL_ARCHIVE_INVENTORY_VERSION;
   directory: { url: string; rawKey: string; sha256: string; files: string[] };
@@ -65,8 +139,9 @@ export type MaterialSnapshot = {
   format: "filing-material.index.v2";
   ref: MaterialRef; filing: MaterialFiling; createdAt: string; documents: MaterialSource[];
   blocks: MaterialIndexedBlock[]; tables: MaterialTable[]; facts: FilingFactRow[];
-  markdown: MaterialMarkdown; toc: Array<{ anchor: string; title: string; chars: number; offset: number }>;
+  markdown: MaterialMarkdown; toc: Array<{ anchor: string; title: string; chars: number; offset: number; kind?: "primary" | "exhibit" | "technical" }>;
   coverage: MaterialCoverage;
+  brief?: { key: string; markdownKey: string; model: string; generatedAt: string; metricsCount: number; signalsCount: number };
 };
 export type MaterialState =
   | { status: "preparing"; filing: MaterialFiling; progress: string }

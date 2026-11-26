@@ -35,8 +35,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   }
   if (path[0] === "library") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && /^(?:|companies\/[A-Z][A-Z0-9.-]{0,11}|materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}(?:\/(?:index|markdown|tables(?:\/[^/]+)?|reading-edition\/(?:preprocessed|organized)))?|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?)$/.test(route);
-    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:prepare|prepare-pilot|reading-edition|reconcile-source|review)|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
+    const read = request.method === "GET" && /^(?:|companies\/[A-Z][A-Z0-9.-]{0,11}|materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}(?:\/(?:index|markdown|brief|tables(?:\/[^/]+)?))?|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?)$/.test(route);
+    const write = request.method === "POST" && /^(?:materials\/[A-Z][A-Z0-9.-]{0,11}\/\d{10}-\d{2}-\d{6}\/(?:prepare|prepare-pilot|brief|reconcile-source|review)|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "reports") {
@@ -79,8 +79,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     }
     const target = new URL(`/admin/${path.map(encodeURIComponent).join("/")}`, origin);
     target.search = new URL(request.url).search;
-    const readingEdition = request.method === "POST" && path[0] === "library" && path[1] === "materials" && path[4] === "reading-edition";
-    const result = await serviceFetcher(binding)(target, { method: request.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(readingEdition ? 90_000 : 30_000) });
+    const result = await serviceFetcher(binding)(target, { method: request.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(30_000) });
     if (![200, 202, 400, 401, 403, 404, 405, 409, 413, 429, 503].includes(result.status)) return json({ error: "财报服务不可用" }, 503);
     return new Response(result.body, { status: result.status, headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
   } catch { return json({ error: "财报服务不可用" }, 503); }

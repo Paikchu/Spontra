@@ -67,6 +67,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** The valuation assessment Workflow. */
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
+  MATERIAL_BRIEF_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; version: string; runId: string; force: boolean }>;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
   BUSINESS_CLASSIFICATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

@@ -13,7 +13,7 @@ export async function executeMaterialPilotChunk(env: AnalysisEnv, input: Materia
   const row = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialStateKey(input.ticker,input.accession)).first<{payload:string}>();
   if (!row) throw new Error("Pilot material state missing");
   const state: MaterialState = JSON.parse(row.payload);
-  const result = await prepareFilingMaterial(env,state.filing,{maxDocuments:1,maxOrganizationBatches:1,...(input.retryFailedSources?{recoveryRequestId:input.requestId}:{}),...(input.repairSource && input.repairRequestId ? { recoverySources:{[input.repairSource]:input.repairRequestId} } : {})});
+  const result = await prepareFilingMaterial(env,state.filing,{maxDocuments:1,...(input.retryFailedSources?{recoveryRequestId:input.requestId}:{}),...(input.repairSource && input.repairRequestId ? { recoverySources:{[input.repairSource]:input.repairRequestId} } : {})});
   await db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.chunkStatus',?,'$.completedAt',?),fetched_at=? WHERE cache_key=? AND json_extract(payload,'$.activeRunId')=? AND json_extract(payload,'$.chunkStatus')='running'")
     .bind(result.status,new Date().toISOString(),new Date().toISOString(),key,input.runId).run();
   return result;

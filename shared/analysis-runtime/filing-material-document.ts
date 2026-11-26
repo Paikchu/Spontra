@@ -6,7 +6,13 @@ export type MarkdownPlan = {
   toc: MaterialSnapshot["toc"]; bytes: number; chars: number;
 };
 
-export function planMaterialMarkdown(filing: MaterialFiling, sources: MaterialSource[], tables: MaterialTable[], kept: Array<{ block: MaterialBlock; section: string }>, duplicates: MaterialCoverage["duplicates"], excluded: MaterialCoverage["excluded"]): MarkdownPlan {
+export type MaterialKeptBlock = {
+  block: MaterialBlock;
+  section: string;
+  sectionKind?: "primary" | "exhibit" | "technical";
+};
+
+export function planMaterialMarkdown(filing: MaterialFiling, sources: MaterialSource[], tables: MaterialTable[], kept: MaterialKeptBlock[], duplicates: MaterialCoverage["duplicates"], excluded: MaterialCoverage["excluded"]): MarkdownPlan {
   const encoder = new TextEncoder();
   const plan: MarkdownPlan = { pieces: [], ranges: new Map(), toc: [], bytes: 0, chars: 0 };
   const raw = (text: string, block: MaterialBlock | null = null) => {
@@ -26,16 +32,21 @@ export function planMaterialMarkdown(filing: MaterialFiling, sources: MaterialSo
   for (const source of sources) line(`- [${source.filename}](${source.url}) (${source.type}, source ${source.id}, SHA-256 ${source.sha256})`);
   line("## Available CSV tables");
   for (const table of tables) line(`- ${table.tableId}: ${table.title}. ${table.description} CSV ${table.filename}. [Table](#${table.anchor}).`);
-  const groups = new Map<string, MaterialBlock[]>(), byTable = new Map(tables.map(table => [table.tableId, table]));
-  for (const item of kept) {
+  const groups = new Map<string, { kind: "primary" | "exhibit" | "technical"; blocks: MaterialBlock[] }>(), byTable = new Map(tables.map(table => [table.tableId, table]));
+  const orderedKept = [
+    ...kept.filter(item => item.sectionKind !== "technical" && item.block.kind !== "code"),
+    ...kept.filter(item => item.sectionKind === "technical" || item.block.kind === "code"),
+  ];
+  for (const item of orderedKept) {
+    const kind = item.sectionKind ?? (item.block.kind === "code" ? "technical" : item.block.filename === filing.primaryDocument ? "primary" : "exhibit");
     const group = groups.get(item.section);
-    if (group) group.push(item.block); else groups.set(item.section, [item.block]);
+    if (group) group.blocks.push(item.block); else groups.set(item.section, { kind, blocks: [item.block] });
   }
   let section = 0;
-  for (const [title, blocks] of groups) {
+  for (const [title, group] of groups) {
     const anchor = `material-section-${++section}`;
     const offset = line(`<a id="${anchor}"></a>\n## ${title}`), before = plan.chars;
-    for (const block of blocks) {
+    for (const block of group.blocks) {
       const anchorOffset = line(`<a id="${block.id}"></a>\n### ${block.title}\nSource [${block.filename}](${block.sourceUrl}), block ${block.id}${block.locator.page ? `, page ${block.locator.page}` : ""}.`);
       const table = block.tableId ? byTable.get(block.tableId) : null;
       if (table) line(`Table ID ${table.tableId}. CSV ${table.filename}. ${table.description}`);
@@ -46,7 +57,7 @@ export function planMaterialMarkdown(filing: MaterialFiling, sources: MaterialSo
       plan.ranges.set(block.id, { anchorOffset, offset: bodyOffset, length: plan.bytes - bodyOffset, chars, sha256: "" });
       if (block.kind === "code") raw("\n\n</details>");
     }
-    plan.toc.push({ anchor, title, offset, chars: plan.chars - before - (blocks.length ? 2 : 0) });
+    plan.toc.push({ anchor, title, offset, chars: plan.chars - before - (group.blocks.length ? 2 : 0), kind: group.kind });
   }
   line("## Coverage dispositions");
   for (const item of duplicates) line(`- ${item.blockId} repeats ${item.target} verbatim; its source remains archived.`);

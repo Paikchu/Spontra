@@ -1,12 +1,12 @@
-import type { MaterialFiling, MaterialRef, MaterialSnapshot, MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
+import type { MaterialBriefState, MaterialFiling, MaterialRef, MaterialSnapshot, MaterialState } from "../../../../shared/analysis-contract/filing-material.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
-import { MATERIAL_ARCHIVE_INVENTORY_VERSION, MATERIAL_ORGANIZER_VERSION, MATERIAL_VERSION } from "../../../../shared/analysis-contract/filing-material.ts";
+import { MATERIAL_ARCHIVE_INVENTORY_VERSION, MATERIAL_BRIEF_VERSION, MATERIAL_LAYOUT_VERSION, MATERIAL_VERSION } from "../../../../shared/analysis-contract/filing-material.ts";
 import { MATERIAL_PARSER_VERSION } from "../../../../shared/analysis-runtime/filing-material.ts";
 
 export const MATERIAL_PREFIX = "sec-materials/v1/";
-export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_ORGANIZER_VERSION}:${MATERIAL_ARCHIVE_INVENTORY_VERSION}`;
+export const MATERIAL_PREPARATION_VERSION = `${MATERIAL_VERSION}:${MATERIAL_PARSER_VERSION}:${MATERIAL_LAYOUT_VERSION}:${MATERIAL_ARCHIVE_INVENTORY_VERSION}`;
 export const materialStatePrefix = (ticker: string) => `filing-material:state:v1:${ticker}:`;
 export const materialStateKey = (ticker: string, accession: string) => `${materialStatePrefix(ticker)}${accession}`;
 export const materialPilotKey = (ticker: string, accession: string) => `filing-material:pilot:v1:${ticker}:${accession}`;
@@ -17,6 +17,10 @@ export const materialReconciliationKey = (ticker: string, accession: string, sou
 export const materialRecoveryKey = (ticker: string, accession: string) => `filing-material:recovery:v1:${ticker}:${accession}`;
 export const materialBase = (ref: MaterialRef) => `${MATERIAL_PREFIX}${ref.ticker}/${ref.accession}/${ref.version}`;
 export const materialSnapshotKey = (ref: MaterialRef) => `${materialBase(ref)}/index.json`;
+export const materialBriefStateKey = (ticker: string, accession: string, version: string) => `filing-material:brief:v1:${ticker}:${accession}:${version}`;
+export const materialBriefBase = (ref: MaterialRef) => `${materialBase(ref)}/brief/${MATERIAL_BRIEF_VERSION}`;
+export const materialBriefJsonKey = (ref: MaterialRef) => `${materialBriefBase(ref)}/brief.json`;
+export const materialBriefMarkdownKey = (ref: MaterialRef) => `${materialBriefBase(ref)}/brief.md`;
 const leaseKey = (filing: MaterialFiling) => `filing-material:lease:v1:${filing.ticker}:${filing.accession}`;
 
 export async function materialDigest(value: string | Uint8Array): Promise<string> {
@@ -79,6 +83,14 @@ export async function requestFilingMaterial(env: Pick<AnalysisEnv, "DB">, filing
       detail: { accession: filing.accession, form: filing.form } }, at, { sql: "changes() > 0", binds: [] }),
   ]);
   return state;
+}
+
+export async function getMaterialBriefState(env: Pick<AnalysisEnv, "DB">, ref: MaterialRef): Promise<MaterialBriefState> {
+  return (await new D1SecRepository(env.DB!).getCache<MaterialBriefState>(materialBriefStateKey(ref.ticker, ref.accession, ref.version)))?.payload ?? { status: "idle" };
+}
+
+export async function writeMaterialBriefState(env: Pick<AnalysisEnv, "DB">, ref: MaterialRef, state: MaterialBriefState): Promise<void> {
+  await new D1SecRepository(env.DB!).setCache(materialBriefStateKey(ref.ticker, ref.accession, ref.version), state, new Date().toISOString());
 }
 
 export async function publishMaterialState(env: Pick<AnalysisEnv, "DB">, state: Extract<MaterialState, { status: "ready" }>, owner: string, causeId?: string): Promise<boolean> {

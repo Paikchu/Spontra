@@ -7,12 +7,11 @@ import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analys
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFiling } from "../sec/sec.ts";
-import type { MaterialBlock, MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
-import { requestFilingMaterial, prepareFilingMaterial, getFilingMaterial, readMaterialSnapshot } from "../filing-material/index.ts";
+import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";
+import { requestFilingMaterial, prepareFilingMaterial, getFilingMaterial, readMaterialSnapshot, readMaterialBrief } from "../filing-material/index.ts";
 import { filingMaterialMeta, materialBlockId, readFilingMarkdown } from "../filing-material/read.ts";
 import { readSourceBytes } from "../filing-material/archive.ts";
-import { organizationBatches, organizationCacheKey, parseOrganizationReceipt } from "../filing-material/prepare.ts";
-import { materialBase, materialDigest } from "../filing-material/store.ts";
+import { materialBase } from "../filing-material/store.ts";
 import { tableCatalogEntry, verifyTableCsv } from "../../../../shared/analysis-runtime/filing-material.ts";
 import { startFilingRuns } from "../filing-analysis/start.ts";
 import { readFilingCheckpoint, type FilingWork } from "../filing-analysis/recipe.ts";
@@ -161,47 +160,19 @@ function materialSourceChecks(snapshot: MaterialSnapshot, refs: Set<string>) {
   });
 }
 
-async function originalOrganizationBatches(env: Env, snapshot: MaterialSnapshot) {
-  const blocks: MaterialBlock[] = [];
-  for (const block of snapshot.blocks) {
-    if (block.kind === "code" || block.kind === "image") continue;
-    let text = "";
-    if (!block.tableId) {
-      if (block.storage === "inline") text = block.text;
-      else {
-        if (!block.range) throw new Error(`Organization source range missing: ${block.id}`);
-        const object = await env.SEC_FILINGS.get(snapshot.markdown.key, { range: { offset: block.range.offset, length: block.range.length } });
-        if (!object) throw new Error(`Organization source missing: ${block.id}`);
-        const bytes = new Uint8Array(await object.arrayBuffer());
-        if (bytes.length !== block.range.length || await materialDigest(bytes) !== block.range.sha256) throw new Error(`Organization source differs: ${block.id}`);
-        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      }
-    }
-    blocks.push({ ...block, text });
-  }
-  const tables = snapshot.tables.map(table => ({ ...table,
-    description: `${table.title}. ${table.table.rows.length} disclosed rows and ${table.table.columns.length + 1} columns.${table.table.unit ? ` Unit: ${table.table.unit}.` : ""}`,
-  }));
-  return organizationBatches(blocks, tables);
-}
-
 async function preprocessingRecords(env: Env, snapshot: MaterialSnapshot) {
-  const batches = await originalOrganizationBatches(env, snapshot), receipts = [];
-  for (const [index, batch] of batches.entries()) {
-    const key = await organizationCacheKey(snapshot.filing, batch), object = await env.SEC_FILINGS.get(key);
-    if (!object) throw new Error(`Organization content receipt missing: ${index}`);
-    const answer = parseOrganizationReceipt(JSON.parse(await object.text()), batch);
-    receipts.push({ index, key, inputHash: key.slice(key.lastIndexOf("/") + 1, -5), blockIds: batch.blocks.map(block => block.id),
-      decisions: answer.decisions, tableDescriptions: answer.tables });
-  }
+  const brief = await readMaterialBrief(env, snapshot.ref);
   const currentMaterialRunId = `material-${snapshot.ref.accession}-${snapshot.ref.version}`;
-  const modelRunIds = [currentMaterialRunId];
-  const calls = await env.DB!.prepare(`SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = ? AND stage = 'filing-material-organize' AND run_id IN (${modelRunIds.map(() => "?").join(",")}) ORDER BY at`)
-    .bind(snapshot.ref.ticker, ...modelRunIds).all<ModelCall>();
-  return { material: snapshot.ref, currentMaterialRunId, receipts, modelCalls: calls.results,
-    currentMaterialModelCalls: calls.results.filter(call => call.runId === currentMaterialRunId).length,
-    receiptModelRuns: modelRunIds.map(runId => ({ runId, recordedCalls: calls.results.filter(call => call.runId === runId).length })),
-    ledgerMeaning: "The ledger contains recorded provider calls. Input-hash receipts may originate in an earlier material version; reusing them does not constitute another model call." };
+  const calls = await env.DB!.prepare(`SELECT at, run_id AS runId, stage, provider, model, reasoning, input_tokens AS inputTokens, cached_tokens AS cachedTokens, output_tokens AS outputTokens, reasoning_tokens AS reasoningTokens, duration_ms AS durationMs, outcome FROM ai_usage WHERE ticker = ? AND stage = 'filing-material-brief' ORDER BY at`)
+    .bind(snapshot.ref.ticker).all<ModelCall>();
+  return {
+    material: snapshot.ref,
+    currentMaterialRunId,
+    l1Layout: { sourceBlocks: snapshot.coverage.sourceBlocks, retainedBlocks: snapshot.coverage.retainedBlocks, duplicates: snapshot.coverage.duplicates.length },
+    l2Brief: { state: brief.state, hasBrief: !!brief.brief },
+    modelCalls: calls.results,
+    ledgerMeaning: "L1 uses zero LLM calls (deterministic native layout). L2 uses a single full-document filing-material-brief call when triggered.",
+  };
 }
 
 async function materialPackage(env: Env, entry: Entry) {

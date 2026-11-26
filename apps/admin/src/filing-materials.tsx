@@ -1,6 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsClockwiseIcon as RefreshCw, CheckIcon as Check, CopyIcon as Copy, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
-import type { MaterialPage, MaterialSnapshot, MaterialState, MaterialTable } from "@/shared/analysis-contract/filing-material";
+import type {
+  MaterialBriefResponse,
+  MaterialPage,
+  MaterialSnapshot,
+  MaterialState,
+  MaterialTable,
+} from "@/shared/analysis-contract/filing-material";
 import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { adminApi, AdminApiError } from "./admin-api";
 import { usePageActive } from "./admin-page";
@@ -9,12 +15,10 @@ import "./filing-materials.css";
 const FilingMarkdown = lazy(async () => ({ default: (await import("./filing-markdown")).FilingMarkdown }));
 
 type Props = { onAuthenticated: () => void; onUnauthorized: () => void };
-type Tab = "markdown" | "tables";
+type Tab = "brief" | "markdown" | "tables";
+type BriefView = "structured" | "markdown" | "json";
 type ReportPage = Pick<MaterialPage, "text" | "nextCursor">;
 type ReadyMaterial = Extract<MaterialState, { status: "ready" }>;
-const supportsReadingEdition = (filing: MaterialState["filing"]) => /\.html?$/i.test(filing.primaryDocument);
-type ReadingEdition = "preprocessed" | "organized";
-type ReadingEditionProgress = { status: "preparing"; progress: string } | { status: "ready" };
 type TableReadResponse = {
   ref: MaterialSnapshot["ref"];
   table: MaterialTable;
@@ -32,8 +36,25 @@ const STATUS_LABEL: Record<MaterialState["status"], string> = {
   blocked: "已阻塞",
 };
 
+const BRIEF_STATUS_LABEL = {
+  idle: "未生成",
+  running: "抽取中",
+  ready: "已就绪",
+  failed: "失败",
+} as const;
+
+const TOC_GROUP_LABEL = {
+  primary: "主文档",
+  exhibit: "附件",
+  technical: "技术与提交原件",
+} as const;
+
 function materialKey(m: MaterialState) {
   return `${m.filing.ticker}:${m.filing.accession}`;
+}
+
+function baseSourceId(id: string) {
+  return id.replace(/#(?:(?:rows:)?\d+-\d+|cell:\d+:\d+)$/, "");
 }
 
 function initialSelection() {
@@ -41,20 +62,30 @@ function initialSelection() {
   return { ticker: (params.get("ticker") ?? "").toUpperCase(), accession: params.get("accession") ?? "" };
 }
 
+function formatChars(chars: number) {
+  return chars >= 1000 ? `${(chars / 1000).toFixed(1)}k 字` : `${chars} 字`;
+}
+
 export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   const [materials, setMaterials] = useState<MaterialState[] | null>(null);
   const [search, setSearch] = useState("");
   const [blockedOnly, setBlockedOnly] = useState(false);
   const [selection, setSelection] = useState(initialSelection);
-  const [tab, setTab] = useState<Tab>("markdown");
+  const [tab, setTab] = useState<Tab>("brief");
+  const [briefView, setBriefView] = useState<BriefView>("structured");
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
 
   const [detail, setDetail] = useState<MaterialState | null>(null);
   const [snapshot, setSnapshot] = useState<MaterialSnapshot | null>(null);
+  const [briefData, setBriefData] = useState<MaterialBriefResponse | null>(null);
+  const [briefBusy, setBriefBusy] = useState(false);
+
   const [mdPage, setMdPage] = useState<ReportPage | null>(null);
   const [mdLoading, setMdLoading] = useState(false);
+  const [activeAnchor, setActiveAnchor] = useState<string>("");
   const materialRequest = useRef<AbortController | null>(null);
+  const mdScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [tableQuery, setTableQuery] = useState("");
   const [tablesList, setTablesList] = useState<MaterialTable[]>([]);
@@ -65,9 +96,6 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
 
   const [actionBusy, setActionBusy] = useState(false);
   const [actionNote, setActionNote] = useState("");
-  const [readingRun, setReadingRun] = useState<{ key: string; running: boolean; note: string } | null>(null);
-  const readingRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => readingRequest.current?.abort(), []);
 
   const callbacks = useRef({ onAuthenticated, onUnauthorized });
   useEffect(() => { callbacks.current = { onAuthenticated, onUnauthorized }; }, [onAuthenticated, onUnauthorized]);
@@ -112,26 +140,35 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   const selectedMaterial = requestedReport ?? reports[0] ?? null;
   const selectedKey = selectedMaterial ? materialKey(selectedMaterial) : "";
 
-  const loadMarkdown = useCallback(async (material: ReadyMaterial, signal: AbortSignal, cursor?: string) => {
+  const loadBrief = useCallback(async (material: ReadyMaterial, signal?: AbortSignal) => {
     const { ticker, accession } = material.filing;
-    const endpoint = `library/materials/${ticker}/${accession}`;
     const params = new URLSearchParams({ version: material.ref.version });
+    try {
+      const res = await adminApi<MaterialBriefResponse>(`library/materials/${ticker}/${accession}/brief?${params}`, { signal });
+      if (!signal?.aborted) setBriefData(res);
+    } catch (e) {
+      if (!signal?.aborted) fail(e);
+    }
+  }, [fail]);
+
+  const loadMarkdown = useCallback(async (material: ReadyMaterial, signal: AbortSignal, cursor?: string, anchor?: string) => {
+    const { ticker, accession } = material.filing;
+    const endpoint = `library/materials/${ticker}/${accession}/markdown`;
+    const params = new URLSearchParams({ version: material.ref.version });
+    if (cursor) params.set("cursor", cursor);
+    if (anchor && !cursor) params.set("anchor", anchor);
     setMdLoading(true);
     try {
-      if (!cursor && supportsReadingEdition(material.filing)) {
-        try {
-          const { markdown } = await adminApi<{ markdown: string }>(`${endpoint}/reading-edition/organized?${params}`, { signal });
-          if (!signal.aborted) setMdPage({ text: markdown, nextCursor: null });
-          return;
-        } catch (error) {
-          if (!(error instanceof AdminApiError) || error.status !== 404) throw error;
+      const page = await adminApi<ReportPage>(`${endpoint}?${params}`, { signal });
+      if (!signal.aborted) {
+        setMdPage(previous => ({ text: (cursor ? previous?.text ?? "" : "") + page.text, nextCursor: page.nextCursor }));
+        if (!cursor) {
+          setActiveAnchor(anchor ?? "");
+          mdScrollRef.current?.scrollTo({ top: 0 });
         }
       }
-      if (cursor) params.set("cursor", cursor);
-      const page = await adminApi<ReportPage>(`${endpoint}/markdown?${params}`, { signal });
-      if (!signal.aborted) setMdPage(previous => ({ text: (cursor ? previous?.text ?? "" : "") + page.text, nextCursor: page.nextCursor }));
-    } catch (error) {
-      if (!signal.aborted) fail(error);
+    } catch (e) {
+      if (!signal.aborted) fail(e);
     } finally {
       if (!signal.aborted) setMdLoading(false);
     }
@@ -148,11 +185,11 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       setTablesList(prev => cursor ? [...prev, ...res.tables] : res.tables);
       setTablesCursor(res.nextCursor);
       if (!cursor) {
-        setSelectedTableId(res.tables[0]?.tableId ?? "");
+        setSelectedTableId(prev => (prev && res.tables.some(t => t.tableId === prev) ? prev : res.tables[0]?.tableId ?? ""));
         if (!res.tables.length) setLoadedTable(null);
       }
-    } catch (error) {
-      if (!signal?.aborted) fail(error);
+    } catch (e) {
+      if (!signal?.aborted) fail(e);
     }
   }, [fail]);
 
@@ -162,8 +199,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     try {
       const res = await adminApi<TableReadResponse>(`library/materials/${ticker}/${accession}/tables/${encodeURIComponent(tableId)}?version=${version}`, { signal });
       if (!signal.aborted) setLoadedTable(res);
-    } catch (error) {
-      if (!signal.aborted) fail(error);
+    } catch (e) {
+      if (!signal?.aborted) fail(e);
     }
   }, [fail]);
 
@@ -171,6 +208,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     if (!selectedMaterial) {
       setDetail(null);
       setSnapshot(null);
+      setBriefData(null);
       setMdPage(null);
       setTablesList([]);
       setLoadedTable(null);
@@ -180,8 +218,10 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     setActionNote("");
     setDetail(null);
     setSnapshot(null);
+    setBriefData(null);
     setMdPage(null);
     setMdLoading(false);
+    setActiveAnchor("");
     setTablesList([]);
     setTablesCursor(null);
     setSelectedTableId("");
@@ -198,6 +238,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
           void adminApi<MaterialSnapshot>(`library/materials/${ticker}/${accession}/index?version=${encodeURIComponent(d.ref.version)}`, { signal: c.signal })
             .then(idx => { if (!c.signal.aborted) setSnapshot(idx); })
             .catch(e => { if (!c.signal.aborted) fail(e); });
+          void loadBrief(d, c.signal);
           void loadMarkdown(d, c.signal);
           void loadTables(d, "", "", c.signal);
         }
@@ -205,7 +246,26 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       .catch(e => { if (!c.signal.aborted) fail(e); });
 
     return () => c.abort();
-  }, [selectedMaterial, fail, loadMarkdown, loadTables]);
+  }, [selectedMaterial, fail, loadBrief, loadMarkdown, loadTables]);
+
+  useEffect(() => {
+    if (!detail || detail.status !== "ready" || materialKey(detail) !== selectedKey) return;
+    if (briefData?.state.status !== "running") return;
+    const controller = new AbortController();
+    const timer = window.setInterval(() => {
+      void loadBrief(detail, controller.signal);
+    }, 3000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [detail, selectedKey, briefData?.state.status, loadBrief]);
+
+  useEffect(() => {
+    if (briefData?.state.status === "ready" && detail?.status === "ready") {
+      void loadTables(detail, tableQuery, "", materialRequest.current?.signal);
+    }
+  }, [briefData?.state.status, detail, tableQuery, loadTables]);
 
   useEffect(() => {
     if (!detail || detail.status !== "ready" || materialKey(detail) !== selectedKey || !selectedTableId || tab !== "tables") return;
@@ -262,47 +322,49 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     }
   }
 
-  async function prepareReadingEdition(ref: MaterialSnapshot["ref"]) {
-    if (readingRequest.current) return;
-    const controller = new AbortController();
-    readingRequest.current = controller;
-    const key = `${ref.ticker}:${ref.accession}`;
+  async function triggerBrief(force: boolean) {
+    if (!detail || detail.status !== "ready") return;
+    const { ticker, accession } = detail.filing;
+    setBriefBusy(true);
     setError("");
-    setReadingRun({ key, running: true, note: "正在识别申报目录…" });
-    const endpoint = `library/materials/${ref.ticker}/${ref.accession}/reading-edition?version=${ref.version}`;
     try {
-      for (;;) {
-        const result = await adminApi<ReadingEditionProgress>(endpoint, { method: "POST", signal: controller.signal });
-        if (result.status === "ready") {
-          setReadingRun({ key, running: false, note: "阅读稿已生成。" });
-          setRefresh(n => n + 1);
-          return;
-        }
-        setReadingRun({ key, running: true, note: result.progress });
-      }
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setReadingRun({ key, running: false, note: "" });
-      fail(error);
+      const res = await adminApi<MaterialBriefResponse | { state: MaterialBriefResponse["state"] }>(
+        `library/materials/${ticker}/${accession}/brief`,
+        { method: "POST", body: JSON.stringify({ version: detail.ref.version, force }) },
+      );
+      if ("brief" in res) setBriefData(res);
+      else setBriefData(prev => ({ state: res.state, brief: force ? null : prev?.brief ?? null, markdown: force ? null : prev?.markdown ?? null }));
+    } catch (e) {
+      fail(e);
     } finally {
-      readingRequest.current = null;
+      setBriefBusy(false);
     }
   }
 
-  async function downloadReadingEdition(ref: MaterialSnapshot["ref"], edition: ReadingEdition) {
-    const endpoint = `library/materials/${ref.ticker}/${ref.accession}/reading-edition/${edition}?version=${ref.version}`;
-    setError("");
-    try {
-      const { markdown } = await adminApi<{ markdown: string }>(endpoint);
-      const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${ref.ticker}-${ref.accession}-${edition}.md`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) {
-      fail(error);
+  function downloadBrief(kind: "json" | "md") {
+    if (!briefData?.brief || !detail || detail.status !== "ready") return;
+    const content = kind === "json" ? JSON.stringify(briefData.brief, null, 2) : (briefData.markdown ?? "");
+    const mime = kind === "json" ? "application/json;charset=utf-8" : "text/markdown;charset=utf-8";
+    const url = URL.createObjectURL(new Blob([content], { type: mime }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${detail.filing.ticker}-${detail.filing.accession}-brief.${kind}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function jumpToSource(sourceId: string) {
+    if (!detail || detail.status !== "ready") return;
+    const base = baseSourceId(sourceId);
+    const isTable = snapshot?.tables.some(t => t.tableId === base) || tablesList.some(t => t.tableId === base);
+    if (isTable) {
+      setTab("tables");
+      setSelectedTableId(base);
+      return;
     }
+    setTab("markdown");
+    const signal = materialRequest.current?.signal;
+    if (signal) void loadMarkdown(detail, signal, undefined, base);
   }
 
   const hasSelectedDetail = detail !== null && materialKey(detail) === selectedKey;
@@ -314,6 +376,25 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     ? loadedTable : null;
   const copiedCsv = tableDetail !== null && copiedTable === tableDetail;
 
+  const groupedToc = useMemo(() => {
+    const items = currentSnapshot?.toc ?? [];
+    const groups: Array<{ kind: "primary" | "exhibit" | "technical"; items: typeof items }> = [
+      { kind: "primary", items: [] },
+      { kind: "exhibit", items: [] },
+      { kind: "technical", items: [] },
+    ];
+    for (const item of items) {
+      const kind = item.kind ?? (item.title === "Technical & Submission Originals" ? "technical" : "primary");
+      groups.find(g => g.kind === kind)!.items.push(item);
+    }
+    return groups.filter(g => g.items.length > 0);
+  }, [currentSnapshot?.toc]);
+
+  const relatedCatalogEntry = useMemo(() => {
+    if (!tableDetail || !briefData?.brief) return null;
+    return briefData.brief.tableCatalog.find(entry => entry.tableId === tableDetail.table.tableId) ?? null;
+  }, [tableDetail, briefData?.brief]);
+
   function copyCsv() {
     if (!tableDetail?.csv) return;
     void navigator.clipboard?.writeText(tableDetail.csv).then(() => {
@@ -321,6 +402,18 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
       setTimeout(() => setCopiedTable(copied => copied === tableDetail ? null : copied), 1500);
     });
   }
+
+  const renderCitations = (ids: string[]) => ids.length ? (
+    <span className="fm2-cite-list">
+      {ids.map(id => (
+        <button key={id} type="button" className="fm2-cite-btn" title={`跳转到 L1 来源 ${id}`} onClick={() => jumpToSource(id)}>
+          {id}
+        </button>
+      ))}
+    </span>
+  ) : null;
+
+  const briefState = briefData?.state ?? { status: "idle" as const };
 
   return (
     <div className="ra-workspace fm2-workspace">
@@ -377,7 +470,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
         </div>
       </section>
 
-      <section className="ra-detail" aria-label="财报报告与数据表格">
+      <section className="ra-detail" aria-label="L1/L2 财报材料检查区">
         {!currentMaterial ? (
           <p className="bs-empty">{materials ? "没有符合筛选条件的财报。" : "正在加载财报…"}</p>
         ) : (
@@ -388,35 +481,210 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                 {currentMaterial.status !== "ready" && <span className={`fm2-badge ${currentMaterial.status}`}>{STATUS_LABEL[currentMaterial.status]}</span>}
               </div>
               <div className="fm2-meta">
+                <span>申报类型：<strong>{currentMaterial.filing.form}</strong></span>
                 <span>报告期：<strong>{currentMaterial.filing.reportDate || "—"}</strong></span>
+                <span>提交日：<strong>{currentMaterial.filing.filedAt || "—"}</strong></span>
               </div>
             </div>
 
-            <nav className="bs-views" aria-label="财报材料视图">
-              <button type="button" aria-pressed={tab === "markdown"} onClick={() => setTab("markdown")}>Markdown 报告</button>
-              <button type="button" aria-pressed={tab === "tables"} onClick={() => setTab("tables")}>数据表格{currentSnapshot ? ` (${currentSnapshot.tables.length})` : ""}</button>
+            <nav className="bs-views" aria-label="L1/L2 材料层级切换">
+              <button type="button" aria-pressed={tab === "brief"} onClick={() => setTab("brief")}>L2 事实卡片</button>
+              <button type="button" aria-pressed={tab === "markdown"} onClick={() => setTab("markdown")}>L1 原文 Markdown</button>
+              <button type="button" aria-pressed={tab === "tables"} onClick={() => setTab("tables")}>L1 数据表格{currentSnapshot ? ` (${currentSnapshot.tables.length})` : ""}</button>
             </nav>
 
             {actionNote && <div className="fm2-badge ready">{actionNote}</div>}
 
+            {tab === "brief" && (
+              <div className="fm2-panel">
+                {currentMaterial.status !== "ready" ? (
+                  <div className="fm2-card">
+                    <p className="fm2-meta">L1 原始材料尚未就绪，需先完成 L1 提取后才能启动 L2 事实卡片抽取。</p>
+                    {currentMaterial.status === "preparing" && <p className="fm2-meta" role="status">{currentMaterial.progress}</p>}
+                    {currentMaterial.status === "blocked" && (
+                      <ul>{currentMaterial.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}</ul>
+                    )}
+                    <div className="fm2-actions">
+                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理 L1 材料</button>
+                      {currentMaterial.status === "blocked" && (
+                        <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>重试失败文件</button>
+                      )}
+                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>分批整理 L1</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="fm2-bar">
+                      <div className="fm2-meta">
+                        <span className={`fm2-badge ${briefState.status === "ready" ? "ready" : briefState.status === "running" ? "preparing" : briefState.status === "failed" ? "blocked" : ""}`}>
+                          L2 状态：{BRIEF_STATUS_LABEL[briefState.status]}
+                        </span>
+                        {briefState.status === "running" && <span>Run: <code>{briefState.runId}</code> · 模型 {briefState.model}</span>}
+                        {briefState.status === "ready" && (
+                          <>
+                            <span>模型：<strong>{briefState.model}</strong></span>
+                            <span>指标 {briefState.metricsCount} · 信号 {briefState.signalsCount} · 表格描述 {briefState.tablesDescribed}</span>
+                            {briefState.inputTokens !== undefined && <span>Tokens：{briefState.inputTokens.toLocaleString()} / {briefState.outputTokens?.toLocaleString() ?? "—"}</span>}
+                            {briefState.durationMs !== undefined && <span>耗时 {(briefState.durationMs / 1000).toFixed(1)}s</span>}
+                          </>
+                        )}
+                      </div>
+                      <div className="fm2-actions">
+                        <button
+                          type="button"
+                          className="fm2-btn primary"
+                          disabled={briefBusy || briefState.status === "running"}
+                          onClick={() => void triggerBrief(briefState.status === "ready")}
+                        >
+                          {briefState.status === "running" ? "L2 抽取中…" : briefState.status === "ready" ? "重新生成 L2" : "启动 L2 抽取"}
+                        </button>
+                        {briefData?.brief && (
+                          <>
+                            <button type="button" className="fm2-btn" onClick={() => downloadBrief("md")}>下载 brief.md</button>
+                            <button type="button" className="fm2-btn" onClick={() => downloadBrief("json")}>下载 brief.json</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {briefState.status === "failed" && (
+                      <div className="fm2-card">
+                        <strong>L2 抽取失败</strong>
+                        <p className="fm2-meta">{briefState.error}</p>
+                      </div>
+                    )}
+
+                    {briefData?.brief ? (
+                      <>
+                        <div className="fm2-filters" role="group" aria-label="L2 视图模式">
+                          <button type="button" className="fm2-filter-pill" aria-pressed={briefView === "structured"} onClick={() => setBriefView("structured")}>结构化核对视图</button>
+                          <button type="button" className="fm2-filter-pill" aria-pressed={briefView === "markdown"} onClick={() => setBriefView("markdown")}>brief.md</button>
+                          <button type="button" className="fm2-filter-pill" aria-pressed={briefView === "json"} onClick={() => setBriefView("json")}>brief.json</button>
+                        </div>
+
+                        {briefView === "structured" && (
+                          <div className="fm2-brief-stack">
+                            <div className="fm2-brief-section">
+                              <h3>披露元数据 & 核心主线（点击右侧编号直接跳转 L1 原文或 CSV）</h3>
+                              <div className="fm2-meta" style={{ marginBottom: 8 }}>
+                                <span>覆盖期末：<strong>{briefData.brief.disclosureMeta.coveredPeriodEnd ?? "—"}</strong></span>
+                                <span>财季：<strong>{briefData.brief.disclosureMeta.fiscalPeriod ?? "—"}</strong></span>
+                                <span>类型：<strong>{briefData.brief.disclosureMeta.disclosureKind}</strong></span>
+                                <span>货币：<strong>{briefData.brief.disclosureMeta.currency ?? "—"}</strong></span>
+                                {briefData.brief.invalidSourceIdsDropped > 0 && (
+                                  <span>已剔除无效引用：{briefData.brief.invalidSourceIdsDropped}</span>
+                                )}
+                              </div>
+                              <p style={{ margin: "0 0 8px", fontWeight: 600, fontSize: 14 }}>{briefData.brief.headline}</p>
+                              <ul className="fm2-brief-list">
+                                {briefData.brief.keyTakeaways.map((item, idx) => (
+                                  <li key={idx}>{item.text}{renderCitations(item.sourceIds)}</li>
+                                ))}
+                              </ul>
+                            </div>
+
+                            {briefData.brief.metrics.length > 0 && (
+                              <div className="fm2-brief-section">
+                                <h3>标准化财务与分部指标 ({briefData.brief.metrics.length})</h3>
+                                <div className="fm2-table-wrap">
+                                  <table className="fm2-table">
+                                    <thead>
+                                      <tr>
+                                        <th>指标</th><th>分部</th><th>报告期</th><th>标准期</th><th>数值</th><th>口径</th><th>YoY</th><th>QoQ</th><th>L1 溯源</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {briefData.brief.metrics.map((m, idx) => (
+                                        <tr key={idx}>
+                                          <td><strong>{m.name}</strong>{m.note ? <div className="fm2-meta">{m.note}</div> : null}</td>
+                                          <td>{m.segment ?? "—"}</td>
+                                          <td>{m.period}</td>
+                                          <td>{m.calendarPeriod ?? "—"}</td>
+                                          <td>{m.unit ? `${m.value} (${m.unit})` : m.value}</td>
+                                          <td>{m.basis}</td>
+                                          <td>{m.yoy ?? "—"}</td>
+                                          <td>{m.qoq ?? "—"}</td>
+                                          <td>{renderCitations(m.sourceIds)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {briefData.brief.guidanceAndChanges.length > 0 && (
+                              <div className="fm2-brief-section">
+                                <h3>业绩指引、CapEx 与口径变更 ({briefData.brief.guidanceAndChanges.length})</h3>
+                                <ul className="fm2-brief-list">
+                                  {briefData.brief.guidanceAndChanges.map((item, idx) => (
+                                    <li key={idx}>
+                                      <strong>{item.topic}</strong>：{item.summary}
+                                      {item.quantitativeTerms ? `（${item.quantitativeTerms}）` : ""}
+                                      {renderCitations(item.sourceIds)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {briefData.brief.risksAndFootnotes.length > 0 && (
+                              <div className="fm2-brief-section">
+                                <h3>附注风险与表外条款 ({briefData.brief.risksAndFootnotes.length})</h3>
+                                <ul className="fm2-brief-list">
+                                  {briefData.brief.risksAndFootnotes.map((item, idx) => (
+                                    <li key={idx}>
+                                      <strong>{item.topic}</strong>：{item.summary}
+                                      {item.quantitativeTerms ? `（${item.quantitativeTerms}）` : ""}
+                                      {renderCitations(item.sourceIds)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {briefData.brief.industrySignals.length > 0 && (
+                              <div className="fm2-brief-section">
+                                <h3>行业横向信号 ({briefData.brief.industrySignals.length})</h3>
+                                <ul className="fm2-brief-list">
+                                  {briefData.brief.industrySignals.map((item, idx) => (
+                                    <li key={idx}>
+                                      <span className="fm2-badge" style={{ marginRight: 6 }}>{item.dimension} · {item.stance}</span>
+                                      {item.summary}
+                                      {renderCitations(item.sourceIds)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {briefView === "markdown" && (
+                          <div className="fm2-content fm2-report-scroll">
+                            <Suspense fallback={<p className="bs-empty" role="status">正在渲染 brief.md…</p>}>
+                              <FilingMarkdown text={briefData.markdown ?? ""} />
+                            </Suspense>
+                          </div>
+                        )}
+
+                        {briefView === "json" && (
+                          <pre className="fm2-pre">{JSON.stringify(briefData.brief, null, 2)}</pre>
+                        )}
+                      </>
+                    ) : briefState.status === "idle" ? (
+                      <div className="fm2-card">
+                        <strong>尚未生成 L2 事实卡片</strong>
+                        <p className="fm2-meta">点击右上角「启动 L2 抽取」，将整份 L1 财报（主报 + 附件 + 表格）一次性送入 DeepSeek 生成标准化 L2 卡片并回填表格目录。</p>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            )}
+
             {tab === "markdown" && (
               <div className="fm2-panel">
-                {currentSnapshot && supportsReadingEdition(currentMaterial.filing) && (
-                  <div className="fm2-bar">
-                    <div className="fm2-actions">
-                      <button type="button" className="fm2-btn primary" disabled={readingRun?.running} onClick={() => void prepareReadingEdition(currentSnapshot.ref)}>
-                        生成阅读稿
-                      </button>
-                      <button type="button" className="fm2-btn" onClick={() => void downloadReadingEdition(currentSnapshot.ref, "preprocessed")}>
-                        下载预处理稿
-                      </button>
-                      <button type="button" className="fm2-btn" onClick={() => void downloadReadingEdition(currentSnapshot.ref, "organized")}>
-                        下载整理稿
-                      </button>
-                    </div>
-                    {readingRun?.key === selectedKey && readingRun.note && <span className="fm2-meta" role="status">{readingRun.note}</span>}
-                  </div>
-                )}
                 {currentMaterial.status !== "ready" ? (
                   <div className="fm2-card">
                     {currentMaterial.status === "preparing" && <p className="fm2-meta" role="status">{currentMaterial.progress}</p>}
@@ -424,37 +692,74 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                       <ul>{currentMaterial.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}</ul>
                     )}
                     <div className="fm2-actions">
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>
-                        重新整理材料
-                      </button>
+                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理材料</button>
                       {currentMaterial.status === "blocked" && (
-                        <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>
-                        重试失败文件
-                        </button>
+                        <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(true)}>重试失败文件</button>
                       )}
-                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>
-                        分批整理材料
-                      </button>
+                      <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPilotPrepare()}>分批整理材料</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="fm2-content fm2-report-scroll">
-                    {reportPage?.text ? (
-                      <Suspense fallback={<p className="bs-empty" role="status">正在加载报告…</p>}>
-                        <FilingMarkdown text={reportPage.text} />
-                      </Suspense>
-                    ) : (
-                      <p className="bs-empty" role="status">{mdLoading || !hasSelectedDetail ? "正在加载报告…" : "暂无报告内容"}</p>
+                  <>
+                    {currentSnapshot && (
+                      <div className="fm2-bar">
+                        <div className="fm2-meta">
+                          <span>文档 {currentSnapshot.coverage.archivedDocuments}/{currentSnapshot.coverage.expectedDocuments}</span>
+                          <span>块 {currentSnapshot.coverage.retainedBlocks}/{currentSnapshot.coverage.sourceBlocks}</span>
+                          <span>表格单元格 {currentSnapshot.coverage.checkedCells}/{currentSnapshot.coverage.tableCells}</span>
+                          <span>正文总长 {formatChars(currentSnapshot.markdown.chars)}</span>
+                          {activeAnchor && <span>当前定位：<code>{activeAnchor}</code></span>}
+                        </div>
+                        {activeAnchor && (
+                          <button type="button" className="fm2-btn" onClick={() => {
+                            const signal = materialRequest.current?.signal;
+                            if (signal) void loadMarkdown(currentMaterial, signal);
+                          }}>回到开头</button>
+                        )}
+                      </div>
                     )}
-                    {reportPage?.nextCursor && (
-                      <button type="button" className="fm2-btn" disabled={mdLoading} onClick={() => {
-                        const signal = materialRequest.current?.signal;
-                        if (signal) void loadMarkdown(currentMaterial, signal, reportPage.nextCursor!);
-                      }}>
-                        {mdLoading ? "加载中…" : "加载下一段"}
-                      </button>
-                    )}
-                  </div>
+                    <div className="fm2-split">
+                      <aside className="fm2-toc" aria-label="L1 原生目录">
+                        {groupedToc.map(group => (
+                          <div key={group.kind}>
+                            <div className="fm2-toc-group">{TOC_GROUP_LABEL[group.kind]}</div>
+                            {group.items.map(item => (
+                              <button
+                                key={item.anchor}
+                                type="button"
+                                className="fm2-toc-btn"
+                                aria-pressed={activeAnchor === item.anchor}
+                                onClick={() => {
+                                  const signal = materialRequest.current?.signal;
+                                  if (signal) void loadMarkdown(currentMaterial, signal, undefined, item.anchor);
+                                }}
+                              >
+                                <div>{item.title}</div>
+                                <small>{formatChars(item.chars)}</small>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </aside>
+                      <div ref={mdScrollRef} className="fm2-content fm2-report-scroll">
+                        {reportPage?.text ? (
+                          <Suspense fallback={<p className="bs-empty" role="status">正在加载报告…</p>}>
+                            <FilingMarkdown text={reportPage.text} />
+                          </Suspense>
+                        ) : (
+                          <p className="bs-empty" role="status">{mdLoading || !hasSelectedDetail ? "正在加载报告…" : "暂无报告内容"}</p>
+                        )}
+                        {reportPage?.nextCursor && (
+                          <button type="button" className="fm2-btn" disabled={mdLoading} onClick={() => {
+                            const signal = materialRequest.current?.signal;
+                            if (signal) void loadMarkdown(currentMaterial, signal, reportPage.nextCursor!);
+                          }}>
+                            {mdLoading ? "加载中…" : "加载下一段"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -504,7 +809,12 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                               </button>
                             </div>
                           </div>
-                          {tableDetail.table.description && <p className="fm2-meta" style={{ marginTop: 0 }}>{tableDetail.table.description}</p>}
+                          {tableDetail.table.description && (
+                            <p className="fm2-meta" style={{ marginTop: 0 }}>
+                              {tableDetail.table.description}
+                              {relatedCatalogEntry?.relatedSourceIds.length ? renderCitations(relatedCatalogEntry.relatedSourceIds) : null}
+                            </p>
+                          )}
                           <div className="fm2-table-wrap">
                             <table className="fm2-table">
                               <thead>
@@ -529,7 +839,6 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                 )}
               </div>
             )}
-
           </>
         )}
       </section>

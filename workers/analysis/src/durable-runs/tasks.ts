@@ -1,4 +1,6 @@
 import { runMaterialPilotChunk, type MaterialPilotChunk } from "../filing-material/pilot.ts";
+import { executeMaterialBriefRun, type MaterialBriefParams } from "../filing-material/brief.ts";
+import { aiToolEnvironment } from "../ai-config.ts";
 import { executePublicResearchRun, type PublicResearchRunSpec } from "../public-research/generation.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { assertFeatureTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams } from "../core.ts";
@@ -69,6 +71,12 @@ export const RUN_TASKS: Record<RunKind, Task> = {
   async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step,id}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step,executionId:id});},
   async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
     return runMaterialPilotChunk(env, step, params);
+  },
+  async MATERIAL_BRIEF_WORKFLOW(params: MaterialBriefParams, { env: raw, step }) {
+    return step.do("extract-material-brief", {
+      retries: { limit: 1, backoff: "constant", delay: 15_000 },
+      timeout: "15 minutes",
+    }, async () => executeMaterialBriefRun(await aiToolEnvironment(raw), params));
   },
   async PUBLIC_RESEARCH_WORKFLOW(params: PublicResearchRunSpec, { env, step, id }) {
     try { return await executePublicResearchRun(params, durableSteps(step, env, id), env); }
