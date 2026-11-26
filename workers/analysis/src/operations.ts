@@ -31,6 +31,7 @@ import type { MaterialFiling } from "../../../shared/analysis-contract/filing-ma
 type R2ObjectLike = { etag?: string; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
 type R2BucketLike = {
   get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectLike | null>;
+  head?(key: string): Promise<unknown>;
   put(key: string, value: string | Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
   list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: Array<{ key: string; uploaded: Date }>; truncated: boolean; cursor?: string }>;
   delete(keys: string[]): Promise<unknown>;

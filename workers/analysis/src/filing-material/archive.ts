@@ -13,8 +13,29 @@ export type MaterialManifest = { filing: MaterialFiling; entries: ManifestEntry[
 
 const directorySchema = z.object({ directory: z.object({ item: z.array(z.object({ name: z.string().min(1) })) }) });
 
-const receiptKey = (filing: MaterialFiling, id: string) => `filing-material:source:v1:${filing.ticker}:${filing.accession}:${id}`;
+export const sourceReceiptPrefix = (filing: MaterialFiling) => `filing-material:source:v1:${filing.ticker}:${filing.accession}:`;
+const receiptKey = (filing: MaterialFiling, id: string) => `${sourceReceiptPrefix(filing)}${id}`;
 export const manifestKey = (filing: MaterialFiling) => `${MATERIAL_PREFIX}${filing.ticker}/${filing.accession}/manifest.json`;
+
+export async function loadCachedSources(env: Pick<AnalysisEnv, "DB">, filing: MaterialFiling): Promise<MaterialSource[]> {
+  const prefix = sourceReceiptPrefix(filing);
+  const rows = await env.DB!.prepare("SELECT payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?")
+    .bind(prefix, `${prefix}\uffff`).all<{ payload: string }>();
+  const out: MaterialSource[] = [];
+  for (const row of rows.results) {
+    try { out.push(JSON.parse(row.payload) as MaterialSource); } catch { /* ignore */ }
+  }
+  return out;
+}
+
+export async function readSubmissionHeaderBytes(env: Pick<AnalysisEnv, "SEC_FILINGS">, source: MaterialSource, headerEnd: number): Promise<Uint8Array> {
+  const length = Math.max(0, headerEnd);
+  if (length === 0) return new Uint8Array(0);
+  const ranged = await env.SEC_FILINGS.get(source.rawKey, { range: { offset: 0, length } });
+  if (ranged) return new Uint8Array(await ranged.arrayBuffer());
+  const full = await readSourceBytes(env, source);
+  return full.subarray(0, length);
+}
 const filingRoot = (filing: MaterialFiling) => `${parseSecArchiveDocumentUrl(filing.documentUrl).archiveRoot}/`;
 const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const ascii = (bytes: Uint8Array) => {
@@ -95,10 +116,14 @@ function decodeUuencoded(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(out);
 }
 
+async function rawExists(env: Pick<AnalysisEnv, "SEC_FILINGS">, key: string): Promise<boolean> {
+  return !!(env.SEC_FILINGS.head ? await env.SEC_FILINGS.head(key) : await env.SEC_FILINGS.get(key));
+}
+
 async function putSource(env: AnalysisEnv, filing: MaterialFiling, entry: ManifestEntry, bytes: Uint8Array, contentType = sourceMimeType(entry.filename)): Promise<MaterialSource> {
   const sha256 = await materialDigest(bytes), id = `d${(await materialDigest(entry.url)).slice(0, 24)}`;
   const existing = (await new D1SecRepository(env.DB!).getCache<MaterialSource>(receiptKey(filing, id)))?.payload;
-  if (existing?.sha256 === sha256 && await env.SEC_FILINGS.get(existing.rawKey)) return existing;
+  if (existing?.sha256 === sha256 && await rawExists(env, existing.rawKey)) return existing;
   const rawKey = `${MATERIAL_PREFIX}sources/${sha256}`;
   await env.SEC_FILINGS.put(rawKey, bytes, { httpMetadata: { contentType } });
   const source: MaterialSource = { id, filename: entry.filename, type: entry.type, url: entry.url, contentType, rawKey, sha256, bytes: bytes.byteLength, container: entry.container };
@@ -152,11 +177,21 @@ export async function loadMaterialManifest(env: AnalysisEnv, filing: MaterialFil
   return manifest;
 }
 
-export async function archiveMaterialEntry(env: AnalysisEnv, manifest: MaterialManifest, entry: ManifestEntry, submissionBytes: Uint8Array, options: GatewayOptions = {}): Promise<MaterialSource> {
+export async function archiveMaterialEntry(
+  env: AnalysisEnv,
+  manifest: MaterialManifest,
+  entry: ManifestEntry,
+  getSubmissionBytes: Uint8Array | (() => Promise<Uint8Array>),
+  options: GatewayOptions & { cachedSource?: MaterialSource } = {},
+): Promise<MaterialSource> {
+  if (options.cachedSource) return options.cachedSource;
   const id = `d${(await materialDigest(entry.url)).slice(0, 24)}`;
   const cached = (await new D1SecRepository(env.DB!).getCache<MaterialSource>(receiptKey(manifest.filing, id)))?.payload;
-  if (cached && await env.SEC_FILINGS.get(cached.rawKey)) return cached;
-  if (entry.start !== null && entry.end !== null) return putSource(env, manifest.filing, entry, decodeUuencoded(submissionBytes.subarray(entry.start, entry.end)));
+  if (cached && await rawExists(env, cached.rawKey)) return cached;
+  if (entry.start !== null && entry.end !== null) {
+    const submissionBytes = typeof getSubmissionBytes === "function" ? await getSubmissionBytes() : getSubmissionBytes;
+    return putSource(env, manifest.filing, entry, decodeUuencoded(submissionBytes.subarray(entry.start, entry.end)));
+  }
   const response = await materialEdgarReader(env.SEC_USER_AGENT, options).document(entry.url);
   return putSource(env, manifest.filing, entry, new Uint8Array(await response.arrayBuffer()), response.headers.get("content-type")?.split(";")[0] || sourceMimeType(entry.filename));
 }

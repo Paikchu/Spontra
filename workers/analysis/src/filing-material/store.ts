@@ -21,7 +21,7 @@ export const materialBriefStateKey = (ticker: string, accession: string, version
 export const materialBriefBase = (ref: MaterialRef) => `${materialBase(ref)}/brief/${MATERIAL_BRIEF_VERSION}`;
 export const materialBriefJsonKey = (ref: MaterialRef) => `${materialBriefBase(ref)}/brief.json`;
 export const materialBriefMarkdownKey = (ref: MaterialRef) => `${materialBriefBase(ref)}/brief.md`;
-const leaseKey = (filing: MaterialFiling) => `filing-material:lease:v1:${filing.ticker}:${filing.accession}`;
+export const leaseKey = (filing: MaterialFiling) => `filing-material:lease:v1:${filing.ticker}:${filing.accession}`;
 
 export async function materialDigest(value: string | Uint8Array): Promise<string> {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value);

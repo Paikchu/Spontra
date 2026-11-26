@@ -533,6 +533,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   const renderExtractionTodo = (material: Exclude<MaterialState, { status: "ready" }>, notice?: string) => {
     const files: MaterialExtractFile[] = Array.isArray(material.files) ? material.files : [];
     const doneCount = files.filter(f => f.status === "done").length;
+    const isStalled = material.status === "preparing" && material.stalled === true;
     return (
       <div className="fm2-card">
         {notice && <p className="fm2-meta" style={{ margin: 0 }}>{notice}</p>}
@@ -543,8 +544,17 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
               {files.length ? `已完成 ${doneCount} / ${files.length}` : "等待获取 SEC 文件清单"}
             </span>
           </div>
-          {material.status === "preparing" && <span className="fm2-meta">自动刷新中</span>}
+          {material.status === "preparing" && (
+            isStalled
+              ? <span className="fm2-badge blocked">后台已中断（疑似超限/超时）</span>
+              : <span className="fm2-meta">自动刷新中</span>
+          )}
         </div>
+        {isStalled && (
+          <p className="fm2-meta" style={{ margin: 0, color: "var(--danger)" }} role="alert">
+            后台任务已超过 3 分钟无心跳更新（可能触发 Worker 内存或子请求上限中断），请点击下方「重新整理 L1 材料」继续完成剩余步骤。
+          </p>
+        )}
         {material.status === "preparing" && material.progress && (
           <div className="fm2-meta" role="status">{material.progress}</div>
         )}

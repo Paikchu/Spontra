@@ -150,7 +150,7 @@ export type MaterialExtractFile = {
   container?: string | null;
 };
 export type MaterialState =
-  | { status: "preparing"; filing: MaterialFiling; progress: string; files?: MaterialExtractFile[]; updatedAt?: string }
+  | { status: "preparing"; filing: MaterialFiling; progress: string; files?: MaterialExtractFile[]; updatedAt?: string; stalled?: boolean }
   | { status: "blocked"; filing: MaterialFiling; issues: string[]; files?: MaterialExtractFile[] }
   | { status: "ready"; ref: MaterialRef; filing: MaterialFiling; snapshotKey: string; markdownKey: string; preparedAt: string; preparationVersion: string };
 

@@ -7,7 +7,7 @@ import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { overrideLink, readLinksView, requestLinks } from "../business-classification/index.ts";
 import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
-import { listFilingMaterials, materialStateKey, readExtractionFiles, readFilingMaterialState, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState, requestFilingMaterial } from "../filing-material/index.ts";
+import { ASSEMBLE_STEP_FILENAME, leaseKey, listFilingMaterials, materialStateKey, readExtractionFiles, readFilingMaterialState, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState, requestFilingMaterial } from "../filing-material/index.ts";
 import { filingMaterialMeta, findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
 import { aiToolEnvironment, modelFor } from "../ai-config.ts";
 import { withRuns } from "../durable-runs/binding.ts";
@@ -207,17 +207,53 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
     }
     if (request.method === "GET") {
       if (parts.length === 3) {
-        const [pilot, revRow, fallbackFiles] = await Promise.all([
+        const [pilot, revRow, stateRow, leaseRow] = await Promise.all([
           env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialPilotKey(ticker,accession)).first<{payload:string}>(),
           env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(materialReviewKey(ticker,accession)).first<{payload:string}>(),
-          (state.status === "preparing" || state.status === "blocked") && (!state.files || state.files.length === 0)
-            ? readExtractionFiles(env, state.filing).catch(() => [])
+          env.DB.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key=?").bind(materialStateKey(ticker,accession)).first<{fetched_at:string}>(),
+          state.status === "preparing"
+            ? env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key=?").bind(leaseKey(state.filing)).first<{payload:string}>()
             : Promise.resolve(null),
         ]);
+        const updatedAt = state.status === "preparing" ? (state.updatedAt ?? stateRow?.fetched_at) : undefined;
+        let stalled = false;
+        if (state.status === "preparing" && state.progress !== "awaiting accession archive" && updatedAt) {
+          const lastMs = Date.parse(updatedAt);
+          let leaseExpired = true;
+          if (leaseRow?.payload) {
+            try {
+              const lease = JSON.parse(leaseRow.payload) as { expiresAt?: number };
+              leaseExpired = !lease.expiresAt || lease.expiresAt <= Date.now();
+            } catch { leaseExpired = true; }
+          }
+          stalled = Number.isFinite(lastMs) && (Date.now() - lastMs > 3 * 60_000) && leaseExpired;
+        }
+        let resolvedFiles = state.status !== "ready" ? state.files : undefined;
+        if ((state.status === "preparing" || state.status === "blocked") && (!resolvedFiles || resolvedFiles.length === 0)) {
+          resolvedFiles = await readExtractionFiles(env, state.filing, { stalled }).catch(() => []);
+        } else if (state.status === "preparing" && resolvedFiles && resolvedFiles.length > 0) {
+          const copy = resolvedFiles.map(f => ({ ...f }));
+          const hasAssemble = copy.some(f => f.type === "ASSEMBLE" || f.filename === ASSEMBLE_STEP_FILENAME);
+          if (!hasAssemble) {
+            const allDone = copy.every(f => f.status === "done");
+            copy.push({
+              filename: ASSEMBLE_STEP_FILENAME,
+              type: "ASSEMBLE",
+              status: stalled && allDone ? "failed" : allDone ? "extracting" : "pending",
+            });
+          }
+          if (stalled) {
+            const active = copy.find(f => f.status === "extracting") ?? copy.find(f => f.status === "pending");
+            if (active) active.status = "failed";
+          }
+          resolvedFiles = copy;
+        }
         const review = revRow ? JSON.parse(revRow.payload) as MaterialReview : null;
         return json({
           ...state,
-          ...(fallbackFiles && fallbackFiles.length ? { files: fallbackFiles } : {}),
+          ...(updatedAt ? { updatedAt } : {}),
+          ...(stalled ? { stalled: true } : {}),
+          ...(resolvedFiles && resolvedFiles.length ? { files: resolvedFiles } : {}),
           review,
           ...(pilot ? { pilot:JSON.parse(pilot.payload), resumeRequired:JSON.parse(pilot.payload).chunkStatus === "preparing" } : {}),
         });

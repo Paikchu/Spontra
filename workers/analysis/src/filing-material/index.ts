@@ -1,4 +1,4 @@
-export { prepareFilingMaterial, readExtractionFiles, type PrepareMaterialOptions } from "./prepare.ts";
+export { prepareFilingMaterial, readExtractionFiles, ASSEMBLE_STEP_FILENAME, type PrepareMaterialOptions } from "./prepare.ts";
 export {
   requestFilingMaterial,
   readFilingMaterialState,
@@ -7,6 +7,7 @@ export {
   listFilingMaterials,
   materialStateKey,
   materialSnapshotKey,
+  leaseKey,
   getMaterialBriefState,
   writeMaterialBriefState,
 } from "./store.ts";
