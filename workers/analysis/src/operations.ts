@@ -26,6 +26,7 @@ import { reasoningEffort } from "./pi/reasoning.ts";
 import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
+import type { MaterialFiling } from "../../../shared/analysis-contract/filing-material.ts";
 
 type R2ObjectLike = { etag?: string; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
 type R2BucketLike = {
@@ -67,6 +68,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** The valuation assessment Workflow. */
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
+  MATERIAL_PREPARE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; filings: MaterialFiling[]; recoveryRequestId?: string }>;
   MATERIAL_BRIEF_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; version: string; runId: string; force: boolean }>;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;

@@ -70,6 +70,13 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       await requestFilingMaterial(env, filingMaterialMeta(filing));
     }
     await flushOutbox(env);
+    const prepareRunner = withRuns(env).MATERIAL_PREPARE_WORKFLOW;
+    if (prepareRunner && selected.length) {
+      await prepareRunner.create({
+        id: `material-prepare-${ticker}-${Date.now()}`,
+        params: { ticker, filings: selected.map(filingMaterialMeta) },
+      }).catch(() => undefined);
+    }
     return json({
       status: "synced",
       ticker,
@@ -125,6 +132,13 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
           env.DB.prepare(`UPDATE sec_cache SET payload=json_remove(payload,'$.pending') WHERE cache_key=? AND ${first}`).bind(receiptKey,receiptKey),
         ]);
         await flushOutbox(env);
+        const prepareRunner = withRuns(env).MATERIAL_PREPARE_WORKFLOW;
+        if (prepareRunner) {
+          await prepareRunner.create({
+            id: `material-prepare-${ticker}-${accession}-${Date.now()}`,
+            params: { ticker, filings: [state.filing], recoveryRequestId: options.requestId },
+          }).catch(() => undefined);
+        }
         return json({...pending,recoveryRequestId:options.requestId,reused:false},202);
       }
       const pending: MaterialState = { status: "preparing", filing: state.filing, progress: "awaiting accession archive" };
@@ -134,6 +148,13 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
         outboxStatement(env.DB, { type: "filing.material.requested", ticker, cik: state.filing.cik, detail: { accession, form: state.filing.form } }),
       ]);
       await flushOutbox(env);
+      const prepareRunner = withRuns(env).MATERIAL_PREPARE_WORKFLOW;
+      if (prepareRunner) {
+        await prepareRunner.create({
+          id: `material-prepare-${ticker}-${accession}-${Date.now()}`,
+          params: { ticker, filings: [state.filing] },
+        }).catch(() => undefined);
+      }
       return json(pending, 202);
     }
     if (parts[3] === "brief" && parts.length === 4) {

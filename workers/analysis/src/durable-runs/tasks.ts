@@ -1,5 +1,7 @@
 import { runMaterialPilotChunk, type MaterialPilotChunk } from "../filing-material/pilot.ts";
+import { prepareFilingMaterial } from "../filing-material/index.ts";
 import { executeMaterialBriefRun, type MaterialBriefParams } from "../filing-material/brief.ts";
+import type { MaterialFiling } from "../../../../shared/analysis-contract/filing-material.ts";
 import { aiToolEnvironment } from "../ai-config.ts";
 import { executePublicResearchRun, type PublicResearchRunSpec } from "../public-research/generation.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
@@ -71,6 +73,24 @@ export const RUN_TASKS: Record<RunKind, Task> = {
   async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step,id}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step,executionId:id});},
   async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
     return runMaterialPilotChunk(env, step, params);
+  },
+  async MATERIAL_PREPARE_WORKFLOW(params: { ticker: string; filings: MaterialFiling[]; recoveryRequestId?: string }, { env, step }) {
+    const results: Array<{ accession: string; status: string }> = [];
+    for (const filing of params.filings) {
+      let status = "preparing";
+      for (let chunk = 0; chunk < 25 && status === "preparing"; chunk++) {
+        const outcome = await step.do(`prepare-${filing.accession}-${chunk}`, {
+          retries: { limit: 1, backoff: "constant", delay: 10_000 },
+          timeout: "10 minutes",
+        }, async () => prepareFilingMaterial(env, filing, {
+          maxDocuments: 20,
+          ...(params.recoveryRequestId ? { recoveryRequestId: params.recoveryRequestId } : {}),
+        }));
+        status = outcome.status;
+      }
+      results.push({ accession: filing.accession, status });
+    }
+    return { ticker: params.ticker, results };
   },
   async MATERIAL_BRIEF_WORKFLOW(params: MaterialBriefParams, { env: raw, step }) {
     return step.do("extract-material-brief", {
