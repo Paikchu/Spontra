@@ -28,6 +28,10 @@ export async function materialDigest(value: string | Uint8Array): Promise<string
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), n => n.toString(16).padStart(2, "0")).join("");
 }
 
+export async function readFilingMaterialState(env: Pick<AnalysisEnv, "DB">, ticker: string, accession: string): Promise<MaterialState | null> {
+  return (await new D1SecRepository(env.DB!).getCache<MaterialState>(materialStateKey(ticker, accession)))?.payload ?? null;
+}
+
 export async function getFilingMaterial(env: Pick<AnalysisEnv, "DB">, ticker: string, accession: string): Promise<MaterialState | null> {
   const state = (await new D1SecRepository(env.DB!).getCache<MaterialState>(materialStateKey(ticker, accession)))?.payload ?? null;
   if (state?.status === "ready" && state.preparationVersion !== MATERIAL_PREPARATION_VERSION) return requestFilingMaterial(env, state.filing);

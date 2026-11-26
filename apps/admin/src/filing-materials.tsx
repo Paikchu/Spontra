@@ -281,6 +281,35 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     } catch { /* ignore */ }
   }, [selectedMaterial, visible]);
 
+  useEffect(() => {
+    if (selectedMaterial?.status !== "preparing" && detail?.status !== "preparing") return;
+    const timer = window.setInterval(() => {
+      setRefresh(n => n + 1);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [selectedMaterial?.status, detail?.status]);
+
+  async function syncCompany(ticker: string) {
+    const upper = ticker.trim().toUpperCase();
+    if (!upper) return;
+    setActionBusy(true);
+    setActionNote("");
+    setError("");
+    try {
+      const res = await adminApi<{ requested: Array<{ accession: string; form: string }> }>(
+        `library/companies/${encodeURIComponent(upper)}/sync`,
+        { method: "POST" },
+      );
+      setActionNote(`已触发 ${upper} 财报 L1 拉取与提取（${res.requested.length} 份）。`);
+      setSelection({ ticker: upper, accession: res.requested[0]?.accession ?? "" });
+      setRefresh(n => n + 1);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function triggerPrepare(retryFailedSources: boolean) {
     if (!selectedMaterial) return;
     const { ticker, accession } = selectedMaterial.filing;
@@ -414,6 +443,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   ) : null;
 
   const briefState = briefData?.state ?? { status: "idle" as const };
+  const searchTicker = search.trim().toUpperCase();
+  const canSyncSearchTicker = /^[A-Z][A-Z0-9.-]{0,11}$/.test(searchTicker) && !companies.some(([t]) => t === searchTicker);
 
   return (
     <div className="ra-workspace fm2-workspace">
@@ -431,6 +462,13 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
           <button type="button" className="fm2-filter-pill" aria-pressed={!blockedOnly} onClick={() => setBlockedOnly(false)}>全部</button>
           <button type="button" className="fm2-filter-pill" aria-pressed={blockedOnly} onClick={() => setBlockedOnly(true)}>已阻塞</button>
         </div>
+        {canSyncSearchTicker && (
+          <div className="fm2-filters">
+            <button type="button" className="fm2-btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={actionBusy} onClick={() => void syncCompany(searchTicker)}>
+              {actionBusy ? "拉取中…" : `拉取 ${searchTicker} 财报材料`}
+            </button>
+          </div>
+        )}
         <div className="ra-list-caption">{materials ? `${companies.length} 家公司` : "加载中"}</div>
         {error && <p className="ra-error" role="alert">{error}</p>}
         <div className="ra-list-scroll">
@@ -710,12 +748,15 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                           <span>正文总长 {formatChars(currentSnapshot.markdown.chars)}</span>
                           {activeAnchor && <span>当前定位：<code>{activeAnchor}</code></span>}
                         </div>
-                        {activeAnchor && (
-                          <button type="button" className="fm2-btn" onClick={() => {
-                            const signal = materialRequest.current?.signal;
-                            if (signal) void loadMarkdown(currentMaterial, signal);
-                          }}>回到开头</button>
-                        )}
+                        <div className="fm2-actions">
+                          {activeAnchor && (
+                            <button type="button" className="fm2-btn" onClick={() => {
+                              const signal = materialRequest.current?.signal;
+                              if (signal) void loadMarkdown(currentMaterial, signal);
+                            }}>回到开头</button>
+                          )}
+                          <button type="button" className="fm2-btn" disabled={actionBusy} onClick={() => void triggerPrepare(false)}>重新整理 L1</button>
+                        </div>
                       </div>
                     )}
                     <div className="fm2-split">

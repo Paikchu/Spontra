@@ -1,6 +1,7 @@
 export { prepareFilingMaterial, type PrepareMaterialOptions } from "./prepare.ts";
 export {
   requestFilingMaterial,
+  readFilingMaterialState,
   getFilingMaterial,
   readMaterialSnapshot,
   listFilingMaterials,

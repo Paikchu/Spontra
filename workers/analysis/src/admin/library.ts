@@ -7,11 +7,14 @@ import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { overrideLink, readLinksView, requestLinks } from "../business-classification/index.ts";
 import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
-import { getFilingMaterial, listFilingMaterials, materialStateKey, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState } from "../filing-material/index.ts";
-import { findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
+import { listFilingMaterials, materialStateKey, readFilingMaterialState, readMaterialBrief, readMaterialSnapshot, briefTableDescriptionMap, getMaterialBriefState, writeMaterialBriefState, requestFilingMaterial } from "../filing-material/index.ts";
+import { filingMaterialMeta, findFilingTables, readFilingMarkdown, readFilingTable } from "../filing-material/read.ts";
 import { aiToolEnvironment, modelFor } from "../ai-config.ts";
 import { withRuns } from "../durable-runs/binding.ts";
-import type { AnalysisEnv } from "../operations.ts";
+import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
+import { D1SecRepository } from "../sec/d1.ts";
+import type { SecFiling, SecFilingFeed } from "../sec/sec.ts";
+import { selectLatestWorkflowFilings } from "../workflow-core.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { materialRecoveryKey, materialPilotKey, isPilotMaterial } from "../filing-material/store.ts";
 import { authenticateAdmin } from "./auth.ts";
@@ -49,6 +52,30 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
   if (request.method === "GET" && parts[0] === "companies" && parts.length === 2 && TICKER_PATTERN.test(parts[1]!)) {
     return json({ materials: await attachMaterialReviews(env.DB, await listFilingMaterials(env, parts[1]!)) });
   }
+  if (request.method === "POST" && parts[0] === "companies" && parts.length === 3 && TICKER_PATTERN.test(parts[1]!) && parts[2] === "sync") {
+    const ticker = parts[1]!;
+    const cached = (await new D1SecRepository(env.DB).getCache<SecFilingFeed>(`sec:filings:${ticker}`))?.payload;
+    let filings: SecFiling[] = cached?.filings ?? [];
+    if (!filings.length) {
+      const ops = createAnalysisOperations(env, fetch);
+      const found = await ops.discover(ticker);
+      await ops.publishFeed(found.feed);
+      filings = found.filings;
+    }
+    const latest = selectLatestWorkflowFilings(filings);
+    const selected = latest.length
+      ? latest
+      : filings.filter(f => /^(?:10-K|10-Q|20-F|40-F|8-K|6-K)(?:\/A)?$/.test(f.form)).slice(0, 4);
+    for (const filing of selected) {
+      await requestFilingMaterial(env, filingMaterialMeta(filing));
+    }
+    await flushOutbox(env);
+    return json({
+      status: "synced",
+      ticker,
+      requested: selected.map(f => ({ accession: f.accessionNumber, form: f.form, filedAt: f.filingDate })),
+    }, 202);
+  }
   if (parts[0] === "materials" && TICKER_PATTERN.test(parts[1] ?? "") && ACCESSION.test(parts[2] ?? "")) {
     const ticker = parts[1]!, accession = parts[2]!;
     if (request.method === "POST" && parts.length === 4 && parts[3] === "reconcile-source") {
@@ -57,7 +84,7 @@ export async function handleLibraryAdminRequest(request: Request, env: AnalysisE
       catch(error){return json({error:error instanceof Error?error.message:String(error)},409);}
     }
     if (request.method === "POST" && parts.length === 4 && parts[3] === "prepare-pilot") return preparePilotMaterial(request, env, ticker, accession);
-    const state = await getFilingMaterial(env, ticker, accession);
+    const state = await readFilingMaterialState(env, ticker, accession);
     if (!state) return json({ error: "未找到该申报材料。" }, 404);
     if (request.method === "POST" && parts.length === 4 && parts[3] === "review") {
       const body = await request.json().catch(() => null) as { decision?: string; note?: string } | null;
