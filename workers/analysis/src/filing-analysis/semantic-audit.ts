@@ -194,7 +194,8 @@ function reportQuote(quote: string, texts: string[]): string | null {
 
 export function semanticIssuesOf(answer: AuditAnswer, state: FilingAuditState, input: Awaited<ReturnType<typeof filingSemanticInput>>): TrackedIssue[] {
   if (answer.verdict === "unavailable" || !answer.complete) return unavailable(state, answer.summary);
-  const sourceIds = new Set([...Object.keys(input.aliases), ...Object.values(input.aliases), ...input.evidence.entries.map(entry => entry.id), ...input.sources.map(source => source.id), ...input.facts.map(fact => fact.factId), ...input.computations.map(computed => computed.id), ...input.investmentChains.map(chain => chain.id), ...(input.earningsQuestions??[]).map(q=>q.id), ...input.charts.map(chart => chart.id)]);
+  const moverIds = (input.movers ?? []).flatMap(group => [...group.byAmount, ...group.byPercent].flatMap(item => [item.current.ref, item.previous.ref, item.table]));
+  const sourceIds = new Set([...Object.keys(input.aliases), ...Object.values(input.aliases), ...input.evidence.entries.map(entry => entry.id), ...input.sources.map(source => source.id), ...input.facts.map(fact => fact.factId), ...moverIds, ...input.computations.map(computed => computed.id), ...input.investmentChains.map(chain => chain.id), ...(input.earningsQuestions??[]).map(q=>q.id), ...input.charts.map(chart => chart.id)]);
   const computations = new Map(input.computations.map(computation => [computation.id, computation]));
   const reviewed = new Set(answer.computations.map(review => review.id));
   if (reviewed.size !== answer.computations.length || reviewed.size !== computations.size || [...computations.keys()].some(id => !reviewed.has(id))) throw new JudgeUnavailable("The independent audit did not review every used computation exactly once");
