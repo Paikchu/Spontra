@@ -8,11 +8,12 @@ import type { FrozenCompanyResearch } from "../../../../shared/analysis-contract
 import { frozenPublicResearchSource, isPublicResearchSourceId } from "../company-research/context-tools.ts";
 import { nodeText, parseHtml, type HtmlNode } from "../../../../shared/analysis-runtime/artifact/html.ts";
 import { blockText, issueKey, type ComposerState, type TrackedIssue } from "../artifact/document.ts";
-import { judge, JudgeUnavailable } from "../artifact/openai.ts";
+import { modelFor } from "../ai-config.ts";
+import { JudgeUnavailable } from "../artifact/openai.ts";
 import { recordCheck } from "../artifact/store.ts";
 import { readMaterialSnapshot } from "../filing-material/index.ts";
 import { materialBlockId } from "../filing-material/read.ts";
-import type { AnalysisEnv } from "../operations.ts";
+import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { sha256 } from "../sha256.ts";
 import type { PeriodicState } from "./periodic.ts";
 import { semanticCorpusRequest, semanticEvidence } from "./semantic-evidence.ts";
@@ -253,14 +254,15 @@ export async function filingSemanticAudit(deps: AuditDeps, state: FilingAuditSta
   let digest: string | null = null, key: string | null = null;
   let input: Awaited<ReturnType<typeof filingSemanticInput>> | null = null;
   let rawAnswer: unknown = null;
-  const model = deps.env.OPENAI_REVIEW_MODEL ?? null;
+  const model = modelFor(deps.env, "artifact-review");
   try {
     input = await filingSemanticInput(deps, state);
     const { evidence, aliases } = input;
     const evidenceHash = await sha256(JSON.stringify({ evidence, aliases }));
     const schema = filingSemanticSchema(input);
     const policyHash = await sha256(`${SEMANTIC_AUDIT_SYSTEM}\n${JSON.stringify(schema)}`);
-    const request = JSON.stringify(await filingSemanticRequest(input));
+    const requestPayload = await filingSemanticRequest(input);
+    const request = JSON.stringify(requestPayload);
     const requestHash = await sha256(request);
     digest = await sha256(JSON.stringify({ model, policyHash, evidenceHash, requestHash }));
     key = `filing-semantic-audits/${deps.snapshot.ref.ticker}/${deps.snapshot.ref.accession}/${digest}.json`;
@@ -273,11 +275,23 @@ export async function filingSemanticAudit(deps: AuditDeps, state: FilingAuditSta
     }
     let reused = answer !== null;
     if (!answer) {
-      rawAnswer = await judge<unknown>(deps.env, {
-        stage: "filing-semantic-audit", system: SEMANTIC_AUDIT_SYSTEM, text: request, schema,
-        effort: "high", maxTokens: 24_000, timeoutMs: 360_000, maxRetries: 0,
-        ledger: { kind: "filing-semantic-audit", ticker: deps.snapshot.ref.ticker, ...(deps.runId ? { runId: deps.runId } : {}) },
-      });
+      const system = `${SEMANTIC_AUDIT_SYSTEM}\n\nOutput MUST strictly conform to this JSON Schema:\n${JSON.stringify(schema)}`;
+      rawAnswer = await callWorkerSecModel(
+        deps.env,
+        fetch,
+        "filing-semantic-audit",
+        system,
+        requestPayload,
+        model,
+        360_000,
+        {
+          reasoning: "high",
+          maxTokens: 24_000,
+          ticker: deps.snapshot.ref.ticker,
+          runId: deps.runId,
+          kind: "filing-semantic-audit",
+        },
+      );
       answer = answerSchema.parse(rawAnswer);
     }
     let issues = semanticIssuesOf(answer, state, input);
