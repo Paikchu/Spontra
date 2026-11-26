@@ -91,6 +91,20 @@ export class D1SecRepository implements SecRepository {
     }
   }
 
+  async listCacheByPrefix<T>(prefix: string): Promise<Array<{ cacheKey: string; payload: T; fetchedAt: string }>> {
+    const rows = await this.database.prepare(`
+      SELECT cache_key AS cacheKey, payload, fetched_at AS fetchedAt
+      FROM sec_cache
+      WHERE cache_key >= ? AND cache_key < ?
+    `).bind(prefix, `${prefix}\uffff`).all<{ cacheKey: string; payload: string; fetchedAt: string }>();
+    const out: Array<{ cacheKey: string; payload: T; fetchedAt: string }> = [];
+    for (const row of rows.results) {
+      try { out.push({ cacheKey: row.cacheKey, payload: JSON.parse(row.payload) as T, fetchedAt: row.fetchedAt }); }
+      catch { /* ignore malformed row */ }
+    }
+    return out;
+  }
+
   /** Batch read of cache entries by exact key, avoiding per-row queries on list pages. */
   async getCaches<T>(keys: readonly string[]): Promise<Map<string, SecCacheRecord<T>>> {
     const out = new Map<string, SecCacheRecord<T>>();

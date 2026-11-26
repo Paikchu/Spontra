@@ -11,6 +11,7 @@ import {
   ANALYSIS_FILING_PAGE_DEFAULT_LIMIT,
   ANALYSIS_FILING_PAGE_MAX_LIMIT,
   type AnalysisRunSummary,
+  type FilingReportBundleMeta,
   type PublicAnalysisStatus,
   type PublicFilingCompany,
   type PublicFilingDetail,
@@ -53,15 +54,26 @@ export async function getPublicFilingPage(
   ]);
   const company = cachedFeed?.company ?? (page.filings[0] ? companyFromFiling(page.filings[0]) : await companyFromDirectory(repository, ticker));
   const resolved = page.filings.map(resolvePublishedFiling);
-  const [jobs, fiscalPeriods] = await Promise.all([
+  const [jobs, fiscalPeriods, bundleRows] = await Promise.all([
     readJobSummaries(repository, ticker, page.filings.map(f => f.accessionNumber)),
     readFiscalPeriodsBatch(repository, resolved),
+    typeof repository.listCacheByPrefix === "function"
+      ? repository.listCacheByPrefix<FilingReportBundleMeta>(`filing-quarter-report:v1:${ticker}:`).catch(() => [])
+      : Promise.resolve([]),
   ]);
+  const bundlesByAccession = new Map<string, FilingReportBundleMeta>();
+  for (const row of bundleRows) {
+    bundlesByAccession.set(row.payload.canonicalAccession, row.payload);
+    for (const src of row.payload.sources) {
+      if (!bundlesByAccession.has(src.accessionNumber)) bundlesByAccession.set(src.accessionNumber, row.payload);
+    }
+  }
   const filings = await Promise.all(page.filings.map((filing, index) =>
     toPublicFiling(repository, filing, company?.name ?? ticker, {
       resolved: resolved[index],
       job: jobs ? jobs.get(filing.accessionNumber) ?? { status: null, updatedAt: null, errorCode: null } : undefined,
       fiscalPeriod: fiscalPeriods ? fiscalPeriods.get(resolved[index]!.accessionNumber) ?? null : undefined,
+      reportBundle: bundlesByAccession.get(filing.accessionNumber) ?? null,
     })));
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
@@ -101,15 +113,28 @@ export async function getPublicFiling(
     return { apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION, ticker, company,
       filing: await toPublicFiling(repository, filing, company?.name ?? ticker) };
   }
-  const cachedFeed = typeof repository.getCache === "function" ? await readCachedSecFeed(repository, ticker) : null;
-  const filing = await repository.getPublicFiling(ticker, accession);
+  const [cachedFeed, alias] = await Promise.all([
+    typeof repository.getCache === "function" ? readCachedSecFeed(repository, ticker) : Promise.resolve(null),
+    typeof repository.getCache === "function"
+      ? repository.getCache<{ canonicalAccession: string; periodEnd: string }>(`filing-quarter-alias:v1:${ticker}:${accession}`).then(r => r?.payload ?? null).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const targetAccession = alias?.canonicalAccession ?? accession;
+  const filing = (await repository.getPublicFiling(ticker, targetAccession)) ?? (targetAccession !== accession ? await repository.getPublicFiling(ticker, accession) : null);
   if (!filing) return null;
+  let reportBundle: FilingReportBundleMeta | null = null;
+  if (typeof repository.getCache === "function") {
+    const bundlePeriod = alias?.periodEnd ?? (filing.reportDate ? filing.reportDate.slice(0, 10) : null);
+    if (bundlePeriod) {
+      reportBundle = (await repository.getCache<FilingReportBundleMeta>(`filing-quarter-report:v1:${ticker}:${bundlePeriod}`).catch(() => null))?.payload ?? null;
+    }
+  }
   const company = cachedFeed?.company ?? companyFromFiling(filing) ?? await companyFromDirectory(repository, ticker);
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
     ticker,
     company,
-    filing: await toPublicFiling(repository, filing, company?.name ?? ticker),
+    filing: await toPublicFiling(repository, filing, company?.name ?? ticker, { reportBundle }),
   };
 }
 
@@ -128,7 +153,7 @@ async function toPublicFiling(
   repository: D1SecRepository,
   rawFiling: SecFilingWithSummary,
   companyName: string,
-  prefetched?: { resolved?: SecFilingWithSummary; job?: JobSummary | null; fiscalPeriod?: SecFiscalPeriod | null },
+  prefetched?: { resolved?: SecFilingWithSummary; job?: JobSummary | null; fiscalPeriod?: SecFiscalPeriod | null; reportBundle?: FilingReportBundleMeta | null },
 ): Promise<PublicSecFiling> {
   const jobAccession = rawFiling.accessionNumber;
   const filing = prefetched?.resolved ?? resolvePublishedFiling(rawFiling);
@@ -154,6 +179,7 @@ async function toPublicFiling(
       : typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null;
   return {
     fiscalPeriod,
+    ...(prefetched?.reportBundle ? { reportBundle: prefetched.reportBundle } : {}),
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,
     companyName,

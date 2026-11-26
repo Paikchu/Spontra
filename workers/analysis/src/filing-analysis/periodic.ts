@@ -11,7 +11,7 @@ import type { ValueUnit } from "../../../../shared/analysis-runtime/findings.ts"
 import { chartHeight, compilePoints, type PointSeries } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { renderChartSvg } from "../../../../shared/analysis-runtime/lens/render.ts";
 import { factText, periodText } from "../../../../shared/analysis-runtime/filing-facts.ts";
-import { readMaterialSnapshot, getFilingMaterial, listFilingMaterials, requestFilingMaterial } from "../filing-material/index.ts";
+import { readMaterialBrief, readMaterialSnapshot, getFilingMaterial, listFilingMaterials, requestFilingMaterial } from "../filing-material/index.ts";
 import { readFilingMarkdown, findFilingTables, readFilingTable, searchFilingMarkdown, sourceText, filingMaterialMeta, withPreparedMaterialReadCache } from "../filing-material/read.ts";
 import { readFilingReadable } from "../filing-material/readable.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "../operations.ts";
@@ -49,7 +49,7 @@ const str = (v: unknown) => typeof v === "string" ? v.trim() : typeof v === "num
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const strings = { type: "array", items: { type: "string" } };
 
-export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; expectations?: FilingExpectations; priorSnapshots?: MaterialSnapshot[]; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
+export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker: string; filing: SecFiling; snapshot: MaterialSnapshot; expectations?: FilingExpectations; priorSnapshots?: MaterialSnapshot[]; companionAccessions?: ReadonlySet<string>; runId: string; flags?: Array<{ rule: string; level: string; metric: string; value: unknown }> }): {
   tools: AnyTool<S>[]; restore(state: S): Promise<void>; resolve(id: string, state: S): Promise<boolean>;
   figure(id: string, state: S): Promise<number[] | null>;
   read(id: string, state: S): { title: string; text: string } | null;
@@ -115,7 +115,7 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
         if (other) await requestFilingMaterial(deps.env, filingMaterialMeta(other));
         throw new Error(`FILING_MATERIAL_PENDING: ${key}. Its complete material must be prepared before it can be read.`);
       }
-      if(deps.expectations && material.filing.filedAt.slice(0,10) >= filing.filingDate.slice(0,10)) throw new Error("That comparison was not verifiably public before this filing.");
+      if(deps.expectations && !deps.companionAccessions?.has(key) && material.filing.filedAt.slice(0,10) >= filing.filingDate.slice(0,10)) throw new Error("That comparison was not verifiably public before this filing.");
       addSnapshot(await readMaterialSnapshot(deps.env, material.ref));
     }
     const found = snapshots.get(key)!;
@@ -224,6 +224,21 @@ export function periodicTools<S extends State>(deps: { env: AnalysisEnv; ticker:
     },
   });
   const tools: AnyTool<S>[] = [impact,
+    handTool<S>({
+      name: "read_filing_brief",
+      description: "Read the structured L2 brief (headline, key takeaways, standardized metrics, guidance/CapEx changes, footnote risks, industry signals, and table catalog) for this filing or a same-quarter companion filing (e.g. 8-K earnings release + 10-Q). Use it first for cross-source orientation, then verify every cited number and quote directly in L1 via read_filing_markdown, read_filing_table, or query_facts.",
+      input_schema: object({
+        accession: { type: "string", description: "Optional accession number; defaults to the primary filing. Pass a companion accession from quarterBundle to inspect same-quarter 8-K / 10-Q briefs." },
+        format: { type: "string", enum: ["markdown", "json"], description: "Output format (default markdown)." },
+      }),
+    }, async (args, state) => {
+      const target = await pick(str(args.accession), state);
+      const res = await readMaterialBrief(deps.env, target.ref);
+      if (!res.brief) return ok(JSON.stringify({ available: false, ref: target.ref, status: res.state.status, note: "No L2 brief generated yet; read L1 Markdown and CSV tables directly." }));
+      const fmt = str(args.format) === "json" ? "json" : "markdown";
+      if (fmt === "json") return ok(JSON.stringify({ available: true, ref: target.ref, brief: res.brief }));
+      return ok(`${JSON.stringify({ available: true, ref: target.ref })}\n\n${res.markdown ?? ""}`);
+    }),
     handTool<S>({ name: "financial_movers", description: "Rank comparable columns of the three primary statements within their unit, accounting duration and end dates. Each value has its original fact id. Null relative change means the denominator or sign makes a growth percentage misleading.", input_schema: object({}) },
       () => ok(JSON.stringify(financialMovers(snapshot)))),
     handTool<S>({ name: "diff_prior_filing", description: "Find non-identical paragraphs in a named section of this and the frozen earlier filing. Open the anchors to decide what changed. Candidate comparisons do not establish deletions.", input_schema: object({section:{type:"string",enum:comparisonSections},cursor:{type:"integer",minimum:0}},["section"]) },

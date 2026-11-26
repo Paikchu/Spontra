@@ -1,4 +1,5 @@
 import {handoffStatement, reviewReleaseQuestions, followupSchema, type EarningsQuestion, type EarningsHandoff} from "./earnings-handoff.ts";
+import { quarterBundleStatements, type QuarterBundleSpec } from "./quarter-bundle.ts";
 import {openPeriodic} from "./periodic.ts";
 import { isPilotMaterial } from "../filing-material/store.ts";
 import type { AiModel, AiEffort } from "../../../../shared/analysis-contract/ai-models-admin.ts";
@@ -41,7 +42,7 @@ export type FilingMode = { mode?: "revise" | "rewrite" } | { mode: "resume"; che
 export type FilingReviewerCorrectionReview={sourcePhase?:"semantic";semanticReceiptHash:string}|{sourcePhase:`content:${typeof PERIODIC_BLOCKS[number]}`;contentReceiptHash:string};
 export type FilingReviewerCorrection={sourceOperatorRunId:string;failedStateHash:string;correctionsHash:string;reviewCallsInherited:number}&FilingReviewerCorrectionReview;
 export type FilingOperatorAuthor = {sourceRunId:string;checkpointHash:string;planHash:string;author:{model:"gpt-6.1-sol";effort:"max";runId:string;promptVersion:string};authorUsage:{status:"unavailable";tokens:null;cost:null};reviewerCorrection?:FilingReviewerCorrection};
-export type FilingSpec = { copyFlow?:{releasePeriod:string|null;handoff:EarningsHandoff|null;deadline?:number}; expectations?: FilingExpectations; operatorCompletion?:FilingOperatorAuthor; shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
+export type FilingSpec = { copyFlow?:{releasePeriod:string|null;handoff:EarningsHandoff|null;deadline?:number}; quarterBundle?: QuarterBundleSpec; expectations?: FilingExpectations; operatorCompletion?:FilingOperatorAuthor; shadow?: boolean; shadowModel?: AiModel; shadowEffort?: AiEffort; shadowContextExtension?: ShadowContextExtension; publicResearch?: FrozenCompanyResearch; ticker: string; profile: ProfileId; filing: SecFiling; sessionId: string; jobId: string; jobVersion: string; requestedBy: "scheduled" | "manual"; material: MaterialRef } & FilingMode;
 /** What a session keeps beside the published document, for the session that revises it and for a recheck. */
 export type FilingWork = { material: MaterialRef; periodic?: PeriodicState; web: Record<string, string>; read: string[] };
 export type FilingState = WebToolState & ResearchContextState & { copy?:{questions:EarningsQuestion[]}; composer: ComposerState; candidates: unknown[]; read?: string[]; web: Record<string, string>; category?: string; periodic?: PeriodicState };
@@ -103,7 +104,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     return [...matches.values()];
   };
   const publicContext = publicResearchTools<FilingState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
-  const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, priorSnapshots, expectations: spec.expectations, runId: spec.sessionId });
+  const companionAccessions = new Set(spec.quarterBundle?.companionMaterials.map(m => m.accession) ?? []);
+  const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, priorSnapshots, companionAccessions, expectations: spec.expectations, runId: spec.sessionId });
   const summarise = (state: FilingState, status: "published" | "failed") => recordRunSummary(db, {
     runId: spec.sessionId, ticker, accession, profile: profile.id, status, settledBy: state.composer.settledBy ?? null,
     reviewRounds: state.composer.rounds?.content ?? 0, renderRounds: state.composer.rounds?.render ?? 0, sectionsRead: state.read ?? [],
@@ -132,7 +134,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       await env.SEC_FILINGS.put(`research-shadow/${spec.sessionId}/validated.json`, JSON.stringify({ spec, ...published, validatedAt: new Date().toISOString(), researchUses: state.researchUses ?? [], work: { material: snapshot.ref, periodic: state.periodic, web: state.web, read: state.read ?? [] } }));
     },
     env, chart: null, ledger: { ticker, runId: spec.sessionId }, budgetTurns: profile.turns, settlement: "agent",
-    research: ["read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript"],
+    research: ["read_filing_brief", "read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript"],
     previewQuery: `report=${encodeURIComponent(accession)}`,
     find: terms => find(terms),
     resolve: periodic.resolve, figure: periodic.figure, ...(profile.id === "periodic" ? { required: () => PERIODIC_BLOCKS, completeInitialSubmission: !operator } : {}), precheck: state => (flow?.releasePeriod && !state.copy ? "Record the outstanding statutory-filing questions first." : periodic.precheck(state)),
@@ -157,7 +159,8 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
       const memory = profile.id === "periodic" ? await filingMemoryStatements(env, { filing, summary, sessionId: spec.sessionId, readSectionIds: state.read ?? [], material: snapshot }) : [];
       const dependencies = await companyResearchDependencyStatements(env, { ticker, resultId: `filing-report:${ticker}:${accession}:v${published.version}`, dependencies: (state.researchUses ?? []).filter(use => use.decision === "adopted"), mappingVersions: spec.publicResearch?.mappingVersions ?? [] });
       const checklist=checklistStatement(state,published,now);
-      return [...(checklist?[checklist]:[]),...repository.summaryStatements({ ticker, accessionNumber: accession, form: filing.form }, summary, memory) as unknown as D1PreparedStatement[], ...dependencies];
+      const bundleStmts = spec.quarterBundle ? quarterBundleStatements(db, ticker, spec.quarterBundle.meta, now) : [];
+      return [...(checklist?[checklist]:[]), ...bundleStmts, ...repository.summaryStatements({ ticker, accessionNumber: accession, form: filing.form }, summary, memory) as unknown as D1PreparedStatement[], ...dependencies];
     },
     afterPublish: async (state) => {
       const now = new Date().toISOString();
@@ -178,7 +181,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     budget: { turns: profile.turns, wallMs: profile.wallMs },
     resultChars: 90_000,
     callsPerTurn: Infinity,
-    concurrent: ["financial_movers", "diff_prior_filing", "read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript", "read_evidence", "list_leads", "read_block", "outline", "view_issue"],
+    concurrent: ["read_filing_brief", "financial_movers", "diff_prior_filing", "read_filing_markdown", "find_filing_tables", "read_filing_table", "grep", "filing_history", "query_facts", "fact_history", "read_transcript", "read_evidence", "list_leads", "read_block", "outline", "view_issue"],
     system: () => (flow ? ["You own the entire report: investigate the filing, write the HTML, build its figures, and repair the rendered layout yourself. For material trends with comparable sourced periods, call chart_facts and insert its figure beside the analytical paragraph. Use the comparison table for precise amounts and the chart for the trend.", flow.releasePeriod?"Use record_earnings_questions before finish.":"",flow.handoff?"Close each inherited question and write its evidence-backed finding or remaining gap in versus-prior.":""].join("\n")+"\n" : "") + (spec.expectations ? EXPECTATIONS_GUIDE + "\n" : "") + (profile.id === "periodic" ? `${PERIODIC_SYSTEM(ticker)}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}` : `${FILING_SYSTEM(ticker)}\n${profile.prompt}\n\n${composerGuide("agent")}\n${PERIODIC_EVIDENCE}\n${PUBLIC_RESEARCH_GUIDE}`),
     open: () => {
       if (resumed) {
@@ -189,11 +192,16 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
         return resumed;
       }
       const state: FilingState = { composer: openState(spec), candidates: [], hits: [], used: { searches: 0, webReads: 0 }, web: {} };
-      if (flow?.handoff) {
-        const handoff=flow.handoff;
-        const periodicState=state.periodic=openPeriodic();
-        periodicState.materials=[handoff.material];
-        periodicState.leads=handoff.questions.map((q,i)=>({id:"release-"+(i+1),source:"earnings-release",question:q.question,why:q.disclosure,priority:"high",refs:[q.source]}));
+      if (flow?.handoff || spec.quarterBundle?.companionMaterials.length) {
+        const periodicState = state.periodic = openPeriodic();
+        const pinnedMats = [
+          ...(flow?.handoff ? [flow.handoff.material] : []),
+          ...(spec.quarterBundle?.companionMaterials ?? []),
+        ];
+        periodicState.materials = [...new Map(pinnedMats.map(m => [`${m.accession}:${m.version}`, m])).values()];
+        if (flow?.handoff) {
+          periodicState.leads = flow.handoff.questions.map((q, i) => ({ id: "release-" + (i + 1), source: "earnings-release", question: q.question, why: q.disclosure, priority: "high", refs: [q.source] }));
+        }
       }
       if (!base) return state;
       // The published report is the document the session opens on: its blocks stand as they were reviewed, and only
@@ -243,7 +251,7 @@ export async function filingLoader(spec: FilingSpec, env: AnalysisEnv): Promise<
   const resumed = spec.mode === "resume" ? await readFilingCheckpoint(env, spec.checkpoint, snapshot.ref, spec.checkpointHash) : null;
   const work = document ? await readWorkState<FilingWork>(store, "filing-report", spec.ticker, spec.filing.accessionNumber) : null;
   const base = document && work?.material?.version === spec.material.version ? { document, work } : null;
-  const priorRefs = [...new Map([...(spec.copyFlow?.handoff ? [spec.copyFlow.handoff.material] : []), ...(resumed?.periodic?.materials ?? []), ...(base?.work?.periodic?.materials ?? [])].map(ref => [`${ref.accession}:${ref.version}`, ref])).values()];
+  const priorRefs = [...new Map([...(spec.copyFlow?.handoff ? [spec.copyFlow.handoff.material] : []), ...(spec.quarterBundle?.companionMaterials ?? []), ...(resumed?.periodic?.materials ?? []), ...(base?.work?.periodic?.materials ?? [])].map(ref => [`${ref.accession}:${ref.version}`, ref])).values()];
   const priorSnapshots = await Promise.all(priorRefs.filter(ref => ref.accession !== snapshot.ref.accession || ref.version !== snapshot.ref.version).map(ref => readMaterialSnapshot(env, ref)));
   return {
     recipe: filingRecipe(env, spec, profile, snapshot, base, resumed, priorSnapshots), input: spec, effort: spec.shadow ? spec.shadowEffort ?? profile.reasoning : profile.reasoning, model: spec.shadow ? spec.shadowModel ?? modelFor(env, "filing") : modelFor(env, "filing"), ledger: { kind: "filing", ticker: spec.ticker, runId: spec.sessionId },

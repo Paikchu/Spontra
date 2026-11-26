@@ -1,4 +1,5 @@
 import { earningsReleasePeriod, latestEarningsHandoff } from "./earnings-handoff.ts";
+import { buildQuarterBundle, type QuarterBundleSpec } from "./quarter-bundle.ts";
 import { disclosureCutoff, freezeFilingExpectations, type FilingExpectations } from "./expectations.ts";
 import { isPilotMaterial } from "../filing-material/store.ts";
 import { freezeCompanyResearch } from "../public-research/context.ts";
@@ -15,11 +16,12 @@ import { profileById, profileFor, type FilingProfile } from "./profiles.ts";
 import type { FilingMode, FilingSpec } from "./recipe.ts";
 import { dueFilings, registerFilings, updateFiling, type FilingRow } from "./store.ts";
 
-export function filingOpening(filing: SecFiling, material: MaterialSnapshot, mode: NonNullable<FilingMode["mode"]>, expectations?: FilingExpectations, flow?:FilingSpec["copyFlow"]): string {
+export function filingOpening(filing: SecFiling, material: MaterialSnapshot, mode: NonNullable<FilingMode["mode"]>, expectations?: FilingExpectations, flow?:FilingSpec["copyFlow"], quarterBundle?: QuarterBundleSpec | null): string {
   const periodic = profileFor(filing.form)?.id === "periodic";
   const readable = { tool: "read_filing_markdown", view: "readable" };
   return JSON.stringify({ filing: { ticker: filing.ticker, companyName: filing.companyName, form: filing.form,
     filingDate: filing.filingDate, reportDate: filing.reportDate, accession: filing.accessionNumber, items: filing.items },
+    ...(quarterBundle ? { quarterBundle: { ...quarterBundle.meta, briefs: quarterBundle.briefs } } : {}),
     ...(flow?{researchTask:{releasePeriod:flow.releasePeriod,questionsFromRelease:flow.handoff,output:"write_blocks then finish"}}:{}),
     material: material.ref, ...(expectations ? { expectations } : {}),
     coverage: periodic ? { expectedDocuments: material.coverage.expectedDocuments, archivedDocuments: material.coverage.archivedDocuments,
@@ -78,12 +80,16 @@ export async function startFilingRuns(env: AnalysisEnv, ticker: string, options:
     const jobId = `${ticker}:${row.accession}:${jobVersion}:${sessionId}`;
     const published = request.mode === "revise" && profile.id === "periodic" && !!await db.prepare("SELECT 1 FROM analysis_artifacts WHERE artifact_id = ? AND published_version IS NOT NULL").bind(`filing-report:${ticker}:${row.accession}`).first().catch(() => null);
     const mode: FilingMode = request.mode === "resume" ? { mode: "resume", checkpoint: request.checkpoint } : { mode: published ? "revise" : "rewrite" };
-    const [publicResearch, expectations] = await Promise.all([freezeCompanyResearch(env, ticker, disclosureCutoff(filing)), freezeFilingExpectations(env,filing,material)]);
+    const [publicResearch, expectations, quarterBundle] = await Promise.all([
+      freezeCompanyResearch(env, ticker, disclosureCutoff(filing)),
+      freezeFilingExpectations(env, filing, material),
+      buildQuarterBundle(env, ticker, filing, material).catch(() => null),
+    ]);
     const copyFlow=mode.mode==="resume"?undefined:{releasePeriod:earningsReleasePeriod(filing,material),handoff:await latestEarningsHandoff(env,filing)};
-    const spec: FilingSpec = { copyFlow, publicResearch, expectations, ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, ...mode };
+    const spec: FilingSpec = { copyFlow, quarterBundle: quarterBundle ?? undefined, publicResearch, expectations, ticker, profile: profile.id, filing, sessionId, jobId, jobVersion, requestedBy: request.requestedBy, material: material.ref, ...mode };
     await updateFiling(db, ticker, row.accession, { status: "running", reason: null, runId }, at);
     await new D1SecRepository(db).upsertAnalysisJob({ jobId, ticker, accessionNumber: row.accession, analysisVersion: jobVersion, status: "running", currentStage: "analysis", attempt: 1, requestedBy: request.requestedBy, workflowInstanceId: sessionId, updatedAt: at });
-    await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, mode.mode ?? "rewrite", expectations, copyFlow), `${sessionId}:report`);
+    await sessions!.start(sessionId, "filing", spec, filingOpening(filing, material, mode.mode ?? "rewrite", expectations, copyFlow, quarterBundle), `${sessionId}:report`);
     await db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(requestKey(row.accession)).run();
     result.started.push(row.accession);
   };

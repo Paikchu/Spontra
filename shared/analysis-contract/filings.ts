@@ -34,10 +34,31 @@ export type AnalysisRunSummary = {
   errorCode: string | null;
 };
 
+export type FilingReportStage = "earnings_flash" | "full_report";
+
+export type FilingReportSourceRef = {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  disclosureKind: "earnings-release" | "periodic-report" | "amendment" | "non-earnings-event" | "transcript";
+  edgarUrl?: string;
+};
+
+export type FilingReportBundleMeta = {
+  periodEnd: string;
+  fiscalPeriod: string | null;
+  stage: FilingReportStage;
+  canonicalAccession: string;
+  sources: FilingReportSourceRef[];
+  hasTranscript: boolean;
+};
+
 export type PublicSecFiling = {
   fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   /** The month the issuer's fiscal year ends in, from its submissions or its latest annual report; null when neither says. */
   fiscalYearEndMonth?: number | null;
+  /** Quarter-aggregated multi-source report metadata when this filing belongs to an earnings quarter bundle. */
+  reportBundle?: FilingReportBundleMeta | null;
   accessionNumber: string;
   ticker: string;
   companyName: string;
@@ -126,6 +147,8 @@ export type PublicFilingDigest = {
   snapshot: { accession: string; reportDate: string; reportVersion: string } | null;
   edgarUrl: string;
   documentUrl: string;
+  /** Quarter-aggregated multi-source report metadata when available (stage: earnings_flash -> full_report). */
+  reportBundle?: FilingReportBundleMeta | null;
 };
 
 export type PublicFilingDigestPage = {

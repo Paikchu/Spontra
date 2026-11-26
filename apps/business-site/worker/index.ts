@@ -232,6 +232,7 @@ export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFi
   hasReport:!!summary?.report,
   snapshot:published&&analysis?{accession:published.filing.accessionNumber,reportDate:published.filing.reportDate||published.filing.filingDate,reportVersion:analysis.reportVersion}:null,
   edgarUrl:filing.edgarUrl,documentUrl:filing.documentUrl,
+  ...(filing.reportBundle ? { reportBundle: filing.reportBundle } : {}),
  };
 }
 
