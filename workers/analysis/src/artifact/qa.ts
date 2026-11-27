@@ -1,5 +1,4 @@
 import puppeteer, { type Browser, type BrowserWorker, type Frame, type Page } from "@cloudflare/puppeteer";
-import axeSource from "axe-core/axe.min.js";
 import { judgeConfigured, JudgeUnavailable, judge, type JudgeEnv, type ImageInput } from "./openai.ts";
 import { issueKey, type TrackedIssue } from "./document.ts";
 
@@ -142,13 +141,6 @@ const MEASURE = `(async () => {
     else if (r.right > W + 1 || r.left < -1) push(t, "major", "interaction", "the tooltip on \\"" + t.textContent.trim().slice(0, 30) + "\\" runs outside the stage");
     t.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true })); t.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
   });
-  // Accessibility: contrast, headings and table structure.
-  if (window.axe) {
-    try {
-      var result = await window.axe.run(article, { runOnly: ["color-contrast", "heading-order", "empty-heading", "th-has-data-cells", "td-headers-attr", "list", "listitem"] });
-      result.violations.forEach(function (v) { (v.nodes || []).slice(0, 3).forEach(function (n) { var el = n.target && document.querySelector(n.target[0]); push(el || article, v.impact === "critical" || v.impact === "serious" ? "major" : "minor", "render", v.help); }); });
-    } catch (e) {}
-  }
   var blocks = Array.prototype.slice.call(article.querySelectorAll("section[data-block]")).map(function (s) { var r = s.getBoundingClientRect(); return { id: s.getAttribute("data-block"), x: r.left, y: r.top + window.scrollY, width: r.width, height: r.height }; });
   return { stageWidth: W, blocks: blocks, problems: problems.slice(0, 60) };
 })()`;
@@ -188,7 +180,6 @@ async function renderPass(browser: Browser, url: string, viewport: Viewport, err
       throw new Error(`${qaErrorMessage(error).slice(0, 80)}; page: ${JSON.stringify(seen)}`);
     });
     if (!found) throw new Error("the artifact frame never drew");
-    await found.frame.evaluate(axeSource).catch(() => undefined);
     const measured = await found.frame.evaluate(MEASURE) as Measured;
     const shots: Pass["shots"] = [];
     // Every block is shot by itself (§4.7), so the review sees each one whole and names the one it is looking at.

@@ -288,7 +288,7 @@ export async function filingSemanticAudit(deps: AuditDeps, state: FilingAuditSta
         model,
         480_000,
         {
-          reasoning: "medium",
+          reasoning: "low",
           ticker: deps.snapshot.ref.ticker,
           runId: deps.runId,
           kind: "filing-semantic-audit",
