@@ -24,16 +24,11 @@ next-env.d.ts
 **/.wrangler/
 /.next/
 
-!workers/analysis/.dev.vars.example
+!.dev.vars.example
 
 **/node_modules/
 
-/apps/business-site/dist/
-/apps/business-site/.wrangler/
-
-apps/admin/dist/
-apps/admin/.wrangler/
-/workers/analysis/.generated/
+/.generated/
 /.audit/
 /outputs/
 /.qoder/

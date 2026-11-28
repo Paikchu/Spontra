@@ -37,22 +37,21 @@ const eslintConfig = defineConfig([
   },
   ...tseslint.configs.recommended.map((c) => ({ ...c, files: c.files ?? ["**/*.ts", "**/*.tsx"] })),
   { files: ["**/*.ts", "**/*.tsx"], rules: { "@typescript-eslint/no-unused-vars": "warn", "@typescript-eslint/no-unused-expressions": "warn" } },
-  // Business-site text is localized: words a reader sees come from a messages() table, never from a JSX literal.
+  // Preview shell text is localized: words a reader sees come from a messages() table, never from a JSX literal.
   // Key caps (<kbd>) and symbols are exempt; data and AI-written text arrive as expressions, not literals.
   {
-    files: ["apps/business-site/src/**/*.tsx"],
+    files: ["web/preview/**/*.tsx"],
     rules: {
       "no-restricted-syntax": ["error",
-        { selector: "JSXElement[openingElement.name.name!='kbd'] > JSXText[value=/[A-Za-z]{2,}/]", message: "Reader-facing text goes through messages() from packages/web/src/i18n." },
-        { selector: "JSXAttribute[name.name=/^(aria-label|title|placeholder|alt|aria-description)$/] > Literal[value=/[A-Za-z]{2,}/]", message: "Reader-facing text goes through messages() from packages/web/src/i18n." },
+        { selector: "JSXElement[openingElement.name.name!='kbd'] > JSXText[value=/[A-Za-z]{2,}/]", message: "Reader-facing text goes through messages() from web/shared/i18n." },
+        { selector: "JSXAttribute[name.name=/^(aria-label|title|placeholder|alt|aria-description)$/] > Literal[value=/[A-Za-z]{2,}/]", message: "Reader-facing text goes through messages() from web/shared/i18n." },
       ],
     },
   },
   globalIgnores([
-    "apps/business-site/dist/**",
-    "apps/admin/dist/**",
-    "apps/admin/.wrangler/**",
-    "apps/business-site/.wrangler/**",
+    "dist/**",
+    ".wrangler/**",
+    ".generated/**",
   ]),
 ]);
 

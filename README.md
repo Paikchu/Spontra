@@ -58,41 +58,52 @@ iOS 客户端在 [SpontraApp](https://github.com/Paikchu/SpontraApp) 仓库独�
 - GitHub：[Paikchu/Spontra](https://github.com/Paikchu/Spontra)，主分支 `main`，唯一 remote 为 `origin`。
 - 线上只读网关：`spontra-business-map` Worker（无公开网页，仅提供 `/api/business/v1/*` 与签名 `/article-preview`）。
 
-## 架构
+## 架构：单 Worker（`spontra-analysis`）
 
-| 层 | 是什么 | 位置 |
+整个仓库只构建与部署 **1 个 Cloudflare Worker（`spontra-analysis`）**，由根目录 [`wrangler.jsonc`](wrangler.jsonc) 统一管理，前端仅保留独立维护的 [SpontraApp](https://github.com/Paikchu/SpontraApp)（iOS 客户端）。
+
+| 模块 | 职责 | 位置 |
 | --- | --- | --- |
-| 后端 | **Spontra Analysis**：SEC 发现与解析、AI 分析、读取 API | 本仓库 `workers/analysis/`，Worker `spontra-analysis` |
-| API 网关与后台 | iOS 只读 API 网关（兼签名报告预览）与运维后台，经 Service Binding 读 Spontra Analysis | 本仓库 `apps/business-site/`、`apps/admin/` |
-| 前端 | **SpontraApp**：iOS 原生客户端 | 独立仓库 `Paikchu/SpontraApp` |
+| 唯一 Worker 入口 | 请求路由、Cron 发现（`*/10`）、Queues 调度、`TaskRunner` DO | [`src/index.ts`](src/index.ts) / [`src/worker.ts`](src/worker.ts) |
+| 公开只读 API 与预览宿主 | iOS 只读接口（`/api/business/v1/*`）、限流与 Edge Cache、签名报告预览（`/article-preview`、`/artifact-frame`） | [`src/api/public/`](src/api/public/) |
+| 运维后台 API 与鉴权 | `/api/admin/*`（Cloudflare Access JWT 校验）与后台接口实现 | [`src/api/admin/`](src/api/admin/) |
+| 事件驱动流水线 | 事件路由、任务注册表、防抖/沉降调度 | [`src/pipeline/`](src/pipeline/) |
+| 业务域（8 个垂直切片） | SEC 归档、财报材料、财务数据、财报分析、业务拆解、估值、公开研究、产物渲染与翻译 | [`src/domains/`](src/domains/) |
+| AI 与 Agent 底座 | Pi 运行时、`TaskRunner` DO、工具循环、网页搜索、独立评审 | [`src/ai/`](src/ai/) |
+| 内部前端静态资源 | 运维后台 SPA（`web/admin`）、签名预览壳（`web/preview`）、公共静态页（`web/public/spontra-ios`） | [`web/`](web/) |
+| D1 迁移与运维脚本 | D1 迁移 SQL、架构边界/i18n/迁移检查与验收脚本 | [`migrations/`](migrations/)、[`scripts/`](scripts/) |
 
-## 三个 Worker，一个仓库
+数据与权限边界：
 
-| Worker | 职责 | 配置 |
-| --- | --- | --- |
-| `spontra-business-map` | 无头只读 API 网关（`/api/business/v1/*` 供 iOS 调用）与内部签名报告预览（`/article-preview`、`/artifact-frame`） | [`apps/business-site/wrangler.jsonc`](apps/business-site/wrangler.jsonc) |
-| `spontra-admin` | 财报与分析运维后台 | [`apps/admin/wrangler.jsonc`](apps/admin/wrangler.jsonc) |
-| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、估值、深度报告等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
-
-数据边界：
-
-- `spontra-business-map` 通过 Service Binding `SPONTRA_ANALYSIS → spontra-analysis` 的 `MapReads` 命名入口读取数据。命名入口无法从公网访问，绑定本身即凭据，网关不保存读取密钥；公开业务地图网页路由（`/`、`/companies/*`、`/research/*`）统一返回 404。
-- admin 通过同名绑定访问 Spontra Analysis 的 `AdminGateway` 命名入口，每次请求带新的后台会话。
-- 分析 D1 `earning-report-analysis-sec-web` 与 R2 `earning-report-analysis-sec-filings` 归 Spontra Analysis 所有，迁移文件在 `workers/analysis/migrations/`。
+- D1 `earning-report-analysis-sec-web` 与 R2 `earning-report-analysis-sec-filings` 由 `spontra-analysis` 独占，迁移文件位于 [`migrations/`](migrations/)。
+- `src/domains/sec-archive/` 是唯一访问 EDGAR 的模块；其余业务域仅从 D1/R2 归档读取。
+- `scripts/checks/check-analysis-boundary.ts` 约束前后端分离：`src/` 不得引用 `web/`；`web/` 从 `src/` 引用时仅允许 `import type` 或白名单中的纯浏览器契约。
+- `spontra-analysis` 同时保留 `MapReads` 与 `AdminGateway` 具名入口以兼容存量 Service Binding 过渡；线上将 `businessview.info` 等路由直接指向 `spontra-analysis` 后即可下线旧的 `spontra-business-map` 与 `spontra-admin` Worker。
 
 ## 目录结构
 
 ```text
-apps/business-site/          无头只读 API 网关 Worker 与签名报告预览沙箱
-apps/admin/                  运维后台前端与 Worker
-packages/web/                后台与后端共享的模型、i18n、样式、字体与 shadcn 组件
-shared/analysis-contract/    前后端共用的声明式契约
-shared/analysis-runtime/     前后端共用的纯运行时（仅依赖 zod）
-workers/analysis/            财报分析 Worker、数据库 schema 与 migrations
-docs/                        功能、数据与运维说明
+wrangler.jsonc               唯一的 Cloudflare Worker 配置（spontra-analysis）
+vite.config.ts               统一构建 web/admin、web/preview、web/artifact-frame 到 dist/
+migrations/                  D1 数据库迁移 SQL
+src/
+  api/public/                iOS 只读 API 网关、Edge Cache 与签名预览路由
+  api/admin/                 运维后台 API、Cloudflare Access 校验与后台接口
+  pipeline/                  事件驱动调度（registry / router / consumer / discovery）
+  domains/                   8 个垂直业务域（sec-archive / filing-material / financials /
+                             filing-analysis / business-map / valuation / public-research / publishing）
+  ai/                        Pi 运行时、Durable Runs、工具与模型调用底座
+  lib/                       通用工具与基础类型
+web/
+  admin/                     运维后台 React SPA
+  preview/                   签名报告预览壳与沙箱 iframe（/artifact-frame）
+  shared/                    后台与预览共用的 UI、i18n、样式与字体
+  public/                    静态资产（spontra-ios 隐私支持页、theme.js、_headers）
+scripts/
+  checks/                    构建与 CI 校验（边界、i18n、issuer 字面量、D1 迁移、PDF.js 准备）
+  acceptance/                SEC 材料与报告验收脚本及本地配置
+docs/                        架构说明、设计文档与运维指引
 ```
-
-`scripts/check-analysis-boundary.ts` 约束依赖方向：Spontra Analysis 只依赖自身、共享契约与共享运行时；地图、后台和 `packages/web` 不得导入 Spontra Analysis 源码。
 
 ## 本地开发
 
@@ -100,44 +111,35 @@ docs/                        功能、数据与运维说明
 
 ```bash
 npm ci
-npm run dev          # 地图，127.0.0.1:4188，/api 代理到 BUSINESS_SITE_API 或 127.0.0.1:8788
-npm run admin:dev    # 后台，127.0.0.1:4190
-npx wrangler dev --config workers/analysis/wrangler.jsonc
+npm run build        # 构建 web/ 到 dist/ 并准备 PDF.js 静态资产
+npm run dev          # 启动本地单 Worker（wrangler dev --config wrangler.jsonc）
+npm run dev:web      # 仅启动 Vite 前端开发服务器（127.0.0.1:4190，/api 代理到 127.0.0.1:8787）
 ```
 
-Spontra Analysis 配置模板见 [`workers/analysis/.dev.vars.example`](workers/analysis/.dev.vars.example)。真实 `.dev.vars*` 由 Git 忽略。
+环境变量模板见 [`.dev.vars.example`](.dev.vars.example)。真实 `.dev.vars*` 由 Git 忽略。
 
 ## 检查命令
 
 ```bash
-npm run typecheck
-npm run business-site:typecheck
-npm run admin:typecheck
-npm run build
-
-npm run check:analysis:boundary
-npm run analysis:typecheck
-npm run analysis:check
+npm run check        # 依次执行 check:i18n、check:issuer-literals、check:boundary、typecheck、build、deploy:dry-run
+npm run lint
 ```
 
-`*:check` 是部署 dry-run，不代表已发布。
+`npm run deploy:dry-run` 是部署 dry-run，不代表已发布。
 
 ## GitHub → Cloudflare 自动部署
 
-唯一上线方式是推送 `origin/main`，禁止本地手动部署。推送触发两条独立构建，根目录均为 `/`：
+唯一上线方式是推送 `origin/main`，禁止本地手动部署。根目录为 `/`：
 
 | 构建目标 | Build command | Deploy command |
 | --- | --- | --- |
-| 地图与后台 | `npm run build` | `npm run deploy:cloudflare` |
-| Spontra Analysis | `npm run check:analysis:boundary && npm run analysis:typecheck && npm run analysis:check` | `npm run analysis:deploy` |
+| Spontra Analysis（单 Worker） | `npm run check` | `npm run deploy` |
 
-`deploy:cloudflare` 先做类型检查与构建，再依次发布 `spontra-admin` 和 `spontra-business-map`。这条构建挂在 `spontra-business-map` Worker 的 Builds 设置下（原 `spontra-app` Worker 已删除），部署脚本会清掉 Workers Builds 注入的 Worker 名，两个应用各按自己的配置名发布。
-
-Spontra Analysis 部署先应用并核对分析 D1 迁移，再发布 Worker。发布完成后需确认两条构建结果及线上读取，不能仅凭 push 或 dry-run 判断上线成功。
+`npm run deploy` 先应用并核对 D1 迁移（[`migrations/`](migrations/)），再将构建好的 `dist/` 静态资产与 Worker 源码一并发布到 `spontra-analysis`。发布完成后需确认构建日志及线上读取（`/health`、`/ready`、`/api/business/v1/home`）。
 
 ## 相关说明
 
-- [Spontra Analysis](workers/analysis/README.md)
-- [业务地图](apps/business-site/README.md)
-- [BusinessView 后台](docs/businessview-admin.md)
+- [五层分析架构](docs/spontra-analysis-architecture.md)
+- [财务数据与三表](docs/financial-data.md)
 - [SEC 归档](docs/sec-archive.md)
+- [BusinessView 后台](docs/businessview-admin.md)

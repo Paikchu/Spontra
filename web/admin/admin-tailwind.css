@@ -1,0 +1,4 @@
+/* Tailwind scans the admin pages and shared shadcn components explicitly. */
+@import "../shared/styles/globals.css";
+@source "./";
+@source "../shared/ui";

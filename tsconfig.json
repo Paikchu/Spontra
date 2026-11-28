@@ -29,19 +29,19 @@
     ]
   },
   "files": [
-    "workers/analysis/src/artifact/text-modules.d.ts",
-    "workers/analysis/src/filing-material/pdfjs-text.d.ts"
+    "worker-configuration.d.ts",
+    "src/domains/publishing/artifact/text-modules.d.ts",
+    "src/domains/filing-material/pdfjs-text.d.ts"
   ],
   "include": [
-    "packages/web/**/*.ts",
-    "packages/web/**/*.tsx",
-    "shared/**/*.ts",
     "scripts/**/*.ts",
     "scripts/**/*.tsx",
-    "apps/business-site/src/assets.d.ts"
+    "vite.config.ts"
   ],
   "exclude": [
     "node_modules",
-    "workers/analysis"
+    "dist",
+    ".wrangler",
+    ".generated"
   ]
 }

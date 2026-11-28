@@ -1,0 +1,204 @@
+import type { Feature, Layer } from "../domains/business-map/features-contract.ts";
+import { isOfferingForm, isProxyForm } from "../domains/financials/events-runtime.ts";
+import { reportedForm } from "./filing-forms.ts";
+/**
+ * The pipeline's event graph: the events that exist, which tasks subscribe to each, and
+ * what every task and source emits. Pure data, so the build checks it without the Workers runtime
+ * (`scripts/check-analysis-boundary.ts`). Adding a downstream task is a row here plus its implementation in
+ * `tasks.ts`; no queue, marker or Cron.
+ */
+export const EVENT_TYPES = [
+  "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
+  "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
+  "filing.material.requested", "filing.material.ready",
+  "map.derived", "extract.published", "filings.indexed", "report.published", "fundamentals.updated",
+  "task.version_changed",
+  "transcript.stored", "explainer.published", "tree.published", "events.published", "items.published",
+  "business.classification.requested", "business.classification.published",
+  "business.tags.requested", "business.tags.published",
+  "peers.published", "content.published", "translations.published",
+  "valuation.published",
+  "presentation.unresolved",
+  "feature.settings",
+] as const;
+export type EventType = typeof EVENT_TYPES[number];
+
+export const TASK_NAMES = [
+  "collect", "history", "reproject", "maintenance", "transcript", "archive", "filing-material",
+  "map-derive", "archive-prune", "archive-prune-scan",
+  "fundamentals", "events", "extract",
+  "memory", "explainer", "tree", "filing-analysis",
+  "business-classification", "storage-sweep", "business-tags",
+  "peers", "translate", "presentation", "valuation",
+] as const;
+export type TaskName = typeof TASK_NAMES[number];
+
+/** What a filing event says about the filing, for subscribers that only want some forms. */
+export type EventDetail = { mode?: "shadow-pilot"; form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string;
+  /** The layer a `feature.settings` event is about. */ feature?: Layer };
+export type PipelineEvent = { type: EventType; ticker: string; cik?: string | null; task?: TaskName | null; detail?: EventDetail | null };
+
+/**
+ * Which companies a task runs for (docs/spontra-architecture-upgrade.md): the companies one analysis layer is switched
+ * on for — `map` is the whitelist, the others the layer switches above it — or once globally.
+ * `publication` keeps the content owner's ticker without depending on any generation layer.
+ */
+export type TaskScope = "map" | Feature | "global" | "publication";
+export type TaskMeta = {
+  emits: readonly EventType[];
+  /** Triggers inside this window push the run back, never beyond `maxWaitMs` after the first. */
+  debounceMs: number;
+  maxWaitMs: number;
+  scope: TaskScope;
+};
+
+const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
+export const TASKS: Record<TaskName, TaskMeta> = {
+  // Collects a company's latest complete statements from EDGAR and publishes them.
+  "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved", "content.published"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
+  // Stores the current reports collection does not read (8-Ks without Item 2.02), so every filing the SEC report
+  // analyses is in the archive (docs/sec-archive.md); no model.
+  "archive": { emits: ["filing.material.requested"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
+  "filing-material": { emits: ["filing.material.ready"], debounceMs: SECOND, maxWaitMs: MINUTE, scope: "publication" },
+  // Brings the company's quarterly revenue history up to date after a publication.
+  "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
+  // Re-projects archived filings whose capital projection predates the current version.
+  "reproject": { emits: ["filing.archived", "archive.superseded"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Advances the admin's financial maintenance tasks, one step per run.
+  "maintenance": { emits: ["financials.published", "filing.archived", "archive.superseded", "content.published"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Fetches earnings-call transcripts for archived periodic reports and 6-K results, within the daily budget; the only
+  // caller of the transcript provider.
+  "transcript": { emits: ["transcript.stored"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
+  // Rebuilds the map's older quarters and capital snapshot from archived filings.
+  "map-derive": { emits: ["map.derived", "content.published"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "map" },
+  // Deletes archive copies replaced by a newer one, a day after the replacement.
+  "archive-prune": { emits: [], debounceMs: 24 * HOUR, maxWaitMs: 24 * HOUR, scope: "map" },
+  // A full pass over the archive for copies left behind before replacements were recorded; admin-requested.
+  "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
+  // Re-reads Company Facts when new statements are published, so the SEC fundamentals keep up with the page; retried
+  // while Company Facts is still behind the filing. No model.
+  "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
+  // Current reports and Form 4 filings for the map's event rail, and every company's filings list; no model.
+  "events": { emits: ["events.published", "filings.indexed", "content.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "map" },
+  // Layer 2's per-period extract: the eight quarters, the ledger every finding's figures come from and the checkup's
+  // flags, cut from layer 1's publication so the layers above never read layer 1; no model.
+  "extract": { emits: ["extract.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
+  // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
+  "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
+  // Model-written explanations of each disclosed business (Workflow).
+  "explainer": { emits: ["explainer.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
+  // The ReAct business mind map (Workflow).
+  "tree": { emits: ["tree.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
+  // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
+  // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
+  // Every filing's one path (docs/filing-analysis-design.md); the sessions it starts publish on their own.
+  "filing-analysis": { emits: ["filings.indexed", "report.published", "fundamentals.updated", "content.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
+  "business-classification": { emits: ["business.classification.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
+  // Comparable units and their two levels of business tags, embedded and matched against other companies' (Workflow; model at high reasoning).
+  "business-tags": { emits: ["business.tags.published"], debounceMs: 5 * MINUTE, maxWaitMs: HOUR, scope: "filings" },
+  // Deletes stored data no code reads any more, at most once a day; no model.
+  "storage-sweep": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
+  // One global projection of every data company's comparable figures, for peers tables resolved at read time; no model.
+  "peers": { emits: ["peers.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "global" },
+  // Post-publication processing retains the publisher's ticker and is independent of generation switches.
+  "translate": { emits: ["translations.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "publication" },
+  // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
+  // arithmetic decides), then collects the issuer again through a maintenance task.
+  "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "map" },
+  // The valuation assessment: five researched dimensions and a calculated model,
+  // rewritten when the figures, filings or calls it reads from change (Workflow; model at the reasoning tier).
+  "valuation": { emits: ["valuation.published", "content.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
+};
+
+const form = (event: PipelineEvent) => event.detail?.form ?? "";
+const PERIODIC = /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/;
+
+export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => boolean };
+export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
+  "content.published": [{ task: "translate" }],
+  "filing.discovered": [
+    // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
+    { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
+  ],
+  // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
+  // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
+  "company.added": [{ task: "events" }, { task: "presentation" }],
+  // A company's baseline lists current reports no `filing.discovered` announced.
+  "archive.requested": [{ task: "archive" }],
+  "filing.material.requested": [{ task: "filing-material" }],
+  "filing.material.ready": [{ task: "filing-analysis", when: e => e.detail?.mode !== "shadow-pilot" && (reportedForm(form(e))) }, { task: "collect", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e))) },
+    { task: "valuation", when: e => e.detail?.mode !== "shadow-pilot" }, { task: "business-classification", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e))) }],
+  // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
+  "collection.requested": [{ task: "collect" }, { task: "history" }],
+  "maintenance.requested": [{ task: "maintenance" }],
+  "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "business-classification" }, { task: "valuation" }],
+  "filing.archived": [{ task: "map-derive" },
+    { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "storage-sweep" }],
+  "business.classification.requested": [{ task: "business-classification" }],
+  "business.classification.published": [{ task: "business-tags" }],
+  "business.tags.requested": [{ task: "business-tags" }],
+  "business.tags.published": [{ task: "peers" }],
+  "archive.superseded": [{ task: "archive-prune" }],
+  "archive.prune.requested": [{ task: "archive-prune-scan" }],
+  "transcript.stored": [{ task: "valuation" }],
+  "report.published": [
+    { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
+    { task: "memory", when: e => PERIODIC.test(form(e)) },
+    { task: "valuation" },
+  ],
+  "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
+  "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
+  "tree.published": [{ task: "valuation" }],
+  "presentation.unresolved": [{ task: "presentation" }],
+  // A feature switch changed in the admin: the feature's first task checks whether there is something to write; the map's
+  // revisions move so shown or hidden content reaches readers at once.
+  "feature.settings": [
+    // Layer 2 reads the prepared Markdown materials.
+    { task: "business-classification", when: e => e.detail?.feature === "filings" },
+    { task: "extract", when: e => e.detail?.feature === "filings" },
+    { task: "filing-analysis", when: e => e.detail?.feature === "filings" },
+    { task: "memory", when: e => e.detail?.feature === "filings" },
+    { task: "explainer", when: e => e.detail?.feature === "tree" },
+    { task: "tree", when: e => e.detail?.feature === "tree" },
+    { task: "valuation", when: e => e.detail?.feature === "valuation" },
+  ],
+};
+
+/** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
+export const SOURCES: Record<string, readonly EventType[]> = {
+  // The only Cron: polls EDGAR, which pushes nothing. Automatic generation and translation follow scheduled analysis.
+  "sec-discovery": ["company.added", "filing.discovered", "collection.requested", "archive.requested"],
+  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "business.classification.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
+  "invocation": ["task.version_changed"],
+  "publication-store": ["content.published"],
+  "filing-material-store": ["filing.material.requested"],
+};
+
+/** Every problem with the graph: a subscription nobody can trigger, an unknown name, or a loop between tasks. */
+export function validateRegistry(): string[] {
+  const errors: string[] = [];
+  if (TASKS.translate.scope !== "publication") errors.push("translation must run in publication scope");
+  const emitted = new Set<EventType>([...Object.values(SOURCES).flat(), ...TASK_NAMES.flatMap(task => TASKS[task].emits)]);
+  for (const [type, subscriptions] of Object.entries(SUBSCRIPTIONS) as Array<[EventType, readonly Subscription[]]>) {
+    if (!EVENT_TYPES.includes(type)) errors.push(`unknown event ${type}`);
+    if (type === "task.version_changed") errors.push("task.version_changed is routed by name and cannot be subscribed");
+    if (!emitted.has(type)) errors.push(`${type} is subscribed but nothing emits it`);
+    for (const { task } of subscriptions) if (!TASK_NAMES.includes(task)) errors.push(`${type} subscribes unknown task ${task}`);
+    if (type !== "content.published" && subscriptions.some(subscription => subscription.task === "translate"))
+      errors.push(`${type}: translation subscribes only to normal content publication`);
+  }
+  for (const task of TASK_NAMES) {
+    const meta = TASKS[task];
+    if (meta.maxWaitMs < meta.debounceMs) errors.push(`${task} waits less than its debounce`);
+    if (meta.maxWaitMs > 24 * HOUR) errors.push(`${task} waits longer than a queue message can be delayed`);
+  }
+  // A task's emitted events lead to the tasks subscribed to them; any path back to the start is a loop.
+  const next = (task: TaskName) => TASKS[task].emits.flatMap(type => (SUBSCRIPTIONS[type] ?? []).map(s => s.task));
+  const visit = (task: TaskName, path: TaskName[]): void => {
+    if (path.includes(task)) { errors.push(`loop: ${[...path, task].join(" → ")}`); return; }
+    for (const child of new Set(next(task))) visit(child, [...path, task]);
+  };
+  for (const task of TASK_NAMES) visit(task, []);
+  return [...new Set(errors)];
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "spontra-analysis",
+  "main": "src/index.ts",
+  "build": { "command": "npm run build" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  // Stylesheets are bundled as text: analysis artifacts are compiled with the site's Tailwind theme (src/domains/publishing/artifact/theme.ts),
+  // and the browser checks inject axe-core into the rendered artifact.
+  "rules": [{ "type": "Text", "globs": ["src/**/*.css", "**/axe.min.js", "**/pdfjs-source.txt"], "fallthrough": true }],
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "limits": { "cpu_ms": 300000 },
+  "secrets": { "required": ["DEEPSEEK_API_KEY"] },
+  "vars": {
+    // No company is listed here: the admin whitelist and feature switches (D1) are the company lists.
+    "SEC_AI_ENABLED": "true",
+    "SEC_DATA_COLLECTION_ENABLED": "true",
+    "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
+    "SEC_ANALYSIS_MODEL": "deepseek-flash",
+    "SEC_REASONING_MODEL": "deepseek-flash",
+    "OPENAI_REVIEW_MODEL": "gpt-6.1-terra",
+    // ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
+    "TRANSCRIPT_DAILY_CALLS": "25",
+    "TRANSCRIPTS_ENABLED": "true",
+    "TRANSLATION_ENABLED": "true",
+    // Where the visual review opens an artifact draft in the real stage (src/domains/publishing/artifact/qa.ts).
+    "BUSINESS_SITE_ORIGIN": "https://businessview.info"
+  },
+  "r2_buckets": [
+    {
+      "binding": "SEC_FILINGS",
+      "bucket_name": "earning-report-analysis-sec-filings"
+    }
+  ],
+  // Business tags: Workers AI embeds each tag with @cf/baai/bge-m3, and the Vectorize
+  // index holds the vectors, one namespace per sector and facet. The index was created once by hand (1024 dimensions,
+  // cosine); D1 stays the source of every tag and pair.
+  "ai": { "binding": "AI" },
+  // Browser Rendering: the lens agent's html pictures are drawn and measured here, so the model reads what a reader
+  // would see.
+  "browser": { "binding": "BROWSER" },
+  "vectorize": [
+    { "binding": "TAGS_INDEX", "index_name": "business-tags" }
+  ],
+  // This Worker owns the analysis data model: it is the only writer, and since the read API landed
+  // it is also the only reader — the Web Worker no longer binds this database at all. The id is an
+  // account-scoped identifier, not a credential, and is committed here the way the bucket and
+  // Worker names above are. The database itself is unchanged: same name, same id, same rows.
+  //
+  // `migrations_dir` moved from `../web/migrations` to this Worker's own directory when ownership
+  // moved. The files kept their names, so `d1_migrations` — which records applied migrations by
+  // filename — still matches every one of them and nothing is reapplied.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "earning-report-analysis-sec-web",
+      "database_id": "3c917a4c-3562-4de1-8b21-586fa384e63f",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Admin login attempts, limited by Cloudflare across isolates. The namespace_id is an
+  // account-scoped integer, not a secret.
+  "ratelimits": [
+    {
+      "name": "REPORT_ADMIN_RATE_LIMIT",
+      "namespace_id": "1004",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "PUBLIC_READ_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 300, "period": 60 }
+    }
+  ],
+  // Event-driven pipeline. The three queues were created once by hand; Wrangler does not
+  // create queues on deploy. Events are routed in large batches so a company's triggers collapse into one run; tasks
+  // run one per invocation so a heavy run never shares its CPU and memory with another.
+  "queues": {
+    "producers": [
+      { "queue": "spontra-pipeline-events", "binding": "PIPELINE_EVENTS" },
+      { "queue": "spontra-pipeline-tasks", "binding": "PIPELINE_TASKS" }
+    ],
+    "consumers": [
+      { "queue": "spontra-pipeline-events", "max_batch_size": 100, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 10, "retry_delay": 10, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-tasks", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 5, "retry_delay": 60, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
+    ]
+  },
+  // The stage: one StageAgent per reader conversation, an Agents SDK Agent and so a
+  // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
+  // turning the stage off is the feature switch, not a revert.
+  "durable_objects": {
+    "bindings": [{ "name": "TASK_RUNS", "class_name": "TaskRunner" }]
+  },
+  "migrations": [
+    { "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] },
+    { "tag": "runs-v1", "new_sqlite_classes": ["TaskRunner"] },
+    { "tag": "stage-v2", "deleted_classes": ["StageAgent"] }
+  ],
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  // The only schedule: SEC filing discovery, because EDGAR pushes nothing. Everything a
+  // filing leads to runs on the queues above.
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  }
+}

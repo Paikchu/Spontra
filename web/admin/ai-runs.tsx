@@ -1,0 +1,257 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/src/api/admin/types/ai-runs-admin";
+import type { BusinessExplainer } from "@/src/domains/business-map/explainer-contract";
+import type { BusinessTree, TreeNode } from "@/src/domains/business-map/tree-contract";
+import type { ValuationPublication } from "@/src/domains/valuation/contract";
+import { adminApi, AdminApiError } from "./admin-api";
+import { CompanyLogo } from "@/web/shared/company-logo";
+import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
+import { TranslationsPanel } from "./translations";
+import "./ai-runs.css";
+import { useOnReturn, usePageActive } from "./admin-page";
+import { PLANS } from "./run-progress";
+
+/** The BusinessView outputs this admin shows. */
+export type ViewKind = AiRunKind;
+const KINDS: Array<[ViewKind, string]> = [["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
+const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
+const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
+const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
+const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
+  [/^(explainer|tree|valuation)-time$/, () => "记录开始时间"],
+  [/^valuation-input$/, () => "读取财务事实与材料目录"],
+  [/^valuation-quote$/, () => "冻结参考收盘价与折现率基线"],
+  [/^valuation-prior$/, () => "按历史先验试算"],
+  [/^valuation-research-t(\d+)/, m => `研究 · 第 ${m[1]} 轮`],
+  [/^valuation-assume-t(\d+)/, m => `假设与计算 · 第 ${m[1]} 轮`],
+  [/^valuation-redteam$/, () => "反证检查"],
+  [/^valuation-compose-t(\d+)/, m => `成稿 · 第 ${m[1]} 轮`],
+  [/^valuation-publish$/, () => "发布"],
+  [/^tree-input$/, () => "读取业务列表"],
+  ...PLANS.tree.step,
+  [/^tree-publish$/, () => "发布"],
+  [/^explainer-input$/, () => "读取业务列表"],
+  [/^explainer-evidence-filing$/, () => "读取财报原文"],
+  [/^explainer-evidence-(\d+)$/, m => `检索资料 · 第 ${Number(m[1]) + 1} 组`],
+  [/^explainer-plan-(\d+)$/, m => `规划补充检索 · 第 ${Number(m[1]) + 1} 组`],
+  [/^explainer-follow-up-(\d+)$/, m => `补充检索 · 第 ${Number(m[1]) + 1} 组`],
+  [/^explainer-write-(\d+)$/, m => `撰写业务解读 · 第 ${Number(m[1]) + 1} 组`],
+  [/^explainer-review-(\d+)$/, m => `审校 · 第 ${Number(m[1]) + 1} 组`],
+  [/^explainer-publish$/, () => "发布"],
+];
+function stageLabel(stage: string | null | undefined) {
+  if (!stage) return "待开始";
+  for (const [pattern, label] of STAGES) { const m = pattern.exec(stage); if (m) return label(m); }
+  return stage;
+}
+const date = (value?: string | null) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "—";
+function elapsed(run: AiRun) {
+  const seconds = Math.max(0, Math.round((Date.parse(run.finishedAt ?? run.updatedAt) - Date.parse(run.startedAt)) / 1000));
+  return seconds < 60 ? `${seconds} 秒` : seconds < 3600 ? `${Math.round(seconds / 60)} 分钟` : `${(seconds / 3600).toFixed(1)} 小时`;
+}
+const count = (value: number) => value.toLocaleString("zh-CN");
+function storage() { try { return window.sessionStorage; } catch { return undefined; } }
+function initial(name: "ticker" | "kind") { try { return new URLSearchParams(window.location.search).get(name) ?? ""; } catch { return ""; } }
+
+/** Companies on the left, the chosen kinds of one company on the right. The page keeps `?ticker=&kind=` in its URL. */
+export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = false }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[]; translations?: boolean }) {
+  const kindTabs = KINDS.filter(([k]) => kinds.includes(k));
+  /** The Chinese Spontra Analysis wrote for the company's publications, as a last tab. */
+  const tabs: Array<[ViewKind | "translations", string]> = [...kindTabs, ...translations ? [["translations", "中文译文"] as [ViewKind | "translations", string]] : []];
+  const [list, setList] = useState<AiCompanies | null>(null), [search, setSearch] = useState(""), [listError, setListError] = useState("");
+  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind | "translations">(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);
+  const [refresh, setRefresh] = useState(0);
+  const callbacks = useRef({ onUnauthorized, onAuthenticated });
+  useEffect(() => { callbacks.current = { onUnauthorized, onAuthenticated }; }, [onUnauthorized, onAuthenticated]);
+
+  useEffect(() => {
+    const c = new AbortController();
+    void adminApi<AiCompanies>("ai/companies", { signal: c.signal }).then(r => { if (!c.signal.aborted) { setList(r); setListError(""); callbacks.current.onAuthenticated(); } })
+      .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setListError((e as Error).message); });
+    return () => c.abort();
+  }, [refresh]);
+  const shown = usePageActive();
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, 20000); return () => clearInterval(timer); }, [shown]);
+  useOnReturn(() => setRefresh(n => n + 1));
+  useEffect(() => {
+    if (!ticker || !shown.current) return;
+    try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
+  }, [ticker, kind, tabs.length, shown]);
+
+  // Translation follows published content; the other tabs retain their generation-feature lists.
+  const listed = useMemo(() => list?.companies.filter(company => kind === "translations" || kinds.some(task => company.kinds[task].enabled !== false)) ?? [], [list, kind, kinds]);
+  useEffect(() => {
+    if (!list) return;
+    setTicker(current => listed.some(company => company.ticker === current) ? current : listed[0]?.ticker ?? "");
+  }, [list, listed]);
+  const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
+  return <div className="ra-workspace ai-workspace">
+    <section className="ra-list" aria-label="公司">
+      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
+      <div className="ra-list-caption"><span>{list ? `${companies.length} 家公司` : "加载中"}</span><button type="button" aria-label="刷新公司" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
+      {listError && <p className="ra-error" role="alert">{listError}</p>}
+      <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kind !== "translations" && kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
+        </span></button>)}
+        {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
+      </div>
+    </section>
+    <section className="ra-detail ai-detail" aria-label="生成详情">
+      {tabs.length > 1 && <div className="ra-tabbar"><div className="ra-segmented" role="group" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
+      {!ticker ? <p className="ai-empty">未选择公司</p> : kind === "translations" ? <TranslationsPanel key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} />
+        : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
+    </section>
+  </div>;
+}
+
+/** One company's runs and published versions of one kind, polled faster while a run is in progress. */
+export function AiKindPanel({ ticker, kind, onUnauthorized }: { ticker: string; kind: ViewKind; onUnauthorized: () => void }) {
+  const [detail, setDetail] = useState<AiCompanyDetail | null>(null), [error, setError] = useState<{ message: string; missing: boolean } | null>(null), [refresh, setRefresh] = useState(0);
+  const unauthorized = useRef(onUnauthorized);
+  useEffect(() => { unauthorized.current = onUnauthorized; }, [onUnauthorized]);
+  const fail = (e: unknown) => { if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError({ message: (e as Error).message, missing: e instanceof AdminApiError && e.status === 404 }); };
+  useEffect(() => {
+    const c = new AbortController();
+    void adminApi<AiCompanyDetail>(`ai/companies/${ticker}/${kind}`, { signal: c.signal }).then(r => { setDetail(r); setError(null); }).catch(e => { if (!c.signal.aborted) fail(e); });
+    return () => c.abort();
+  }, [ticker, kind, refresh]);
+  const active = !!detail?.runs.some(r => ACTIVE.has(r.status));
+  const shown = usePageActive();
+  useEffect(() => {
+    const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, active ? 4000 : 20000);
+    return () => clearInterval(timer);
+  }, [active, shown]);
+  useOnReturn(() => setRefresh(n => n + 1));
+  if (error) return error.missing ? <p className="ai-empty">{error.message}</p> : <p className="ra-error ai-pad" role="alert">{error.message}</p>;
+  if (!detail) return <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>;
+  return <KindDetail detail={detail} onChanged={() => setRefresh(n => n + 1)} onError={fail} />;
+}
+
+function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; onChanged: () => void; onError: (error: unknown) => void }) {
+  const [confirming, setConfirming] = useState(false), [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [error, setError] = useState("");
+  const label = KINDS.find(([k]) => k === detail.kind)![1];
+  const running = detail.runs.find(r => ACTIVE.has(r.status));
+  async function start() {
+    const key = `ai:${detail.kind}:${detail.ticker}:`, requestId = pendingRequestId(key, storage());
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const r = await adminApi<AiRunStarted>(`ai/companies/${detail.ticker}/${detail.kind}/runs`, { method: "POST", body: JSON.stringify({ requestId }) });
+      completeRequestId(key, storage()); setConfirming(false);
+      setNotice(r.reused ? "任务已存在" : "已提交");
+      onChanged();
+    } catch (e) {
+      if (e instanceof AdminApiError && e.status === 401) onError(e); else setError((e as Error).message);
+      if (e instanceof AdminApiError && e.status >= 400 && e.status < 500) completeRequestId(key, storage());
+    } finally { setBusy(false); }
+  }
+  return <div className="ai-pad">
+    <header className="ai-head">
+      <div><h2>{detail.ticker} · {label}</h2>
+        <p>{detail.state.current ? `当前版本 ${date(detail.state.current.id)} · ${summaryText(detail.kind, detail.state.current.summary)}` : "未发布"}{" · "}{detail.state.automatic ? "自动生成已开启" : "自动生成未开启"}</p></div>
+      <div className="ai-trigger">
+        {!confirming ? <button className="ra-primary" disabled={!!detail.state.blocked || !!running || busy} onClick={() => setConfirming(true)} title={detail.state.blocked ?? undefined}><RefreshCw size={15} />{running ? "运行中" : "重新生成"}</button>
+          : <span className="ai-confirm"><button className="ra-primary" disabled={busy} onClick={() => void start()}>{busy && <LoaderCircle size={15} className="ra-spin" />}确认生成</button><button className="fm-button" disabled={busy} onClick={() => setConfirming(false)}>取消</button></span>}
+      </div>
+    </header>
+    {detail.state.blocked && <p className="ai-hint">{detail.state.blocked}</p>}
+    {notice && <p className="ra-notice" role="status">{notice}</p>}{error && <p className="ra-error" role="alert">{error}</p>}
+    <h3>运行记录</h3>
+    {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
+    <details className="ai-usage-panel">
+      <summary>模型用量</summary>
+      {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap" role="region" aria-label="模型用量表" tabIndex={0}><table className="ai-table ai-usage">
+      <thead><tr><th>日期</th><th>调用</th><th>输入</th><th>缓存</th><th>输出</th><th>搜索</th></tr></thead>
+      <tbody>{detail.usage.map(u => <tr key={u.day}><td>{u.day}</td><td>{count(u.calls)}</td><td>{count(u.inputTokens)}</td><td>{count(u.cachedTokens)}</td><td>{count(u.outputTokens)}</td><td>{count(u.searchCalls)}</td></tr>)}</tbody>
+      </table></div>}
+    </details>
+    <Versions detail={detail} onError={onError} />
+  </div>;
+}
+
+function summaryText(_kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
+  return `${s.items} 项业务 · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
+}
+
+function RunItem({ run }: { run: AiRun }) {
+  const result = run.result as { businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
+  return <li><details>
+    <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
+      <small>{run.trigger === "manual" ? "手动" : "自动"}{ACTIVE.has(run.status) ? ` · 开始 ${date(run.startedAt)}` : ""} · 用时 {elapsed(run)}</small></summary>
+    {run.error && <p className="ra-error">{run.error}</p>}
+    {result && <p className="ai-result">{[
+      result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
+      result.withheld?.length ? `${result.withheld.length} 条未通过核对` : null,
+    ].filter(Boolean).join(" · ")}</p>}
+    {!!result?.withheld?.length && <ul className="ai-withheld">{result.withheld.map(w => <li key={w.id}><code>{w.id}</code>{w.reasons.join("；")}</li>)}</ul>}
+    {run.log.length > 0 && <ol className="ai-steps">{run.log.map((s, i) => <li key={i} data-current={ACTIVE.has(run.status) && i === run.log.length - 1 || undefined}><time>{date(s.at)}</time>{stageLabel(s.stage)}{s.attempt ? ` · 第 ${s.attempt} 次尝试` : ""}</li>)}</ol>}
+    <small className="ai-id">{run.runId}</small>
+  </details></li>;
+}
+
+function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (error: unknown) => void }) {
+  const [chosen, setId] = useState(""), [version, setVersion] = useState<AiVersionDetail | null>(null), [error, setError] = useState("");
+  // A newly published version becomes the default; a version the operator picked stays selected while it exists.
+  const id = detail.versions.some(v => v.id === chosen) ? chosen : detail.versions[0]?.id ?? "";
+  useEffect(() => {
+    if (!id) return;
+    const c = new AbortController();
+    void adminApi<AiVersionDetail>(`ai/companies/${detail.ticker}/${detail.kind}/versions/${encodeURIComponent(id)}`, { signal: c.signal }).then(r => { setVersion(r); setError(""); })
+      .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) onError(e); else setError((e as Error).message); });
+    return () => c.abort();
+  }, [detail.ticker, detail.kind, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <section className="ai-versions">
+    <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
+    {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
+      : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
+        {detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "valuation" ? <ValuationView report={version.publication as ValuationPublication} /> : <TreeView tree={version.publication as BusinessTree} />}
+        <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
+  </section>;
+}
+
+const VERDICT_ZH: Record<ValuationPublication["verdict"], string> = { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" };
+const DIMENSION_ZH: Record<ValuationPublication["dimensions"][number]["key"], string> = { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" };
+/** The valuation as published: verdict, score, the five dimensions, the range against the reference close, gaps and the sources read. */
+function ValuationView({ report }: { report: ValuationPublication }) {
+  const r = report.model?.range ?? null;
+  const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+  return <div className="ai-valuation">
+    <p><b>{VERDICT_ZH[report.verdict]}</b> · 综合分 {report.weightedScore ?? "—"} · 置信度 {report.confidence} · 研究日期 {report.researchAsOf.slice(0, 10)} · 财务基期 {report.financialPeriodEnd} · {report.reportStatus === "ready" ? "完整" : "材料不足"}</p>
+    <div className="ai-table-wrap" role="region" aria-label="估值分项评分" tabIndex={0}><table className="ai-table"><thead><tr><th>维度</th><th>分数</th><th>置信度</th><th>理由</th></tr></thead><tbody>
+      {report.dimensions.map(d => <tr key={d.key}><td>{DIMENSION_ZH[d.key]}</td><td>{d.score ?? "—"}</td><td>{d.confidence}</td><td lang="en">{d.rationale}</td></tr>)}
+    </tbody></table></div>
+    {report.model && r && <p>模型 {report.model.modelType} · 折现率 {pct(report.model.discountRate.value)} · 每股价值 {r.low.toFixed(2)} / {r.base.toFixed(2)} / {r.high.toFixed(2)}{r.expected != null ? ` · 期望 ${r.expected.toFixed(2)}` : ""} · 参考价 {r.price ?? "—"} · 安全边际 {pct(r.marginOfSafety)}{report.model.implied ? ` · 现价隐含增长 ${pct(report.model.implied.implied)}` : ""}</p>}
+    {report.gaps.length > 0 && <ul>{report.gaps.map((g, i) => <li key={i}><code>{g.code}</code> <span lang="en">{g.message}</span></li>)}</ul>}
+    <p lang="en">{report.sections.summary}</p>
+    <ol>{report.evidence.map(e => <li key={e.evidenceId}><code>{e.evidenceId}</code> {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}{e.path ? ` › ${e.path}` : ""}</li>)}</ol>
+  </div>;
+}
+function ExplainerView({ explainer }: { explainer: BusinessExplainer }) {
+  return <div className="ai-cards"><p className="ai-muted">模型 {explainer.model} · {explainer.sources.length} 个来源</p>{explainer.businesses.map(b => <article key={b.nodeId} className="ai-card">
+    <header><strong>{b.name}</strong><small>{b.nodeId}</small></header>
+    {b.summary ? <p>{b.summary.text}</p> : <p className="ai-muted">概述未通过审校</p>}
+    {b.products.length > 0 && <small>产品：{b.products.join("、")}</small>}
+    {b.sections.map(s => <div key={s.id} className="ai-section"><h4>{s.title}</h4><ul>{s.items.map((item, i) => <li key={i}>{item.label && <strong>{item.label}：</strong>}{item.claim.text}</li>)}</ul></div>)}
+  </article>)}</div>;
+}
+/** The breakdown as nested lists, and under each business the agent's turns: thought, action, and what the harness answered. */
+function TreeView({ tree }: { tree: BusinessTree }) {
+  const sourceTitle = (id: string) => tree.sources.find(s => s.id === id)?.title ?? id;
+  const Node = ({ node }: { node: TreeNode }) => <li>
+    <strong>{node.name}</strong>{node.gloss && <span className="ai-muted"> · {node.gloss}</span>}{node.flowNodeId && <small> （财报披露）</small>}
+    {node.revenue.length > 0 && <div className="ai-tree-revenue">{node.revenue.map((r, i) => <span key={i} title={`${r.text}（${r.sourceIds.map(sourceTitle).join("、")}）`}>¥ {r.label}</span>)}</div>}
+    {node.anchor && <small className="ai-tree-anchor" title={node.anchor.sourceIds.map(sourceTitle).join("、")}>“{node.anchor.text}”</small>}
+    {node.children.length > 0 && <ul>{node.children.map(c => <Node key={c.id} node={c} />)}</ul>}
+  </li>;
+  return <div className="ai-cards"><p className="ai-muted">报告期 {tree.periodEnd} · 模型 {tree.model} · {tree.sources.length} 个来源</p>{tree.branches.map(b => {
+    const steps = tree.research?.find(r => r.flowNodeId === b.flowNodeId)?.steps ?? [];
+    return <article key={b.flowNodeId} className="ai-card">
+      <header><strong>{b.name}</strong><small>{b.flowNodeId}</small></header>
+      {b.summary && <p>{b.summary.text}</p>}
+      <ul className="ai-tree">{b.children.map(c => <Node key={c.id} node={c} />)}</ul>
+      {steps.length > 0 && <details className="ai-raw"><summary>研究过程 · {steps.length} 轮</summary><ol className="ai-tree-steps">{steps.map((s, i) => <li key={i}>
+        <p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre>
+      </li>)}</ol></details>}
+    </article>;
+  })}</div>;
+}

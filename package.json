@@ -1,34 +1,37 @@
 {
   "name": "spontra",
-  "description": "Spontra Analysis 财报分析后端、运维后台与 iOS 只读 API 网关（含内部报告预览）。",
+  "description": "Spontra Analysis 单 Worker 财报分析后端、运维后台与 iOS 只读 API 网关（含内部报告预览）。",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "npm run dev --workspace @spontra/business-site",
-    "check": "npm run check:i18n && npm run check:issuer-literals && npm run check:analysis:boundary && npm run typecheck && npm run business-site:typecheck && npm run admin:typecheck && npm run build",
-    "build": "npm run check:i18n && npm run check:issuer-literals && npm run business-site:build && npm run admin:build",
-    "check:i18n": "node --experimental-strip-types --no-warnings scripts/check-i18n.ts",
+    "dev": "npx wrangler dev --config wrangler.jsonc",
+    "dev:web": "vite --config vite.config.ts",
+    "prepare:assets": "node scripts/checks/prepare-analysis-assets.mjs",
+    "build:web": "vite build --config vite.config.ts",
+    "build": "npm run prepare:assets && npm run check:i18n && npm run check:issuer-literals && npm run build:web",
+    "check:i18n": "node --experimental-strip-types --no-warnings scripts/checks/check-i18n.ts",
+    "check:issuer-literals": "node --experimental-strip-types --no-warnings scripts/checks/check-issuer-literals.ts",
+    "check:boundary": "node --experimental-strip-types scripts/checks/check-analysis-boundary.ts",
+    "check:migrations": "node --experimental-strip-types scripts/checks/check-migrations.ts",
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "npm run typecheck:worker && npm run typecheck:web && npm run typecheck:scripts",
+    "check": "npm run check:i18n && npm run check:issuer-literals && npm run check:boundary && npm run typecheck && npm run build && npm run deploy:dry-run",
     "lint": "eslint . --ignore-pattern dist",
-    "typecheck": "tsc --noEmit",
-    "deploy:cloudflare": "node --experimental-strip-types scripts/deploy-cloudflare-ci.mjs",
-    "analysis:check:migrations": "node --experimental-strip-types workers/analysis/scripts/check-migrations.ts",
-    "analysis:check": "wrangler deploy --config workers/analysis/wrangler.jsonc --env=\"\" --dry-run",
-    "analysis:migrate:ci": "wrangler d1 migrations apply DB --remote --config workers/analysis/wrangler.jsonc --env=\"\"",
-    "analysis:deploy": "npm run analysis:migrate:ci && npm run analysis:check:migrations && wrangler deploy --config workers/analysis/wrangler.jsonc --env=\"\" --keep-vars",
-    "analysis:typecheck": "tsc --noEmit -p workers/analysis/tsconfig.json",
-    "check:analysis:boundary": "node --experimental-strip-types scripts/check-analysis-boundary.ts",
-    "check:issuer-literals": "node --experimental-strip-types --no-warnings scripts/check-issuer-literals.ts",
-    "business-site:build": "npm run build --workspace @spontra/business-site",
-    "business-site:typecheck": "npm run typecheck --workspace @spontra/business-site",
-    "business-site:check": "wrangler deploy --config apps/business-site/wrangler.jsonc --dry-run",
-    "admin:dev": "npm run dev --workspace @spontra/admin",
-    "admin:build": "npm run build --workspace @spontra/admin",
-    "admin:typecheck": "npm run typecheck --workspace @spontra/admin",
-    "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run",
-    "analysis:prepare": "node scripts/prepare-analysis-assets.mjs"
+    "migrate:ci": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc --env=\"\"",
+    "deploy:dry-run": "wrangler deploy --config wrangler.jsonc --env=\"\" --dry-run",
+    "deploy": "npm run migrate:ci && npm run check:migrations && wrangler deploy --config wrangler.jsonc --env=\"\" --keep-vars",
+    "analysis:prepare": "npm run prepare:assets",
+    "analysis:check:migrations": "npm run check:migrations",
+    "analysis:check": "npm run deploy:dry-run",
+    "analysis:typecheck": "npm run typecheck:worker",
+    "analysis:migrate:ci": "npm run migrate:ci",
+    "analysis:deploy": "npm run deploy",
+    "check:analysis:boundary": "npm run check:boundary"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "1.4.0",
@@ -74,9 +77,5 @@
     "vite": "8.3.6",
     "wrangler": "4.127.1"
   },
-  "type": "module",
-  "workspaces": [
-    "apps/business-site",
-    "apps/admin"
-  ]
+  "type": "module"
 }

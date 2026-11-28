@@ -1,0 +1,379 @@
+import OpenAI from "openai";
+import type { ChatCompletionChunk, ChatCompletionCreateParamsStreaming, ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { Stream } from "openai/core/streaming";
+import { type ReasoningEffort } from "./ai/config.ts";
+import { aiUsageFromMetrics, recordAiUsage } from "./ai/runs/usage.ts";
+import { readModelContent, parseModelJson, SecModelOutputError } from "./ai/model-stream.ts";
+import { SecModelHttpError, type ModelRequestOptions } from "./ai/model-recovery.ts";
+export { readModelContent } from "./ai/model-stream.ts";
+export { SecModelHttpError } from "./ai/model-recovery.ts";
+import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts } from "./domains/filing-analysis/sec/fiscal-period.ts";
+import { fiscalPeriodsInSequence } from "./domains/filing-analysis/sec/fiscal-sequence.ts";
+import {
+  discoverSecTicker,
+} from "./domains/filing-analysis/sec/pipeline.ts";
+import { D1SecRepository } from "./domains/filing-analysis/sec/d1.ts";
+import { cleanSecTicker, type SecFiling, type SecFilingFeed } from "./domains/filing-analysis/sec/sec.ts";
+import { normalizeCompanyFacts } from "./domains/filing-analysis/sec/history.ts";
+import { edgarListings, type EdgarListings } from "./domains/sec-archive";
+import { secFundamentalsKey } from "./domains/financials/fundamentals/sec-fundamentals.ts";
+import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
+import type { AnalysisReadEnv } from "./api/public/router.ts";
+import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
+import { outboxStatement } from "./pipeline/outbox.ts";
+import { endpointFor } from "./ai/pi/endpoints.ts";
+import { reasoningEffort } from "./ai/pi/reasoning.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_FALLBACK_MODEL } from "./lib/retry-policy.ts";
+import type { AnalysisOperations, WorkflowJobUpdate } from "./lib/workflow-core.ts";
+import type { MarkdownConverter } from "./ai/web-search/page.ts";
+import type { MaterialFiling } from "./domains/filing-material/contract.ts";
+
+type R2ObjectLike = { etag?: string; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> };
+type R2BucketLike = {
+  get(key: string, options?: { range?: { offset: number; length: number } }): Promise<R2ObjectLike | null>;
+  head?(key: string): Promise<unknown>;
+  put(key: string, value: string | Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
+  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: Array<{ key: string; uploaded: Date }>; truncated: boolean; cursor?: string }>;
+  delete(keys: string[]): Promise<unknown>;
+};
+
+/** `get` reads an instance's engine status; the admin view uses it to settle runs that ended without a record. */
+export type AiWorkflowBinding<P> = {
+  create(options: { id: string; params: P }): Promise<unknown>;
+  get?(id: string): Promise<{ status(): Promise<{ status: string; error?: unknown }> }>;
+};
+
+/** The slice of the Workers AI binding the tags use. */
+export type TagEmbedder = { run(model: string, input: { text: string[] } | { messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; max_tokens?: number; response_format?: { type: string } }): Promise<unknown> };
+/** The slice of a Vectorize index the tags use. */
+export type TagIndex = {
+  upsert(vectors: Array<{ id: string; values: number[]; namespace?: string; metadata?: Record<string, string> }>): Promise<unknown>;
+  deleteByIds(ids: string[]): Promise<unknown>;
+  query(vector: number[], options: { topK: number; namespace?: string; returnValues?: boolean; returnMetadata?: "none" | "indexed" | "all" }): Promise<{ matches: Array<{ id: string; score: number; namespace?: string }> }>;
+};
+
+export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
+  /** Static web assets (admin SPA, signed preview shell, iOS support pages). */
+  ASSETS?: { fetch(request: Request): Promise<Response> };
+  /** Public read-API rate limiter. */
+  PUBLIC_READ_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  /** Cloudflare Access configuration guarding browser admin API requests. */
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  /** Installed only inside a claimed filing-shadow continuation; reserves each auxiliary model HTTP send. */
+  MODEL_REQUEST_GATE?: () => Promise<void>;
+  /** The Pi sessions of the durable run executing this task (durable-runs/runner.ts); absent elsewhere. */
+  PI?: import("./ai/pi/runs.ts").PiRuns;
+  BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** Model calls per UTC day for judging income statements no calculation or statement row balances (default 60). */
+  PRESENTATION_DAILY_CALLS?: string;
+  /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
+  READ_NOTE_DAILY_CALLS?: string;
+  BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** The valuation assessment Workflow. */
+  VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
+  MATERIAL_PREPARE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; filings: MaterialFiling[]; recoveryRequestId?: string }>;
+  MATERIAL_BRIEF_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; version: string; runId: string; force: boolean }>;
+  /** "false" pauses valuation runs; the admin's global switch overrides it. */
+  VALUATION_ENABLED?: string;
+  BUSINESS_CLASSIFICATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; artifact?: { artifactId: string; sourceVersion: number; sourceHash: string } }>;
+  /** "false" pauses translating publications into Chinese; unset or anything else runs it. */
+  TRANSLATION_ENABLED?: string;
+  /** Browser Rendering: draws the lens agent's html pictures so the agent reads what a reader would see (`browser`). */
+  BROWSER?: import("@cloudflare/puppeteer").BrowserWorker;
+  /** "false" pauses the daily storage sweep; unset or anything else runs it. */
+  STORAGE_SWEEP_ENABLED?: string;
+  BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** "false" pauses writing business tags; unset or anything else runs it. */
+  BUSINESS_TAGS_ENABLED?: string;
+  /** Workers AI, for embedding business tags and turning fetched pages into Markdown. */
+  AI?: TagEmbedder & Partial<MarkdownConverter>;
+  /** The Vectorize index of business tags, one namespace per sector and facet. */
+  TAGS_INDEX?: TagIndex;
+  /** JSON such as {"same":0.8,"near":0.68}: the cosine scores at which two tags count as the same or a near business. */
+  PEER_TAG_THRESHOLDS?: string;
+  /** JSON overriding an AI tool's reasoning level, e.g. {"business-classification":"high"}; see `ai-config.ts`. */
+  AI_REASONING?: string;
+  /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
+  AI_TOOL_SETTINGS?: string;
+  /** Models the admin connected (name, url, key, thinking level), set only by `aiToolEnvironment`. */
+  AI_ENDPOINTS?: string;
+  /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
+  BUSINESS_TREE_ENABLED?: string;
+  /** The four feature lists and global switches after the admin's switches (JSON), set only by `companyPolicyEnvironment`. */
+  FEATURE_RESOLVED?: string;
+  /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */
+  EVENTS_ENABLED?: string;
+  /** "false" turns off the IR-site deck search fallback. */
+  /** Alpha Vantage key for earnings-call transcripts; optional. */
+  ALPHA_VANTAGE_API_KEY?: string;
+  TRANSCRIPTS_ENABLED?: string;
+  /** Shared daily transcript request budget; defaults to the free tier's 25 requests. */
+  TRANSCRIPT_DAILY_CALLS?: string;
+  SEC_FILINGS: R2BucketLike;
+  SEC_USER_AGENT: string;
+  /** DeepSeek model calls and the independent Search/Fetch APIs use this key. */
+  DEEPSEEK_API_KEY?: string;
+  /** OpenAI's independent artifact arbiter and visual review (artifact/openai.ts). */
+  OPENAI_API_KEY?: string;
+  OPENAI_REVIEW_MODEL?: string;
+  /** The business map's public origin, where the visual review loads an artifact draft in the real stage. */
+  BUSINESS_SITE_ORIGIN?: string;
+  /** Signs artifact preview links; the admin password's secret doubles as the key material. */
+  REPORT_ADMIN_PASSWORD?: string;
+  SEC_ANALYSIS_MODEL?: string;
+  /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
+  SEC_REASONING_MODEL?: string;
+  /** Event routing and task runs. Optional so a partial environment simply emits nothing. */
+  PIPELINE_EVENTS?: Queue<EventMessage>;
+  PIPELINE_TASKS?: Queue<TaskMessage>;
+  /** Which deployment is running; task versions only ever move forward to a newer one. */
+  CF_VERSION_METADATA?: { id: string; tag: string; timestamp: string };
+};
+
+
+/** Planning, review and synthesis carry the judgement; node extraction is mechanical. */
+const REASONING_STAGE = /^(manager|synthesis|discovery-audit|editorial-review|editorial-revision)/;
+
+export function modelForStage(env: AnalysisEnv, stage: string, override?: string): string | undefined {
+  if (override) return override;
+  return REASONING_STAGE.test(stage) ? env.SEC_REASONING_MODEL || undefined : undefined;
+}
+
+export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch = fetch, workflowInstanceId = "standalone"): AnalysisOperations {
+  const repository = () => new D1SecRepository(requireDb(env));
+  // EDGAR is read for listings only; every filing's text comes from the archive (docs/sec-archive.md).
+  const listings = (): EdgarListings => edgarListings(env, { fetcher });
+  return {
+    loadFiling: async (ticker, accession) => {
+      assertTrackedTicker(env, ticker);
+      const saved = await repository().getPublicFiling(ticker, accession);
+      if (!saved) return null;
+      // Publication snapshots must carry source identity, never nest the old analysis recursively.
+      return { ticker: saved.ticker, cik: saved.cik, cikNumber: saved.cikNumber, companyName: saved.companyName,
+        form: saved.form, acceptedAt: saved.acceptedAt, filingDate: saved.filingDate, reportDate: saved.reportDate, accessionNumber: saved.accessionNumber,
+        primaryDocument: saved.primaryDocument, description: saved.description, items: saved.items,
+        documentUrl: saved.documentUrl, indexUrl: saved.indexUrl };
+    },
+    discover: (ticker) => discoverSecTicker(ticker, { listings: listings() }),
+    publishFeed: async (feed) => {
+      const typedFeed = feed as SecFilingFeed;
+      const ticker = cleanSecTicker(typedFeed.ticker);
+      if (!ticker) throw new Error("Invalid SEC filing index data.");
+      assertTrackedTicker(env, ticker);
+      const normalizedFeed = { ...typedFeed, ticker, filings: typedFeed.filings.map(toStoredFiling) };
+      const store = repository();
+      const db = requireDb(env), indexedAt = typedFeed.fetchedAt ?? new Date().toISOString();
+      // One Company Facts read gives each periodic filing's fiscal focus and the fundamentals. Retried on every
+      // discovery sweep: Company Facts can arrive after the filing index.
+      const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;
+      const facts = cik ? await listings().companyFacts(cik).catch((error) => {
+        console.warn("SEC Company Facts read failed", { ticker, error: error instanceof Error ? error.message : String(error) });
+        return null;
+      }) : null;
+      // An issuer's DEI can repeat last year's fiscal year (Oracle's 2026-08-31 10-Q says FY2026 Q1); the stored label is the one in sequence.
+      const periods = facts ? fiscalPeriodsInSequence(fiscalPeriodsFromCompanyFacts(facts, normalizedFeed.filings)) : [];
+      // The indexed list, the fiscal periods and their event commit together.
+      await db.batch([
+        db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+          .bind(`sec:filings:${ticker}`, JSON.stringify(normalizedFeed), indexedAt),
+        ...periods.map((period) => db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at WHERE sec_cache.payload IS NOT excluded.payload")
+          .bind(fiscalPeriodKey({ ticker, accessionNumber: period.sourceAccession }), JSON.stringify(period), indexedAt)),
+        outboxStatement(db, { type: "filings.indexed", ticker, cik: normalizedFeed.company?.cik ?? null, causeId: null }, indexedAt),
+      ]);
+      await Promise.all(normalizedFeed.filings.map((filing) => store.upsertFilingIndex(filing)));
+      // Publish one complete snapshot atomically; failures leave the last good snapshot intact.
+      if (cik && facts) {
+        try {
+          const history = normalizeCompanyFacts(ticker, facts);
+          if (history.series.some((series) => series.seriesId === "revenue" && series.quarters.length)) {
+            const at = new Date().toISOString();
+            await db.batch([
+              db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+                .bind(secFundamentalsKey(ticker), JSON.stringify(history), at),
+              outboxStatement(db, { type: "fundamentals.updated", ticker, cik, causeId: null }, at),
+            ]);
+          }
+        } catch (error) {
+          console.warn("SEC fundamentals refresh failed", { ticker, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+    },
+    updateJob: async (job: WorkflowJobUpdate) => {
+      const ticker = cleanSecTicker(job.ticker);
+      if (!ticker || !job.jobId || !job.accessionNumber) throw new Error("Invalid SEC job status.");
+      assertTrackedTicker(env, ticker);
+      await repository().upsertAnalysisJob({ ...job, ticker });
+    },
+    markJobStage: async (jobId: string, stage: string) => {
+      if (!env.DB) return;
+      await env.DB.prepare("UPDATE sec_analysis_jobs SET current_stage = ?, updated_at = ? WHERE job_id = ? AND status = 'running'")
+        .bind(stage, new Date().toISOString(), jobId).run();
+    },
+  };
+}
+
+function toStoredFiling(filing: SecFilingFeed["filings"][number]): SecFiling {
+  return {
+    ticker: filing.ticker,
+    cik: filing.cik,
+    cikNumber: filing.cikNumber,
+    companyName: filing.companyName,
+    form: filing.form,
+    filingDate: filing.filingDate,
+    acceptedAt: filing.acceptedAt,
+    reportDate: filing.reportDate,
+    accessionNumber: filing.accessionNumber,
+    primaryDocument: filing.primaryDocument,
+    description: filing.description,
+    items: filing.items,
+    documentUrl: filing.documentUrl,
+    indexUrl: filing.indexUrl,
+  };
+}
+
+export async function callWorkerSecModel(
+  env: AnalysisEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown,
+  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
+  tuning?: ModelCallTuning,
+): Promise<Record<string, unknown>> {
+  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, tuning));
+}
+
+/**
+ * Per-call limits for narrow extraction stages, the AI tool's reasoning level, and the provider-reported usage when the
+ * call ends. `ticker`, `runId` and `kind` only label the row in the `ai_usage` ledger; the kind is read from the stage
+ * name when a caller leaves it out.
+ */
+export type ModelCallTuning = {
+  maxTokens?: number; reasoning?: ReasoningEffort | "off"; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
+  ticker?: string; runId?: string; kind?: string;
+  /** The reader and conversation a stage call served, for the ledger. */
+  userHash?: string; conversationId?: string;
+};
+
+async function requestWorkerSecModelContent(
+  env: AnalysisEnv,
+  fetcher: typeof fetch,
+  stage: string,
+  system: string,
+  payload: unknown,
+  modelOverride?: string,
+  executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
+): Promise<string> {
+  const started = Date.now();
+  const controller = new AbortController();
+  let timeoutKind = "execution-budget";
+  const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
+  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
+  const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+  const connected = endpointFor(env, model);
+  const apiKey = connected?.apiKey || await resolveWorkerModelKey(env, fetcher);
+  const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(payload).length };
+  if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
+  // Keepalive bytes count as liveness while the model is reasoning.
+  let liveAt = Date.now();
+  const gatedFetch: typeof fetch = env.MODEL_REQUEST_GATE ? async (input, init) => { await env.MODEL_REQUEST_GATE!(); return fetcher(input, init); } : fetcher;
+  const client = modelClient(connected?.apiKey || apiKey, connected?.url || DEEPSEEK_BASE_URL, executionBudgetMs, gatedFetch, metrics, () => { liveAt = Date.now(); });
+  try {
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: `${system}\nReturn one valid JSON object only.` },
+    { role: "user", content: JSON.stringify(payload) },
+  ];
+  if (options?.continuation) messages.push(
+    { role: "assistant", content: options.continuation },
+    { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },
+  );
+  if (options?.repair) messages.push(
+    { role: "assistant", content: options.repair },
+    { role: "user", content: "Repair the previous response into one complete JSON object matching the original schema. Preserve its substantive analysis and evidence; fix syntax and complete missing fields from the original inputs. Do not replace the report with a summary. Output the complete repaired object only." },
+  );
+  const effort = options?.reasoning === "off" ? null : connected?.thinkingLevel ?? reasoningEffort(model, options?.reasoning ?? "high");
+  metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
+  metrics.reasoning = effort ?? "off";
+  metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
+  let stream: Stream<ChatCompletionChunk>;
+  try {
+    const request: ChatCompletionCreateParamsStreaming & { thinking: { type: "enabled" | "disabled" } } = {
+      model, messages,
+      thinking: { type: effort === null ? "disabled" : "enabled" },
+      ...(effort === null ? {} : { reasoning_effort: effort as ChatCompletionCreateParamsStreaming["reasoning_effort"] }),
+      max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
+      ...(options?.continuation ? {} : { response_format: { type: "json_object" } }),
+      stream: true,
+      stream_options: { include_usage: true },
+    };
+    stream = await client.chat.completions.create(request, { signal: controller.signal });
+  } catch (error) {
+    if (!(error instanceof OpenAI.APIError) || error instanceof OpenAI.APIUserAbortError) throw error;
+    // Transport failures carry no status; the recovery loop retries them as it retries a failed fetch.
+    if (error instanceof OpenAI.APIConnectionError || error.status === undefined) throw new TypeError(`Model ${model} ${stage} transport: ${error.message}`);
+    const failure = httpFailure(error, model, stage, apiKey);
+    metrics.providerCode = failure.providerCode;
+    throw failure;
+  }
+  clearTimeout(firstTimer);
+  metrics.headersMs = Date.now() - started;
+  return await readModelContent(stream, stage, () => {
+    metrics.firstTokenMs ??= Date.now() - started;
+    metrics.lastTokenMs = Date.now() - started;
+  }, metrics, undefined, {
+    signal: controller.signal, liveAt: () => liveAt, cancel: () => stream.controller.abort(),
+    checkpoint: options?.checkpoint, heartbeat: options?.heartbeat,
+  });
+  } catch (error) {
+    metrics.error = controller.signal.aborted ? `model-timeout:${timeoutKind}` : error instanceof SecModelHttpError ? `http:${error.status}` : error instanceof SecModelOutputError ? error.code : error instanceof Error ? error.name : "unknown";
+    if (controller.signal.aborted) throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
+    throw error;
+  } finally {
+    clearTimeout(firstTimer);
+    clearTimeout(budgetTimer);
+    await recordModelCall(env, metrics, started, { ...options, runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined) });
+  }
+}
+
+/** DeepSeek's OpenAI-compatible Chat Completions endpoint. */
+export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+
+/** The client every model call uses: DeepSeek's endpoint, no SDK retries, and a body watcher for liveness. */
+function modelClient(apiKey: string, baseURL: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): OpenAI {
+  return new OpenAI({
+    apiKey, baseURL, maxRetries: 0, timeout,
+    fetch: async (input, init) => {
+      const response = await fetcher(input, init);
+      onHeaders?.();
+      if (!response.body) return response;
+      const observed = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) { onBytes(); metrics.wireBytes = Number(metrics.wireBytes ?? 0) + chunk.byteLength; controller.enqueue(chunk); },
+      }));
+      return new Response(observed, { status: response.status, statusText: response.statusText, headers: response.headers });
+    },
+  });
+}
+
+/** An HTTP failure with its status, provider code and retry-after, for the recovery loop; the key never reaches the message. */
+function httpFailure(error: InstanceType<typeof OpenAI.APIError>, model: string, stage: string, apiKey: string): SecModelHttpError {
+  const retryAfter = error.headers?.get("retry-after");
+  const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
+  const code = error.code ?? error.type;
+  const providerCode = typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : undefined;
+  return new SecModelHttpError(error.status!, `Model ${model} ${stage} HTTP ${error.status}: ${error.message.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
+}
+
+/** Every call, however it ended, is logged and is a row in the cost ledger; the write is bounded and never throws. */
+async function recordModelCall(env: AnalysisEnv, metrics: Record<string, unknown>, started: number, tuning: Pick<ModelCallTuning, "onMetrics" | "ticker" | "runId" | "kind" | "userHash" | "conversationId">): Promise<void> {
+  console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
+  try { tuning.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
+  await recordAiUsage(env, aiUsageFromMetrics(metrics, {
+    at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "deepseek",
+    ticker: tuning.ticker, kind: tuning.kind, runId: tuning.runId, userHash: tuning.userHash, conversationId: tuning.conversationId,
+  }));
+}
+
+export async function resolveWorkerModelKey(env: AnalysisEnv, fetcher: typeof fetch = fetch): Promise<string> {
+  void fetcher;
+  if (!env.DEEPSEEK_API_KEY) throw new Error("SEC pipeline DEEPSEEK_API_KEY is not configured");
+  return env.DEEPSEEK_API_KEY;
+}

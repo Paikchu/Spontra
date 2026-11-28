@@ -1,0 +1,57 @@
+import { useEffect, useRef, useState } from "react";
+import type { ArtifactFrameMessage, PublishedArtifact } from "@/src/domains/publishing/artifact-contract";
+import { ArtifactLanguage } from "./ArtifactLanguage";
+
+const isDark = () => !document.documentElement.classList.contains("light");
+
+/**
+ * An analysis report (docs/analysis-html-artifact.md §8), drawn in the `/artifact-frame` sandbox: an opaque origin with
+ * no network, where only the site's component script runs. The page hands it the report and the theme, sizes the
+ * frame to the height it reports, and opens the links it forwards. `data-rendered` tells the visual review the report
+ * has drawn.
+ */
+export function ArtifactFrame({ artifact, showLanguage = true, hostTitle }: { artifact: Pick<PublishedArtifact, "id" | "hash" | "lang" | "translation" | "title" | "html" | "css">; showLanguage?: boolean; hostTitle?: string }) {
+  return <>
+    {showLanguage && <ArtifactLanguage artifact={artifact} row />}
+    <ArtifactDocumentFrame key={`${artifact.id}:${artifact.lang}:${artifact.hash}:${hostTitle ?? ""}`} artifact={artifact} hostTitle={hostTitle} />
+  </>;
+}
+
+export function ArtifactDocumentFrame({ artifact, hostTitle, filing, onClose }: {
+  artifact: Pick<PublishedArtifact, "title" | "html" | "css" | "lang" | "hash">;
+  hostTitle?: string;
+  filing?: Extract<ArtifactFrameMessage, { type: "artifact:render" }>["filing"];
+  onClose?: () => void;
+}) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [initialDark] = useState(isDark);
+  const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false), [height, setHeight] = useState(480);
+  const post = (message: ArtifactFrameMessage) => frame.current?.contentWindow?.postMessage(message, "*");
+  useEffect(() => {
+    const listener = (event: MessageEvent<ArtifactFrameMessage>) => {
+      if (!frame.current || event.source !== frame.current.contentWindow || !event.data || typeof event.data !== "object") return;
+      const m = event.data;
+      if (m.type === "artifact:ready") setReady(true);
+      else if (m.type === "artifact:rendered") { setHeight(m.height); setRendered(true); }
+      else if (m.type === "artifact:size") setHeight(m.height);
+      else if (m.type === "artifact:link" && /^https:\/\//.test(m.href)) window.open(m.href, "_blank", "noopener,noreferrer");
+      else if (m.type === "artifact:close") onClose?.();
+    };
+    addEventListener("message", listener);
+    return () => removeEventListener("message", listener);
+  }, [onClose]);
+  const drawn = useRef(false);
+  useEffect(() => {
+    if (!ready || drawn.current) return;
+    drawn.current = true;
+    post({ type: "artifact:render", html: artifact.html, css: artifact.css, dark: isDark(), lang: artifact.lang, hostTitle, filing });
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const observer = new MutationObserver(() => post({ type: "artifact:theme", dark: isDark() }));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return <iframe ref={frame} className="artifact-frame" src={`/artifact-frame?theme=${initialDark ? "dark" : "light"}`} sandbox="allow-scripts" title={artifact.title}
+    data-artifact-frame="" data-artifact-hash={artifact.hash} data-rendered={rendered ? "" : undefined} style={{ height }}
+    onLoad={() => { if (!drawn.current) post({ type: "artifact:ping" }); }} />;
+}

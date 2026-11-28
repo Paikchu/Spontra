@@ -1,25 +1,17 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  // knip cannot see Cloudflare entrypoints: each wrangler.jsonc "main" and each Vite HTML input is an entry.
+  // knip cannot see Cloudflare entrypoints: wrangler.jsonc "main" and Vite HTML inputs are listed here.
   // package.json scripts are picked up automatically.
-  "workspaces": {
-    ".": {
-      "entry": [
-        "workers/analysis/src/index.ts",          // workers/analysis/wrangler.jsonc "main"
-        // Hand-run ops scripts with documented usage:
-        "scripts/sec-report-reliability.ts",      // docs/sec-generation-reliability.md
-        "workers/analysis/scripts/*.ts"           // workers/analysis/scripts/README.md
-      ],
-      "project": ["workers/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}", "shared/**/*.{ts,tsx}", "scripts/**/*.{ts,mjs}"]
-    },
-    "apps/business-site": {
-      // worker/index.ts (wrangler "main") and src/main.tsx are detected; the HTML inputs come from vite.config.ts.
-      "entry": ["index.html", "artifact-frame.html"],
-      "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
-    },
-    "apps/admin": {
-      "entry": ["index.html"],
-      "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
-    }
-  }
+  "entry": [
+    "src/index.ts",
+    "web/admin.html",
+    "web/preview.html",
+    "web/artifact-frame.html",
+    "scripts/acceptance/*.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "web/**/*.{ts,tsx}",
+    "scripts/**/*.{ts,mjs}"
+  ]
 }

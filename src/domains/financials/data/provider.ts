@@ -1,0 +1,157 @@
+import type {Job} from './store.ts';
+import {secArchiveDocumentUrl, secArchiveRoot} from '../../sec-archive/sec-sources.ts';
+import type {DocumentBatch} from './collect.ts';
+import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
+import {reviewedCurrentPair} from './period-review.ts';
+import {restatedConcepts} from './restatement.ts';
+import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
+import type {BridgeStructure} from './bridge.ts';
+import {namesMembers} from './member-labels.ts';
+import {SEC_DOCUMENT_MAX_BYTES} from '../runtime/limits.ts';
+import {releaseQuarter} from '../runtime/earnings-release.ts';
+import type {BusinessFlowQuarter} from '../business-flow-contract.ts';
+export interface SecReader {
+ material?(filing:{accession:string;form:string;filedAt:string;reportDate:string|null;url:string;cik?:string}):Promise<import('../../filing-material/contract.ts').MaterialSnapshot>;
+ /** One filing document by its EDGAR URL. The implementation lives in `sec-archive/`; nothing else downloads from EDGAR. */
+ read(url:string):Promise<Response>;
+ /** The issuer's submission list, or one of its continuation pages, parsed. */
+ submissions(cik:string,page?:string):Promise<unknown>;
+ /** EDGAR's exchange directory of issuers, parsed. */
+ issuerDirectory():Promise<unknown>;
+ /** Persist exact bytes and all encountered facts independently of the chart projection. */
+ archive?(source:DocumentSource,html:string,metadata?:{form?:string;reportDate?:string}):Promise<void>;
+ /** The stored copy of a document this issuer already archived. A filed EDGAR document never changes, so it stands in for the download. */
+ archived?(url:string):Promise<string|null>;
+ /** The filing's own names for its dimension members, keyed by member QName; absent, members read by their local names. */
+ memberLabels?(documentUrl:string,accession:string):Promise<Record<string,string>>;
+ /** The filing's income statement calculation linkbase (calculation.ts); absent or null, the statement rows are read instead. */
+ calculation?(documentUrl:string,accession:string):Promise<IncomeCalculation|null>;
+ /** How the filing reconciles segment revenue to consolidated revenue (calculation.ts); absent or null, a split must add up by itself. */
+ revenueStructure?(documentUrl:string,accession:string):Promise<RevenueStructure|null>;
+ /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
+ presentation?(cik:string):Promise<{structure:BridgeStructure;version:string}|null>;
+}
+/**
+ * EDGAR accepts no script in a filing, yet sec.gov appends one with a random path to every page it serves, so the same
+ * document hashed differently on each download and was archived again in full. Dropping script elements leaves exactly
+ * what was filed.
+ */
+export function canonicalSecHtml(html:string):string{return html.replace(/\s*<script\b[^>]*?(?:\/>|>[\s\S]*?<\/script\s*>)/gi,'');}
+/** A filed document never changes size: one over the cap is a final reason (`SEC_DOCUMENT_TOO_LARGE`), never retried as a source outage. */
+async function readBoundedReport(response:Response):Promise<string>{
+ if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('SEC_DOCUMENT_TOO_LARGE');
+ if(!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
+ const reader=response.body.getReader(),decoder=new TextDecoder(),parts:string[]=[];let bytes=0;
+ try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>SEC_DOCUMENT_MAX_BYTES){await reader.cancel();throw new Error('SEC_DOCUMENT_TOO_LARGE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
+ const html=canonicalSecHtml(parts.join(''));if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
+}
+async function readDocument(url:string,reader:SecReader):Promise<string>{
+ const stored=await reader.archived?.(url);if(stored)return stored;
+ const response=await reader.read(url);if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('SEC_DOCUMENT_TOO_LARGE');
+ return readBoundedReport(response);
+}
+const plain=(html:string)=>html.replace(/<[^>]*>/g,' ').replace(/&nbsp;|&#160;/gi,' ').replace(/&amp;/gi,'&').replace(/\s+/g,' ');
+/**
+ * A 6-K is a cover for whatever a foreign issuer furnished. It can carry a quarter only when its exhibit index describes
+ * financial statements, results or an earnings release, or when the cover itself prints a statement of income; monthly
+ * revenue, board, dividend, meeting and transaction notices cannot. Other forms always can.
+ */
+export function reportsFinancials(form:string|undefined,html:string):boolean{
+ if(!/^6-K/.test(form??'')||/<ix:nonFraction/i.test(html))return true;
+ const exhibits=[...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(row=>plain(row[1])).filter(row=>/\b99(?:\.\d+)?\b/.test(row)).join(' ');
+ return /financial\s+(?:statements|results|information)|earnings|(?:quarterly|interim|half[- ]year)\s+(?:results|report)|consolidated\s+report|management\s+report/i.test(exhibits)
+  ||/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|profit\s+or\s+loss)/i.test(plain(html));
+}
+export async function readFilingDocuments(primaryUrl:string,reader:SecReader,accession?:string,form?:string,metadata?:{filedAt:string;reportDate:string|null;cik?:string}):Promise<Array<{url:string;html:string;memberLabels?:Record<string,string>}>>{
+ if(!reader.material||!accession)throw new Error('FILING_MATERIAL_READER_REQUIRED');
+ const snapshot=await reader.material({accession,form:form??'SEC',filedAt:metadata?.filedAt??'',reportDate:metadata?.reportDate??null,url:primaryUrl,...(metadata?.cik?{cik:metadata.cik}:{})});
+ const documents:Array<{url:string;html:string;memberLabels?:Record<string,string>}>=[];
+ for(const source of snapshot.documents.filter(s=>s.contentType==='text/html'))documents.push({url:source.url,html:await readDocument(source.url,reader)});
+ documents.sort((a,b)=>Number(b.url===primaryUrl)-Number(a.url===primaryUrl));
+ if(reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
+ return documents;
+}
+/** A scan reads at most MAX_REPORTS financial reports. A foreign issuer's 6-Ks are listed when filed within the lookback of
+ * its newest filing (at most FOREIGN_LISTED filings in all); one step passes over at most NOTICES_PER_STEP notices. */
+const MAX_REPORTS=32,FOREIGN_LOOKBACK_DAYS=550,FOREIGN_LISTED=200,NOTICES_PER_STEP=12;
+export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {release?:{url:string;accession:string;filedAt:string};documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;calculations?:Record<string,IncomeCalculation>;revenueStructures?:Record<string,RevenueStructure>;presentation?:{structure:BridgeStructure;version:string}|null;restated?:ReturnType<typeof restatedConcepts>;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean;reports?:number};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.release;delete cursor.calculations;delete cursor.revenueStructures;delete cursor.restated;delete cursor.presentation;delete cursor.reports;}
+ if(!cursor.documents){
+  cursor.presentation=await reader.presentation?.(cik)??null;
+  const data=await reader.submissions(cik) as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
+  // A foreign issuer's 6-Ks are mostly notices; they are listed by filing date and only those that report financials count.
+  const newest=Date.parse(recent.filingDate[0]??'');let counted=0;
+  for(let i=0;i<recent.form.length&&counted<(cursor.foreign?MAX_REPORTS:10)&&cursor.documents.length<FOREIGN_LISTED;i++){
+   if(cursor.foreign&&recent.form[i]==='6-K'&&!(Date.parse(recent.filingDate[i])>=newest-FOREIGN_LOOKBACK_DAYS*86400000))break;
+   if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
+   const folder=secArchiveRoot(Number(cik),accession);
+   cursor.documents.push({url:secArchiveDocumentUrl(folder,doc),accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
+   if(recent.form[i]!=='6-K')counted++;
+  }
+  // An earnings release filed after the newest quarterly report reports a quarter no report covers yet. It is read on
+  // its own once the verified pair is known (readReleaseQuarter), never among the reports that verify that pair.
+  if(!cursor.foreign){
+   const periodic=cursor.documents.filter(d=>d.form!=='8-K').map(d=>d.filedAt).sort().at(-1)??'';
+   const release=cursor.documents.filter(d=>d.form==='8-K'&&d.filedAt>periodic).sort((a,b)=>b.filedAt.localeCompare(a.filedAt))[0];
+   if(release){cursor.release={url:release.url,accession:release.accession,filedAt:release.filedAt};cursor.documents=cursor.documents.filter(d=>!(d.form==='8-K'&&d.filedAt>periodic));}
+  }
+  // The current statement and its adjacent filing provide the cumulative bridge.
+  if(!cursor.foreign)cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
+  cursor.index=0;
+  if(!cursor.documents.length)throw new Error('NO_SUPPORTED_FILINGS');
+ }
+ const quarters=[];cursor.index??=0;let read=0,skipped=0;
+ while(cursor.index<cursor.documents.length&&(cursor.reports??0)<MAX_REPORTS&&read<Math.max(1,Math.min(3,maxDocuments))&&skipped<NOTICES_PER_STEP){
+  const document=cursor.documents[cursor.index];
+  const documents=await readFilingDocuments(document.url,reader,document.accession,document.form,{filedAt:document.filedAt,reportDate:document.periodEnd,cik});
+  // A notice is archived like any filing, but neither parsed nor counted.
+  if(!reportsFinancials(document.form,documents[0].html)){await reader.archive?.({...document,cik,industry:cursor.industry??'unknown'},documents[0].html,{form:document.form,reportDate:document.periodEnd});cursor.index++;skipped++;continue;}
+  read++;cursor.reports=(cursor.reports??0)+1;
+  for(const content of documents){
+   const stored:DocumentSource={...document,url:content.url,cik,industry:cursor.industry??'unknown',...(content.memberLabels?{memberLabels:content.memberLabels}:{})};
+   await reader.archive?.(stored,content.html,{form:document.form,reportDate:document.periodEnd});
+   // The calculation belongs to the filing's XBRL instance, which only the inline XBRL document carries.
+   const calculation=/<ix:nonFraction/i.test(content.html)?await reader.calculation?.(content.url,document.accession)??null:null;
+   if(calculation)cursor.calculations={...(cursor.calculations??{}),[document.accession]:calculation};
+   const revenueStructure=/<ix:nonFraction/i.test(content.html)?await reader.revenueStructure?.(content.url,document.accession)??null:null;
+   if(revenueStructure)cursor.revenueStructures={...(cursor.revenueStructures??{}),[document.accession]:revenueStructure};
+   const source:DocumentSource={...stored,calculation,revenueStructure,presentation:cursor.presentation??null};
+   const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
+   if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
+   if(cursor.foreign&&parsed.quarters.length){const latest=parsed.quarters.map(q=>q.periodEnd).sort().at(-1)!;if(!cursor.expectedPeriodEnd||latest>cursor.expectedPeriodEnd)cursor.expectedPeriodEnd=latest;}
+   const expected=cursor.expectedPeriodEnd;
+   const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
+   if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source:stored,eligible:true}];cursor.restated=restatedConcepts(cursor.reportedFacts);}
+   quarters.push(...parsed.quarters);
+   if(expected&&cursor.reportedFacts?.length){const firstReport=!cursor.documents.some(d=>d.form!=='8-K'&&d.periodEnd<expected);
+    const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null,cursor.revenueStructures??{},firstReport);if(review.reviewed){cursor.index++;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
+  }
+  cursor.index++;
+ }
+ const finished=cursor.index>=cursor.documents.length||(cursor.reports??0)>=MAX_REPORTS;
+ return {quarters,nextCursor:JSON.stringify(cursor),finished,expectedPeriodEnd:cursor.expectedPeriodEnd};
+}
+
+/**
+ * The quarter after `previous` from the earnings release the job found filed after the newest quarterly report, or
+ * null. The release is read the same way every time (an archived copy stands in for the download), so a retried
+ * publication reaches the same quarter.
+ */
+export async function readReleaseQuarter(job:Job,previous:BusinessFlowQuarter,reader:SecReader):Promise<{quarter:BusinessFlowQuarter|null;issues:string[]}>{
+ const release=(JSON.parse(job.cursor||'{}') as {release?:{url:string;accession:string;filedAt:string}}).release;
+ if(!release)return {quarter:null,issues:[]};
+ const documents=await readFilingDocuments(release.url,reader,release.accession,'8-K',{filedAt:release.filedAt,reportDate:null,cik:job.cik});
+ const result=releaseQuarter(documents.map(d=>({url:d.url,html:d.html})),previous,{accession:release.accession,filedAt:release.filedAt,parserVersion:SEC_FLOW_PARSER_VERSION});
+ return result.quarter&&result.quarter.periodEnd>previous.periodEnd?result:{quarter:null,issues:result.issues};
+}
+
+export async function discoverDataIssuer(ticker:string,reader:Pick<SecReader,'issuerDirectory'>):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{
+ const raw=await reader.issuerDirectory() as {fields:string[];data:unknown[][]};
+ if(!Array.isArray(raw.fields)||!Array.isArray(raw.data))throw new Error('Invalid SEC issuer directory');
+ const symbol=raw.fields.indexOf('ticker'),cik=raw.fields.indexOf('cik'),name=raw.fields.indexOf('name');
+ if(symbol<0||cik<0||name<0)throw new Error('Invalid SEC issuer directory');
+ const canonical=ticker.toUpperCase().replaceAll("-", ".");
+ const row=raw.data.find(row=>String(row[symbol]).toUpperCase().replaceAll("-", ".")===canonical);if(!row)throw new Error('SEC_ISSUER_NOT_FOUND');const identifier=String(row[cik]).padStart(10,'0');if(!/^\d{10}$/.test(identifier))throw new Error('Invalid issuer identity');
+ return {cik:identifier,tickers:[ticker],name:String(row[name]),industry:'unknown'};
+}

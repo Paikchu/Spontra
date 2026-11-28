@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "spontra-sec-material-acceptance-proxy-local",
+  "main": "sec-material-acceptance-proxy.ts",
+  "compatibility_date": "2026-08-26",
+  "services": [
+    { "binding": "ANALYSIS", "service": "spontra-analysis", "entrypoint": "AdminGateway", "remote": true }
+  ],
+  "dev": { "ip": "127.0.0.1", "port": 8799, "local_protocol": "http" }
+}

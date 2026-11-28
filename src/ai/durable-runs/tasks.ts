@@ -1,0 +1,138 @@
+import { runMaterialPilotChunk, type MaterialPilotChunk } from "../../domains/filing-material/pilot.ts";
+import { prepareFilingMaterial } from "../../domains/filing-material";
+import { executeMaterialBriefRun, type MaterialBriefParams } from "../../domains/filing-material/brief.ts";
+import type { MaterialFiling } from "../../domains/filing-material/contract.ts";
+import { aiToolEnvironment } from "../config.ts";
+import { executePublicResearchRun, type PublicResearchRunSpec } from "../../domains/public-research/generation.ts";
+import { companyPolicyEnvironment } from "../../domains/financials/data/company-policy.ts";
+import { assertFeatureTicker, type SecMemoryWorkflowParams } from "../../core.ts";
+import { SecModelHttpError, type AnalysisEnv } from "../../operations.ts";
+import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "../../lib/retry-policy.ts";
+import type { WorkflowStepLike } from "../../lib/workflow-core.ts";
+import { storeWorkflowResult, loadWorkflowResult } from "../../lib/workflow-results.ts";
+import { executeSecMemoryWorkflow } from "../../domains/filing-analysis/memory-workflow.ts";
+import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "../../domains/business-map/explainer/workflow.ts";
+import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "../../domains/business-map/tree/workflow.ts";
+import { executeValuationWorkflow, type ValuationWorkflowParams } from "../../domains/valuation/workflow.ts";
+import { executeValuationEvaluation, type ValuationEvaluationParams } from "../../domains/valuation/evaluation.ts";
+import { executeBusinessClassificationWorkflow, type BusinessClassificationParams } from "../../domains/business-map/classification";
+import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "../../domains/business-map/tags/workflow.ts";
+import { executeFilingOperatorCompletion } from "../../domains/filing-analysis/operator-completion.ts";
+import { executeTranslateWorkflow, type TranslateParams } from "../../domains/publishing/translation/translate.ts";
+import { trackRun, trackSteps } from "../runs/tracking.ts";
+import { NonRetryableError, type RunStep, type StepConfig } from "./engine.ts";
+import type { RunKind } from "./binding.ts";
+
+export type RunContext = { env: AnalysisEnv; step: RunStep; id: string; timestamp: Date };
+type Task = (params: never, run: RunContext) => Promise<unknown>;
+
+const STEP_RETRY = {
+  // The delay function already applies backoff.
+  retries: { limit: 3, backoff: "constant", delay: ({ ctx }) => retryDelayForAttempt(ctx.attempt) },
+  timeout: SEC_WORKFLOW_STEP_TIMEOUT,
+} satisfies StepConfig;
+
+/** The analysis steps: large results go to R2, and a provider's refusal of the request itself is final. */
+function durableSteps(step: RunStep, env: AnalysisEnv, runId: string): WorkflowStepLike {
+  return {
+    // A session's outcome carries its whole trail and state, which can pass what one journal row holds.
+    waitFor: async <T>(name: string, check: () => Promise<T | null>, recheck: Parameters<RunStep["waitFor"]>[2]) => loadWorkflowResult<T>(env.SEC_FILINGS, await step.waitFor(name, async () => {
+      const value = await check();
+      return value === null ? null : await storeWorkflowResult(env.SEC_FILINGS, runId, name, value);
+    }, recheck) as never),
+    async do<T>(name: string, callback: (context?: { attempt: number }) => Promise<T>): Promise<T> {
+      const stored = await step.do(name, STEP_RETRY, async (context) => {
+        try { return await storeWorkflowResult(env.SEC_FILINGS, runId, name, await callback(context)); }
+        catch (error) {
+          if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
+            // The request layer redacts the credential before constructing this message.
+            throw new NonRetryableError(`${error.providerCode ? `[${error.providerCode}] ` : ""}${error.message.slice(0, 1000)}`);
+          }
+          throw error;
+        }
+      });
+      for (let attempt = 0; ; attempt++) {
+        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored); }
+        catch (error) {
+          if (attempt >= 2 || /integrity|Invalid stored|missing/.test(String(error))) throw error;
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 3 ** attempt));
+        }
+      }
+    },
+  };
+}
+
+const sleeper = (step: RunStep) => (name: string, ms: number) => step.sleep(name, Math.max(1000, Math.round(ms)));
+
+/** What each run kind executes; the bodies the Workflow classes had. */
+export const RUN_TASKS: Record<RunKind, Task> = {
+  async FILING_OPERATOR_COMPLETION_WORKFLOW(params,{env:raw,step,id}){return executeFilingOperatorCompletion(params,{env:await companyPolicyEnvironment(raw),step,executionId:id});},
+  async MATERIAL_PILOT_WORKFLOW(params: MaterialPilotChunk, { env, step }) {
+    return runMaterialPilotChunk(env, step, params);
+  },
+  async MATERIAL_PREPARE_WORKFLOW(params: { ticker: string; filings: MaterialFiling[]; recoveryRequestId?: string }, { env, step }) {
+    const results: Array<{ accession: string; status: string }> = [];
+    for (const filing of params.filings) {
+      let status = "preparing";
+      for (let chunk = 0; chunk < 25 && status === "preparing"; chunk++) {
+        const outcome = await step.do(`prepare-${filing.accession}-${chunk}`, {
+          retries: { limit: 1, backoff: "constant", delay: 10_000 },
+          timeout: "10 minutes",
+        }, async () => prepareFilingMaterial(env, filing, {
+          maxDocuments: 20,
+          ...(params.recoveryRequestId ? { recoveryRequestId: params.recoveryRequestId } : {}),
+        }));
+        status = outcome.status;
+      }
+      results.push({ accession: filing.accession, status });
+    }
+    return { ticker: params.ticker, results };
+  },
+  async MATERIAL_BRIEF_WORKFLOW(params: MaterialBriefParams, { env: raw, step }) {
+    return step.do("extract-material-brief", {
+      retries: { limit: 1, backoff: "constant", delay: 15_000 },
+      timeout: "15 minutes",
+    }, async () => executeMaterialBriefRun(await aiToolEnvironment(raw), params));
+  },
+  async PUBLIC_RESEARCH_WORKFLOW(params: PublicResearchRunSpec, { env, step, id }) {
+    try { return await executePublicResearchRun(params, durableSteps(step, env, id), env); }
+    catch (error) {
+      await env.DB?.prepare("UPDATE public_research_runs SET state='failed',error=?,updated_at=? WHERE run_id=? AND state IN ('running','queued')")
+        .bind(error instanceof Error ? error.message.slice(0,1000) : String(error), new Date().toISOString(), params.runId).run();
+      throw error;
+    }
+  },
+  async BUSINESS_EXPLAINER_WORKFLOW(params: BusinessExplainerParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    const run = { env, kind: "explainer" as const, ticker: params.ticker, runId: id };
+    return trackRun(run, () => executeBusinessExplainerWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, fetch, id));
+  },
+  async BUSINESS_TREE_WORKFLOW(params: BusinessTreeParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    const run = { env, kind: "tree" as const, ticker: params.ticker, runId: id };
+    return trackRun(run, () => executeBusinessTreeWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, fetch, id));
+  },
+  async VALUATION_WORKFLOW(params: ValuationWorkflowParams | ValuationEvaluationParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    if ("evaluationId" in params) return executeValuationEvaluation(params, durableSteps(step, env, id), env, id);
+    const run = { env, kind: "valuation" as const, ticker: params.ticker, runId: id };
+    return trackRun(run, () => executeValuationWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, fetch, id));
+  },
+  async TRANSLATE_WORKFLOW(params: TranslateParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    return executeTranslateWorkflow(params, durableSteps(step, env, id), env, id);
+  },
+  async BUSINESS_CLASSIFICATION_WORKFLOW(params: BusinessClassificationParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    return executeBusinessClassificationWorkflow(params, durableSteps(step, env, id), env);
+  },
+  async BUSINESS_TAGS_WORKFLOW(params: BusinessTagsParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    return executeBusinessTagsWorkflow(params, durableSteps(step, env, id), env);
+  },
+  async SEC_MEMORY_WORKFLOW(params: SecMemoryWorkflowParams, { env: raw, step, id }) {
+    const env = await companyPolicyEnvironment(raw);
+    assertFeatureTicker(env, "filings", params.ticker);
+    return executeSecMemoryWorkflow(params, id, durableSteps(step, env, id), env);
+  },
+};
