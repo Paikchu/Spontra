@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { Button } from "@/web/shared/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -604,9 +605,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                 <span className={`fm2-badge ${currentMaterial.status}`}>{STATUS_LABEL[currentMaterial.status]}</span>
               </div>
               <div className="fm2-meta">
-                <span>申报类型：<strong>{currentMaterial.filing.form}</strong></span>
                 <span>报告期：<strong>{currentMaterial.filing.reportDate || "—"}</strong></span>
-                <span>提交日：<strong>{currentMaterial.filing.filedAt || "—"}</strong></span>
               </div>
             </div>
 
@@ -681,9 +680,9 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                         </div>
 
                         {briefView === "structured" && (
-                          <div className="fm2-brief-stack">
-                            <div className="fm2-brief-section">
-                              <h3>披露元数据 & 核心主线（点击右侧编号直接跳转 L1 原文或 CSV）</h3>
+                          <div className="flex min-w-0 flex-col gap-8">
+                            <div className="flex min-w-0 flex-col gap-3">
+                              <h3 className="text-base font-semibold">核心主线</h3>
                               <div className="fm2-meta" style={{ marginBottom: 8 }}>
                                 <span>覆盖期末：<strong>{briefData.brief.disclosureMeta.coveredPeriodEnd ?? "—"}</strong></span>
                                 <span>财季：<strong>{briefData.brief.disclosureMeta.fiscalPeriod ?? "—"}</strong></span>
@@ -702,37 +701,37 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                             </div>
 
                             {briefData.brief.metrics.length > 0 && (
-                              <div className="fm2-brief-section">
-                                <h3>标准化财务与分部指标 ({briefData.brief.metrics.length})</h3>
-                                <div className="fm2-table-wrap">
-                                  <table className="fm2-table">
-                                    <thead>
-                                      <tr>
-                                        <th>指标</th><th>分部</th><th>报告期</th><th>标准期</th><th>数值</th><th>口径</th><th>YoY</th><th>QoQ</th><th>L1 溯源</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
+                              <div className="flex min-w-0 flex-col gap-3">
+                                <h3 className="text-base font-semibold">财务与分部指标 ({briefData.brief.metrics.length})</h3>
+                                <div className="min-w-0">
+                                  <Table className="min-w-[56rem] table-fixed">
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="w-52">指标</TableHead><TableHead>分部</TableHead><TableHead className="w-32">报告期</TableHead><TableHead>标准期</TableHead><TableHead className="w-28">数值</TableHead><TableHead>口径</TableHead><TableHead>YoY</TableHead><TableHead>QoQ</TableHead><TableHead className="w-40">L1 溯源</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
                                       {briefData.brief.metrics.map((m, idx) => (
-                                        <tr key={idx}>
-                                          <td><strong>{m.name}</strong>{m.note ? <div className="fm2-meta">{m.note}</div> : null}</td>
-                                          <td>{m.segment ?? "—"}</td>
-                                          <td>{m.period}</td>
-                                          <td>{m.calendarPeriod ?? "—"}</td>
-                                          <td>{m.unit ? `${m.value} (${m.unit})` : m.value}</td>
-                                          <td>{m.basis}</td>
-                                          <td>{m.yoy ?? "—"}</td>
-                                          <td>{m.qoq ?? "—"}</td>
-                                          <td>{renderCitations(m.sourceIds)}</td>
-                                        </tr>
+                                        <TableRow key={idx}>
+                                          <TableCell className="align-top whitespace-normal break-words"><strong>{m.name}</strong>{m.note ? <div className="fm2-meta">{m.note}</div> : null}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.segment ?? "—"}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.period}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.calendarPeriod ?? "—"}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.unit ? `${m.value} (${m.unit})` : m.value}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.basis}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.yoy ?? "—"}</TableCell>
+                                          <TableCell className="align-top whitespace-normal break-words">{m.qoq ?? "—"}</TableCell>
+                                          <TableCell className="align-top whitespace-normal [&_button]:max-w-full [&_button]:truncate">{renderCitations(m.sourceIds)}</TableCell>
+                                        </TableRow>
                                       ))}
-                                    </tbody>
-                                  </table>
+                                    </TableBody>
+                                  </Table>
                                 </div>
                               </div>
                             )}
 
                             {briefData.brief.guidanceAndChanges.length > 0 && (
-                              <div className="fm2-brief-section">
+                              <div className="flex min-w-0 flex-col gap-3">
                                 <h3>业绩指引、CapEx 与口径变更 ({briefData.brief.guidanceAndChanges.length})</h3>
                                 <ul className="fm2-brief-list">
                                   {briefData.brief.guidanceAndChanges.map((item, idx) => (
@@ -747,7 +746,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                             )}
 
                             {briefData.brief.risksAndFootnotes.length > 0 && (
-                              <div className="fm2-brief-section">
+                              <div className="flex min-w-0 flex-col gap-3">
                                 <h3>附注风险与表外条款 ({briefData.brief.risksAndFootnotes.length})</h3>
                                 <ul className="fm2-brief-list">
                                   {briefData.brief.risksAndFootnotes.map((item, idx) => (
@@ -762,7 +761,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                             )}
 
                             {briefData.brief.industrySignals.length > 0 && (
-                              <div className="fm2-brief-section">
+                              <div className="flex min-w-0 flex-col gap-3">
                                 <h3>行业横向信号 ({briefData.brief.industrySignals.length})</h3>
                                 <ul className="fm2-brief-list">
                                   {briefData.brief.industrySignals.map((item, idx) => (
