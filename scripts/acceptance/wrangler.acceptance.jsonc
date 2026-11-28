@@ -14,7 +14,7 @@
     "SEC_DATA_TICKERS": "CRWV,ORCL",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
     "SEC_REASONING_MODEL": "deepseek-flash",
-    "BUSINESS_SITE_ORIGIN": "http://127.0.0.1:8799"
+    "SPONTRA_PUBLIC_ORIGIN": "http://127.0.0.1:8799"
   },
   "d1_databases": [{ "binding": "DB", "database_name": "sec-material-acceptance-local", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "../../migrations" }],
   "r2_buckets": [{ "binding": "SEC_FILINGS", "bucket_name": "sec-material-acceptance-local" }],

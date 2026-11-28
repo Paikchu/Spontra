@@ -27,8 +27,8 @@
     "TRANSCRIPT_DAILY_CALLS": "25",
     "TRANSCRIPTS_ENABLED": "true",
     "TRANSLATION_ENABLED": "true",
-    // Where the visual review opens an artifact draft in the real stage (src/domains/publishing/artifact/qa.ts).
-    "BUSINESS_SITE_ORIGIN": "https://businessview.info"
+    // Public HTTPS origin used for signed artifact previews and absolute research references.
+    "SPONTRA_PUBLIC_ORIGIN": "https://businessview.info"
   },
   "r2_buckets": [
     {

@@ -219,7 +219,7 @@ export function composerHarness<S extends { composer: ComposerState }>(setup: Co
   async function renderUrl(state: S, version: number) {
     const c = state.composer;
     const token = await previewToken(setup.env, c.artifact.kind, c.artifact.ticker, c.artifact.subject, version);
-    const origin = (setup.env.BUSINESS_SITE_ORIGIN ?? "").replace(/\/$/, "");
+    const origin = (setup.env.SPONTRA_PUBLIC_ORIGIN ?? "").replace(/\/$/, "");
     const query = setup.previewQuery ? `&${setup.previewQuery}` : "";
     return `${origin}/article-preview?token=${encodeURIComponent(token)}${query}`;
   }

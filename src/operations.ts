@@ -119,7 +119,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   OPENAI_API_KEY?: string;
   OPENAI_REVIEW_MODEL?: string;
   /** The business map's public origin, where the visual review loads an artifact draft in the real stage. */
-  BUSINESS_SITE_ORIGIN?: string;
+  SPONTRA_PUBLIC_ORIGIN?: string;
   /** Signs artifact preview links; the admin password's secret doubles as the key material. */
   REPORT_ADMIN_PASSWORD?: string;
   SEC_ANALYSIS_MODEL?: string;

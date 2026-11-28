@@ -24,7 +24,7 @@
     "lint": "eslint . --ignore-pattern dist",
     "migrate:ci": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc --env=\"\"",
     "deploy:dry-run": "wrangler deploy --config wrangler.jsonc --env=\"\" --dry-run",
-    "deploy": "npm run migrate:ci && npm run check:migrations && wrangler deploy --config wrangler.jsonc --env=\"\" --keep-vars",
+    "deploy": "npm run migrate:ci && npm run check:migrations && wrangler deploy --config wrangler.jsonc --env=\"\"",
     "analysis:prepare": "npm run prepare:assets",
     "analysis:check:migrations": "npm run check:migrations",
     "analysis:check": "npm run deploy:dry-run",

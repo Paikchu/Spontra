@@ -29,7 +29,7 @@
 
 1. Cloudflare Zero Trust → Access → Applications 新建 Self-hosted 应用，域名填 `spontra-admin` 的全部访问地址（含 `spontra-admin.<子域>.workers.dev` 及任何自定义域名），按需配置允许登录的策略。也可在 Workers → `spontra-admin` → Settings → Domains & Routes 为 `workers.dev` 开启 Access。
 2. 在应用的 Overview 复制 Application Audience (AUD) Tag；团队域名为 Zero Trust → Settings 中的 Team domain（`<团队>.cloudflareaccess.com`）。
-3. Workers → `spontra-admin` → Settings → Variables and Secrets 添加纯文本变量 `ACCESS_TEAM_DOMAIN` 与 `ACCESS_AUD`。不写入 `wrangler.jsonc`；自动发布以 `wrangler deploy --keep-vars` 保留控制台设置的变量。
+3. 将 `ACCESS_TEAM_DOMAIN` 与 `ACCESS_AUD` 配在当前 Spontra Analysis Worker 的发布配置 `wrangler.jsonc` 的 `vars` 中。它们是公开标识。发布不保留仅在控制台添加的纯文本变量；密钥应继续使用 Worker Secrets。
 
 `spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
 

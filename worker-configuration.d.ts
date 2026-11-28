@@ -21,7 +21,7 @@ interface __BaseEnv_Env {
 	TRANSCRIPT_DAILY_CALLS: "25";
 	TRANSCRIPTS_ENABLED: "true";
 	TRANSLATION_ENABLED: "true";
-	BUSINESS_SITE_ORIGIN: "https://businessview.info";
+	SPONTRA_PUBLIC_ORIGIN: "https://businessview.info";
 	DEEPSEEK_API_KEY: string;
 	TASK_RUNS: DurableObjectNamespace<import("./src/index").TaskRunner>;
 }
@@ -37,7 +37,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "OPENAI_REVIEW_MODEL" | "TRANSCRIPT_DAILY_CALLS" | "TRANSCRIPTS_ENABLED" | "TRANSLATION_ENABLED" | "BUSINESS_SITE_ORIGIN" | "DEEPSEEK_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "OPENAI_REVIEW_MODEL" | "TRANSCRIPT_DAILY_CALLS" | "TRANSCRIPTS_ENABLED" | "TRANSLATION_ENABLED" | "SPONTRA_PUBLIC_ORIGIN" | "DEEPSEEK_API_KEY">> {}
 }
 declare module "*.css" {
 	const value: string;

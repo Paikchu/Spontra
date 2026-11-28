@@ -70,7 +70,7 @@ export async function publishArtifactTranslation(env: AnalysisEnv, source: Artif
     await db.batch([db.prepare("UPDATE analysis_artifact_translations SET status='checking', r2_key=?, hash=?, updated_at=? WHERE artifact_id=? AND source_version=? AND locale='zh-CN' AND source_hash=?")
       .bind(key, hash, checkingAt, id, doc.version, stored.hash), outboxStatement(db, { type: "translations.published", ticker: doc.ticker }, checkingAt)]);
     const token = await previewToken(env, doc.kind, doc.ticker, doc.subject, doc.version, Date.now(), "zh-CN");
-    const origin = env.BUSINESS_SITE_ORIGIN!;
+    const origin = env.SPONTRA_PUBLIC_ORIGIN!;
     const url = new URL("/article-preview", origin);
     url.searchParams.set("lang", "zh-CN"); url.searchParams.set("token", token);
     // Translation checks exercise the actual report and its interactions, without another content-generation run.

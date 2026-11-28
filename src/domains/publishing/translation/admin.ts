@@ -46,7 +46,7 @@ export async function translationsAdmin(env: AnalysisEnv, ticker: string, locale
       const row = await readArtifactTranslation(env, source.artifact.id, doc.version, source.artifact.stored.hash);
       const lang: Locale = row?.r2_key ? "zh-CN" : "en";
       const token = await previewToken(env, doc.kind, ticker, doc.subject, doc.version, Date.now(), lang === "zh-CN" ? lang : undefined);
-      const url = new URL("/article-preview", env.BUSINESS_SITE_ORIGIN);
+      const url = new URL("/article-preview", env.SPONTRA_PUBLIC_ORIGIN);
       url.searchParams.set("token", token);
       url.searchParams.set("lang", lang);
       return { resource: source.resource, scope: source.scope, total: source.strings.length, translated, rejected,

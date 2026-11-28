@@ -13,7 +13,7 @@ function adapter(state:ValuationState):ResearchContextState{
   return context;
 }
 export function valuationPublicResearchTools(env:AnalysisEnv,frozen:ValuationState["publicResearch"]):AnyTool<ValuationState>[] {
-  const background=publicResearchTools<ResearchContextState>(frozen,env.BUSINESS_SITE_ORIGIN);
+  const background=publicResearchTools<ResearchContextState>(frozen,env.SPONTRA_PUBLIC_ORIGIN);
   return background.tools.map(tool=>({...tool,nativeSearch:undefined,
     execute:async(args,ctx)=>{
       const state=adapter(ctx.state),result=await tool.execute(args,{...ctx,state});
@@ -22,7 +22,7 @@ export function valuationPublicResearchTools(env:AnalysisEnv,frozen:ValuationSta
         if(item&&claim){
           const text=JSON.stringify({reportId:item.report.reportId,version:item.report.version,claim,sources:item.report.sources.filter(s=>claim.sourceIds.includes(s.id)),observations:item.report.observations.filter(o=>claim.observationIds.includes(o.id))});
           const contentSha256=await sha256(text),evidenceId=`e${(await sha256(`public:${item.report.reportId}:${item.report.version}:${claim.id}`)).slice(0,10)}`;
-          ctx.state.evidence.set(evidenceId,{evidenceId,kind:"web",title:`${item.report.title}: ${claim.title}`,url:env.BUSINESS_SITE_ORIGIN?`${env.BUSINESS_SITE_ORIGIN}/research/${encodeURIComponent(item.report.reportId)}?version=${item.report.version}#claim-${claim.id}`:null,documentId:`public-research:${item.report.reportId}:${item.report.version}`,passageId:claim.id,form:null,publishedAt:item.report.publishedAt,fetchedAt:ctx.state.now,excerpt:text,contentSha256,path:claim.id});
+          ctx.state.evidence.set(evidenceId,{evidenceId,kind:"web",title:`${item.report.title}: ${claim.title}`,url:env.SPONTRA_PUBLIC_ORIGIN?`${env.SPONTRA_PUBLIC_ORIGIN}/research/${encodeURIComponent(item.report.reportId)}?version=${item.report.version}#claim-${claim.id}`:null,documentId:`public-research:${item.report.reportId}:${item.report.version}`,passageId:claim.id,form:null,publishedAt:item.report.publishedAt,fetchedAt:ctx.state.now,excerpt:text,contentSha256,path:claim.id});
           (ctx.state.publicEvidence??={})[evidenceId]={reportId:item.report.reportId,version:item.report.version,claimId:claim.id};
           return {...result,observation:`${result.observation}\nValuation citation ID: ${evidenceId}. Record applicability with the original reportId/version/claimId before using this evidence.`};
         }

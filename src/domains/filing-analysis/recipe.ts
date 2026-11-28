@@ -103,7 +103,7 @@ function filingRecipe(env: AnalysisEnv, spec: FilingSpec, profile: FilingProfile
     }
     return [...matches.values()];
   };
-  const publicContext = publicResearchTools<FilingState>(spec.publicResearch, env.BUSINESS_SITE_ORIGIN);
+  const publicContext = publicResearchTools<FilingState>(spec.publicResearch, env.SPONTRA_PUBLIC_ORIGIN);
   const companionAccessions = new Set(spec.quarterBundle?.companionMaterials.map(m => m.accession) ?? []);
   const periodic = periodicTools<FilingState>({ env, ticker, filing, snapshot, priorSnapshots, companionAccessions, expectations: spec.expectations, runId: spec.sessionId });
   const summarise = (state: FilingState, status: "published" | "failed") => recordRunSummary(db, {
