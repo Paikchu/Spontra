@@ -1,15 +1,13 @@
 /**
- * Offline translation check for the business site: no network, no API, no translation service.
+ * Offline translation check for shared UI/runtime/preview tables: no network, no API, no translation service.
  *
  *  1. Tables   Every messages()/labels() table is loaded through Vite's SSR loader and each Chinese entry is checked
  *              against its English one: present, actually translated, same interpolated arguments, glossary terms.
  *  2. Literals Every Chinese string literal in site, web package and shared runtime code is checked for leftover
  *              English words, half-width punctuation and missing spaces between Chinese and Latin text.
  *  3. Numbers  The locale number forms (amounts, shares, points, multiples, periods) are pinned in both languages.
- *  4. Pages    The Chinese pages are rendered from fixtures and every visible word outside generated (lang="en")
- *              text must be Chinese, an allowed term, or data from the fixture.
  *
- * Run: npm run check:i18n. It runs before every site build, so a missing or broken translation fails the deploy.
+ * Run: npm run check:i18n. It runs before every build, so a missing or broken translation fails the deploy.
  */
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
@@ -299,10 +297,8 @@ async function main() {
       await server.ssrLoadModule(join(ROOT, "shared/analysis-runtime/locale.ts")) as LocaleModule,
       await server.ssrLoadModule(join(ROOT, "shared/analysis-runtime/lens/format.ts")) as LensFormat,
     );
-    const { checkPages } = await server.ssrLoadModule(join(ROOT, "scripts/i18n/pages.tsx")) as typeof import("./i18n/pages.tsx");
-    const pageProblems = await checkPages(unexpectedLatin, typography);
     const entries = tables.reduce((n, t) => n + Object.keys(t.en).length, 0);
-    const sections: Array<[string, string[]]> = [["Tables", tableProblems], ["Chinese literals", literalProblems], ["Number forms", numberProblems], ["Rendered pages", pageProblems]];
+    const sections: Array<[string, string[]]> = [["Tables", tableProblems], ["Chinese literals", literalProblems], ["Number forms", numberProblems]];
     for (const [title, list] of sections) if (list.length) console.log(`\n${title} (${list.length})\n${list.map(p => "  " + p).join("\n")}`);
     if (process.argv.includes("--variants") && variants.length) console.log(`\nSame English, different Chinese (${variants.length}); review only\n${variants.map(v => "  " + v).join("\n")}`);
     const total = sections.reduce((n, [, list]) => n + list.length, 0);

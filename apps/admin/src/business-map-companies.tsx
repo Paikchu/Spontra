@@ -167,19 +167,6 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     }
     finally {pending.current.delete(key);setRefresh(n=>n+1);}
   }
-  async function switchStage(symbol:string|null,on:boolean) {
-    const key=`stage:${symbol??'*'}`;
-    if(!data||pending.current.has(key)||lock.current)return;
-    const before=symbol?data.companies.find(c=>c.ticker===symbol)?.stageEnabled:data.stageEnabled;
-    if(before===undefined)return;
-    const move=(d:BusinessMapCompanies,value:boolean)=>symbol?{...d,companies:d.companies.map(c=>c.ticker===symbol?{...c,stageEnabled:value}:c)}:{...d,stageEnabled:value};
-    pending.current.add(key);switched.current++;setError('');
-    setData(d=>d&&move(d,on));
-    try{await adminApi(symbol?`business-map/companies/${symbol}/stage`:'business-map/stage',{method:'POST',body:JSON.stringify({on})});}
-    catch(err){setData(d=>d&&move(d,before));if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
-    finally{pending.current.delete(key);setRefresh(n=>n+1);}
-  }
-  /** Move a company's five-layer ladder directly to `target` (0 = off, 1..5 = up to LAYERS[target-1]). */
   async function setLayerDepth(symbol:string,layers:Record<Layer,boolean>,target:number) {
     const current=layerDepth(layers);
     if(target===current)return;
@@ -222,7 +209,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   }
   const details=new Map(data?.companies.map(c=>[c.ticker,c])??[]);
   const rows=directory?.rows??[];
-  const globalPaused=data?FEATURES.filter(f=>!data.generation[f]).length+(data.stageEnabled?0:1)+(data.scheduledAnalysis?0:1):0;
+  const globalPaused=data?FEATURES.filter(f=>!data.generation[f]).length+(data.scheduledAnalysis?0:1):0;
   return <section className="bm-admin" aria-label="公司">
     <header className="ra-page-header bm-directory-toolbar">
       <label className="bm-admin-search"><span className="bm-admin-sr">搜索公司</span><span className="ra-search bm-admin-query"><Search size={16}/><input aria-label="搜索公司" placeholder="代码或公司名" value={typed} onChange={e=>setTyped(e.target.value.toUpperCase())}/></span></label>
@@ -232,7 +219,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
           <button aria-pressed={!query&&scope==='scheduled'} disabled={!!query} onClick={()=>{setScope('scheduled');setPage(1);}}>定时分析</button>
           <button aria-pressed={!!query||scope==='all'} disabled={!!query} onClick={()=>{setScope('all');setPage(1);}}>全部美股</button>
         </div>
-        <GlobalControls data={data} pausedCount={globalPaused} onFeature={(f,on)=>void switchFeature(null,f,on)} onStage={on=>void switchStage(null,on)} onScheduled={on=>void switchScheduledAnalysis(null,on)}/>
+        <GlobalControls data={data} pausedCount={globalPaused} onFeature={(f,on)=>void switchFeature(null,f,on)} onScheduled={on=>void switchScheduledAnalysis(null,on)}/>
         <span>{directory?`${directory.total.toLocaleString('en-US')} 家`:''}</span>
         <button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button>
       </div>
@@ -247,12 +234,11 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       <thead><tr>
         <th scope="col">公司</th>
         <th scope="col">分析层级</th>
-        <th scope="col" className="bm-admin-feature-col">提问</th>
         <th scope="col" className="bm-admin-feature-col">定时分析</th>
         <th scope="col">操作</th>
       </tr></thead>
       {rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
-        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onDepth={depth=>void setLayerDepth(company.ticker,{...row.layers,...Object.fromEntries(FEATURES.map(f=>[f,company.features[f].on]))} as Record<Layer,boolean>,depth)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onStage={on=>void switchStage(company.ticker,on)} stagePaused={!data?.stageEnabled} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
+        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onDepth={depth=>void setLayerDepth(company.ticker,{...row.layers,...Object.fromEntries(FEATURES.map(f=>[f,company.features[f].on]))} as Record<Layer,boolean>,depth)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>
         :<Listed key={row.ticker} row={row} busy={!!busy} onDepth={depth=>void setLayerDepth(row.ticker,row.layers,depth)}/>;})}
     </table></div>}
     {directory&&!rows.length&&<div className="ra-empty" role="status"><Search size={24} aria-hidden="true"/><h3>{scope==='scheduled'&&!query?'暂无开启定时分析的公司':'无匹配公司'}</h3></div>}
@@ -306,7 +292,7 @@ function Dropdown({open,onOpenChange,align='left',trigger,children}:{open:boolea
   return <>{trigger(anchor)}{open&&pos&&createPortal(<div ref={panel} className="bm-popover" style={pos} role="dialog">{children}</div>,document.body)}</>;
 }
 /** Project-wide switches moved out of the table header into a single toolbar menu. */
-function GlobalControls({data,pausedCount,onFeature,onStage,onScheduled}:{data:BusinessMapCompanies|null;pausedCount:number;onFeature:(f:Feature,on:boolean)=>void;onStage:(on:boolean)=>void;onScheduled:(on:boolean)=>void}) {
+function GlobalControls({data,pausedCount,onFeature,onScheduled}:{data:BusinessMapCompanies|null;pausedCount:number;onFeature:(f:Feature,on:boolean)=>void;onScheduled:(on:boolean)=>void}) {
   const [open,setOpen]=useState(false);
   return <Dropdown open={open} onOpenChange={setOpen} align="right" trigger={ref=><button ref={ref} className="bm-global-trigger" aria-expanded={open} aria-haspopup="dialog" disabled={!data} onClick={()=>setOpen(o=>!o)}>
     <SlidersHorizontal size={14} aria-hidden="true"/>
@@ -323,10 +309,6 @@ function GlobalControls({data,pausedCount,onFeature,onStage,onScheduled}:{data:B
     </div>
     <div className="bm-popover-section">
       <div className="bm-popover-title">运行入口（全部公司）</div>
-      <div className="bm-popover-row">
-        <div><strong>提问</strong><small>所有已开启公司的前台提问入口</small></div>
-        <button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.stageEnabled} aria-label="提问（全部公司）" onClick={()=>onStage(!data?.stageEnabled)}><span/></button>
-      </div>
       <div className="bm-popover-row">
         <div><strong>定时分析</strong><small>后台周期性财报与分析更新</small></div>
         <button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.scheduledAnalysis} aria-label="定时分析（全部公司）" onClick={()=>onScheduled(!data?.scheduledAnalysis)}><span/></button>
@@ -375,7 +357,6 @@ function Listed({row,busy,onDepth}:{row:DirectoryCompany;busy:boolean;onDepth:(d
   return <tbody><tr className="bm-admin-row" aria-label={row.ticker}>
     <td><div className="bm-admin-company-cell"><span className="bm-admin-toggle-gap"/><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{row.ticker}</strong><small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></td>
     <td><LayerSelect ticker={row.ticker} layers={row.layers} disabled={busy} onSelect={onDepth}/></td>
-    <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={false} aria-label={`${row.ticker} 提问`} title="先开启财务报表" disabled><span/></button></td>
     <td className="bm-admin-feature-col"><span className="bm-admin-dash">—</span></td>
     <td/>
   </tr></tbody>;
@@ -449,7 +430,7 @@ function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol
 }
 
 /** One company as a table row: its layer dropdown, independent switches and actions; the row opens to the details. */
-function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onStage,stagePaused,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onDepth:(depth:number)=>void;onPrepare:()=>void;onJudge:()=>void;onStage:(on:boolean)=>void;stagePaused:boolean;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
+function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onScheduled,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onDepth:(depth:number)=>void;onPrepare:()=>void;onJudge:()=>void;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -468,11 +449,10 @@ function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onStage,stageP
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><LayerSelect ticker={c.ticker} layers={currentLayers} features={c.features} disabled={busy} onSelect={onDepth}/></td>
-      <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.stageEnabled} aria-label={`${c.ticker} 提问`} title={stagePaused?'提问已全局暂停':c.stageEnabled?'提问入口已开启':'提问入口已关闭'} disabled={busy||!c.dataEnabled} onClick={()=>onStage(!c.stageEnabled)}><span/></button></td>
       <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.scheduledAnalysis} aria-label={`${c.ticker} 定时分析`} title={c.scheduledAnalysis?'定时分析已开启':'定时分析已暂停'} onClick={()=>onScheduled(!c.scheduledAnalysis)}><span/></button></td>
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button></div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={5}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={4}><div className="bm-detail">
       <CompanyUsage ticker={c.ticker} onUnauthorized={onUnauthorized} rows={LAYERS.map(layer => ({ layer, label: LAYER_LABEL[layer], state: c.layerStatuses?.[layer] }))}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}

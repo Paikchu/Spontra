@@ -40,7 +40,7 @@ const eslintConfig = defineConfig([
   // Business-site text is localized: words a reader sees come from a messages() table, never from a JSX literal.
   // Key caps (<kbd>) and symbols are exempt; data and AI-written text arrive as expressions, not literals.
   {
-    files: ["apps/business-site/src/**/*.tsx", "packages/web/src/{sec-report,report,business-flow}/**/*.tsx"],
+    files: ["apps/business-site/src/**/*.tsx"],
     rules: {
       "no-restricted-syntax": ["error",
         { selector: "JSXElement[openingElement.name.name!='kbd'] > JSXText[value=/[A-Za-z]{2,}/]", message: "Reader-facing text goes through messages() from packages/web/src/i18n." },

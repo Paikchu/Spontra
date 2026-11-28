@@ -53,40 +53,41 @@ iOS 客户端在 [SpontraApp](https://github.com/Paikchu/SpontraApp) 仓库独�
 
 ## 定位与实现边界
 
-以上定义产品目标，不代表完整的 Discovery Agent、Live Report 与 Agent 自主布局已经实现。本仓库提供公司研究数据、分析服务、业务地图与后台；具体职责及部署方式见下文。现有能力应逐项验证，不能将定时分析或报告展示等同于完整的自主研究闭环。
+以上定义产品目标。目前 Web 端业务地图与搜索页面已全部下线，前端仅保留独立维护的 [SpontraApp](https://github.com/Paikchu/SpontraApp)（iOS 客户端）；本仓库聚焦于 **Spontra Analysis 后端分析引擎**、**运维后台（Admin）** 与**面向 iOS 的无头只读 API 网关及签名预览宿主**。
 
 - GitHub：[Paikchu/Spontra](https://github.com/Paikchu/Spontra)，主分支 `main`，唯一 remote 为 `origin`。
-- 线上地图：`spontra-business-map` Worker。
+- 线上只读网关：`spontra-business-map` Worker（无公开网页，仅提供 `/api/business/v1/*` 与签名 `/article-preview`）。
 
 ## 架构
 
 | 层 | 是什么 | 位置 |
 | --- | --- | --- |
 | 后端 | **Spontra Analysis**：SEC 发现与解析、AI 分析、读取 API | 本仓库 `workers/analysis/`，Worker `spontra-analysis` |
-| 业务地图与后台 | 公开业务地图与运维后台，经 Service Binding 读 Spontra Analysis | 本仓库 `apps/business-site/`、`apps/admin/` |
+| API 网关与后台 | iOS 只读 API 网关（兼签名报告预览）与运维后台，经 Service Binding 读 Spontra Analysis | 本仓库 `apps/business-site/`、`apps/admin/` |
+| 前端 | **SpontraApp**：iOS 原生客户端 | 独立仓库 `Paikchu/SpontraApp` |
 
 ## 三个 Worker，一个仓库
 
 | Worker | 职责 | 配置 |
 | --- | --- | --- |
-| `spontra-business-map` | 公开业务地图页面与只读 API（`/api/business/v1/*`） | [`apps/business-site/wrangler.jsonc`](apps/business-site/wrangler.jsonc) |
-| `spontra-admin` | 财报与业务地图运维后台 | [`apps/admin/wrangler.jsonc`](apps/admin/wrangler.jsonc) |
-| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、估值、舞台等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
+| `spontra-business-map` | 无头只读 API 网关（`/api/business/v1/*` 供 iOS 调用）与内部签名报告预览（`/article-preview`、`/artifact-frame`） | [`apps/business-site/wrangler.jsonc`](apps/business-site/wrangler.jsonc) |
+| `spontra-admin` | 财报与分析运维后台 | [`apps/admin/wrangler.jsonc`](apps/admin/wrangler.jsonc) |
+| `spontra-analysis` | SEC 发现与归档、财务采集、全部 AI 分析（要点、业务解读、脑图、估值、深度报告等）、事件、基本面及读取 API | [`workers/analysis/wrangler.jsonc`](workers/analysis/wrangler.jsonc) |
 
 数据边界：
 
-- 地图通过 Service Binding `SPONTRA_ANALYSIS → spontra-analysis` 的 `MapReads` 命名入口读取数据。命名入口无法从公网访问，绑定本身即凭据，地图不保存读取密钥。
-- admin 通过同名绑定访问 Spontra Analysis 的 `AdminGateway` 命名入口，每次请求带新的后台会话；舞台经地图的 `SPONTRA_STAGE → StageGateway` 绑定进入。
+- `spontra-business-map` 通过 Service Binding `SPONTRA_ANALYSIS → spontra-analysis` 的 `MapReads` 命名入口读取数据。命名入口无法从公网访问，绑定本身即凭据，网关不保存读取密钥；公开业务地图网页路由（`/`、`/companies/*`、`/research/*`）统一返回 404。
+- admin 通过同名绑定访问 Spontra Analysis 的 `AdminGateway` 命名入口，每次请求带新的后台会话。
 - 分析 D1 `earning-report-analysis-sec-web` 与 R2 `earning-report-analysis-sec-filings` 归 Spontra Analysis 所有，迁移文件在 `workers/analysis/migrations/`。
 
 ## 目录结构
 
 ```text
-apps/business-site/          业务地图前端（Vite + React）与 Worker
+apps/business-site/          无头只读 API 网关 Worker 与签名报告预览沙箱
 apps/admin/                  运维后台前端与 Worker
-packages/web/                地图与后台共用的界面：财报阅读器、桑基图、shadcn 组件、样式与字体
-shared/analysis-contract/    前端与 Spontra Analysis 共用的声明式契约
-shared/analysis-runtime/     前端与 Spontra Analysis 共用的纯运行时（仅依赖 zod）
+packages/web/                后台与后端共享的模型、i18n、样式、字体与 shadcn 组件
+shared/analysis-contract/    前后端共用的声明式契约
+shared/analysis-runtime/     前后端共用的纯运行时（仅依赖 zod）
 workers/analysis/            财报分析 Worker、数据库 schema 与 migrations
 docs/                        功能、数据与运维说明
 ```

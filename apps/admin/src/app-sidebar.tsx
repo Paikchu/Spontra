@@ -1,5 +1,4 @@
-import { ArrowUpRightIcon as ArrowUpRight, BellIcon as Bell, ChartBarIcon as ChartColumn, CpuIcon as Cpu, FileMagnifyingGlassIcon as FileSearch, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, ListIcon as List, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
-import Link from "@/packages/web/src/navigation";
+import { BellIcon as Bell, CpuIcon as Cpu, FileMagnifyingGlassIcon as FileSearch, FilesIcon as FileStack, ArchiveIcon as GalleryVerticalEnd, ListChecksIcon as ListChecks, FunnelSimpleIcon as ListFilter, ListIcon as List, MoonIcon as Moon, TreeStructureIcon as Network, SunIcon as Sun, type Icon } from "@phosphor-icons/react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarHeader,
   SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
@@ -8,7 +7,7 @@ import {
 import type { Section } from "./business-view-admin";
 
 const NAV_GROUPS: Array<{ title: string; items: Array<[Section, Icon]> }> = [
-  { title: "数据", items: [["whitelist", ListChecks], ["analytics", ChartColumn]] },
+  { title: "数据", items: [["whitelist", ListChecks]] },
   { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter], ["benchmark", FileSearch]] },
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
@@ -31,11 +30,10 @@ type AppSidebarProps = {
   unread: number;
   light: boolean;
   toggleTheme: () => void;
-  mapOrigin: string;
 };
 
 /** sidebar-03 presentation; the shell owns every page, address and theme transition. */
-export function AppSidebar({ section, activeSection, pages, navigate, unread, light, toggleTheme, mapOrigin }: AppSidebarProps) {
+export function AppSidebar({ section, activeSection, pages, navigate, unread, light, toggleTheme }: AppSidebarProps) {
   const { setOpenMobile } = useSidebar();
   function select(next: Section) {
     navigate(next);
@@ -89,11 +87,6 @@ export function AppSidebar({ section, activeSection, pages, navigate, unread, li
         <SidebarMenuItem>
           <SidebarMenuButton onClick={toggleTheme}>
             {light ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}<span>{light ? "切换到深色" : "切换到浅色"}</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild>
-            <Link href={`${mapOrigin}/`}><ArrowUpRight aria-hidden="true" /><span>打开 BusinessView</span></Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

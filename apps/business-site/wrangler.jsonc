@@ -7,19 +7,11 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*",
-      "/agents/*"
-    ]
-  },
-  "durable_objects": {
-    "bindings": [
-      { "name": "TELEMETRY", "class_name": "TelemetryStore" }
-    ]
+    "run_worker_first": true
   },
   "migrations": [
-    { "tag": "telemetry-v1", "new_sqlite_classes": ["TelemetryStore"] }
+    { "tag": "telemetry-v1", "new_sqlite_classes": ["TelemetryStore"] },
+    { "tag": "telemetry-v2", "deleted_classes": ["TelemetryStore"] }
   ],
   "ratelimits": [
     {
@@ -27,15 +19,6 @@
       "namespace_id": "1002",
       "simple": {
         "limit": 300,
-        "period": 60
-      }
-    },
-    // The stage's door: identities, conversations and socket handshakes per address.
-    {
-      "name": "AGENT_LIMIT",
-      "namespace_id": "1005",
-      "simple": {
-        "limit": 30,
         "period": 60
       }
     }
@@ -52,12 +35,6 @@
       "binding": "SPONTRA_ANALYSIS",
       "service": "spontra-analysis",
       "entrypoint": "MapReads"
-    },
-    // The stage's door: a second binding to the same Worker's StageGateway entrypoint.
-    {
-      "binding": "SPONTRA_STAGE",
-      "service": "spontra-analysis",
-      "entrypoint": "StageGateway"
     }
   ],
   "compatibility_flags": [

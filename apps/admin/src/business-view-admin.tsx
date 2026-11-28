@@ -8,17 +8,15 @@ import { AiModels } from "./ai-models";
 import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
-import { AnalyticsPanel } from "./analytics";
 import { FilingMaterials } from "./filing-materials";
 import { ReportBenchmark } from "./report-benchmark";
 
-export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "benchmark" | "models" | "messages";
+export type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "benchmark" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the companies page, so it has no entry of its own. */
 const PAGES: Record<Section, Page> = {
   whitelist: { path: "/admin/companies", title: "公司" },
-  analytics: { path: "/admin/analytics", title: "使用情况" },
   financials: { path: "/admin/financials", title: "财务报表", nav: "whitelist" },
   filings: { path: "/admin/filings", title: "财报" },
   business: { path: "/admin/business", title: "公司业务" },
@@ -48,7 +46,7 @@ function initialSection(): Section {
  * leaves it), so switching back shows it as it was, its data, place and scroll included, and brings it up to date behind
  * what it shows (admin-page.ts).
  */
-export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
+export function BusinessViewAdmin() {
   const [section, setSection] = useState<Section>(initialSection);
   const [opened, setOpened] = useState<Section[]>(() => [initialSection()]);
   const [generation, setGeneration] = useState<Partial<Record<Section, number>>>({});
@@ -104,14 +102,13 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const auth = { onUnauthorized: () => setError("管理接口拒绝访问"), onAuthenticated: () => setError("") };
 
   return <SidebarProvider className="report-admin" mobileBreakpoint={769} persistState={false} keyboardShortcut={null}>
-    <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} mapOrigin={mapOrigin} />
+    <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} />
     <SidebarInset className="min-w-0" aria-label={page.title}>
       <AdminMobileNavigation title={page.title} />
       <div className="ra-main" data-section={section}>
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
       {opened.map(key => {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} />
-          : key === "analytics" ? <AnalyticsPanel />
           : key === "financials" ? <FinancialMaintenance {...auth} />
           : key === "filings" ? <FilingMaterials {...auth} />
           : key === "business" ? <BusinessSegments {...auth} />

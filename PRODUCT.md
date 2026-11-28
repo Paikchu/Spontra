@@ -1,4 +1,4 @@
-# Business View
+# Spontra
 
 ## Register
 
@@ -6,29 +6,20 @@ product
 
 ## Users
 
-People researching listed companies, reading financial statements, business structure, company filings and evidence-backed findings in English or Chinese.
+iOS readers (`SpontraApp`) researching listed companies, reading financial statements, business structure, company filings and evidence-backed findings in Chinese or English, plus internal operators using the Admin console (`apps/admin`).
 
 ## Product Purpose
 
-Help readers understand a company's business, financial performance and unresolved research questions. The fixed sidebar controls research; the agent organizes the research stage through the harness and reusable presentation components.
+Deliver Spontra Analysis's evidence-backed company research, valuation, financial statements, and filings cleanly via the headless read API gateway (`apps/business-site`) to the iOS client, while operators manage data collection, pipelines, models, and evaluations in `apps/admin`.
 
 ## Brand Personality
 
-Precise, restrained and evidence-led. Preserve the existing Business View identity and financial color semantics.
-
-## Anti-references
-
-Generic generated dashboards, decorative metric cards and fixed stage layouts that replace the agent's composition choices.
+Precise, restrained and evidence-led. Preserve the Spontra financial color semantics and typography tokens.
 
 ## Design Principles
 
-- Preserve the current two-pane layout and brand colors when polishing existing views.
 - Keep financial figures, their periods and comparisons readable.
-- Let the agent choose research content and composition; the harness supplies consistent rendering.
 - Make findings and their evidence easy to follow.
-
-## Accessibility & Inclusion
-
-Use the existing contrast-checked theme tokens, visible keyboard focus and reduced-motion behavior. Preserve English and Chinese localization and the existing mobile reading order.
+- Preserve contrast-checked theme tokens and sandboxed artifact rendering for report previews and iOS WebViews.
 
 Context is drawn from README.md, AGENTS.md and apps/business-site/src/tokens.css.

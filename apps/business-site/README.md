@@ -1,27 +1,23 @@
-# Business map
+# Spontra Read API Gateway & Preview Host (`spontra-business-map`)
 
-The public BusinessView site, Worker `spontra-business-map`: a Vite + React page and the Worker that serves it. Every figure, finding and analysis comes from Spontra Analysis; the site runs no collection or model work on page reads.
+Headless read-only API gateway for the iOS client (`SpontraApp`) plus the minimal signed report preview host (`/article-preview` and `/artifact-frame`) used by Spontra Analysis visual QA and admin translation previews. All public Business Map and search web pages (`/`, `/companies/*`, `/research/*`, `/agents/*`) have been removed and return `404`.
 
 ## Layout
 
 | Path | What it holds |
 | --- | --- |
-| `src/` | The page: home (`Home.tsx`), company page (`CompanyPage.tsx`, `BusinessMap.tsx`), the Sankey, mind map, trend and metric panels, the rail, findings, lens, filings and events, insiders, valuation. `*-model.ts` files are the pure logic the components draw from; tests in `test/` cover them. |
-| `src/stage/` | The stage agent on the company page. |
-| `src/lens-frame/`, `lens-frame.html` | The same-origin frame that paints a finding's lens charts. |
-| `public/html-frame.html` | The sandboxed frame for model-written chart HTML. |
+| `src/` | Minimal signed preview shell (`ArtifactPreviewPage.tsx`, `ArtifactFrame.tsx`, `ArtifactLanguage.tsx`) and sandboxed `/artifact-frame` runtime (`src/artifact-frame/`). |
+| `public/spontra-ios/` | iOS App Store privacy policy and support page (`/spontra-ios/`). |
 | `public/_headers` | CSP and security headers per path. |
-| `worker/index.ts` | The Worker: data routes, the stage door, caching and rate limits. |
-| `worker/telemetry-store.ts` | `TelemetryStore`, the Durable Object behind `/api/business/v1/telemetry`. |
+| `worker/index.ts` | The Worker: `/api/business/v1/*` read routes, edge caching, rate limits, and gated preview asset routing. |
+| `worker/home-model.ts` | Home digest schema parser/validator. |
 
-Shared UI comes from `packages/web/`; contracts and verification shared with the backend come from `shared/analysis-contract/` and `shared/analysis-runtime/`. Strings are localized in place with `messages(en, zh)` ([docs/i18n-conventions.md](../../docs/i18n-conventions.md)).
+Shared utilities come from `packages/web/`; contracts and verification shared with the backend come from `shared/analysis-contract/` and `shared/analysis-runtime/`.
 
 ## Data
 
-- Reads go to Spontra Analysis over the `SPONTRA_ANALYSIS` Service Binding to its `MapReads` named entrypoint. A named entrypoint is unreachable from the public internet, so the binding is the credential and the site keeps no key. Without the binding the data routes answer 503 and the shell still serves.
-- Routes: `/api/business/v1/home`, `/findings`, `/tickers/:ticker`, `/telemetry`, and `/api/business/v1/companies/:ticker` with `/opening`, `/revision`, `/capital`, `/findings`, `/fundamentals`, `/events`, `/insiders`, `/filings`, `/filings/:accession`, `/items/:accession` and `/valuation` (with versions and evidence) under it.
-- The page re-validates every response against the shared contracts and withholds what does not verify (findings, highlights, lens documents, quotes).
-- `/agents/*` reaches the stage over the second binding `SPONTRA_STAGE` (`StageGateway` entrypoint), same-origin only and limited per address (`AGENT_LIMIT`).
+- Reads go to Spontra Analysis over the `SPONTRA_ANALYSIS` Service Binding to its `MapReads` named entrypoint. A named entrypoint is unreachable from the public internet, so the binding is the credential and the gateway keeps no key.
+- API routes: `/api/business/v1/home`, `/findings`, `/tickers/:ticker`, `/research`, `/artifact-preview/:token`, and `/api/business/v1/companies/:ticker` with `/opening`, `/revision`, `/capital`, `/findings`, `/fundamentals`, `/events`, `/insiders`, `/filings`, `/filings/:accession`, `/items/:accession`, `/market-daily`, and `/valuation` (with versions and evidence).
 - Public reads are limited per IP (`PUBLIC_READ_LIMIT`, 300/min) and cached at the edge. `global_fetch_strictly_public` keeps any stray global fetch on public routing.
 
 ## Local development
@@ -40,4 +36,4 @@ npm run business-site:check   # deploy dry run
 
 ## Release
 
-Push verified code to `origin/main` per AGENTS.md; never deploy locally. The map-and-admin build deploys this Worker. A map deploy that lands before Spontra Analysis has published a new entrypoint fails its binding check and is redeployed by the next push.
+Push verified code to `origin/main` per `AGENTS.md`; never deploy locally. The gateway-and-admin build deploys this Worker.

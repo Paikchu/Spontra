@@ -1,6 +1,6 @@
 {
   "name": "spontra",
-  "description": "个股业务地图：从公开财报看公司的业务、产品与客户，到收入、成本费用与净利润；含 Spontra Analysis 分析后端与运维后台。",
+  "description": "Spontra Analysis 财报分析后端、运维后台与 iOS 只读 API 网关（含内部报告预览）。",
   "version": "0.1.0",
   "private": true,
   "engines": {

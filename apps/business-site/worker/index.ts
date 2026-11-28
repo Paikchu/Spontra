@@ -31,9 +31,7 @@ import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,Public
 import {filingFiscalFields,formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
-import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
-import {handleTelemetry,type TelemetryNamespace} from "../src/telemetry.ts";
-export {TelemetryStore} from "./telemetry-store.ts";
+import {homeLocale,parseHomeDigest,unavailableHome} from "./home-model.ts";
 import {DISPLAY_CONFIG_TOKEN,MAP_RESOURCES,PRIMARY_MAP_RESOURCES,REVISION,STREAM_MAP_RESOURCES,type MapResource,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
@@ -41,13 +39,7 @@ const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
  /** Service Binding to Spontra Analysis's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
- SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>};
- /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door. */
- SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
- /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
- AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>};
- /** Anonymous usage events. The binding stores a hash of the address, never the address itself. */
- TELEMETRY?:TelemetryNamespace};
+ SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>}};
 /** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
 export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
  const binding=env.SPONTRA_ANALYSIS;
@@ -332,9 +324,6 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
  return (await loadRevisionState(ticker,fetcher))?.revisions??null;
 }
 
-/** The reader's signed id lives in an HttpOnly cookie scoped to the stage, so page scripts never hold it and sockets carry it. */
-const READER_COOKIE="spontra_reader";
-const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
 const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
 /** The home digest lists newly added companies, so the edge keeps it half a minute and browsers revalidate it by ETag every time. */
 const HOME_EDGE_SECONDS=30;
@@ -344,40 +333,6 @@ function revalidated(request:Request,response:Response):Response{
  if(etag&&asked&&asked.split(",").some(tag=>tag.trim().replace(/^W\//,"")===etag.replace(/^W\//,"")))return new Response(null,{status:304,headers:{...security,etag,"cache-control":"no-cache"}});
  const out=new Response(response.body,response);
  out.headers.set("cache-control","no-cache");
- return out;
-}
-/**
- * The stage's public door: same-origin requests only, limited per address, passed
- * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
- * itself never leaves this Worker. Socket upgrades pass through untouched so the 101 reaches the browser.
- */
-export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
- const url=new URL(request.url);
- const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":"no-store"}});
- if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
- const origin=request.headers.get("origin");
- const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
- if((upgrade||request.method!=="GET")&&origin!==url.origin)return plain({error:"forbidden"},403);
- const ip=request.headers.get("cf-connecting-ip")??"unknown";
- if(request.method!=="GET"||upgrade){try{if(env.AGENT_LIMIT&&!(await env.AGENT_LIMIT.limit({key:ip})).success)return plain({error:"rate"},429);}catch(error){console.error(JSON.stringify({event:"stage-limit-failed",message:error instanceof Error?error.message:String(error)}));return plain({error:"unavailable"},503);}}
- const token=request.headers.get("cookie")?.split(";").map(v=>v.trim()).find(v=>v.startsWith(`${READER_COOKIE}=`))?.slice(READER_COOKIE.length+1)??null;
- const headers=new Headers(request.headers);
- headers.delete("cookie");headers.delete("x-spontra-token");headers.delete("x-spontra-address");headers.delete("x-spontra-reader");
- if(token)headers.set("x-spontra-token",token);
- headers.set("x-spontra-address",await sha256Hex(`spontra-stage\n${ip}`));
- const forwarded=new Request(`https://spontra-stage.internal${url.pathname}${url.search}`,{method:request.method,headers,body:request.method==="GET"||request.method==="HEAD"?undefined:request.body});
- const response=await env.SPONTRA_STAGE.fetch(forwarded);
- if(upgrade||response.status===101)return response;
- if(url.pathname==="/agents/identity"&&response.ok){
-  const body=await response.json() as {reader?:boolean;token?:string};
-  const out=plain({reader:!!body.reader},200);
-  if(body.token)out.headers.append("set-cookie",readerCookie(body.token,url.protocol==="https:"));
-  return out;
- }
- const out=new Response(response.body,{status:response.status,headers:response.headers});
- for(const [name,value] of Object.entries(security))out.headers.set(name,value);
- if(response.status===429&&!out.headers.has("retry-after"))out.headers.set("retry-after","60");
- out.headers.set("cache-control","no-store");
  return out;
 }
 
@@ -427,16 +382,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
 }
 async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache,trustedConfig?:string|null):Promise<Response>{
  const url=new URL(request.url);
- if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
-  if(url.pathname==="/api/business/v1/telemetry"){
-   const response=await handleTelemetry(request,env.TELEMETRY);
-   const headers=new Headers(response.headers);
-   for(const [name,value] of Object.entries(security))headers.set(name,value);
-   if(response.status===429&&!headers.has("retry-after"))headers.set("retry-after","60");
-   headers.set("cache-control","no-store");
-   return new Response(response.body,{status:response.status,headers});
-  }
   const source=upstream??analysisFetcher(env);
   let readFailureStatus=0, readRetryAfter:string|null=null;
   const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);const sourcePath=new URL(input instanceof Request?input.url:String(input)).pathname;const absentResource=response.status===404&&(/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/artifacts\/(?:company-analysis|dossier\/[a-z0-9][a-z0-9-]{0,79})\/?$/.test(sourcePath)||/^\/api\/v1\/companies\/[A-Z][A-Z0-9.-]{0,11}\/fundamentals\/?$/.test(sourcePath));if(!response.ok&&!absentResource){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
@@ -613,8 +559,30 @@ async function handleRequest(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(!cacheable)response.headers.set("cache-control","no-store");
    return finish(response);}catch{return finish(readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503));}
  }
+const artifactFrameSecurity={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"};
+ async function serveAsset(assetRequest:Request,env:SiteEnv,extraHeaders:Record<string,string>):Promise<Response>{
+  const response=await env.ASSETS.fetch(assetRequest);
+  const headers=new Headers(response.headers);
+  for(const [name,value]of Object.entries(extraHeaders))headers.set(name,value);
+  return new Response(response.body,{status:response.status,headers});
+ }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
- const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});
+ if(url.pathname==="/spontra-ios"||url.pathname==="/spontra-ios/"||url.pathname==="/spontra-ios/index.html"){
+  return serveAsset(new Request(new URL("/spontra-ios/",url),request),env,security);
+ }
+ if(url.pathname==="/article-preview"||url.pathname==="/article-preview/"){
+  return serveAsset(new Request(new URL("/",url),request),env,{...security,"cache-control":"no-store"});
+ }
+ if(url.pathname==="/artifact-frame"||url.pathname==="/artifact-frame.html"){
+  return serveAsset(new Request(new URL("/artifact-frame",url),request),env,artifactFrameSecurity);
+ }
+ if(url.pathname==="/theme.js"){
+  return serveAsset(request,env,security);
+ }
+ if(url.pathname.startsWith("/assets/")){
+  return serveAsset(request,env,{"x-content-type-options":"nosniff","access-control-allow-origin":"*","cache-control":"public, max-age=31536000, immutable"});
+ }
+ return new Response("Not found",{status:404,headers:{...security,"cache-control":"no-store"}});
 }
 // No upstream fetcher is passed here on purpose: the data routes must read over the binding, never the public internet.
 const worker = {fetch(request:Request,env:SiteEnv,ctx:SiteContext){return handle(request,env,ctx,undefined,typeof caches==="undefined"?undefined:(caches as CacheStorage & {default:Cache}).default);}};
