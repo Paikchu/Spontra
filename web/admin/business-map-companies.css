@@ -86,7 +86,6 @@
   .bm-detail-head > div { flex-wrap: wrap; }
 }
 /* Feature columns & dropdown controls. */
-.bm-admin-feature-col { text-align: center !important; }
 .bm-admin-dash { color: var(--ink-muted); font-size: 12px; }
 .bm-switch-sm { width: 28px; height: 16px; }
 .bm-switch-sm span { width: 12px; height: 12px; }

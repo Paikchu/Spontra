@@ -270,32 +270,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   font: 600 15px/1 var(--serif);
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-th,
-td {
-  padding: 7px 7px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-th:first-child,
-td:first-child { padding-left: 4px; text-align: left; }
-
-th {
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-td { font-size: 14px; }
-
 .back-link {
   min-height: 44px;
   display: inline-flex;

@@ -248,7 +248,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,companyTick
       <TableHeader><TableRow>
         <TableHead scope="col">公司</TableHead>
         <TableHead scope="col">分析层级</TableHead>
-        <TableHead scope="col" className="bm-admin-feature-col">定时分析</TableHead>
+        <TableHead scope="col" className="text-center">定时分析</TableHead>
         <TableHead scope="col">操作</TableHead>
       </TableRow></TableHeader>
       <TableBody>{rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
@@ -336,7 +336,7 @@ function Listed({row,busy,onDepth,onOpen}:{row:DirectoryCompany;busy:boolean;onD
   return <TableRow aria-label={row.ticker}>
     <TableCell><div className="bm-admin-company-cell"><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name">{onOpen ? <><strong className="ra-mono hidden md:inline">{row.ticker}</strong><Button variant="link" size="sm" className="ra-mono h-auto p-0 md:hidden" aria-label={`查看 ${row.ticker}`} onClick={onOpen}>{row.ticker}</Button></> : <strong className="ra-mono">{row.ticker}</strong>}<small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></TableCell>
     <TableCell><LayerSelect ticker={row.ticker} layers={row.layers} disabled={busy} onSelect={onDepth}/></TableCell>
-    <TableCell className="bm-admin-feature-col"><span className="bm-admin-dash">—</span></TableCell>
+    <TableCell className="text-center"><span className="bm-admin-dash">—</span></TableCell>
     <TableCell>{onOpen&&<Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={onOpen}>查看公司</Button>}</TableCell>
   </TableRow>;
 }
@@ -417,7 +417,7 @@ function CompanyRow({company:c,layers,busy,onDepth,onPrepare,onScheduled,onOpen}
   return <TableRow aria-label={`${c.ticker} 数据准备`}>
     <TableCell><div className="bm-admin-company-cell"><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name">{onOpen ? <><strong className="ra-mono hidden md:inline">{c.ticker}</strong><Button variant="link" size="sm" className="ra-mono h-auto p-0 md:hidden" aria-label={`查看 ${c.ticker}`} onClick={onOpen}>{c.ticker}</Button></> : <strong className="ra-mono">{c.ticker}</strong>}{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></TableCell>
     <TableCell><LayerSelect ticker={c.ticker} layers={displayedLayers(layers,c)} features={c.features} disabled={busy} onSelect={onDepth}/></TableCell>
-    <TableCell className="bm-admin-feature-col"><Switch checked={c.scheduledAnalysis} disabled={busy} aria-label={`${c.ticker} 定时分析`} onCheckedChange={onScheduled}/></TableCell>
+    <TableCell className="text-center"><Switch checked={c.scheduledAnalysis} disabled={busy} aria-label={`${c.ticker} 定时分析`} onCheckedChange={onScheduled}/></TableCell>
     <TableCell><div className="bm-admin-actions">{onOpen&&<Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={onOpen}>查看公司</Button>}<Button variant="outline" size="sm" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</Button></div></TableCell>
   </TableRow>;
 }
