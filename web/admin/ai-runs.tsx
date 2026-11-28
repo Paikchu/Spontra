@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { useEffect, useRef, useState } from "react";
 import { Refresh as LoaderCircle, Refresh as RefreshCw } from "reicon-react";
 import type { AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/src/api/admin/types/ai-runs-admin";
@@ -105,10 +106,10 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
     {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
     <details className="ai-usage-panel">
       <summary>模型用量</summary>
-      {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap" role="region" aria-label="模型用量表" tabIndex={0}><table className="ai-table ai-usage">
-      <thead><tr><th>日期</th><th>调用</th><th>输入</th><th>缓存</th><th>输出</th><th>搜索</th></tr></thead>
-      <tbody>{detail.usage.map(u => <tr key={u.day}><td>{u.day}</td><td>{count(u.calls)}</td><td>{count(u.inputTokens)}</td><td>{count(u.cachedTokens)}</td><td>{count(u.outputTokens)}</td><td>{count(u.searchCalls)}</td></tr>)}</tbody>
-      </table></div>}
+      {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="min-w-0" role="region" aria-label="模型用量表" tabIndex={0}><Table className="min-w-[36rem] tabular-nums">
+      <TableHeader><TableRow><TableHead>日期</TableHead><TableHead>调用</TableHead><TableHead>输入</TableHead><TableHead>缓存</TableHead><TableHead>输出</TableHead><TableHead>搜索</TableHead></TableRow></TableHeader>
+      <TableBody>{detail.usage.map(u => <TableRow key={u.day}><TableCell>{u.day}</TableCell><TableCell>{count(u.calls)}</TableCell><TableCell>{count(u.inputTokens)}</TableCell><TableCell>{count(u.cachedTokens)}</TableCell><TableCell>{count(u.outputTokens)}</TableCell><TableCell>{count(u.searchCalls)}</TableCell></TableRow>)}</TableBody>
+      </Table></div>}
     </details>
     <Versions detail={detail} onError={onError} />
   </div>;
@@ -162,9 +163,9 @@ function ValuationView({ report }: { report: ValuationPublication }) {
   const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
   return <div className="ai-valuation">
     <p><b>{VERDICT_ZH[report.verdict]}</b> · 综合分 {report.weightedScore ?? "—"} · 置信度 {report.confidence} · 研究日期 {report.researchAsOf.slice(0, 10)} · 财务基期 {report.financialPeriodEnd} · {report.reportStatus === "ready" ? "完整" : "材料不足"}</p>
-    <div className="ai-table-wrap" role="region" aria-label="估值分项评分" tabIndex={0}><table className="ai-table"><thead><tr><th>维度</th><th>分数</th><th>置信度</th><th>理由</th></tr></thead><tbody>
-      {report.dimensions.map(d => <tr key={d.key}><td>{DIMENSION_ZH[d.key]}</td><td>{d.score ?? "—"}</td><td>{d.confidence}</td><td lang="en">{d.rationale}</td></tr>)}
-    </tbody></table></div>
+    <div className="min-w-0" role="region" aria-label="估值分项评分" tabIndex={0}><Table className="min-w-[36rem] [&_td:last-child]:whitespace-normal"><TableHeader><TableRow><TableHead>维度</TableHead><TableHead>分数</TableHead><TableHead>置信度</TableHead><TableHead>理由</TableHead></TableRow></TableHeader><TableBody>
+      {report.dimensions.map(d => <TableRow key={d.key}><TableCell>{DIMENSION_ZH[d.key]}</TableCell><TableCell>{d.score ?? "—"}</TableCell><TableCell>{d.confidence}</TableCell><TableCell lang="en">{d.rationale}</TableCell></TableRow>)}
+    </TableBody></Table></div>
     {report.model && r && <p>模型 {report.model.modelType} · 折现率 {pct(report.model.discountRate.value)} · 每股价值 {r.low.toFixed(2)} / {r.base.toFixed(2)} / {r.high.toFixed(2)}{r.expected != null ? ` · 期望 ${r.expected.toFixed(2)}` : ""} · 参考价 {r.price ?? "—"} · 安全边际 {pct(r.marginOfSafety)}{report.model.implied ? ` · 现价隐含增长 ${pct(report.model.implied.implied)}` : ""}</p>}
     {report.gaps.length > 0 && <ul>{report.gaps.map((g, i) => <li key={i}><code>{g.code}</code> <span lang="en">{g.message}</span></li>)}</ul>}
     <p lang="en">{report.sections.summary}</p>

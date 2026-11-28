@@ -308,7 +308,7 @@ export function AppValuation({ ticker, children }: Scoped) {
               {displayRange && (["low", "base", "high"] as const).map(key => <Line key={key} type="stepAfter" dataKey={key} dot={false} stroke={`var(--color-${key})`} strokeDasharray="4 4" isAnimationActive={false}/>)}
             </LineChart>
           </ChartContainer>}
-          {report.sections.summary && <p className="whitespace-pre-line text-base">{report.sections.summary}</p>}
+          {report.sections.summary && <p className="max-w-[65ch] whitespace-pre-line text-base">{report.sections.summary}</p>}
           {!!model && !!val.versions.length && <Table><TableCaption className={caption}>历史估值</TableCaption><TableHeader><TableRow><TableHead>日期</TableHead><TableHead>下限</TableHead><TableHead>基准</TableHead><TableHead>上限</TableHead></TableRow></TableHeader><TableBody>
             {val.versions.map(v => <TableRow key={v.versionId}><TableCell>{dateText(v.researchAsOf)}</TableCell><TableCell>{money(v.normalRange?.low, report.currency)}</TableCell><TableCell>{money(v.normalRange?.base, report.currency)}</TableCell><TableCell>{money(v.normalRange?.high, report.currency)}</TableCell></TableRow>)}
           </TableBody></Table>}
@@ -332,10 +332,10 @@ export function AppValuation({ ticker, children }: Scoped) {
               <div><dt className={muted}>终值占比</dt><dd className="text-base font-semibold">{percentage(selected.result.terminalShare)}</dd></div>
               {"probability" in selected && typeof selected.probability === "number" && <div><dt className={muted}>概率</dt><dd className="text-base font-semibold">{percentage(selected.probability)}</dd></div>}
             </dl>
-            <p>{selected.narrative}</p>
+            <p className="max-w-[65ch] text-base">{selected.narrative}</p>
             <div className="flex flex-wrap gap-2">{cite(selected.evidenceIds)}</div>
             {selected.assumptions && ([["营收路径", selected.assumptions.revenue], ["利润率路径", selected.assumptions.margin], ["资本开支路径", selected.assumptions.capex]] as const).map(([label, assumption]) => <section key={label} className="flex flex-col gap-2">
-              <h3 className="text-base font-semibold">{label}</h3><p>{assumption.rationale}</p><div className="flex flex-wrap gap-2">{cite(assumption.evidenceIds)}</div>
+              <h3 className="text-base font-semibold">{label}</h3><p className="max-w-[65ch]">{assumption.rationale}</p><div className="flex flex-wrap gap-2">{cite(assumption.evidenceIds)}</div>
             </section>)}
             {selected.triggers?.map(t => <p key={t}>{t}</p>)}{selected.invalidation?.map(t => <p key={t} className={muted}>{t}</p>)}
             {!!selected.result.yearly.length && <Table><TableCaption className={caption}>经营路径</TableCaption><TableHeader><TableRow><TableHead>年份</TableHead><TableHead>收入</TableHead><TableHead>自由现金流</TableHead><TableHead>资本开支</TableHead><TableHead>税后营业利润</TableHead></TableRow></TableHeader><TableBody>{selected.result.yearly.map(row => <TableRow key={row.year}><TableCell>{row.year}</TableCell><TableCell>{money(row.revenue, report.currency)}</TableCell><TableCell>{money(row.cashFlow, report.currency)}</TableCell><TableCell>{money(row.capex ?? row.buildCapex, report.currency)}</TableCell><TableCell>{money(row.nopat, report.currency)}</TableCell></TableRow>)}</TableBody></Table>}

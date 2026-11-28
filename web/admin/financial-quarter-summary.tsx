@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { useState } from "react";
 import { Search } from "reicon-react";
 import type { FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "@/src/domains/financials/maintenance-contract";
@@ -97,13 +98,13 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
         <label className="fqs-search"><Search size={18} strokeWidth={1.5} aria-hidden="true" /><input aria-label="搜索季度摘要项目" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索项目" /></label>
       </div>
       {commonCurrency && <p className="fqs-table-meta">单位：{millions ? "百万" : ""}{currencies[commonCurrency]}</p>}
-      <div className="fqs-table-scroll" tabIndex={0} role="region" aria-label="季度摘要比较表">
-        <table><thead><tr><th scope="col">项目</th>{visiblePeriods.map(period => <th scope="col" key={period.periodEnd}><strong>{period.fiscalLabel || period.periodEnd}</strong><span>{period.periodStart ? `${period.periodStart} — ${period.periodEnd}` : `截至 ${period.periodEnd}`}</span></th>)}</tr></thead>
-          <tbody>{rows.map(row => <tr key={row.id} data-total={totals.has(row.id)}><th scope="row">{row.label}</th>{metricMaps.map((metrics, index) => {
+      <div className="min-w-0" tabIndex={0} role="region" aria-label="季度摘要比较表">
+        <Table className="min-w-[28rem] tabular-nums [&_td]:text-right [&_th:not(:first-child)]:text-right"><TableHeader><TableRow><TableHead scope="col">项目</TableHead>{visiblePeriods.map(period => <TableHead scope="col" key={period.periodEnd}><strong>{period.fiscalLabel || period.periodEnd}</strong><span className="block text-xs font-normal text-muted-foreground">{period.periodStart ? `${period.periodStart} — ${period.periodEnd}` : `截至 ${period.periodEnd}`}</span></TableHead>)}</TableRow></TableHeader>
+          <TableBody>{rows.map(row => <TableRow key={row.id} className={totals.has(row.id) ? "font-semibold" : undefined}><TableHead className="sticky left-0 z-10 bg-background whitespace-normal" scope="row">{row.label}</TableHead>{metricMaps.map((metrics, index) => {
             const metric = metrics.get(row.id);
             const display = metricDisplay(metric, commonCurrency, millions);
-            return <td key={visiblePeriods[index]!.periodEnd} data-missing={!metric || metric.value === null} title={display.exact} aria-label={display.exact}><span>{display.value}</span>{display.unit && <small>{display.unit}</small>}</td>;
-          })}</tr>)}</tbody></table>
+            return <TableCell key={visiblePeriods[index]!.periodEnd} data-missing={!metric || metric.value === null} title={display.exact} aria-label={display.exact}><span>{display.value}</span>{display.unit && <small>{display.unit}</small>}</TableCell>;
+          })}</TableRow>)}</TableBody></Table>
         {!rows.length && <p className="fqs-empty" role="status">{search ? "无匹配项目" : group === "business" ? "无业务收入明细" : "无利润与费用数据"}</p>}
       </div>
     </>}

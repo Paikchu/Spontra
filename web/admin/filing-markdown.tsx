@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { createElement, memo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -57,9 +58,14 @@ const components: Components = {
     ? <a href={href} {...(href.startsWith("#") ? {} : { target: "_blank", rel: "noopener noreferrer" })}>{children}</a>
     : <span>{children}</span>,
   img: ({ alt }) => alt ? <span>{alt}</span> : null,
+  thead: ({ children }) => <TableHeader>{children}</TableHeader>,
+  tbody: ({ children }) => <TableBody>{children}</TableBody>,
+  tr: ({ children }) => <TableRow>{children}</TableRow>,
+  th: ({ children, style }) => <TableHead style={style}>{children}</TableHead>,
+  td: ({ children, style }) => <TableCell className="whitespace-normal" style={style}>{children}</TableCell>,
   table: ({ children }) => (
-    <div className="fm2-report-table" role="region" aria-label="报告内的表格" tabIndex={0}>
-      <table>{children}</table>
+    <div className="min-w-0" role="region" aria-label="报告内的表格" tabIndex={0}>
+      <Table>{children}</Table>
     </div>
   ),
 };

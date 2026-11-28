@@ -174,24 +174,6 @@
   font-size: 12px;
 }
 .fm2-report :not(pre) > code { padding-inline: .2em; background: var(--fill); }
-.fm2-report-table {
-  max-width: 100%;
-  overflow-x: auto;
-  margin-block: 1em;
-}
-.fm2-report-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.fm2-report-table :is(th, td) {
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-  overflow-wrap: normal;
-}
-.fm2-report-table th { background: var(--fill); }
 .fm2-report-scroll > .fm2-btn { margin-top: var(--space-3); }
 .fm2-bar {
   display: flex;
@@ -202,28 +184,6 @@
   padding-bottom: 8px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--line);
-}
-.fm2-table-wrap {
-  overflow: auto;
-  max-height: 100%;
-}
-.fm2-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-.fm2-table th,
-.fm2-table td {
-  border: 1px solid var(--line);
-  padding: 6px 8px;
-  text-align: left;
-  vertical-align: top;
-}
-.fm2-table th {
-  background: var(--fill);
-  font-weight: 600;
-  position: sticky;
-  top: 0;
 }
 .fm2-card {
   border: 1px solid var(--line);

@@ -45,16 +45,8 @@
 .ai-severity { color: var(--ink-muted); font-size: 12px; }
 .ai-section h4 { margin: var(--space-3) 0 4px; color: var(--ink); font-size: 13px; }
 .ai-section ul { margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 13px; line-height: 1.7; }
-.ai-table-wrap { max-width: 100%; overflow-x: auto; }
-.ai-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 12px; }
-.ai-table th, .ai-table td { padding: var(--space-2); border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-.ai-table th { color: var(--ink-muted); font-weight: 600; }
-.ai-table td small { display: block; color: var(--ink-muted); }
-.ai-usage { min-width: 0; max-width: 560px; }
 .ai-usage-panel { margin-top: var(--space-4); }
 .ai-usage-panel summary { color: var(--ink-soft); font-size: 13px; cursor: pointer; }
-.ai-usage-panel .ai-table-wrap { margin-top: var(--space-2); }
-.ai-usage th:not(:first-child), .ai-usage td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .ai-raw { margin-top: var(--space-4); font-size: 12px; }
 .ai-raw summary { color: var(--ink-muted); cursor: pointer; }
 .ai-raw pre { max-height: 420px; margin: var(--space-2) 0 0; padding: var(--space-3); overflow: auto; border-radius: var(--sp-radius-sm); background: var(--surface-sunken); color: var(--ink-soft); font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -73,9 +65,6 @@
 .ai-lens-warnings { margin: 6px 0 10px; padding-left: 18px; color: var(--muted-foreground); font-size: 12px; }
 
 /* 中文译文: coverage per resource, then each English string beside its Chinese. */
-.tr-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; }
-.tr-table td .ra-error { display: block; max-width: 30ch; white-space: normal; overflow-wrap: anywhere; }
-.tr-table td:first-child { padding-left: var(--space-5); }
 .tr-link { padding: 0; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
 .tr-link[aria-pressed="true"] { color: var(--brand); }
 .tr-filters { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-6) 0 var(--space-4); }

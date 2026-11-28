@@ -923,22 +923,22 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
                               {relatedCatalogEntry?.relatedSourceIds.length ? renderCitations(relatedCatalogEntry.relatedSourceIds) : null}
                             </p>
                           )}
-                          <div className="fm2-table-wrap">
-                            <table className="fm2-table">
-                              <thead>
-                                <tr>
-                                  {tableDetail.columns.map((col, idx) => <th key={idx}>{col}</th>)}
-                                </tr>
-                              </thead>
-                              <tbody>
+                          <div className="min-w-0">
+                            <Table className="min-w-max tabular-nums">
+                              <TableHeader>
+                                <TableRow>
+                                  {tableDetail.columns.map((col, idx) => <TableHead key={idx}>{col}</TableHead>)}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
                                 {tableDetail.table.table.rows.map((row, rIdx) => (
-                                  <tr key={rIdx}>
-                                    <td><strong>{row.label}</strong></td>
-                                    {row.cells.map((cell, cIdx) => <td key={cIdx}>{cell.text}</td>)}
-                                  </tr>
+                                  <TableRow key={rIdx}>
+                                    <TableCell><strong>{row.label}</strong></TableCell>
+                                    {row.cells.map((cell, cIdx) => <TableCell key={cIdx}>{cell.text}</TableCell>)}
+                                  </TableRow>
                                 ))}
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           </div>
                         </>
                       )}

@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Refresh as LoaderCircle, Refresh as RefreshCw, Search } from "reicon-react";
 import type { TranslationEntry, TranslationsAdmin, TranslationStarted } from "@/src/api/admin/types/translations-admin";
@@ -67,15 +68,15 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     {queued && <p className="ai-hint" role="status">翻译任务已加入队列</p>}
     {triggerError && <p className="ra-error" role="alert">{triggerError}</p>}
     <h3>译文覆盖</h3>
-    <div className="bm-admin-table-wrap" role="region" aria-label="译文覆盖表" tabIndex={0}><table className="bm-admin-table tr-table">
-      <thead><tr><th>资源</th><th>已翻译</th><th>未通过</th><th>待翻译</th><th>发布状态</th><th>译文表更新</th><th>预览</th></tr></thead>
-      <tbody>{data.resources.map(r => <tr key={`${r.resource}:${r.scope}`}>
-        <td><button className="tr-link" onClick={() => setResource(v => v === `${r.resource}:${r.scope}` ? "" : `${r.resource}:${r.scope}`)} aria-pressed={resource === `${r.resource}:${r.scope}`}>{label(r.resource, r.scope)}</button></td>
-        <td>{r.translated} / {r.total}</td><td>{r.rejected || "—"}</td><td>{r.total - r.translated - r.rejected || "—"}</td>
-        <td>{r.publication ? PUBLICATION[r.publication.status] : "—"}{r.publication?.error && <small className="ra-error">{r.publication.error}</small>}</td><td>{date(r.publishedAt)}</td>
-        <td>{r.preview ? <a className="tr-link" href={r.preview.href} target="_blank" rel="noopener noreferrer">{r.preview.lang === "zh-CN" ? "中文预览" : "原文预览"}</a> : "—"}</td>
-      </tr>)}</tbody>
-    </table></div>
+    <div className="min-w-0" role="region" aria-label="译文覆盖表" tabIndex={0}><Table className="min-w-[42rem]">
+      <TableHeader><TableRow><TableHead>资源</TableHead><TableHead>已翻译</TableHead><TableHead>未通过</TableHead><TableHead>待翻译</TableHead><TableHead>发布状态</TableHead><TableHead>译文表更新</TableHead><TableHead>预览</TableHead></TableRow></TableHeader>
+      <TableBody>{data.resources.map(r => <TableRow key={`${r.resource}:${r.scope}`}>
+        <TableCell><button className="tr-link" onClick={() => setResource(v => v === `${r.resource}:${r.scope}` ? "" : `${r.resource}:${r.scope}`)} aria-pressed={resource === `${r.resource}:${r.scope}`}>{label(r.resource, r.scope)}</button></TableCell>
+        <TableCell>{r.translated} / {r.total}</TableCell><TableCell>{r.rejected || "—"}</TableCell><TableCell>{r.total - r.translated - r.rejected || "—"}</TableCell>
+        <TableCell>{r.publication ? PUBLICATION[r.publication.status] : "—"}{r.publication?.error && <small className="ra-error">{r.publication.error}</small>}</TableCell><TableCell>{date(r.publishedAt)}</TableCell>
+        <TableCell>{r.preview ? <a className="tr-link" href={r.preview.href} target="_blank" rel="noopener noreferrer">{r.preview.lang === "zh-CN" ? "中文预览" : "原文预览"}</a> : "—"}</TableCell>
+      </TableRow>)}</TableBody>
+    </Table></div>
     <div className="tr-filters">
       <div className="ra-segmented" role="group" aria-label="状态">{(["all", "rejected", "pending", "ready"] as Filter[]).map(f => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "all" ? "全部" : STATUS[f][0]}<small>{counts[f]}</small></button>)}</div>
       {selectedResource && <button type="button" className="fm-button" aria-label={`清除资源筛选 ${label(selectedResource.resource, selectedResource.scope)}`} onClick={() => setResource("")}>{label(selectedResource.resource, selectedResource.scope)} ✕</button>}

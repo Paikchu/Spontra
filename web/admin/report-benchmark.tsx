@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
 import { Fragment, useMemo, useState } from "react";
 
@@ -176,25 +177,25 @@ export function ReportBenchmark({ ticker }: { ticker: string }) {
                 <h2>评分红线</h2>
                 <span className="rb-meta">触发任一项时总分上限为 59 分</span>
               </div>
-              <div className="rb-table-wrap" role="region" aria-label="评分红线" tabIndex={0}>
-                <table className="rb-table">
-                  <thead>
-                    <tr>
-                      <th>编号</th>
-                      <th>红线名称</th>
-                      <th>判定标准</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="min-w-0" role="region" aria-label="评分红线" tabIndex={0}>
+                <Table className="min-w-[36rem] [&_td]:whitespace-normal [&_td]:align-top">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>编号</TableHead>
+                      <TableHead>红线名称</TableHead>
+                      <TableHead>判定标准</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {rubric.vetoRules.map(rule => (
-                      <tr key={rule.id}>
-                        <td className="ra-mono">{rule.id}</td>
-                        <td style={{ whiteSpace: "nowrap", fontWeight: 500 }}>{rule.name}</td>
-                        <td className="rb-evidence">{rule.description}</td>
-                      </tr>
+                      <TableRow key={rule.id}>
+                        <TableCell className="ra-mono">{rule.id}</TableCell>
+                        <TableCell style={{ whiteSpace: "nowrap", fontWeight: 500 }}>{rule.name}</TableCell>
+                        <TableCell className="rb-evidence">{rule.description}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
 
@@ -203,33 +204,33 @@ export function ReportBenchmark({ ticker }: { ticker: string }) {
                 <h2>评分项目</h2>
                 <span className="rb-meta">{rubric.subItems.length} 项 · 满分 100 分 · {DATASET.rubricVersion}</span>
               </div>
-              <div className="rb-table-wrap" role="region" aria-label="评分项目" tabIndex={0}>
-                <table className="rb-table">
-                  <thead>
-                    <tr>
-                      <th>编号</th>
-                      <th>小项名称</th>
-                      <th style={{ textAlign: "right" }}>满分</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="min-w-0" role="region" aria-label="评分项目" tabIndex={0}>
+                <Table className="min-w-[36rem] [&_td]:whitespace-normal [&_td]:align-top">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>编号</TableHead>
+                      <TableHead>小项名称</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>满分</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {rubric.dimensions.map(dim => (
                       <Fragment key={dim.id}>
-                        <tr className="rb-dim-divider">
-                          <td colSpan={2}>{dim.id} · {dim.name}</td>
-                          <td className="rb-num">{dim.max} 分</td>
-                        </tr>
+                        <TableRow className="bg-muted/40 font-semibold">
+                          <TableCell colSpan={2}>{dim.id} · {dim.name}</TableCell>
+                          <TableCell className="text-right tabular-nums">{dim.max} 分</TableCell>
+                        </TableRow>
                         {rubric.subItems.filter(s => s.dimension === dim.id).map(sub => (
-                          <tr key={sub.id}>
-                            <td className="ra-mono">{sub.id}</td>
-                            <td>{sub.name}</td>
-                            <td className="rb-num">{sub.max}</td>
-                          </tr>
+                          <TableRow key={sub.id}>
+                            <TableCell className="ra-mono">{sub.id}</TableCell>
+                            <TableCell>{sub.name}</TableCell>
+                            <TableCell className="text-right tabular-nums">{sub.max}</TableCell>
+                          </TableRow>
                         ))}
                       </Fragment>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           </div>
@@ -351,91 +352,91 @@ export function ReportBenchmark({ ticker }: { ticker: string }) {
             </div>
 
             {tab === "subitems" && (
-              <div className="rb-table-wrap" role="region" aria-label="分项评分" tabIndex={0}>
-                <table className="rb-table">
-                  <thead>
-                    <tr>
-                      <th>编号</th>
-                      <th>小项名称</th>
-                      <th style={{ textAlign: "right" }}>得分</th>
-                      <th style={{ textAlign: "right" }}>较对照 Δ</th>
-                      <th>根因</th>
-                      <th>证据与扣分说明</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="min-w-0" role="region" aria-label="分项评分" tabIndex={0}>
+                <Table className="min-w-[36rem] [&_td]:whitespace-normal [&_td]:align-top">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>编号</TableHead>
+                      <TableHead>小项名称</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>得分</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>较对照 Δ</TableHead>
+                      <TableHead>根因</TableHead>
+                      <TableHead>证据与扣分说明</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {rubric.dimensions.map(dim => (
                       <Fragment key={dim.id}>
-                        <tr className="rb-dim-divider">
-                          <td colSpan={6}>{dim.id} · {dim.name}（满分 {dim.max}）</td>
-                        </tr>
+                        <TableRow className="bg-muted/40 font-semibold">
+                          <TableCell colSpan={6}>{dim.id} · {dim.name}（满分 {dim.max}）</TableCell>
+                        </TableRow>
                         {rubric.subItems.filter(s => s.dimension === dim.id).map(sub => {
                           const cur = subItemMap.get(sub.id);
                           const prev = compareSubItemMap.get(sub.id);
                           const delta = cur && prev ? cur.score - prev.score : cur?.delta ?? null;
                           const d = formatDelta(delta);
                           return (
-                            <tr key={sub.id}>
-                              <td className="ra-mono">{sub.id}</td>
-                              <td style={{ whiteSpace: "nowrap" }}>{sub.name}</td>
-                              <td className="rb-num">{cur ? `${cur.score} / ${sub.max}` : `— / ${sub.max}`}</td>
-                              <td className="rb-num"><span className={`rb-delta ${d.cls}`}>{d.text}</span></td>
-                              <td>{cur?.rootCause ? <span className="ra-badge" data-status="caution">{cur.rootCause}</span> : <span style={{ color: "var(--ink-muted)" }}>—</span>}</td>
-                              <td className="rb-evidence">{cur?.evidence || "—"}</td>
-                            </tr>
+                            <TableRow key={sub.id}>
+                              <TableCell className="ra-mono">{sub.id}</TableCell>
+                              <TableCell style={{ whiteSpace: "nowrap" }}>{sub.name}</TableCell>
+                              <TableCell className="text-right tabular-nums">{cur ? `${cur.score} / ${sub.max}` : `— / ${sub.max}`}</TableCell>
+                              <TableCell className="text-right tabular-nums"><span className={`rb-delta ${d.cls}`}>{d.text}</span></TableCell>
+                              <TableCell>{cur?.rootCause ? <span className="ra-badge" data-status="caution">{cur.rootCause}</span> : <span style={{ color: "var(--ink-muted)" }}>—</span>}</TableCell>
+                              <TableCell className="rb-evidence">{cur?.evidence || "—"}</TableCell>
+                            </TableRow>
                           );
                         })}
                       </Fragment>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
 
             {tab === "history" && (
-              <div className="rb-table-wrap" role="region" aria-label="版本历史" tabIndex={0}>
-                <table className="rb-table">
-                  <thead>
-                    <tr>
-                      <th>版本</th>
-                      <th>修改目标</th>
-                      <th style={{ textAlign: "right" }}>总分</th>
-                      <th style={{ textAlign: "right" }}>较上版 Δ</th>
-                      <th>评级 / 红线</th>
-                      <th>A/B 盲评</th>
-                      <th>Commit / 时间</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="min-w-0" role="region" aria-label="版本历史" tabIndex={0}>
+                <Table className="min-w-[36rem] [&_td]:whitespace-normal [&_td]:align-top">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>版本</TableHead>
+                      <TableHead>修改目标</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>总分</TableHead>
+                      <TableHead style={{ textAlign: "right" }}>较上版 Δ</TableHead>
+                      <TableHead>评级 / 红线</TableHead>
+                      <TableHead>A/B 盲评</TableHead>
+                      <TableHead>Commit / 时间</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {[...versions].reverse().map(v => {
                       const idx = versions.findIndex(x => x.versionId === v.versionId);
                       const prev = idx > 0 ? versions[idx - 1] : null;
                       const d = formatDelta(prev ? v.totalScore - prev.totalScore : v.deltaFromPrev ?? null);
                       return (
-                        <tr
+                        <TableRow
                           key={v.versionId}
-                          className={`rb-clickable${v.versionId === activeVersion.versionId ? " rb-active" : ""}`}
+                          className="cursor-pointer" data-state={v.versionId === activeVersion.versionId ? "selected" : undefined}
                           onClick={() => setSelectedVersionId(v.versionId)}
                         >
-                          <td><button type="button" className="rb-history-select ra-mono" aria-pressed={v.versionId === activeVersion.versionId}>v{v.versionNumber}{v.isBaseline ? "（基线）" : ""}</button></td>
-                          <td>{v.goal}</td>
-                          <td className="rb-num">{v.totalScore}</td>
-                          <td className="rb-num"><span className={`rb-delta ${d.cls}`}>{d.text}</span></td>
-                          <td>
+                          <TableCell><button type="button" className="rb-history-select ra-mono" aria-pressed={v.versionId === activeVersion.versionId}>v{v.versionNumber}{v.isBaseline ? "（基线）" : ""}</button></TableCell>
+                          <TableCell>{v.goal}</TableCell>
+                          <TableCell className="text-right tabular-nums">{v.totalScore}</TableCell>
+                          <TableCell className="text-right tabular-nums"><span className={`rb-delta ${d.cls}`}>{d.text}</span></TableCell>
+                          <TableCell>
                             <span className="ra-badge" data-status={gradeStatus(v.grade, v.veto.triggered)}>
                               {v.veto.triggered ? "红线触发" : v.grade}
                             </span>
-                          </td>
-                          <td>{v.pairwiseVsPrev?.outcome ?? "—"}</td>
-                          <td className="rb-evidence">
+                          </TableCell>
+                          <TableCell>{v.pairwiseVsPrev?.outcome ?? "—"}</TableCell>
+                          <TableCell className="rb-evidence">
                             {v.gitCommit && <code className="ra-mono" style={{ marginRight: 8 }}>{v.gitCommit}</code>}
                             {v.createdAt}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
 

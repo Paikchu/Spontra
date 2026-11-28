@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { Switch } from "@/web/shared/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/web/shared/ui/popover";
 import { Button } from "@/web/shared/ui/button";
@@ -77,8 +78,6 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,companyTick
   const [directory,setDirectory]=useState<BusinessMapDirectory|null>(null);
   const [query,setQuery]=useState(()=>companyTicker??""),[typed,setTyped]=useState(query);
   const [scope,setScope]=useState<'on'|'scheduled'|'all'>('on'),[page,setPage]=useState(1);
-  // The company the page was opened for (a message's link): its row opens and comes into view once, when the list arrives.
-  const [focus,setFocus]=useState(()=>companyTicker??"");
   const [loadError,setLoadError]=useState('');
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(''),[refresh,setRefresh]=useState(0);
   const lock=useRef(false),pending=useRef(new Set<string>()),switched=useRef(0),callbacks=useRef({onUnauthorized,onAuthenticated});
@@ -211,9 +210,11 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,companyTick
   }
   const details=new Map(data?.companies.map(c=>[c.ticker,c])??[]);
   const rows=(directory?.rows??[]).filter(row=>!companyTicker||row.ticker===companyTicker);
+  const scopedRow=companyTicker ? rows[0] : undefined;
+  const scopedCompany=companyTicker ? details.get(companyTicker) : undefined;
   const globalPaused=data?FEATURES.filter(f=>!data.generation[f]).length+(data.scheduledAnalysis?0:1):0;
   return <section className="bm-admin" aria-label="公司">
-    {!companyTicker && <header className="ra-page-header bm-directory-toolbar">
+    {!companyTicker && <header className="ra-page-header bm-directory-toolbar shrink-0">
       <label className="bm-admin-search"><span className="bm-admin-sr">搜索公司</span><span className="ra-search bm-admin-query"><Search size={18} strokeWidth={1.5}/><input aria-label="搜索公司" placeholder="代码或公司名" value={typed} onChange={e=>setTyped(e.target.value.toUpperCase())}/></span></label>
       <div className="bm-admin-filter">
         <div className="bm-admin-scope" role="group" aria-label="范围">
@@ -232,17 +233,28 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,companyTick
     {!companyTicker&&data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
     <p className="bm-admin-sr" id="bm-switch-guide">分析层级为线性阶梯，选择目标层级会自动开启前置层或关闭上层；全局自动生成与运行入口开关位于顶部全局控制菜单。</p>
     {!directory&&!loadError&&<div className="bm-admin-loading" role="status"><span>加载公司</span>{Array.from({length:6},(_,i)=><div key={i} aria-hidden="true"/>)}</div>}
-    {rows.length>0&&<div className="bm-admin-table-wrap" tabIndex={0} role="region" aria-label="公司功能管理" aria-describedby="bm-switch-guide"><table className="bm-admin-table bm-company-table">
-      <thead><tr>
-        <th scope="col">公司</th>
-        <th scope="col">分析层级</th>
-        <th scope="col" className="bm-admin-feature-col">定时分析</th>
-        <th scope="col">操作</th>
-      </tr></thead>
-      {rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
-        ?<Company key={row.ticker} company={company} layers={row.layers} onUnauthorized={unauthorized} busy={!!busy} onDepth={depth=>void setLayerDepth(company.ticker,{...row.layers,...Object.fromEntries(FEATURES.map(f=>[f,company.features[f].on]))} as Record<Layer,boolean>,depth)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} focused={company.ticker===focus} onFocused={()=>setFocus('')} onOpen={onOpenCompany ? ()=>onOpenCompany(row.ticker) : undefined}/>
-        :<Listed key={row.ticker} row={row} busy={!!busy} onDepth={depth=>void setLayerDepth(row.ticker,row.layers,depth)}/>;})}
-    </table></div>}
+    {companyTicker&&scopedRow&&<div className="flex min-w-0 flex-col gap-6">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex min-w-0 items-center gap-2"><CompanyLogo symbol={scopedRow.ticker}/><strong>{scopedRow.name || scopedRow.ticker}</strong></div>
+        <LayerSelect ticker={scopedRow.ticker} layers={scopedCompany ? displayedLayers(scopedRow.layers,scopedCompany) : scopedRow.layers} features={scopedCompany?.features} disabled={!!busy} onSelect={depth=>void setLayerDepth(scopedRow.ticker,scopedCompany ? displayedLayers(scopedRow.layers,scopedCompany) : scopedRow.layers,depth)}/>
+        {scopedCompany&&<>
+          <label className="flex items-center gap-2 text-sm"><span>定时分析</span><Switch checked={scopedCompany.scheduledAnalysis} onCheckedChange={on=>void switchScheduledAnalysis(scopedCompany.ticker,on)}/></label>
+          <Button variant="outline" size="sm" disabled={!!busy||!!scopedCompany.task&&active.has(scopedCompany.task.status)||!scopedCompany.dataEnabled} onClick={()=>void mutate(scopedCompany.ticker)}>{scopedCompany.task&&active.has(scopedCompany.task.status)?'准备中':'重新准备'}</Button>
+        </>}
+      </div>
+      {scopedCompany&&<CompanyDetails company={scopedCompany} busy={!!busy} onUnauthorized={unauthorized} onJudge={()=>void judge(scopedCompany.ticker)}/>}
+    </div>}
+    {!companyTicker&&rows.length>0&&<div className="min-w-0" tabIndex={0} role="region" aria-label="公司功能管理" aria-describedby="bm-switch-guide"><Table className="min-w-[46rem] [&_td:last-child]:text-right [&_th:last-child]:text-right">
+      <TableHeader><TableRow>
+        <TableHead scope="col">公司</TableHead>
+        <TableHead scope="col">分析层级</TableHead>
+        <TableHead scope="col" className="bm-admin-feature-col">定时分析</TableHead>
+        <TableHead scope="col">操作</TableHead>
+      </TableRow></TableHeader>
+      <TableBody>{rows.map(row=>{const company=details.get(row.ticker);return company&&row.layers.map
+        ?<CompanyRow key={row.ticker} company={company} layers={row.layers} busy={!!busy} onDepth={depth=>void setLayerDepth(company.ticker,displayedLayers(row.layers,company),depth)} onPrepare={()=>void mutate(company.ticker)} onScheduled={on=>void switchScheduledAnalysis(company.ticker,on)} onOpen={onOpenCompany ? ()=>onOpenCompany(row.ticker) : undefined}/>
+        :<Listed key={row.ticker} row={row} onOpen={onOpenCompany ? ()=>onOpenCompany(row.ticker) : undefined} busy={!!busy} onDepth={depth=>void setLayerDepth(row.ticker,row.layers,depth)}/>;})}</TableBody>
+    </Table></div>}
     {directory&&!rows.length&&<div className="ra-empty" role="status"><Search size={18} strokeWidth={1.5} aria-hidden="true"/><h3>{companyTicker?'暂无公司数据':scope==='scheduled'&&!query?'暂无开启定时分析的公司':'无匹配公司'}</h3></div>}
     {!companyTicker&&directory&&directory.pages>1&&<nav className="bm-admin-pages" aria-label="分页">
       <button className="ra-icon-button" aria-label="上一页" disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={18} strokeWidth={1.5}/></button>
@@ -320,13 +332,13 @@ function LayerSelect({ticker,layers,features,disabled,onSelect}:{ticker:string;l
   </PopoverContent></Popover>;
 }
 /** A listed company without a financial map yet: can be enabled straight to any layer from the dropdown. */
-function Listed({row,busy,onDepth}:{row:DirectoryCompany;busy:boolean;onDepth:(depth:number)=>void}) {
-  return <tbody><tr className="bm-admin-row" aria-label={row.ticker}>
-    <td><div className="bm-admin-company-cell"><span className="bm-admin-toggle-gap"/><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{row.ticker}</strong><small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></td>
-    <td><LayerSelect ticker={row.ticker} layers={row.layers} disabled={busy} onSelect={onDepth}/></td>
-    <td className="bm-admin-feature-col"><span className="bm-admin-dash">—</span></td>
-    <td/>
-  </tr></tbody>;
+function Listed({row,busy,onDepth,onOpen}:{row:DirectoryCompany;busy:boolean;onDepth:(depth:number)=>void;onOpen?:()=>void}) {
+  return <TableRow aria-label={row.ticker}>
+    <TableCell><div className="bm-admin-company-cell"><CompanyLogo symbol={row.ticker}/><span className="bm-admin-name">{onOpen ? <><strong className="ra-mono hidden md:inline">{row.ticker}</strong><Button variant="link" size="sm" className="ra-mono h-auto p-0 md:hidden" aria-label={`查看 ${row.ticker}`} onClick={onOpen}>{row.ticker}</Button></> : <strong className="ra-mono">{row.ticker}</strong>}<small>{row.name}{row.classes.length?` · ${row.classes.join(' ')}`:''}</small></span></div></TableCell>
+    <TableCell><LayerSelect ticker={row.ticker} layers={row.layers} disabled={busy} onSelect={onDepth}/></TableCell>
+    <TableCell className="bm-admin-feature-col"><span className="bm-admin-dash">—</span></TableCell>
+    <TableCell>{onOpen&&<Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={onOpen}>查看公司</Button>}</TableCell>
+  </TableRow>;
 }
 /** Layer switches after one moved: closing a layer closes every layer above it. */
 function applyLayers(layers:Record<Layer,boolean>,feature:Feature,on:boolean):Record<Layer,boolean> {
@@ -396,8 +408,21 @@ function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol
   return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,...Object.fromEntries(affected.map(f=>[f,old.features[f]]))}})};
 }
 
-/** One company as a table row: its layer dropdown, independent switches and actions; the row opens to the details. */
-function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onScheduled,focused,onFocused,onUnauthorized,onOpen}:{onOpen?:()=>void;company:BusinessMapCompany;layers:Record<Layer,boolean>;onUnauthorized:()=>void;busy:boolean;onDepth:(depth:number)=>void;onPrepare:()=>void;onJudge:()=>void;onScheduled:(on:boolean)=>void;focused:boolean;onFocused:()=>void}) {
+function displayedLayers(layers:Record<Layer,boolean>, company:BusinessMapCompany):Record<Layer,boolean> {
+  return {...layers,...Object.fromEntries(FEATURES.map(f=>[f,company.features[f].on]))};
+}
+
+function CompanyRow({company:c,layers,busy,onDepth,onPrepare,onScheduled,onOpen}:{company:BusinessMapCompany;layers:Record<Layer,boolean>;busy:boolean;onDepth:(depth:number)=>void;onPrepare:()=>void;onScheduled:(on:boolean)=>void;onOpen?:()=>void}) {
+  const running=!!c.task&&active.has(c.task.status);
+  return <TableRow aria-label={`${c.ticker} 数据准备`}>
+    <TableCell><div className="bm-admin-company-cell"><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name">{onOpen ? <><strong className="ra-mono hidden md:inline">{c.ticker}</strong><Button variant="link" size="sm" className="ra-mono h-auto p-0 md:hidden" aria-label={`查看 ${c.ticker}`} onClick={onOpen}>{c.ticker}</Button></> : <strong className="ra-mono">{c.ticker}</strong>}{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></TableCell>
+    <TableCell><LayerSelect ticker={c.ticker} layers={displayedLayers(layers,c)} features={c.features} disabled={busy} onSelect={onDepth}/></TableCell>
+    <TableCell className="bm-admin-feature-col"><Switch checked={c.scheduledAnalysis} disabled={busy} aria-label={`${c.ticker} 定时分析`} onCheckedChange={onScheduled}/></TableCell>
+    <TableCell><div className="bm-admin-actions">{onOpen&&<Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={onOpen}>查看公司</Button>}<Button variant="outline" size="sm" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</Button></div></TableCell>
+  </TableRow>;
+}
+
+function CompanyDetails({company:c,busy,onJudge,onUnauthorized}:{company:BusinessMapCompany;busy:boolean;onJudge:()=>void;onUnauthorized:()=>void}) {
   const running=!!c.task&&active.has(c.task.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -407,19 +432,9 @@ function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onScheduled,fo
   const notes=taskIssues.filter(code=>NOTE.test(code));
   const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...taskIssues.filter(code=>!NOTE.test(code)),...(c.collection?.status==='succeeded'?[]:c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
   const skipped=notes.filter(code=>!code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).length,unsupported=notes.filter(code=>code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).reduce((n,code)=>n+Number(code.split(':')[1]??0),0);
-  const [open,setOpen]=useState(focused),body=useRef<HTMLTableSectionElement>(null);
-  useEffect(()=>{if(!focused)return;body.current?.scrollIntoView({block:'start'});onFocused();},[focused,onFocused]);
   const problems=groupIssues(issues);
   const runs=FEATURES.flatMap(feature=>(c.features[feature].progress??[]).map((run,_,all)=>({feature,run,count:all.length})));
-  const currentLayers={...layers,...Object.fromEntries(FEATURES.map(f=>[f,c.features[f].on]))} as Record<Layer,boolean>;
-  return <tbody ref={body} data-open={open||undefined}>
-    <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
-      <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={18} strokeWidth={1.5}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
-      <td><LayerSelect ticker={c.ticker} layers={currentLayers} features={c.features} disabled={busy} onSelect={onDepth}/></td>
-      <td className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.scheduledAnalysis} aria-label={`${c.ticker} 定时分析`} title={c.scheduledAnalysis?'定时分析已开启':'定时分析已暂停'} onClick={()=>onScheduled(!c.scheduledAnalysis)}><span/></button></td>
-      <td><div className="bm-admin-actions">{onOpen && <Button variant="ghost" size="sm" onClick={onOpen}>查看公司</Button>}<button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button></div></td>
-    </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={4}><div className="bm-detail">
+  return <div className="bm-detail" aria-label="公司详情">
       <CompanyUsage ticker={c.ticker} onUnauthorized={onUnauthorized} rows={LAYERS.map(layer => ({ layer, label: LAYER_LABEL[layer], state: c.layerStatuses?.[layer] }))}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}
@@ -451,6 +466,5 @@ function Company({company:c,layers,busy,onDepth,onPrepare,onJudge,onScheduled,fo
       </div>
       <CompanyReports ticker={c.ticker} onUnauthorized={onUnauthorized}/>
       <ValuationInputs ticker={c.ticker} onUnauthorized={onUnauthorized}/>
-    </div></td></tr>}
-  </tbody>;
+    </div>;
 }

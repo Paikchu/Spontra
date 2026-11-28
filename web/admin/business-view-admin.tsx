@@ -90,9 +90,8 @@ export function BusinessViewAdmin() {
   return <SidebarProvider className="report-admin bg-background text-foreground" mobileBreakpoint={767} persistState={false} keyboardShortcut={null}>
     <AppSidebar section={section} ticker={ticker} pages={PAGES} navigate={next => { if (section !== next) go(next); }} selectTicker={symbol => { if (symbol !== ticker) go(section, symbol); }} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme}/>
     <SidebarInset className="min-w-0 bg-background" aria-label={page.title}>
-      <AdminMobileNavigation title={page.title}/>
       <div className="min-w-0 px-4 py-6 md:px-8 md:py-8 xl:px-12">
-        <h1 className="mb-6 text-lg! leading-7! font-semibold! tracking-normal!">{page.global || !ticker ? page.title : `${ticker} · ${page.title}`}</h1>
+        <header className="mb-6 flex min-w-0 items-center gap-3"><AdminMobileNavigation/><h1 className="text-lg! leading-7! font-semibold! tracking-normal!">{page.global || !ticker ? page.title : `${ticker} · ${page.title}`}</h1></header>
         {error && <p role="alert" className="mb-4 text-sm">{error}</p>}
         <div key={`${section}:${page.global ? "" : ticker}:${section === "l1" || section === "l2" ? search : ""}`} className="ra-main" data-section={section}>
           {content ?? <p className="text-sm text-muted-foreground">请选择公司</p>}

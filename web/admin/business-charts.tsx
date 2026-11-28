@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { useEffect, useRef, useState } from 'react';
 import type { BusinessMapCharts } from '@/src/api/admin/types/business-map-admin';
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowAmount, type FlowMetric } from '@/src/domains/financials/business-flow-contract';
@@ -77,12 +78,12 @@ function balanceRows(quarters: CapitalQuarter[]): Row[] {
 }
 
 function Statement({ periods, rows, currency, label }: { periods: string[]; rows: Row[]; currency: string; label: string }) {
-  return <div className="bc-wrap" role="region" aria-label={label} tabIndex={0}><table className="bc-table">
-    <thead><tr><th scope="col">{`百万 ${currency}`}</th>{periods.map(p => <th key={p} scope="col">{p}</th>)}</tr></thead>
-    <tbody>{rows.map(r => r.kind === 'head'
-      ? <tr key={r.key} className="bc-head"><th colSpan={periods.length + 1}>{r.label}</th></tr>
-      : <tr key={r.key} data-kind={r.kind}><th scope="row">{r.label}{r.note && <small>{r.note}</small>}</th>{periods.map(p => { const v = r.values.get(p); return <td key={p} data-negative={v != null && v < 0 || undefined}>{million(v)}</td>; })}</tr>)}</tbody>
-  </table></div>;
+  return <div className="min-w-0" role="region" aria-label={label} tabIndex={0}><Table className="min-w-[36rem] tabular-nums [&_td]:text-right [&_th:not(:first-child)]:text-right">
+    <TableHeader><TableRow><TableHead scope="col">{`百万 ${currency}`}</TableHead>{periods.map(p => <TableHead key={p} scope="col">{p}</TableHead>)}</TableRow></TableHeader>
+    <TableBody>{rows.map(r => r.kind === 'head'
+      ? <TableRow key={r.key} className="bg-muted/40 font-semibold"><TableHead colSpan={periods.length + 1}>{r.label}</TableHead></TableRow>
+      : <TableRow key={r.key} data-kind={r.kind} className={r.kind==="total" ? "font-semibold" : undefined}><TableHead scope="row">{r.label}{r.note && <small>{r.note}</small>}</TableHead>{periods.map(p => { const v = r.values.get(p); return <TableCell key={p} data-negative={v != null && v < 0 || undefined}>{million(v)}</TableCell>; })}</TableRow>)}</TableBody>
+  </Table></div>;
 }
 
 /** The figures behind BusinessView's three charts — profit, cash flow and balance sheet — as quarterly statements. */

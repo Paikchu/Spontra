@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowDown2 as ChevronDown, FileText, Refresh as LoaderCircle, Maximize2, Search, Xmark as X } from "reicon-react";
 import type { DisclosureAuditSummary } from "@/src/domains/financials/disclosure-audit-contract";
@@ -149,18 +150,18 @@ export function FinancialStatementsInspector({ ticker, documents, onUnauthorized
           openingSign.add(index + 1); foldedSigns.add(index);
         }
       }
-      return <tr key={rowIndex} data-focused={focusedRow === rowIndex} data-total={total} onClick={() => setFocusedRow(previous => previous === rowIndex ? null : rowIndex)}>
+      return <TableRow key={rowIndex} data-state={focusedRow === rowIndex ? "selected" : undefined} className={total ? "font-semibold" : undefined} data-total={total} onClick={() => setFocusedRow(previous => previous === rowIndex ? null : rowIndex)}>
         {row.cells.map((cell, index) => {
-          const Tag = cell.header ? "th" : "td";
+          const Tag = cell.header ? TableHead : TableCell;
           const key = cellKey(rowIndex, cell), kind = columns[cell.column]?.kind;
           const translated = kind === "label" ? translateStatementLabel(cell.text) : cell.text;
           const showOriginalMatch = search && translated !== cell.text && cell.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()) && !translated.toLocaleLowerCase().includes(search.toLocaleLowerCase());
-          return <Tag key={index} colSpan={cell.colSpan} rowSpan={cell.rowSpan} data-column-kind={kind} data-numeric={hasNumericFact(cell)} data-empty={!cell.text} data-search-cell={key} data-active-match={activeCell === key} data-folded-sign={foldedSigns.has(index)} title={translated !== cell.text ? cell.text : undefined}>
+          return <Tag className={kind === "label" ? "sticky left-0 z-10 min-w-44 max-w-96 whitespace-normal bg-background font-medium" : "min-w-0"} key={index} colSpan={cell.colSpan} rowSpan={cell.rowSpan} data-column-kind={kind} data-numeric={hasNumericFact(cell)} data-empty={!cell.text} data-search-cell={key} data-active-match={activeCell === key} data-folded-sign={foldedSigns.has(index)} title={translated !== cell.text ? cell.text : undefined}>
             <span aria-hidden={foldedSigns.has(index) || undefined}>{(parenthesized.has(index) || openingSign.has(index)) && "("}<HighlightedText text={translated || "\u00a0"} query={search} />{(parenthesized.has(index) || closingSign.has(index)) && ")"}</span>
             {showOriginalMatch && <small className="fs-original-match"><HighlightedText text={cell.text} query={search} /></small>}
           </Tag>;
         })}
-      </tr>;
+      </TableRow>;
     });
   }
 
@@ -169,7 +170,7 @@ export function FinancialStatementsInspector({ ticker, documents, onUnauthorized
     const originalTitle = table.section.trim();
     const title = translateStatementLabel(originalTitle) || STATEMENT_CATEGORY_LABELS[category];
     const headingId = `${titleId}-${isExpanded ? "expanded" : "inline"}`;
-    return <div className="fs-reader" data-density={dense ? "compact" : "comfortable"}>
+    return <div className="fs-reader data-[density=compact]:[&_td]:py-1 data-[density=compact]:[&_th]:h-auto data-[density=compact]:[&_th]:py-1 data-[density=compact]:[&_td]:text-xs data-[density=compact]:[&_th]:text-xs" data-density={dense ? "compact" : "comfortable"}>
       <div className="fs-reader-heading">
         <div className="fs-heading-copy"><h3 id={headingId} lang={title === originalTitle ? "en" : undefined}>{title}</h3>{originalTitle && title !== originalTitle && <p className="fs-original-title" lang="en">{originalTitle}</p>}</div>
         <div className="fs-reader-tools">
@@ -180,12 +181,12 @@ export function FinancialStatementsInspector({ ticker, documents, onUnauthorized
         </div>
       </div>
       <div className="fs-table-options">{unitCaption && <span>{unitCaption}</span>}<button type="button" className="fs-density" aria-pressed={dense} onClick={() => setDense(value => !value)}>紧凑</button></div>
-      <div className="fs-table-scroll" ref={isExpanded ? expandedGrid : grid} tabIndex={0} role="region" aria-labelledby={headingId}>
-        <table className="fs-table" aria-labelledby={headingId}>
-          <colgroup>{columns.map(column => <col key={column.index} data-column-kind={column.kind} />)}</colgroup>
-          {headerRows > 0 && <thead>{renderRows(0, headerRows)}</thead>}
-          <tbody>{renderRows(headerRows, table.rows.length)}</tbody>
-        </table>
+      <div className="min-w-0 [&_[data-slot=table-container]]:max-h-[min(680px,70vh)]" ref={isExpanded ? expandedGrid : grid} tabIndex={0} role="region" aria-labelledby={headingId}>
+        <Table className="min-w-[38rem] tabular-nums [&_td[data-numeric=true]]:text-right [&_td[data-column-kind=decoration]]:px-1 [&_[data-folded-sign=true]>span]:invisible [&_[data-active-match=true]]:bg-accent [&_[data-active-match=true]]:outline [&_[data-active-match=true]]:outline-primary" aria-labelledby={headingId}>
+          <colgroup>{columns.map(column => <col key={column.index} className={column.kind === "decoration" ? "w-4" : column.kind === "empty" ? "w-1" : undefined} />)}</colgroup>
+          {headerRows > 0 && <TableHeader className="sticky top-0 z-20 bg-background">{renderRows(0, headerRows)}</TableHeader>}
+          <TableBody>{renderRows(headerRows, table.rows.length)}</TableBody>
+        </Table>
       </div>
       {table.precedingText && <div className="fs-reader-footer"><details className="fs-notes"><summary>报表说明<ChevronDown size={18} strokeWidth={1.5} aria-hidden="true" /></summary><p>{table.precedingText}</p></details></div>}
     </div>;

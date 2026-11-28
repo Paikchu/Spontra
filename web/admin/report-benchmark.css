@@ -172,43 +172,7 @@
   font-weight: 600;
 }
 .rb-dim-value small { color: var(--ink-muted); font-size: 12px; font-weight: 400; }
-
-.rb-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  margin-top: var(--space-3);
-}
 .rb-views { margin-top: var(--space-4); }
-.rb-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.rb-table th {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line-strong);
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
-  white-space: nowrap;
-}
-.rb-table td {
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--line);
-  text-align: start;
-  vertical-align: top;
-}
-.rb-table tr.rb-dim-divider td {
-  padding: 12px 10px 6px;
-  background: var(--fill);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 600;
-}
-.rb-table tr.rb-clickable { cursor: pointer; }
-.rb-table tr.rb-clickable:hover td { background: var(--fill); }
-.rb-table tr.rb-active td { background: var(--brand-soft); }
 .rb-history-select {
   min-height: 32px;
   padding: 0;
@@ -219,7 +183,6 @@
   white-space: nowrap;
 }
 .rb-history-select:hover { text-decoration: underline; }
-.rb-table td.rb-num { font-family: var(--mono); white-space: nowrap; text-align: end; }
 .rb-evidence { color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
 
 .rb-article-toolbar {

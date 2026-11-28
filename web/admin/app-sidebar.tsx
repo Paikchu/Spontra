@@ -16,11 +16,10 @@ const groups = [
   { title: "全局管理", items: [["directory", Settings], ["models", Cpu], ["messages", Bell]] },
 ] as const;
 
-export function AdminMobileNavigation({ title }: { title: string }) {
+export function AdminMobileNavigation() {
   const { setOpenMobile } = useSidebar();
-  return <div className="flex items-center gap-3 px-4 py-2 md:hidden">
+  return <div className="md:hidden">
     <Button variant="ghost" size="icon" aria-label="打开管理导航" onClick={() => setOpenMobile(true)}><Menu size={18} strokeWidth={1.5}/></Button>
-    <strong>{title}</strong>
   </div>;
 }
 
@@ -70,10 +69,10 @@ export function AppSidebar({ section, ticker, pages, navigate, selectTicker, unr
     </SidebarHeader>
     <SidebarContent className="gap-4 px-2" aria-label="后台导航">
       {groups.map(({ title, items }, index) => <SidebarGroup key={title} className={index === 2 ? "mt-auto" : ""}>
-        <SidebarGroupLabel>{title}</SidebarGroupLabel>
+        <SidebarGroupLabel className="text-sm!">{title}</SidebarGroupLabel>
         <SidebarMenu className="gap-1">
           {items.map(([key, Icon]) => <SidebarMenuItem key={key}>
-            <SidebarMenuButton className="h-9 rounded-lg" isActive={section === key} aria-current={section === key ? "page" : undefined} onClick={() => { navigate(key); setOpenMobile(false); }}>
+            <SidebarMenuButton className="h-9 rounded-lg text-sm" isActive={section === key} aria-current={section === key ? "page" : undefined} onClick={() => { navigate(key); setOpenMobile(false); }}>
               <span className="grid size-6 shrink-0 place-items-center"><Icon size={18} strokeWidth={1.5} aria-hidden="true"/></span><span>{pages[key].title}</span>
             </SidebarMenuButton>
             {key === "messages" && unread > 0 && <SidebarMenuBadge aria-label={`${unread} 条未读`}>{unread > 99 ? "99+" : unread}</SidebarMenuBadge>}

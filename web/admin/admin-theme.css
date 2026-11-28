@@ -141,7 +141,6 @@ html:has(.report-admin) :is(button, select, input, textarea):disabled { opacity:
 .report-admin .bm-switch[aria-checked='true']:disabled span { background: var(--primary-foreground); }
 .report-admin :is(.ra-primary, .fm-button):disabled { background: var(--muted); color: var(--muted-foreground); border-color: var(--input); }
 .report-admin .bm-admin-name small { font-size: 13px; }
-.report-admin .bm-usage .bm-usage-table :is(th, td) { font-size: 13px; }
 .report-admin .company-logo { background: var(--logo-surface); border-color: var(--input); }
 .report-admin .company-logo-fallback { color: oklch(0.148 0.004 228.8); }
 
