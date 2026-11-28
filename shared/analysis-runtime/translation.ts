@@ -11,7 +11,7 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "events" | "filings" | "filing" | "filing-impact" | "item" | "valuation" | "artifact";
+export type TranslatedResource = "flow" | "explainer" | "tree" | "events" | "filings" | "filing" | "filing-impact" | "valuation" | "artifact";
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -32,11 +32,6 @@ const RULES: Record<TranslatedResource, Rule> = {
   artifact: { keys: set(), skip: set() },
   // The statement's descriptive sentences: what each business is, who buys, how it charges, the basis. Names and figures are data.
   flow: { keys: set("description", "customers", "monetization", "disclosure", "basisLabel"), skip: set("sources", "figures", "name", "products", "lineage", "amount", "revenue", "expenseComponents", "otherComponents", "revenueAdjustments") },
-  // Findings with their lens documents (the analyst dossier is merged in): titles, judgments, watches, prose,
-  // chart and table words, highlight titles. Materials, sources and quote blocks are the filings' own words.
-  findings: { keys: set("title", "subtitle", "text", "condition", "label"), skip: set("sources", "materials", "anchors", "ref", "refs", "fingerprint", "model", "said"), skipWhen: v => v.kind === "quote" },
-  // One rail row's analysis, a finding in shape: the same words as a finding; its quoted passages are the filings' own.
-  item: { keys: set("title", "subtitle", "text", "condition", "label"), skip: set("sources", "materials", "passages", "anchors", "ref", "refs", "said"), skipWhen: v => v.kind === "quote" },
   // Business explanations: summaries, offerings, section titles and items. Business and product names are data.
   explainer: { keys: set("text", "title", "label"), skip: set("sources", "name", "products", "line", "companyName", "model", "fingerprint") },
   // The business mind map: summaries, glosses and revenue models; the anchor is a verbatim filing passage.

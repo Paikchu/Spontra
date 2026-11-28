@@ -8,7 +8,7 @@ import type { Section } from "./business-view-admin";
 
 const NAV_GROUPS: Array<{ title: string; items: Array<[Section, Icon]> }> = [
   { title: "数据", items: [["whitelist", ListChecks]] },
-  { title: "内容", items: [["filings", FileStack], ["business", Network], ["findings", ListFilter], ["benchmark", FileSearch]] },
+  { title: "内容", items: [["filings", FileStack], ["business", Network], ["valuation", ListFilter], ["benchmark", FileSearch]] },
   { title: "系统", items: [["models", Cpu], ["messages", Bell]] },
 ];
 

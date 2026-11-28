@@ -6,13 +6,8 @@ import {readCompletePublicationForTicker} from '../financial-data/publication.ts
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readEventsResponse } from "../events/read.ts";
-import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
-import { readItemAnalysisResponse } from "../items/read.ts";
-import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
-import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { listedIssuer, primaryTicker, securities, storedIssuerDirectory } from "../catalog/issuer-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
@@ -25,12 +20,11 @@ import type { RevisionsResponse } from "../../../../shared/analysis-contract/rev
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import { LAYERS, type Feature, type Layer } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
-import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
-import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 import { readPreview, readPublishedArtifact, readArtifactEdition, artifactId, type ArtifactStoreEnv } from "../artifact/store.ts";
 import type { PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
-import { stageAvailable } from "../stage/access.ts";
 import { listPublicResearch, readPublicResearch } from "../public-research/store.ts";
 
 /**
@@ -56,23 +50,14 @@ type RouteMatch =
   | { kind: "filings"; ticker: string }
   | { kind: "filing"; ticker: string; accession: string }
   | { kind: "artifact-preview"; token: string }
-  | { kind: "artifact"; ticker: string; artifactKind: "company-analysis" }
-  | { kind: "dossier-artifact"; ticker: string; findingId: string }
   | { kind: "business-flow"; ticker: string }
   | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
   | { kind: "business-tree"; ticker: string }
-  | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
-  | { kind: "insiders"; ticker: string }
-  | { kind: "insider-transactions"; ticker: string; personKey: string }
-  | { kind: "item"; ticker: string; id: string }
-  | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
   | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
   | { kind: "market-daily"; ticker: string }
-  | { kind: "findings-index" }
-  | { kind: "ticker"; ticker: string }
   | { kind: "home" }
   | { kind: "public-research"; reportId?: string };
 
@@ -80,14 +65,6 @@ type RouteMatch =
 /** A filing as the reports feature's display switch leaves it for readers: the filing itself, none of the model's writing. */
 function withoutSummary(filing: PublicSecFiling): PublicSecFiling {
   return { ...filing, summary: null, analysis: null, analysisStatus: "not_collected", reportVersion: null, periodId: null, analysisSchemaVersion: null, contentRevision: null };
-}
-
-/**
- * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
- * read from what is stored rather than from a list kept in the page.
- */
-async function findingsIndex(request: Request): Promise<Response> {
-  return dataResponse(request, { schemaVersion: "findings-index.v1", tickers: [] }, "cacheable");
 }
 
 /** Serves one map read. */
@@ -112,7 +89,6 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
-    if (route.kind === "findings-index") return await findingsIndex(request);
     if (route.kind === "home") return await home(request, env.DB);
     if (route.kind === "public-research") {
       const allowed = new Set(["type", "industryId", "version"]);
@@ -132,7 +108,6 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
         : await listPublicResearch(researchEnv, { type: type as "macro" | "industry" | undefined ?? undefined, industryId: industryId ?? undefined });
       return dataResponse(request, result, "no-store");
     }
-    if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
     // An artifact draft opened by the visual review through its signed, short-lived link; never cached.
     if (route.kind === "artifact-preview") {
       const draft = await readPreview(env as unknown as ArtifactStoreEnv, route.token);
@@ -142,18 +117,6 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
-}
-
-/**
- * The ticker a company's data is kept under, for a ticker as typed or linked: a second share class answers with the
- * class EDGAR lists first for its issuer (catalog/issuer-directory.ts); any other ticker answers with itself.
- */
-async function primary(request: Request, database: D1Database, ticker: string): Promise<Response> {
-  const requested = normalizeTicker(ticker);
-  if (!requested) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-  const directory = await storedIssuerDirectory(database);
-  // `listed` says the directory knew the ticker, so a reader may keep the answer; before EDGAR was first read it is false.
-  return dataResponse(request, { schemaVersion: "ticker.v1", requested, ticker: primaryTicker(directory, requested), listed: listedIssuer(directory, requested) !== null }, "no-store");
 }
 
 /** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
@@ -175,7 +138,7 @@ async function withFilingImpactTranslations(database: D1Database, artifact: Publ
   return table ? { ...artifact, filingImpactTranslations: table } : artifact;
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" } | { kind: "artifact-preview" } | { kind: "public-research" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "home" } | { kind: "artifact-preview" } | { kind: "public-research" }>): Promise<Response> {
   const ticker = normalizeTicker(route.ticker);
   if (!ticker) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const layers = route.kind === "revisions" ? null : await shownLayers(database, ticker);
@@ -200,12 +163,11 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
     // What changed since a reader loaded: one indexed read, never cached, carrying the live display-switch fingerprint so caches obey switch changes immediately.
     case "revisions": {
       const ticker = route.ticker.trim().toUpperCase();
-      const [revisions, currentLayers, stageEnabled] = await Promise.all([
+      const [revisions, currentLayers] = await Promise.all([
         readRevisions(database, ticker),
         shownLayers(database, ticker),
-        stageAvailable({ DB: database }, ticker),
       ]);
-      const config = `${LAYERS.map((layer: Layer) => (currentLayers[layer] ? "1" : "0")).join("")}-${stageEnabled ? "1" : "0"}`;
+      const config = `${LAYERS.map((layer: Layer) => (currentLayers[layer] ? "1" : "0")).join("")}-0`;
       return dataResponse(request, { schemaVersion: "revisions.v1", ticker, revisions, config } satisfies RevisionsResponse, "no-store");
     }
     case "filings": {
@@ -240,13 +202,10 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (exactEdition && (!artifact || (artifact.sourceHash ?? artifact.hash) !== editionHash)) return errorResponse("FILING_NOT_FOUND", "Filing report edition not found.");
       return dataResponse(request, { ...detail, artifact: artifact && await withFilingImpactTranslations(database, artifact, locale), filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } }, artifact?.filingImpact ? "no-store" : "cacheable");
     }
-    case "artifact":
-    case "dossier-artifact":
-      return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       payload.layers = layers!;
-      payload.stageEnabled = await stageAvailable({ DB: database }, ticker);
+      payload.stageEnabled = false;
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
       if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
       if(payload.flow){const flow=await translated("flow",{flow:payload.flow,reports:payload.reports??null});payload.flow=flow.flow;payload.reports=flow.reports;}
@@ -274,26 +233,9 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       payload.tree = await translated("tree", payload.tree);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
-    case "findings":
-      return dataResponse(request, { schemaVersion: "findings-response.v1", status: "unavailable", findings: null, peers: null, passages: null, dossiers: null }, "no-store");
     case "events": {
       const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("filings") });
       payload.events = await translated("events", payload.events);
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
-    // Insider trades by person: the filings' own figures, so no switch hides them and no translation applies.
-    case "insiders": {
-      const payload = await readInsidersResponse(database, route.ticker);
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
-    case "insider-transactions": {
-      const payload = await readInsiderTransactionsResponse(database, route.ticker, route.personKey, url.searchParams.get("cursor"), url.searchParams.get("limit"));
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
-    // One rail row's analysis, under the AI analysis switch; the analysis is applied in the reader's language like a finding.
-    case "item": {
-      const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("filings") });
-      if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     // The valuation: hidden answers 200 with nothing; history and evidence
@@ -326,18 +268,6 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const payload = await readYahooDailyBars(ticker);
       return payload ? dataResponse(request, payload, "no-store") : errorResponse("STORAGE_UNAVAILABLE", "Daily market prices are temporarily unavailable.");
     }
-    case "fundamentals": {
-      const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
-      const payload = await getSecFundamentals(database, query);
-      // Preserved from the pre-backend behaviour: a ticker the directory does not know as a stock
-      // has no fundamentals to collect, and says so, rather than reporting an empty pending set.
-      if (payload.status === "pending" && (await securities(database))(query.ticker)?.etf !== false) {
-        return errorResponse("FUNDAMENTALS_NOT_AVAILABLE", "Fundamentals are unavailable for this ticker.");
-      }
-      const focus = await readFiscalFocus(database, query.ticker);
-      payload.periods = payload.periods.map(period => ({ ...period, ...fiscalFields(query.ticker, period.periodEnd, focus) }));
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
   }
 }
 
@@ -348,27 +278,14 @@ function matchRoute(pathname: string): RouteMatch | null {
     return reportId === null || (reportId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(reportId)) ? null : { kind: "public-research", reportId };
   }
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
-  if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
   const preview = /^\/api\/v1\/artifact-preview\/([A-Za-z0-9_.-]{20,1000})\/?$/.exec(pathname);
   if (preview) return { kind: "artifact-preview", token: preview[1]! };
-  const named = /^\/api\/v1\/tickers\/([^/]+)\/?$/.exec(pathname);
-  if (named) { const ticker = safeDecode(named[1]!); return ticker === null ? null : { kind: "ticker", ticker }; }
   const valuation = /^\/api\/v1\/companies\/([^/]+)\/valuation(?:\/(versions)(?:\/([0-9a-f]{8,64})(?:\/evidence\/(e[0-9a-f]{6,20}))?)?)?\/?$/.exec(pathname);
   if (valuation) {
     const ticker = safeDecode(valuation[1]!);
     return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
   }
-  const dossier = /^\/api\/v1\/companies\/([^/]+)\/artifacts\/dossier\/([a-z0-9][a-z0-9-]{0,79})\/?$/.exec(pathname);
-  if (dossier) { const ticker = safeDecode(dossier[1]!); return ticker === null ? null : { kind: "dossier-artifact", ticker, findingId: dossier[2]! }; }
-  const artifact = /^\/api\/v1\/companies\/([^/]+)\/artifacts\/(company-analysis)\/?$/.exec(pathname);
-  if (artifact) { const ticker = safeDecode(artifact[1]!); return ticker === null ? null : { kind: "artifact", ticker, artifactKind: "company-analysis" }; }
-  const insiders = /^\/api\/v1\/companies\/([^/]+)\/insiders(?:\/([^/]+)\/transactions)?\/?$/.exec(pathname);
-  if (insiders) {
-    const ticker = safeDecode(insiders[1]!), personKey = insiders[2] === undefined ? undefined : safeDecode(insiders[2]);
-    if (ticker === null || personKey === null) return null;
-    return personKey === undefined ? { kind: "insiders", ticker } : { kind: "insider-transactions", ticker, personKey };
-  }
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|findings|events|items|revisions|market-daily)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|business-flow|capital|business-explainer|business-tree|events|revisions|market-daily)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -379,20 +296,14 @@ function matchRoute(pathname: string): RouteMatch | null {
     const accession = safeDecode(tail);
     return accession === null ? null : { kind: "filing", ticker, accession };
   }
-  if (resource === "items") {
-    const id = tail === undefined ? null : safeDecode(tail);
-    return id === null ? null : { kind: "item", ticker, id };
-  }
   if (tail !== undefined) return null;
   if(resource === "business-flow") return {kind:"business-flow",ticker};
   if (resource === "capital") return { kind: "capital", ticker };
   if (resource === "business-explainer") return { kind: "business-explainer", ticker };
   if (resource === "business-tree") return { kind: "business-tree", ticker };
-  if (resource === "findings") return { kind: "findings", ticker };
   if (resource === "events") return { kind: "events", ticker };
   if (resource === "revisions") return { kind: "revisions", ticker };
-  if (resource === "market-daily") return { kind: "market-daily", ticker };
-  return { kind: "fundamentals", ticker };
+  return { kind: "market-daily", ticker };
 }
 
 function safeDecode(value: string): string | null {

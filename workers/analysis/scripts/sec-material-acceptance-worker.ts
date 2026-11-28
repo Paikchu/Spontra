@@ -5,7 +5,6 @@ import { handleMapRead } from "../src/read-api/router.ts";
 import type { PublishedArtifact } from "../../../shared/analysis-contract/artifact.ts";
 
 export { TaskRunner } from "../src/durable-runs/runner.ts";
-export { StageAgent } from "../src/stage/agent.ts";
 
 type Env = AnalysisEnv & { ASSETS?: Fetcher; SEC_ACCEPTANCE_KEY?: string };
 
@@ -21,8 +20,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/artifact-frame") return env.ASSETS?.fetch(new Request(new URL("/artifact-frame.html", url), request)) ?? new Response("Assets are not mounted", { status: 404 });
-    if (url.pathname.startsWith("/companies/")) {
-      const token = url.searchParams.get("artifact-preview");
+    if (url.pathname.startsWith("/companies/") || url.pathname === "/article-preview") {
+      const token = url.searchParams.get("artifact-preview") ?? url.searchParams.get("token");
       const artifact = token ? await readPreview(env, token) : null;
       return artifact ? previewShell(artifact) : new Response("No valid artifact preview", { status: 404 });
     }

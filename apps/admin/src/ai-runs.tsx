@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/shared/analysis-contract/ai-runs-admin";
-import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business-tree";
 import type { ValuationPublication } from "@/shared/analysis-contract/valuation";
@@ -15,12 +14,12 @@ import { PLANS } from "./run-progress";
 
 /** The BusinessView outputs this admin shows. */
 export type ViewKind = AiRunKind;
-const KINDS: Array<[ViewKind, string]> = [["findings", "分析线索"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
+const KINDS: Array<[ViewKind, string]> = [["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
 const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
-  [/^(findings|explainer|tree|valuation)-time$/, () => "记录开始时间"],
+  [/^(explainer|tree|valuation)-time$/, () => "记录开始时间"],
   [/^valuation-input$/, () => "读取财务事实与材料目录"],
   [/^valuation-quote$/, () => "冻结参考收盘价与折现率基线"],
   [/^valuation-prior$/, () => "按历史先验试算"],
@@ -32,10 +31,6 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   [/^tree-input$/, () => "读取业务列表"],
   ...PLANS.tree.step,
   [/^tree-publish$/, () => "发布"],
-  [/^findings-input$/, () => "读取财报与公司综述"],
-  [/^findings-write$/, () => "发现分析线索"],
-  [/^findings-repair$/, () => "修正未通过项"],
-  [/^findings-publish$/, () => "核对并发布"],
   [/^explainer-input$/, () => "读取业务列表"],
   [/^explainer-evidence-filing$/, () => "读取财报原文"],
   [/^explainer-evidence-(\d+)$/, m => `检索资料 · 第 ${Number(m[1]) + 1} 组`],
@@ -174,18 +169,18 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
   </div>;
 }
 
-function summaryText(kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
-  return kind === "analyst" ? `${s.items} 份案卷${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}` : `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
+function summaryText(_kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
+  return `${s.items} 项业务 · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
 function RunItem({ run }: { run: AiRun }) {
-  const result = run.result as { findings?: number; businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
+  const result = run.result as { businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
   return <li><details>
     <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
       <small>{run.trigger === "manual" ? "手动" : "自动"}{ACTIVE.has(run.status) ? ` · 开始 ${date(run.startedAt)}` : ""} · 用时 {elapsed(run)}</small></summary>
     {run.error && <p className="ra-error">{run.error}</p>}
     {result && <p className="ai-result">{[
-      result.findings !== undefined && `发布 ${result.findings} 条要点`, result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
+      result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
       result.withheld?.length ? `${result.withheld.length} 条未通过核对` : null,
     ].filter(Boolean).join(" · ")}</p>}
     {!!result?.withheld?.length && <ul className="ai-withheld">{result.withheld.map(w => <li key={w.id}><code>{w.id}</code>{w.reasons.join("；")}</li>)}</ul>}
@@ -209,12 +204,11 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
       : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "valuation" ? <ValuationView report={version.publication as ValuationPublication} /> : <TreeView tree={version.publication as BusinessTree} />}
+        {detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "valuation" ? <ValuationView report={version.publication as ValuationPublication} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
 
-const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
 const VERDICT_ZH: Record<ValuationPublication["verdict"], string> = { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" };
 const DIMENSION_ZH: Record<ValuationPublication["dimensions"][number]["key"], string> = { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" };
 /** The valuation as published: verdict, score, the five dimensions, the range against the reference close, gaps and the sources read. */
@@ -231,40 +225,6 @@ function ValuationView({ report }: { report: ValuationPublication }) {
     <p lang="en">{report.sections.summary}</p>
     <ol>{report.evidence.map(e => <li key={e.evidenceId}><code>{e.evidenceId}</code> {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}{e.path ? ` › ${e.path}` : ""}</li>)}</ol>
   </div>;
-}
-/** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and the artifact it published. */
-type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
-  artifacts?: Record<string, { subject: string; version: number; degraded: string[] }>;
-  analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document?: unknown; artifact?: { subject: string; version: number; degraded: string[] } | null; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review?: string[] }> } };
-const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", margin_mix: "利润率与结构", peers: "同业" };
-const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
-function AnalystView({ dossier }: { dossier: DossierRecord }) {
-  const outcomes = dossier.analystTrace?.findings ?? [];
-  const blocks = (id: string) => dossier.documents[id]?.rows.flatMap(r => r.cells.flat()) ?? [];
-  return <div className="ai-cards"><p className="ai-muted">模型 {dossier.model} · 要点指纹 {dossier.findingsFingerprint.slice(0, 8)} · {Object.keys(dossier.artifacts ?? {}).length || Object.keys(dossier.documents).length} 份案卷 · {dossier.materials.length} 条引用材料</p>
-    {outcomes.map(o => <article key={o.id} className="ai-card" data-kind={o.document || o.artifact ? "strength" : "watch"}>
-      <header><span className="ra-badge" data-status={o.document || o.artifact ? "reviewed" : "processing"}>{o.document || o.artifact ? "已采用" : o.tier === "light" ? "轻量" : "未采用"}</span><strong>{o.id}</strong><small>{TIER_LABEL[o.tier] ?? o.tier} · {o.lines.map(l => LINE_LABEL[l] ?? l).join("、") || "无追问线"}</small></header>
-      {o.artifact ? <small>HTML 案卷 v{o.artifact.version}{o.artifact.degraded.length ? ` · 由程序收口：${o.artifact.degraded.join("、")}` : ""}</small> : null}
-      {o.document ? <small>{dossier.documents[o.id]?.rows.length ?? 0} 行 · 引文 {blocks(o.id).filter(b => b.kind === "quote").length} · 表格 {blocks(o.id).filter(b => b.kind === "table").length} · 图 {blocks(o.id).filter(b => b.kind === "chart").length} · 段落 {blocks(o.id).filter(b => b.kind === "prose").length}</small> : null}
-      {o.warnings.length > 0 && <ul className="ai-lens-warnings">{o.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
-      {(o.review?.length ?? 0) > 0 && <ul className="ai-lens-warnings">{o.review!.map((w, i) => <li key={i}>审校移除：{w}</li>)}</ul>}
-      {o.turns.length > 0 && <details className="ai-raw"><summary>研究过程 · {o.turns.length} 轮</summary><ol className="ai-tree-steps">{o.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input.slice(0, 1200)}</code><pre>{s.observation}</pre></li>)}</ol></details>}
-    </article>)}</div>;
-}
-/** The lens agent's trace rides beside the publication for the operator: every turn of every finding, and what was accepted. */
-type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: string; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[] }> };
-function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {
-  const trace = (id: string) => publication.lensTrace?.findings.find(f => f.id === id);
-  const leads = publication.leads ?? publication.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, question: f.judgment.text, evidence: f.evidence, anchors: f.anchors, pairWith: f.pairWith }));
-  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model} · {leads.length} 条线索</p>{leads.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
-    <header><h4>{f.title}</h4><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">重要度 {f.severity}/3</span></header>
-    <p>{f.question}</p>
-    <small>{f.evidence.length} 项起始证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}</small>
-    {t && <details className="ai-raw"><summary>Lens 生成过程 · {t.turns.length} 轮{t.document ? "" : " · 未采用，沿用原图"}{t.warnings.length ? ` · ${t.warnings.length} 条提示` : ""}</summary>
-      {t.warnings.length > 0 && <ul className="ai-lens-warnings">{t.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
-      <ol className="ai-tree-steps">{t.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre></li>)}</ol>
-    </details>}
-  </article>; })}</div>;
 }
 function ExplainerView({ explainer }: { explainer: BusinessExplainer }) {
   return <div className="ai-cards"><p className="ai-muted">模型 {explainer.model} · {explainer.sources.length} 个来源</p>{explainer.businesses.map(b => <article key={b.nodeId} className="ai-card">

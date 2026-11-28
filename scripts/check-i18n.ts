@@ -145,20 +145,12 @@ const GLOSSARY: Array<[RegExp, string]> = [
 ];
 /** Entries whose Chinese deliberately leaves out an argument the English prints, with the reason. */
 const DROPPED_ARGUMENTS: Record<string, string> = {
-  "FinancialSankey.tsx millions": "zh amounts carry 亿/万 and the currency, so the 'USD millions' unit is dropped",
-  "FinancialSankey.tsx unit": "same as millions",
-  "BusinessMap.tsx reconciliationUnit": "same as millions",
-  "company-meta.ts fiscalEnds": "English names the month (Jan), Chinese writes its number (1 月)",
-  "company-meta.ts fiscalExplain": "English names the month (January), Chinese writes its number (1 月)",
-  "BusinessMap.tsx asReported": "same as millions",
   "trend-model.ts expected": "the direction (up/down/flat) is printed as 上升/下降/持平 rather than as the raw value",
 };
 /** Labels written in the language they switch to, so they read the same in both tables. */
-const OTHER_LANGUAGE = new Set(["Sidebar.tsx switchTo", "Sidebar.tsx other"]);
+const OTHER_LANGUAGE = new Set<string>();
 /** Entries the glossary rule should not apply to, with the reason. */
-const GLOSSARY_EXEMPT: Record<string, string> = {
-  "SecReaderContent.tsx cashAndCapex": "资本开支 is present; 现金流 covers 'cash flow' in the title",
-};
+const GLOSSARY_EXEMPT: Record<string, string> = {};
 
 function checkTables(tables: Table[]): { problems: string[]; variants: string[] } {
   const problems: string[] = [];

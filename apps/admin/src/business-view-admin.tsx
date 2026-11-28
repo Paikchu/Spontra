@@ -11,7 +11,7 @@ import { PageActive } from "./admin-page";
 import { FilingMaterials } from "./filing-materials";
 import { ReportBenchmark } from "./report-benchmark";
 
-export type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "benchmark" | "models" | "messages";
+export type Section = "whitelist" | "financials" | "filings" | "business" | "valuation" | "benchmark" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the companies page, so it has no entry of its own. */
@@ -20,7 +20,7 @@ const PAGES: Record<Section, Page> = {
   financials: { path: "/admin/financials", title: "财务报表", nav: "whitelist" },
   filings: { path: "/admin/filings", title: "财报" },
   business: { path: "/admin/business", title: "公司业务" },
-  findings: { path: "/admin/findings", title: "要点" },
+  valuation: { path: "/admin/valuation", title: "估值" },
   benchmark: { path: "/admin/benchmark", title: "报告评测" },
   models: { path: "/admin/models", title: "模型配置" },
   messages: { path: "/admin/messages", title: "消息" },
@@ -28,16 +28,16 @@ const PAGES: Record<Section, Page> = {
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
-const FROM_ADDRESS = new Set<Section>(["whitelist", "financials", "filings", "business", "findings"]);
+const FROM_ADDRESS = new Set<Section>(["whitelist", "financials", "filings", "business", "valuation"]);
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
-const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/whitelist": "whitelist", "/admin/library": "filings" };
+const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/whitelist": "whitelist", "/admin/library": "filings", "/admin/findings": "valuation" };
 
 function initialSection(): Section {
   if (typeof window === "undefined") return "whitelist";
   const { pathname, search } = window.location;
   const found = (Object.keys(PAGES) as Section[]).find(key => PAGES[key].path === pathname);
   if (found) return found;
-  if (pathname === "/admin/ai") return new URLSearchParams(search).get("kind") === "findings" ? "findings" : "business";
+  if (pathname === "/admin/ai") return new URLSearchParams(search).get("kind") === "valuation" ? "valuation" : "business";
   return LEGACY[pathname] ?? "whitelist";
 }
 
@@ -115,7 +115,7 @@ export function BusinessViewAdmin() {
           : key === "benchmark" ? <ReportBenchmark />
           : key === "models" ? <AiModels {...auth} />
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
-          : <AiRuns {...auth} kinds={["findings", "analyst", "valuation"]} translations />;
+          : <AiRuns {...auth} kinds={["valuation"]} translations />;
         return <div key={`${key}:${generation[key] ?? 0}`} className="ra-page" hidden={key !== section}><PageActive.Provider value={key === section}>{content}</PageActive.Provider></div>;
       })}
       </div>

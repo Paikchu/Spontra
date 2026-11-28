@@ -84,9 +84,13 @@
   // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
   // turning the stage off is the feature switch, not a revert.
   "durable_objects": {
-    "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }, { "name": "TASK_RUNS", "class_name": "TaskRunner" }]
+    "bindings": [{ "name": "TASK_RUNS", "class_name": "TaskRunner" }]
   },
-  "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }, { "tag": "runs-v1", "new_sqlite_classes": ["TaskRunner"] }],
+  "migrations": [
+    { "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] },
+    { "tag": "runs-v1", "new_sqlite_classes": ["TaskRunner"] },
+    { "tag": "stage-v2", "deleted_classes": ["StageAgent"] }
+  ],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // The only schedule: SEC filing discovery, because EDGAR pushes nothing. Everything a
   // filing leads to runs on the queues above.

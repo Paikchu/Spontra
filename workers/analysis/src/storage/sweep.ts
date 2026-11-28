@@ -31,7 +31,11 @@ const SWEEP_RULES: SweepRule[] = [
 
 /** D1 cache rows of features that were removed or replaced; no code reads these prefixes any more. */
 export const RETIRED_CACHE_PREFIXES = [
-  "sec:text:", "sec:ticker-map", "sec:business-flow:", "narrative:v1:", "figures:v1:", "findings:v1:", "findings:v2:", "dossier:v1:", "operating-metrics:", "ownership:", "admin:backup:",
+  "sec:text:", "sec:ticker-map", "sec:business-flow:", "narrative:v1:", "figures:v1:",
+  "findings:", "dossier:", "analyst:", "checkup:", "reader-pin:",
+  "item-analysis:", "items:", "ai-version:v1:analyst:", "ai-version:v1:findings:",
+  "ai-run:v1:analyst:", "ai-run:v1:findings:", "i18n:v1:zh-CN:item:", "i18n:v1:zh-CN:findings:",
+  "operating-metrics:", "ownership:", "admin:backup:",
 ];
 
 type Cursor = { rule: number; cursor?: string };

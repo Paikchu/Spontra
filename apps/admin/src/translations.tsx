@@ -6,8 +6,8 @@ import { adminApi, AdminApiError } from "./admin-api";
 import { usePageActive } from "./admin-page";
 
 const RESOURCE: Record<TranslatedResource, string> = {
-  flow: "业务地图说明", findings: "要点与分析师", explainer: "业务解读", tree: "业务脑图",
-  events: "事件摘要", filings: "财报列表", filing: "完整财报", "filing-impact": "财报投资影响", item: "文件分析", valuation: "估值评估", artifact: "HTML 报告",
+  flow: "业务地图说明", explainer: "业务解读", tree: "业务脑图",
+  events: "事件摘要", filings: "财报列表", filing: "完整财报", "filing-impact": "财报投资影响", valuation: "估值评估", artifact: "HTML 报告",
 };
 const STATUS: Record<TranslationEntry["status"], [string, string]> = { ready: ["已翻译", "reviewed"], rejected: ["未通过", "failed"], pending: ["待翻译", "processing"] };
 const PUBLICATION = { pending: "待翻译", translating: "翻译中", checking: "检查中", ready: "已发布", failed: "未通过" };

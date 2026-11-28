@@ -8,7 +8,7 @@ import { sha256 } from "../sha256.ts";
 import type { ValuationState } from "./tools.ts";
 
 function adapter(state:ValuationState):ResearchContextState{
-  const context=state.publicContextState??={composer:openComposer({kind:"company-analysis",ticker:state.input.ticker,subject:state.input.ticker,title:"Valuation public context",lang:"en"})};
+  const context=state.publicContextState??={composer:openComposer({kind:"filing-report",ticker:state.input.ticker,subject:state.input.ticker,title:"Valuation public context",lang:"en"})};
   for(const evidence of state.evidence.values())if(!evidence.documentId?.startsWith("public-research:"))registerSource(context.composer,evidence.evidenceId,{title:evidence.title,url:evidence.url,kind:evidence.kind==="sec"?"sec":"web"});
   return context;
 }

@@ -20,8 +20,8 @@
   "r2_buckets": [{ "binding": "SEC_FILINGS", "bucket_name": "sec-material-acceptance-local" }],
   "ai": { "binding": "AI", "remote": true },
   "browser": { "binding": "BROWSER", "remote": true },
-  "durable_objects": { "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }, { "name": "TASK_RUNS", "class_name": "TaskRunner" }] },
-  "migrations": [{ "tag": "acceptance-v1", "new_sqlite_classes": ["StageAgent", "TaskRunner"] }],
+  "durable_objects": { "bindings": [{ "name": "TASK_RUNS", "class_name": "TaskRunner" }] },
+  "migrations": [{ "tag": "acceptance-v1", "new_sqlite_classes": ["TaskRunner"] }],
   "assets": { "directory": "../../../apps/business-site/dist", "binding": "ASSETS", "run_worker_first": true },
   "dev": { "port": 8799, "local_protocol": "http" }
 }

@@ -1,4 +1,3 @@
-import { dossierPresentation } from "../../../../shared/analysis-runtime/artifact/dossier-presentation.ts";
 import { companyResearchDependencyStatus } from "../public-research/context.ts";
 import type { ArtifactDocument, ArtifactKind, PublishedArtifact } from "../../../../shared/analysis-contract/artifact.ts";
 import { sha256 } from "../sha256.ts";
@@ -26,16 +25,6 @@ export type ArtifactTranslationRow = {
 };
 
 export const artifactId = (kind: ArtifactKind, ticker: string, subject: string) => `${kind}:${ticker}:${subject}`;
-/** A finding's dossier is bound to the findings publication it was written for: a new publication waits for its own. */
-export const dossierSubject = (findingsFingerprint: string, findingId: string) => `${findingsFingerprint.slice(0, 16)}.${findingId}`;
-
-/** The findings of this publication whose dossier artifact is published, with when each was published (the page's cache key). */
-export async function publishedDossiers(db: D1Database, ticker: string, findingsFingerprint: string): Promise<Record<string, string>> {
-  const prefix = `${findingsFingerprint.slice(0, 16)}.`;
-  const rows = await db.prepare("SELECT subject, published_at FROM analysis_artifacts WHERE kind = 'dossier' AND ticker = ? AND published_version IS NOT NULL AND substr(subject, 1, ?) = ?")
-    .bind(ticker, prefix.length, prefix).all<{ subject: string; published_at: string }>().catch(() => ({ results: [] as Array<{ subject: string; published_at: string }> }));
-  return Object.fromEntries(rows.results.map(r => [r.subject.slice(prefix.length), r.published_at]));
-}
 const objectKey = (id: string, version: number, hash: string) => `artifacts/${id.replace(/[^A-Za-z0-9:._-]/g, "_").replace(/:/g, "/")}/v${version}-${hash}.json`;
 
 /** Saves a version and returns its number and hash; the same HTML and CSS saved again is the same version. */
@@ -142,7 +131,7 @@ export async function localizedEdition(env: ArtifactStoreEnv, id: string, stored
         const translation: NonNullable<PublishedArtifact["translation"]> = translated?.status === "ready"
           ? { locale: "zh-CN", status: "ready" }
           : { locale: "zh-CN", status: translated?.status ?? "pending", completed: translated?.completed ?? 0, total: translated?.total ?? 0 };
-        return { ...toPublished(id, edition, publishedAt), ...(stored.document.kind === "dossier" && dossierPresentation(stored.document).status === "incomplete" ? { title: "研究尚未完成" } : {}), sourceHash: original.sourceHash, filingImpact: original.filingImpact, filingImpactState: original.filingImpactState, researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
+        return { ...toPublished(id, edition, publishedAt), sourceHash: original.sourceHash, filingImpact: original.filingImpact, filingImpactState: original.filingImpactState, researchContext: original.researchContext, researchFreshness: original.researchFreshness, translation };
       }
     }
   }
@@ -178,8 +167,7 @@ export async function readWorkState<T>(env: ArtifactStoreEnv, kind: ArtifactKind
 const toPublished = (id: string, s: Stored, at: string): PublishedArtifact => ({
   ...(s.document.researchContext ? { researchContext: s.document.researchContext } : {}),
   id, kind: s.document.kind, ticker: s.document.ticker, subject: s.document.subject, version: s.document.version,
-  title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title
-    : s.document.kind === "dossier" ? dossierPresentation(s.document).title : s.document.title,
+  title: s.document.kind === "filing-report" ? s.document.blocks.find(b => b.id === "summary")?.title ?? s.document.title : s.document.title,
   html: s.html, css: s.css, hash: s.hash, publishedAt: at, degraded: s.degraded,
   lang: isLocale(s.document.lang) ? s.document.lang : "en", translation: null,
 });

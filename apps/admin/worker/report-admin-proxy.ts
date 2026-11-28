@@ -24,13 +24,13 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|usage|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers" || route === "directory");
-    const write = request.method === "POST" && (route === "messages/read" || route === "scheduled-analysis" || route === "stage" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
+    const write = request.method === "POST" && (route === "messages/read" || route === "scheduled-analysis" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (route === "models" || route === "stage" || /^stage\/conversations\/[0-9a-f]{32}$/.test(route) || /^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route));
-    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|explainer|tree|valuation)\/runs$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route) || route === "endpoints");
+    const read = request.method === "GET" && (route === "models" || /^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:explainer|tree|valuation)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route));
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,11}\/(?:explainer|tree|valuation)\/runs$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations(?:\/artifact)?$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route) || route === "endpoints");
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "library") {

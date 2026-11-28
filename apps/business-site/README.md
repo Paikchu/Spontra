@@ -17,7 +17,7 @@ Shared utilities come from `packages/web/`; contracts and verification shared wi
 ## Data
 
 - Reads go to Spontra Analysis over the `SPONTRA_ANALYSIS` Service Binding to its `MapReads` named entrypoint. A named entrypoint is unreachable from the public internet, so the binding is the credential and the gateway keeps no key.
-- API routes: `/api/business/v1/home`, `/findings`, `/tickers/:ticker`, `/research`, `/artifact-preview/:token`, and `/api/business/v1/companies/:ticker` with `/opening`, `/revision`, `/capital`, `/findings`, `/fundamentals`, `/events`, `/insiders`, `/filings`, `/filings/:accession`, `/items/:accession`, `/market-daily`, and `/valuation` (with versions and evidence).
+- API routes: `/api/business/v1/home`, `/research`, `/artifact-preview/:token`, and `/api/business/v1/companies/:ticker` with `/revision`, `/capital`, `/events`, `/filings`, `/filings/:accession`, `/market-daily`, and `/valuation` (with versions and evidence).
 - Public reads are limited per IP (`PUBLIC_READ_LIMIT`, 300/min) and cached at the edge. `global_fetch_strictly_public` keeps any stray global fetch on public routing.
 
 ## Local development

@@ -3,7 +3,6 @@ import type { ResearchContextState } from "../company-research/context-tools.ts"
 import type { ValuationPublicEvidence } from "./public-research.ts";
 import type { MaterialRef } from "../../../../shared/analysis-contract/filing-material.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
 import { blockText } from "../artifact/document.ts";
 import { readArtifactVersion } from "../artifact/store.ts";
 import { readFilingImpact } from "../filing-analysis/impact-publication.ts";
@@ -510,23 +509,6 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
           return JSON.stringify({ accession, version: edition.version, article, investmentChains: impact?.chains });
         });
       }, observe: (_a, value) => value }),
-    tool({ name: "read_filing_analyses", description: "The written analysis of each of the company's filings, newest report first: id, form, dates and title. Read one with read_filing_analysis.", parameters: z.object({}), concurrencySafe: true,
-      execute: async (_a, ctx) => { const list = await ctx.stage("analyses", () => listFilingAnalyses(db, ctx.state.input.ticker).catch(() => [])); return list.map(a => `${a.id} · ${a.form} filed ${a.filedAt} · report ${a.periodEnd} · ${a.title}`).join("\n") || "No filing analysis is written yet."; }, observe: (_a, v) => v }),
-    tool({ name: "read_filing_analysis", description: "Read one filing analysis: its conclusion and the verbatim passages it quoted, each becoming evidence [e…]. Counts against filing reads.", parameters: z.object({ id: z.string().max(40), focus: z.array(z.string().max(60)).max(8).optional() }),
-      execute: async (args, ctx) => {
-        if (ctx.state.used.reads >= RESEARCH_BUDGET.reads) throw new Error("no filing reads left; score with the evidence you have");
-        ctx.state.used.reads++;
-        const read = await ctx.stage("analysis", () => readFilingAnalysis(db, ctx.state.input.ticker, args.id));
-        if (!read) throw new Error("no filing analysis with that id (read_filing_analyses)");
-        const terms = (args.focus ?? []).map(f => f.toLowerCase());
-        const chosen = terms.length ? read.passages.filter(p => terms.some(t => (p.text + " " + p.path.join(" ")).toLowerCase().includes(t))) : read.passages;
-        const out: string[] = [];
-        for (const p of (chosen.length ? chosen : read.passages).slice(0, 10)) {
-          const excerpt = (p.table ? renderTable(p.table, args.focus ?? []) : p.text).slice(0, READ_CHARS);
-          out.push(`[${await registerEvidence(ctx.state, p, "sec", null, excerpt)}] ${p.path.join(" › ")}\n${excerpt}`);
-        }
-        return `${read.form} filed ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion (analysis, not evidence): ${read.judgment}\n\n${out.join("\n\n") || "(no passage quoted)"}`;
-      }, observe: (_a, v) => v }),
     tool({ name: "read_business_tree", description: "The company's business breakdown: each disclosed business, its lines and products and how they earn money, each anchored by a passage from a researched page or filing. A business's anchors become evidence [e…].", parameters: z.object({ business: z.string().max(120).optional() }),
       execute: async (args, ctx) => {
         const tree = await ctx.stage("tree", async () => (await new D1SecRepository(db).getCache<BusinessTree>(businessTreeCacheKey(ctx.state.input.ticker)).catch(() => null))?.payload ?? null);
@@ -638,7 +620,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_published_filing_report", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const RESEARCH_TOOLS = ["read_financials", "read_published_filing_report", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

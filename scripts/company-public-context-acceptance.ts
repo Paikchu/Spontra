@@ -51,7 +51,7 @@ async function invoke<S>(tools: AnyTool<S>[], state: S, name: string, input: Rec
   return outcome;
 }
 function harness(context: FrozenCompanyResearch | undefined) {
-  const state: ResearchContextState = { composer: openComposer({ kind: "company-analysis", ticker: frozen.ticker, subject: frozen.ticker, title: "Synthetic context journey", lang: "en" }) };
+  const state: ResearchContextState = { composer: openComposer({ kind: "filing-report", ticker: frozen.ticker, subject: frozen.ticker, title: "Synthetic context journey", lang: "en" }) };
   const background = publicResearchTools<ResearchContextState>(context, "https://example.com");
   return { state, background, call: (name: string, input: Record<string, unknown>, expectError = false) => invoke(background.tools, state, name, input, expectError) };
 }

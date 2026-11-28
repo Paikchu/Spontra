@@ -11,7 +11,6 @@ import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "../retry-policy
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "../workflow-results.ts";
 import { executeSecMemoryWorkflow } from "../memory-workflow.ts";
-import { executeReportWorkflow, type ReportParams } from "../stage/report-workflow.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "../business-explainer/workflow.ts";
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "../business-tree/workflow.ts";
 import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valuation/workflow.ts";
@@ -135,9 +134,5 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     const env = await companyPolicyEnvironment(raw);
     assertFeatureTicker(env, "filings", params.ticker);
     return executeSecMemoryWorkflow(params, id, durableSteps(step, env, id), env);
-  },
-  async REPORT_WORKFLOW(params: ReportParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    return executeReportWorkflow(params, durableSteps(step, env, id), env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }, id);
   },
 };

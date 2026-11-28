@@ -1,87 +1,13 @@
 import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
-import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
-import type { AnalysisFinding, ComposedAnalysis, FindingEvidence, FindingMaterial, FindingPassage, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import type { LensDocument } from "../../../../shared/analysis-contract/lens.ts";
-import { earlierMaterial } from "../../../../shared/analysis-runtime/earlier-material.ts";
-import { findingRefSchema, lensDocumentIssues, readLensDocument, verifyFindings, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";
-import { compileDocument, verifyLensDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";
-import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
+import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "../web-search/read-page.ts";
-import { renderTable } from "./render-table.ts";
-import { secFilingTools } from "../sec-archive/tool.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import type { StageData } from "../stage/data.ts";
-import { stageTools, type StageInput, type StageTurn } from "../stage/recipe.ts";
 import { defineTool, type AnyTool } from "../tools/registry.ts";
 import type { SearchHit } from "../web-search/types.ts";
 import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
 
-/**
- * The tools every agent that writes an analysis composes it with: the stage's reads of
- * the company's figures and findings, the filing library, the web when a recipe allows it, and `compose`, which holds the
- * analysis to the finding page's own verifiers — every number in the judgment produced by its evidence, every quote
- * found in the passage it names, at least one quote from a filing, and one from an earlier filing when there is one. A
- * recipe chooses the prompt, the budget and the materials the run starts from; the tools and the rules are the same.
- */
-export type ComposeBudget = { finds: number; reads: number; searches: number; webReads: number };
-export type ComposeInput = {
-  env: AnalysisEnv;
-  data: StageData;
-  locale: Locale;
-  now: string;
-  /** The report the evidence and charts are read at. */
-  periodEnd: string;
-  budget: ComposeBudget;
-  /** Whether the library holds a filing earlier than `periodEnd` the analysis must also quote. */
-  earlierAvailable: boolean;
-  /** Passages the run starts with, registered as materials m1… before any read: the subject filing's own words. */
-  seed?: FindingPassage[];
-  /** Whether a quote from a filing is required; a Form 4 with nothing written in it has nothing to quote. */
-  quoteFiling: boolean;
-  /** At least this many pieces of evidence; an analysis of a filing with no figures may have none and then states no number. */
-  minEvidence: number;
-  /** A recipe's own conditions on a composed analysis, as error lines. */
-  check?: (finding: AnalysisFinding) => string[];
-};
-export type Material = FindingMaterial & { passage: FindingPassage };
-export type ComposeState = Omit<StageTurn, "report"> & { report: StageTurn["report"];
-  materials: Material[];
-  hits: SearchHit[];
-  used: { finds: number; reads: number; searches: number; webReads: number };
-  draft: { finding: AnalysisFinding; errors: string[] } | null;
-  composed: ComposedAnalysis | null;
-  /** Analyses the checks refused; past `REPAIR_ROUNDS` repairs the analysis is withheld rather than tried again. */
-  rejected: number;
-  withheld: boolean;
-};
-/**
- * Repairs a composed analysis gets after its first check (docs/spontra-architecture-upgrade.md, U7): one. What one
- * repair cannot fix is withheld, so a run never spends its turns re-sending whole documents.
- */
-export const REPAIR_ROUNDS = 1;
-
-const tool = defineTool<ComposeState>();
 const untrusted = (host: string, text: string) => `<untrusted source="${host}">\n${text}\n</untrusted>`;
-
-function register(state: ComposeState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null): string {
-  const seen = state.materials.find(m => m.passageId === passage.passageId);
-  if (seen) return seen.id;
-  const id = kind === "sec" ? `m${state.materials.filter(m => m.kind === "sec").length + 1}` : passage.passageId;
-  state.materials.push({ id, kind, title: passage.title, url: passage.url, publishedAt: kind === "sec" ? passage.filedAt : publishedAt, passageId: passage.passageId, ...(passage.documentId ? { documentId: passage.documentId } : {}), ...(passage.form ? { form: passage.form } : {}), path: passage.path, passage });
-  return id;
-}
-
-/** A run's state with its seed passages already registered, in order, as m1… */
-export function openCompose(input: ComposeInput): ComposeState {
-  const state: ComposeState = { candidates: [], last: null, accepted: null, answer: null, materials: [], hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0 }, draft: null, report: null, composed: null, rejected: 0, withheld: false };
-  for (const passage of input.seed ?? []) register(state, passage, "sec", null);
-  return state;
-}
-
-/** The seeded materials as the opening message lists them: id, where it sits, and its text. */
-export const seedMaterials = (state: ComposeState, chars = 2400) => state.materials.map(m => ({ id: m.id, title: m.title, path: m.passage.path.join(" › "), text: m.passage.table ? renderTable(m.passage.table, []) : m.passage.text.slice(0, chars) }));
 
 /** What the two web tools keep in a run's state. */
 export type WebToolState = { hits: SearchHit[]; used: { searches: number; webReads: number } };
@@ -116,83 +42,3 @@ export function webTools<S extends WebToolState>(input: { env: AnalysisEnv; tick
       }, observe: (_a, v) => v }),
   ];
 }
-
-export function composeTools(input: ComposeInput): AnyTool<ComposeState>[] {
-  const { env, data, budget } = input;
-  const ticker = data.ticker;
-  // The stage's own reads, answered against the same data the analysis is verified on.
-  const stageInput: StageInput = { data, locale: input.locale, scene: [], view: null };
-  const reads = stageTools(stageInput).filter(t => ["company_overview", "findings", "read_series"].includes(t.name)) as unknown as AnyTool<ComposeState>[];
-  const draftSchema = composeDraft(input.minEvidence);
-  const compose = (state: ComposeState, value: unknown): string => {
-    const parsed = draftSchema.safeParse(value);
-    if (!parsed.success) return `The analysis does not match the contract:\n  ${parsed.error.issues.slice(0, 8).map(i => `${i.path.join(".") || "analysis"}: ${i.message}`).join("\n  ")}`;
-    const document = readLensDocument(parsed.data.document);
-    if (!document) return `The document does not match the lens grammar:\n  ${lensDocumentIssues(parsed.data.document).join("\n  ")}`;
-    const finding: AnalysisFinding = {
-      id: "analysis", kind: parsed.data.kind, severity: 2, title: parsed.data.title,
-      judgment: { text: parsed.data.judgment, sourceIds: sources(state).map(s => s.id).slice(0, 6).concat(sources(state).length ? [] : ["sec"]) },
-      evidence: parsed.data.evidence as FindingEvidence[],
-      anchors: { view: "profit", nodeIds: [], metrics: [], capital: [] },
-      lens: { type: "document", document },
-    };
-    const facts: FindingData = { ...data.data, passages: [...(data.data.passages ?? []), ...state.materials.map(m => m.passage)] };
-    const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker, periodEnd: input.periodEnd, generatedAt: input.now, model: "compose", findings: [finding], sources: sources(state) };
-    const { verified, withheld } = verifyFindings(publication, facts, input.locale);
-    const errors: string[] = withheld.flatMap(w => w.reasons.map(r => `judgment: ${r}`));
-    const resolved = verified[0]?.resolved ?? [];
-    const lens = verified[0] ? verifyLensDocument(document, finding, resolved, facts, input.periodEnd, { locale: input.locale }, { ticker, materials: state.materials }) : null;
-    if (verified[0] && !lens) errors.push("document: nothing verifies; it needs its judgment block and blocks whose references resolve");
-    for (const reason of lens?.reasons ?? []) errors.push(`document: ${reason}`);
-    const blocks = document.rows.flatMap(r => r.cells.flat());
-    // The figures block lists every figure of the evidence, so a second one repeats the first.
-    if (blocks.filter(b => b.kind === "figures").length > 1) errors.push("document: one figures block at most; it already lists every figure of the evidence");
-    const quotes = blocks.flatMap(b => b.kind === "quote" ? [state.materials.find(m => m.id === b.materialId)] : []);
-    if (input.quoteFiling && !quotes.some(m => m?.kind === "sec")) errors.push("document: quote at least one filing material (m<n>) word for word");
-    if (input.earlierAvailable && !quotes.some(m => m?.kind === "sec" && earlierMaterial(m, input.periodEnd))) errors.push("document: quote an earlier filing too (read_filing_markdown with the earlier accession)");
-    for (const line of input.check?.(finding) ?? []) errors.push(line);
-    state.draft = { finding, errors };
-    if (errors.length && ++state.rejected > REPAIR_ROUNDS) { state.withheld = true; return `errors (${errors.length}):\n  ${errors.join("\n  ")}\nNo repair is left: the analysis is withheld.`; }
-    const described = lens ? describeDocument(lens.document, compileDocument(lens.document, facts, input.periodEnd), []) : "";
-    return `${described}\n${errors.length ? `errors (${errors.length}):\n  ${errors.join("\n  ")}\nFix them and compose again; this is the one repair.` : "The analysis is accepted as written; call finish."}`;
-  };
-  return [
-    ...reads,
-    // The SEC resource (sec-archive/tool.ts): the filings as the library holds them, never EDGAR or the web.
-    ...secFilingTools<ComposeState>({ env, ticker, budget, register: (state, passage) => register(state, passage, "sec", null), spent: { finds: "read what you found or compose", reads: "compose with the materials you have" } }),
-    ...webTools<ComposeState>({ env, ticker, now: input.now, periodEnd: input.periodEnd, budget, register: (state, passage, publishedAt) => register(state, passage, "web", publishedAt) }),
-    tool({ name: "compose", description: "Check the whole analysis: its judgment against its evidence, its document against the data and the materials read.", parameters: z.object({ report: z.unknown() }), strict: false,
-      execute: ({ report }, ctx) => compose(ctx.state, report), observe: (_a, v) => v }),
-    tool({ name: "finish", description: "Publish the last composed analysis; only one with no errors is accepted.", parameters: z.object({}),
-      execute: (_a, ctx) => {
-        const draft = ctx.state.draft;
-        if (!draft) throw new Error("nothing composed yet; call compose first");
-        if (draft.errors.length) throw new Error(`the last analysis has ${draft.errors.length} error(s); fix them and compose again`);
-        const used = new Set((draft.finding.lens.type === "document" ? draft.finding.lens.document : { rows: [] } as LensDocument).rows.flatMap(r => r.cells.flat()).flatMap(b => b.kind === "quote" ? [b.materialId] : []));
-        const materials = ctx.state.materials.filter(m => used.has(m.id));
-        ctx.state.composed = { finding: draft.finding, materials: materials.map(({ passage: _p, ...m }) => { void _p; return m; }), passages: materials.map(m => m.passage), sources: sources(ctx.state) };
-        return "Published.";
-      }, observe: (_a, v) => v }),
-  ];
-}
-
-const span = z.preprocess(v => typeof v === "string" ? (/^q/i.test(v.trim()) ? "quarter" : /^(fy|fiscal|annual|year)/i.test(v.trim()) ? "fiscal_year" : v) : v, z.enum(["quarter", "fiscal_year"]));
-const composeDraft = (minEvidence: number) => z.object({
-  title: z.string().trim().min(4).max(160),
-  kind: z.enum(["risk", "strength", "shift", "watch"]).default("shift"),
-  judgment: z.string().trim().min(40).max(1400),
-  evidence: z.array(z.object({ ref: findingRefSchema, periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), span, compare: z.enum(["yoy", "qoq"]).optional() })).min(minEvidence).max(6),
-  document: z.unknown(),
-});
-
-/** The filings the analysis's figures come from, as the citations its judgment and prose point at. */
-function sources(state: ComposeState): ExplainerSource[] {
-  const out = new Map<string, ExplainerSource>();
-  for (const m of state.materials) if (!out.has(m.url)) out.set(m.url, { id: `s${out.size + 1}`, title: m.title, url: m.url, kind: m.kind === "sec" ? "sec" : "web", publishedAt: m.publishedAt ?? null });
-  return [...out.values()];
-}
-
-/** The analysis contract and lens blocks, as every composing recipe's prompt states them. */
-export const COMPOSE_CONTRACT = `An analysis: {"title": "...", "kind": "risk|strength|shift|watch", "judgment": "80–180 words", "evidence": [{"ref": <ref>, "periodEnd": "YYYY-MM-DD", "span": "quarter|fiscal_year", "compare": "yoy|qoq" optional}], "document": {"rows": [{"title": "optional, no digits", "cells": [[block, ...], [block, ...]]}]}}.
-- Every number in the title and judgment must be one its evidence produces, written as the evidence writes it. A ref is copied exactly from company_overview's catalogue, a finding's evidence, or the refs the first message lists.
-- The document uses the lens blocks: {"kind":"judgment"} exactly once, in the first row; {"kind":"figures"} at most once (it lists every figure of the evidence); {"kind":"chart","chart":{...}} (lens chart grammar, at most three); {"kind":"prose","paragraphs":[{"text":"...","sourceIds":[]}]}; {"kind":"quote","materialId":"m1","text":"exact words from that material"}; {"kind":"table","table":{...}}; {"kind":"sources"}.`;

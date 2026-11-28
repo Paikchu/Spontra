@@ -4,7 +4,6 @@ import { installPiTracer, type PiTracer } from "./pi/tracing.ts";
 import { handleMapRead } from "./read-api/router.ts";
 import { readHomeDigest } from "./read-api/home-digest.ts";
 import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
-import { handleStageRequest } from "./stage/gateway.ts";
 import type { AnalysisEnv } from "./operations.ts";
 import worker from "./worker.ts";
 import { createAdminSession } from "./admin/auth.ts";
@@ -14,7 +13,6 @@ import { createAdminSession } from "./admin/auth.ts";
  * `cloudflare:workers`. The entrypoints and Durable Objects that need that module live here; this is the file
  * Wrangler points `main` at. Every model run is a `TaskRunner` (durable-runs/), one Durable Object per run.
  */
-export { StageAgent } from "./stage/agent.ts";
 export { TaskRunner } from "./durable-runs/runner.ts";
 
 /**
@@ -33,20 +31,6 @@ export class MapReads extends WorkerEntrypoint<AnalysisEnv> {
     if (!this.env.DB) return Promise.reject(new Error("The analysis store is not available on this deployment."));
     const lang = isLocale(locale) && locale !== "en" ? locale : null;
     return readHomeDigest(this.env.DB, lang);
-  }
-}
-
-/**
- * The stage's door: the business map reaches it over its own Service Binding to
- * this named entrypoint, never from the public internet.
- */
-export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
-  async fetch(request: Request) {
-    try { return await handleStageRequest(request, this.env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }); }
-    catch (error) {
-      console.error(JSON.stringify({ event: "stage-gateway", outcome: "error", path: new URL(request.url).pathname, error: error instanceof Error ? error.message : String(error) }));
-      return Response.json({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
-    }
   }
 }
 

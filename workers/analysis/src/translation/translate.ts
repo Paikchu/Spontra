@@ -9,7 +9,6 @@ import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { itemsIndexKey, readItemAnalysisResponse, type ItemsIndex } from "../items/read.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -80,13 +79,6 @@ export async function readSources(db: D1Database, ticker: string, artifacts?: Ar
     if (!filing.summary?.report && !filing.analysis?.reader && !filing.analysis?.presentation) continue;
     const detail = await quiet(() => getPublicFiling(repository, ticker, filing.accessionNumber));
     if (detail) sources.push({ resource: "filing", scope: filing.accessionNumber, strings: collectProse("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }) });
-  }
-  // Each rail row's analysis, as the item route serves it.
-  const index = await quiet(() => repository.getCache<ItemsIndex>(itemsIndexKey(ticker)));
-  for (const item of index?.payload.items ?? []) {
-    if (!item.written) continue;
-    const read = await quiet(() => readItemAnalysisResponse(db, ticker, item.id));
-    if (read?.analysis) sources.push({ resource: "item", scope: item.id, strings: collectProse("item", read.analysis) });
   }
   return sources;
 }

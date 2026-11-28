@@ -10,7 +10,6 @@ import { piModelIds } from "../pi/model.ts";
 import type { PiRuns } from "../pi/runs.ts";
 import { filingLoader, type FilingSpec } from "../filing-analysis/recipe.ts";
 import { BUSY_RECHECK_MS, isBusy, lostWake } from "./wakes.ts";
-import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
 import { publicResearchStageSchema } from "../public-research/checkpoint.ts";
@@ -67,7 +66,6 @@ export class TaskRunner extends Agent<Env, RunView> {
       filing: async spec => filingLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
       tree: async spec => treeLoader(spec, await env()),
-      report: async spec => reportLoader(spec, await env()),
     };
   }
 

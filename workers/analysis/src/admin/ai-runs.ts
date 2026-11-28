@@ -36,13 +36,11 @@ function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
   return (kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : undefined) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for. */
-const featureOf = (kind: AiRunKind): Feature => kind === "analyst" ? "findings" : kind === "explainer" ? "tree" : kind;
+const featureOf = (kind: AiRunKind): Feature => kind === "explainer" ? "tree" : kind;
 function enabled(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
-  if (kind === "findings" || kind === "analyst") return false;
   return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }
 function blocked(env: AnalysisEnv, kind: AiRunKind, ticker: string): string | null {
-  if (kind === "findings" || kind === "analyst") return "该功能已移除。";
   if (!featureEnabled(env, featureOf(kind))) return `${FEATURE_NAME[featureOf(kind)]}生成已全局暂停。`;
   if (!enabled(env, kind, ticker)) return `该公司的${FEATURE_NAME[featureOf(kind)]}生成已关闭。`;
   if (!binding(env, kind)) return "该任务的工作流未配置。";
@@ -58,7 +56,6 @@ function automatic(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
-  if (kind === "findings" || kind === "analyst") return null;
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
   return (await readValuationResponse(db, ticker)).report;
@@ -98,8 +95,7 @@ async function settle(env: AnalysisEnv, store: AiRunStore, runs: AiRun[], now: n
   }));
 }
 
-/** The ledger kinds one admin kind spends: the lens agent's calls belong to the findings run. */
-const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], explainer: ["explainer"], tree: ["tree"], valuation: ["valuation", "valuation-research"] };
+const USAGE_KINDS: Record<AiRunKind, string[]> = { explainer: ["explainer"], tree: ["tree"], valuation: ["valuation", "valuation-research"] };
 /** The last 30 days of the `ai_usage` ledger (migration 0023) by day; undefined when the table cannot be read. */
 async function usage(db: D1Database, kind: AiRunKind, ticker: string, now: number): Promise<AiUsageDay[] | undefined> {
   const kinds = USAGE_KINDS[kind], since = new Date(now - 30 * 86_400_000).toISOString();
@@ -256,7 +252,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       if (request.method === "POST") return startTranslation(request, env, db, translations[1]!, now);
       return json(await translationsAdmin(env, translations[1]!));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|explainer|tree|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(explainer|tree|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;
