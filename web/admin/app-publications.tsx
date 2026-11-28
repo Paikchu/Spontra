@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, Radar, RadarChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, XAxis, YAxis } from "recharts";
+import { Dialog, DialogContent, DialogTitle } from "@/web/shared/ui/dialog";
 import { Button } from "@/web/shared/ui/button";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/web/shared/ui/chart";
 import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
@@ -7,7 +8,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/web/shared/ui/tabs";
 import type { PublicFilingDigest, PublicFilingDetail } from "@/src/domains/filing-analysis/filings-contract";
 import type { CompanyEvent, EventsResponse } from "@/src/domains/financials/events-contract";
-import type { ValuationResponse } from "@/src/domains/valuation/contract";
+import type { ValuationEvidence, ValuationResponse, ValuationVersionRange } from "@/src/domains/valuation/contract";
 import type { CapitalResponse } from "@/src/domains/financials/capital-structure-contract";
 import type { BusinessFlowQuarter } from "@/src/domains/financials/business-flow-contract";
 import type { BusinessTree, TreeNode } from "@/src/domains/business-map/tree-contract";
@@ -239,6 +240,36 @@ export function AppStatements({ ticker, children }: Scoped) {
 }
 
 const dimensions: Record<string, string> = { businessQuality: "业务质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错价催化", financialResilience: "财务韧性" };
+function timeline<T extends { time: string }>(
+  bars: T[], versions: ValuationResponse["versions"], report: NonNullable<ValuationResponse["report"]>, current: ValuationVersionRange | null,
+): Array<T & { low: number | null; base: number | null; high: number | null }> {
+  const sorted = [...bars].sort((a, b) => a.time.localeCompare(b.time));
+  const last = sorted.at(-1)?.time ?? "";
+  if (!last || !current) return sorted.map(bar => ({ ...bar, low: null, base: null, high: null }));
+  const checkpoints = new Map<string, ValuationVersionRange & { timestamp: string }>();
+  function insert(date: string, timestamp: string, range: ValuationVersionRange) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || ![range.low, range.base, range.high].every(Number.isFinite)) return;
+    const effective = date > last ? last : date;
+    if ((checkpoints.get(effective)?.timestamp ?? "") > timestamp) return;
+    checkpoints.set(effective, { low: range.low, base: range.base, high: range.high, timestamp });
+  }
+  for (const v of versions) {
+    if (v.reportStatus !== "ready" || !v.normalRange || v.generatedAt > report.generatedAt) continue;
+    insert((v.researchAsOf || v.generatedAt).slice(0, 10), v.generatedAt, v.normalRange);
+  }
+  const active = versions.find(v => v.versionId === report.versionId);
+  insert((active?.researchAsOf || report.researchAsOf || report.generatedAt).slice(0, 10), report.generatedAt, current);
+  const ordered = [...checkpoints].sort(([a], [b]) => a.localeCompare(b));
+  let i = -1;
+  return sorted.map(bar => {
+    while (i + 1 < ordered.length && ordered[i + 1][0] <= bar.time) i++;
+    const matched = ordered[i]?.[1];
+    return { ...bar, low: matched?.low ?? null, base: matched?.base ?? null, high: matched?.high ?? null };
+  });
+}
+function percentage(value: number | undefined | null) {
+  return value == null || !Number.isFinite(value) ? "—" : Intl.NumberFormat("zh-CN", { style: "percent", maximumFractionDigits: 1 }).format(value);
+}
 const scenarioNames: Record<string, string> = { bear: "悲观", base: "基准", bull: "乐观", lower: "正常下限", upper: "正常上限", management: "管理层" };
 export function AppValuation({ ticker, children }: Scoped) {
   const result = usePublication<ValuationResponse>(ticker, "/valuation");
@@ -248,6 +279,7 @@ export function AppValuation({ ticker, children }: Scoped) {
     val.priceImpact?.quantificationStatus !== "unavailable" && report?.reportStatus === "ready" ? report.model : null;
   const guide = val?.priceGuide?.reportVersionId === report?.versionId ? val?.priceGuide : undefined;
   const [scenario, setScenario] = useState("base");
+  const [evidence, setEvidence] = useState<ValuationEvidence>();
   const modelRange = model?.fairValueRange;
   const range = modelRange?.status === "available" ? modelRange : null;
   const displayRange = range && (!guide || guide.status === "available" || ["no_quote", "unusable_quote", "stale_quote", "currency_mismatch"].includes(guide.reason ?? ""));
@@ -257,7 +289,11 @@ export function AppValuation({ ticker, children }: Scoped) {
   ] as const : [];
   const selected = cases.find(([key]) => key === scenario)?.[1];
   const quote = guide?.quote ?? report?.quote;
-  const chartData = (market?.data?.bars ?? []).map(row => ({ ...row, low: displayRange ? range.low : null, base: displayRange ? range.base : null, high: displayRange ? range.high : null }));
+  const chartData = report && val ? timeline(market?.data?.bars ?? [], val.versions, report, displayRange ? range : null) : [];
+  const cite = (ids: string[]) => ids.flatMap(id => {
+    const source = report?.evidence.find(item => item.evidenceId === id);
+    return source ? [<Button key={id} size="sm" variant="ghost" className="max-w-full justify-start" type="button" onClick={() => setEvidence(source)}><span className="truncate">{source.title}</span></Button>] : [];
+  });
   return <div className="flex min-w-0 flex-col gap-6">
     {report ? <>
       <div className="flex flex-wrap items-end gap-4"><p className="text-3xl font-semibold tabular-nums">{money(market?.data?.livePrice ?? quote?.price, report.currency)}</p><time className={muted}>{market?.data?.liveDate ?? quote?.priceDate}</time></div>
@@ -269,7 +305,7 @@ export function AppValuation({ ticker, children }: Scoped) {
           {model && chartData.length > 0 && <ChartContainer className="aspect-auto h-72 w-full" config={{ close: { label: "收盘", color: "var(--primary)" }, low: { label: "下限", color: "var(--muted-foreground)" }, base: { label: "基准", color: "var(--foreground)" }, high: { label: "上限", color: "var(--muted-foreground)" } }}>
             <LineChart accessibilityLayer data={chartData}><CartesianGrid vertical={false}/><XAxis dataKey="time" minTickGap={36}/><YAxis width={64} domain={["auto", "auto"]}/><ChartTooltip content={<ChartTooltipContent/>}/>
               <Line type="linear" dataKey="close" dot={false} stroke="var(--color-close)" strokeWidth={2} isAnimationActive={false}/>
-              {displayRange && (["low", "base", "high"] as const).map(key => <Line key={key} dataKey={key} dot={false} stroke={`var(--color-${key})`} strokeDasharray="4 4" isAnimationActive={false}/>)}
+              {displayRange && (["low", "base", "high"] as const).map(key => <Line key={key} type="stepAfter" dataKey={key} dot={false} stroke={`var(--color-${key})`} strokeDasharray="4 4" isAnimationActive={false}/>)}
             </LineChart>
           </ChartContainer>}
           {report.sections.summary && <p className="whitespace-pre-line text-base">{report.sections.summary}</p>}
@@ -289,13 +325,31 @@ export function AppValuation({ ticker, children }: Scoped) {
         <TabsContent value="scenarios" className="flex flex-col gap-4">
           {model && <NativeSelect aria-label="选择估值情景" value={scenario} onChange={e => setScenario(e.target.value)}>{cases.filter(([, entry]) => entry).map(([key]) => <NativeSelectOption key={key} value={key}>{scenarioNames[key]}</NativeSelectOption>)}</NativeSelect>}
           {!model && <p className={muted}>暂无可用经营情景</p>}
-          {selected && <><p>{money(selected.valuation?.perShare ?? selected.result.perShare, report.currency)}</p><p>{selected.narrative}</p>
+          {selected && <>
+            <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div><dt className={muted}>加权价值</dt><dd className="text-base font-semibold">{money(selected.valuation?.perShare ?? selected.result.perShare, report.currency)}</dd></div>
+              <div><dt className={muted}>现金流折现值</dt><dd className="text-base font-semibold">{money(selected.result.perShare, report.currency)}</dd></div>
+              <div><dt className={muted}>终值占比</dt><dd className="text-base font-semibold">{percentage(selected.result.terminalShare)}</dd></div>
+              {"probability" in selected && typeof selected.probability === "number" && <div><dt className={muted}>概率</dt><dd className="text-base font-semibold">{percentage(selected.probability)}</dd></div>}
+            </dl>
+            <p>{selected.narrative}</p>
+            <div className="flex flex-wrap gap-2">{cite(selected.evidenceIds)}</div>
+            {selected.assumptions && ([["营收路径", selected.assumptions.revenue], ["利润率路径", selected.assumptions.margin], ["资本开支路径", selected.assumptions.capex]] as const).map(([label, assumption]) => <section key={label} className="flex flex-col gap-2">
+              <h3 className="text-base font-semibold">{label}</h3><p>{assumption.rationale}</p><div className="flex flex-wrap gap-2">{cite(assumption.evidenceIds)}</div>
+            </section>)}
             {selected.triggers?.map(t => <p key={t}>{t}</p>)}{selected.invalidation?.map(t => <p key={t} className={muted}>{t}</p>)}
-            {!!selected.result.yearly.length && <Table><TableCaption className={caption}>经营路径</TableCaption><TableHeader><TableRow><TableHead>年份</TableHead><TableHead>收入</TableHead><TableHead>自由现金流</TableHead></TableRow></TableHeader><TableBody>{selected.result.yearly.map(row => <TableRow key={row.year}><TableCell>{row.year}</TableCell><TableCell>{money(row.revenue, report.currency)}</TableCell><TableCell>{money(row.cashFlow, report.currency)}</TableCell></TableRow>)}</TableBody></Table>}
+            {!!selected.result.yearly.length && <Table><TableCaption className={caption}>经营路径</TableCaption><TableHeader><TableRow><TableHead>年份</TableHead><TableHead>收入</TableHead><TableHead>自由现金流</TableHead><TableHead>资本开支</TableHead><TableHead>税后营业利润</TableHead></TableRow></TableHeader><TableBody>{selected.result.yearly.map(row => <TableRow key={row.year}><TableCell>{row.year}</TableCell><TableCell>{money(row.revenue, report.currency)}</TableCell><TableCell>{money(row.cashFlow, report.currency)}</TableCell><TableCell>{money(row.capex ?? row.buildCapex, report.currency)}</TableCell><TableCell>{money(row.nopat, report.currency)}</TableCell></TableRow>)}</TableBody></Table>}
           </>}
         </TabsContent>
       </Tabs>
     </> : status(result, val?.availability === "preparing" ? "估值准备中" : "暂无已发布估值")}
+    <Dialog open={!!evidence} onOpenChange={open => { if (!open) setEvidence(undefined); }}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogTitle>{evidence?.title}</DialogTitle><p className={muted}>{evidence?.publishedAt}</p>
+        <p className="whitespace-pre-wrap text-sm">{evidence?.excerpt}</p>
+        {safeLink(evidence?.url) && <a className="underline" href={safeLink(evidence?.url)} target="_blank" rel="noreferrer">查看来源</a>}
+      </DialogContent>
+    </Dialog>
     {!!report?.evidence.length && <details><summary className="cursor-pointer py-2 font-medium">估值证据</summary>
       <ul className="flex flex-col gap-4 py-3">{report.evidence.map(e => <li key={e.evidenceId}>{safeLink(e.url) ? <a href={safeLink(e.url)} target="_blank" rel="noreferrer" className="underline">{e.title}</a> : e.title}<p className={muted}>{e.excerpt}</p></li>)}</ul>
     </details>}
