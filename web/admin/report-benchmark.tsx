@@ -1,5 +1,6 @@
+import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
 import { Fragment, useMemo, useState } from "react";
-import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+
 import rawDataset from "@/benchmarks/filing-analysis-benchmark.json";
 import "./report-benchmark.css";
 
@@ -98,30 +99,16 @@ function ArticleView({ version }: { version: BenchmarkVersion }) {
  * Reads directly from `benchmarks/filing-analysis-benchmark.json` so Codex/agents can append
  * new baseline & optimization versions cleanly under version control.
  */
-export function ReportBenchmark() {
-  const { rubric, benchmarks } = DATASET;
-  const [query, setQuery] = useState("");
+export function ReportBenchmark({ ticker }: { ticker: string }) {
+  const { rubric } = DATASET;
+  const benchmarks = useMemo(() => DATASET.benchmarks.filter(b => b.ticker === ticker), [ticker]);
   const [selectedKey, setSelectedKey] = useState<string>(() => benchmarks[0]?.benchmarkKey ?? "");
   const [selectedVersionId, setSelectedVersionId] = useState<string>("");
   const [compareVersionId, setCompareVersionId] = useState<string>("auto");
   const [tab, setTab] = useState<TabKey>("subitems");
   const [splitArticle, setSplitArticle] = useState(false);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return benchmarks;
-    return benchmarks.filter(b =>
-      b.benchmarkKey.toLowerCase().includes(q)
-      || b.ticker.toLowerCase().includes(q)
-      || b.form.toLowerCase().includes(q)
-      || (b.title ?? "").toLowerCase().includes(q),
-    );
-  }, [benchmarks, query]);
-
-  const activeEntry = useMemo(
-    () => benchmarks.find(b => b.benchmarkKey === selectedKey) ?? filtered[0] ?? null,
-    [benchmarks, filtered, selectedKey],
-  );
+  const activeEntry = benchmarks.find(b => b.benchmarkKey === selectedKey) ?? benchmarks[0] ?? null;
 
   const versions = useMemo(
     () => activeEntry ? [...activeEntry.versions].sort((a, b) => a.versionNumber - b.versionNumber) : [],
@@ -168,57 +155,10 @@ export function ReportBenchmark() {
   }
 
   return (
-    <div className="ra-workspace rb-workspace">
-      <aside className="ra-list" aria-label="评测标的列表">
-        <div className="ra-filters">
-          <label className="ra-search">
-            <Search size={14} aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="筛选标的（如 CRWV 10-Q）"
-              aria-label="筛选评测标的"
-            />
-          </label>
-        </div>
-        <div className="ra-list-caption">
-          <span>{filtered.length} 个评测标的</span>
-        </div>
-        <div className="ra-list-scroll">
-          {filtered.length === 0 ? (
-            <p className="rb-empty-state">{benchmarks.length ? "没有匹配的标的" : "暂无评测记录"}</p>
-          ) : (
-            filtered.map(entry => {
-              const sorted = [...entry.versions].sort((a, b) => a.versionNumber - b.versionNumber);
-              const latest = sorted[sorted.length - 1];
-              const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
-              const delta = latest && prev ? latest.totalScore - prev.totalScore : latest?.deltaFromPrev ?? null;
-              const d = formatDelta(delta);
-              const isSelected = activeEntry?.benchmarkKey === entry.benchmarkKey;
-              return (
-                <button
-                  key={entry.benchmarkKey}
-                  type="button"
-                  className="ra-report-row"
-                  aria-pressed={isSelected}
-                  onClick={() => selectEntry(entry.benchmarkKey)}
-                >
-                  <div className="ra-row-info">
-                    <strong>{entry.ticker}</strong>
-                    <small>{latest ? `${latest.totalScore} 分` : "未打分"}</small>
-                    <span>
-                      {entry.form} · {entry.periodEnd} · {entry.versions.length} 版
-                      {delta != null && <span className={`rb-delta ${d.cls}`} style={{ marginLeft: 6 }}>{d.text}</span>}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </aside>
-
+    <div className="flex min-w-0 flex-col gap-6">
+      {benchmarks.length > 0 && <NativeSelect aria-label="选择评测报告" value={activeEntry?.benchmarkKey ?? ""} onChange={e => selectEntry(e.target.value)}>
+        {benchmarks.map(entry => <NativeSelectOption key={entry.benchmarkKey} value={entry.benchmarkKey}>{entry.form} · {entry.periodEnd}</NativeSelectOption>)}
+      </NativeSelect>}
       <section className="ra-detail" aria-label="报告评测详情">
         {!activeEntry || !activeVersion ? (
           <div className="rb-empty-guide">

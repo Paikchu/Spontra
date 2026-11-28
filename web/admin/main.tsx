@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { BusinessViewAdmin, THEME_KEY } from "./business-view-admin";
-import "@fontsource-variable/public-sans";
+import "@fontsource-variable/geist";
 import "./admin-tailwind.css";
 import "@/web/shared/styles/spontra-ui.css";
 import "./report-admin.css";

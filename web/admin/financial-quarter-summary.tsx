@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { Search } from "reicon-react";
 import type { FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "@/src/domains/financials/maintenance-contract";
 import { displayFinancialValue } from "./financial-maintenance-state";
 import "./financial-quarter-summary.css";
@@ -94,7 +94,7 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
       </div>
       <div className="fqs-filters">
         <div className="fqs-groups" role="group" aria-label="季度摘要内容"><button type="button" aria-pressed={group === "income"} onClick={() => setGroup("income")}>利润与费用</button><button type="button" aria-pressed={group === "business"} onClick={() => setGroup("business")}>业务收入</button></div>
-        <label className="fqs-search"><Search size={15} aria-hidden="true" /><input aria-label="搜索季度摘要项目" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索项目" /></label>
+        <label className="fqs-search"><Search size={18} strokeWidth={1.5} aria-hidden="true" /><input aria-label="搜索季度摘要项目" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索项目" /></label>
       </div>
       {commonCurrency && <p className="fqs-table-meta">单位：{millions ? "百万" : ""}{currencies[commonCurrency]}</p>}
       <div className="fqs-table-scroll" tabIndex={0} role="region" aria-label="季度摘要比较表">

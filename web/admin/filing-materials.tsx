@@ -1,12 +1,7 @@
+import { Button } from "@/web/shared/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowsClockwiseIcon as RefreshCw,
-  CheckIcon as Check,
-  CopyIcon as Copy,
-  MagnifyingGlassIcon as Search,
-  SpinnerGapIcon as LoaderCircle,
-  XIcon as X,
-} from "@phosphor-icons/react";
+import { Check, Copy, Refresh as LoaderCircle, Xmark as X } from "reicon-react";
 import type {
   MaterialBriefResponse,
   MaterialExtractFile,
@@ -15,14 +10,13 @@ import type {
   MaterialState,
   MaterialTable,
 } from "@/src/domains/filing-material/contract";
-import { CompanyLogo } from "@/web/shared/company-logo";
 import { adminApi, AdminApiError } from "./admin-api";
 import { useOnReturn, usePageActive } from "./admin-page";
 import "./filing-materials.css";
 
 const FilingMarkdown = lazy(async () => ({ default: (await import("./filing-markdown")).FilingMarkdown }));
 
-type Props = { onAuthenticated: () => void; onUnauthorized: () => void };
+type Props = { onAuthenticated: () => void; onUnauthorized: () => void; ticker: string; accession: string; layer: "l1" | "l2"; source?: string; onOpenL1: (accession: string, source: string) => void };
 type Tab = "brief" | "markdown" | "tables";
 type BriefView = "structured" | "markdown" | "json";
 type ReportPage = Pick<MaterialPage, "text" | "nextCursor">;
@@ -71,21 +65,16 @@ function baseSourceId(id: string) {
   return id.replace(/#(?:(?:rows:)?\d+-\d+|cell:\d+:\d+)$/, "");
 }
 
-function initialSelection() {
-  const params = new URLSearchParams(window.location.search);
-  return { ticker: (params.get("ticker") ?? "").toUpperCase(), accession: params.get("accession") ?? "" };
-}
-
 function formatChars(chars: number) {
   return chars >= 1000 ? `${(chars / 1000).toFixed(1)}k 字` : `${chars} 字`;
 }
 
-export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
+export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, accession, layer, source, onOpenL1 }: Props) {
+  const initialAccession = accession;
   const [materials, setMaterials] = useState<MaterialState[] | null>(null);
-  const [search, setSearch] = useState("");
   const [blockedOnly, setBlockedOnly] = useState(false);
-  const [selection, setSelection] = useState(initialSelection);
-  const [tab, setTab] = useState<Tab>("brief");
+  const [selection, setSelection] = useState({ ticker, accession });
+  const [tab, setTab] = useState<Tab>(layer === "l2" ? "brief" : "markdown");
   const [briefView, setBriefView] = useState<BriefView>("structured");
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
@@ -122,7 +111,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
 
   const fetchMaterials = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await adminApi<{ materials: MaterialState[] }>("library", { signal });
+      const res = await adminApi<{ materials: MaterialState[] }>(`library/companies/${encodeURIComponent(ticker)}`, { signal });
       if (signal?.aborted) return;
       const sorted = [...res.materials].sort((a, b) => (b.filing.filedAt || "").localeCompare(a.filing.filedAt || ""));
       setMaterials(sorted);
@@ -131,7 +120,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     } catch (e) {
       if (!signal?.aborted) fail(e);
     }
-  }, [fail]);
+  }, [fail, ticker]);
 
   useEffect(() => {
     const c = new AbortController();
@@ -166,23 +155,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     return () => window.clearInterval(timer);
   }, [hasPreparing, fetchMaterials, visible]);
 
-  const companies = useMemo(() => {
-    const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const byTicker = new Map<string, MaterialState[]>();
-    for (const material of materials ?? []) {
-      if (blockedOnly && material.status !== "blocked") continue;
-      const { ticker, companyName, form, accession, reportDate, filedAt } = material.filing;
-      const description = `${ticker} ${companyName} ${form} ${accession} ${reportDate} ${filedAt}`.toLowerCase();
-      if (!terms.every(term => description.includes(term))) continue;
-      const reports = byTicker.get(ticker);
-      if (reports) reports.push(material);
-      else byTicker.set(ticker, [material]);
-    }
-    return [...byTicker].sort(([a], [b]) => a.localeCompare(b));
-  }, [materials, search, blockedOnly]);
-
-  const company = companies.find(([ticker]) => ticker === selection.ticker) ?? companies[0];
-  const reports = company?.[1] ?? [];
+  const reports = useMemo(() => (materials ?? []).filter(m => m.filing.ticker === ticker && (!blockedOnly || m.status === "blocked")), [ticker, materials, blockedOnly]);
+  const company: [string, MaterialState[]] = [ticker, reports];
   const requestedReport = company?.[0] === selection.ticker
     ? reports.find(report => report.filing.accession === selection.accession)
     : undefined;
@@ -322,14 +296,21 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
     if (!readyKey || !readyVersion || !current) return;
     const c = new AbortController();
     const { ticker, accession } = current.filing;
+    const anchor = layer === "l1" && source && accession === initialAccession ? baseSourceId(source) : undefined;
     void adminApi<MaterialSnapshot>(`library/materials/${ticker}/${accession}/index?version=${encodeURIComponent(readyVersion)}`, { signal: c.signal })
-      .then(idx => { if (!c.signal.aborted) setSnapshot(idx); })
+      .then(idx => {
+        if (c.signal.aborted) return;
+        setSnapshot(idx);
+        if (anchor && idx.tables.some(t => t.tableId === anchor)) {
+          setTab("tables");
+          setSelectedTableId(anchor);
+        } else if (layer === "l1") void loadMarkdown(current, c.signal, undefined, anchor);
+      })
       .catch(e => { if (!c.signal.aborted) fail(e); });
-    void loadBrief(current, c.signal);
-    void loadMarkdown(current, c.signal);
-    void loadTables(current, "", "", c.signal);
+    if (layer === "l2") void loadBrief(current, c.signal);
+    else void loadTables(current, "", "", c.signal);
     return () => c.abort();
-  }, [readyKey, readyVersion, fail, loadBrief, loadMarkdown, loadTables]);
+  }, [readyKey, readyVersion, fail, loadBrief, loadMarkdown, loadTables, layer, source, initialAccession]);
 
   useEffect(() => {
     if (!detail || detail.status !== "ready" || materialKey(detail) !== selectedKey) return;
@@ -361,9 +342,9 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   useEffect(() => {
     if (!selectedTicker || !selectedAccession || !visible.current) return;
     try {
-      window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams({ ticker: selectedTicker, accession: selectedAccession })}`);
+      window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams({ ticker: selectedTicker, accession: selectedAccession, ...(source && selectedAccession === accession ? { source } : {}) })}`);
     } catch { /* ignore */ }
-  }, [selectedTicker, selectedAccession, visible]);
+  }, [selectedTicker, selectedAccession, visible, source, accession]);
 
   async function syncCompany(ticker: string) {
     const upper = ticker.trim().toUpperCase();
@@ -472,6 +453,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
 
   function jumpToSource(sourceId: string) {
     if (!detail || detail.status !== "ready") return;
+    if (layer === "l2") { onOpenL1(detail.filing.accession, sourceId); return; }
     const base = baseSourceId(sourceId);
     const isTable = snapshot?.tables.some(t => t.tableId === base) || tablesList.some(t => t.tableId === base);
     if (isTable) {
@@ -562,9 +544,9 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
           {files.length > 0 ? files.map((file, idx) => (
             <li key={`${file.container ?? ""}:${file.filename}:${idx}`} className="fm2-todo-item">
               <span className={`fm2-todo-check ${file.status}`} aria-label={file.status}>
-                {file.status === "done" && <Check size={12} weight="bold" />}
-                {file.status === "extracting" && <LoaderCircle size={12} className="fm2-spin" />}
-                {file.status === "failed" && <X size={12} weight="bold" />}
+                {file.status === "done" && <Check size={18} strokeWidth={1.5} />}
+                {file.status === "extracting" && <LoaderCircle size={18} strokeWidth={1.5} className="fm2-spin" />}
+                {file.status === "failed" && <X size={18} strokeWidth={1.5} />}
               </span>
               <span className="fm2-todo-name">
                 <code>{file.filename}</code>
@@ -575,7 +557,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
           )) : material.status === "preparing" ? (
             <li className="fm2-todo-item">
               <span className="fm2-todo-check extracting" aria-label="extracting">
-                <LoaderCircle size={12} className="fm2-spin" />
+                <LoaderCircle size={18} strokeWidth={1.5} className="fm2-spin" />
               </span>
               <span className="fm2-todo-name">
                 <span>获取 SEC 提交文件清单 (manifest.json)</span>
@@ -599,71 +581,18 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
   };
 
   const briefState = briefData?.state ?? null;
-  const searchTicker = search.trim().toUpperCase();
-  const canSyncSearchTicker = /^[A-Z][A-Z0-9.-]{0,11}$/.test(searchTicker) && !companies.some(([t]) => t === searchTicker);
-
   return (
-    <div className="ra-workspace fm2-workspace">
-      <section className="ra-list" aria-label="财报公司列表">
-        <div className="ra-filters">
-          <label className="ra-search">
-            <Search size={17} />
-            <input type="search" aria-label="搜索公司或财报" placeholder="公司或财报" autoCapitalize="none" spellCheck={false} value={search} onChange={e => setSearch(e.target.value)} />
-          </label>
-          <button className="bs-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}>
-            <RefreshCw size={17} />
-          </button>
-        </div>
-        <div className="fm2-filters" role="group" aria-label="按材料状态筛选">
-          <button type="button" className="fm2-filter-pill" aria-pressed={!blockedOnly} onClick={() => setBlockedOnly(false)}>全部</button>
-          <button type="button" className="fm2-filter-pill" aria-pressed={blockedOnly} onClick={() => setBlockedOnly(true)}>已阻塞</button>
-        </div>
-        {canSyncSearchTicker && (
-          <div className="fm2-filters">
-            <button type="button" className="fm2-btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={actionBusy} onClick={() => void syncCompany(searchTicker)}>
-              {actionBusy ? "拉取中…" : `拉取 ${searchTicker} 财报材料`}
-            </button>
-          </div>
-        )}
-        <div className="ra-list-caption">{materials ? `${companies.length} 家公司` : "加载中"}</div>
-        {error && <p className="ra-error" role="alert">{error}</p>}
-        <div className="ra-list-scroll">
-          {companies.map(([ticker, filings]) => (
-            <button key={ticker} type="button" className="ra-report-row" aria-pressed={company?.[0] === ticker}
-              onClick={() => setSelection({
-                ticker, accession: company?.[0] === ticker ? selectedMaterial?.filing.accession ?? "" : "",
-              })}>
-              <CompanyLogo symbol={ticker} />
-              <span className="ra-row-info"><strong>{ticker}</strong><small>{filings.length} 份</small></span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="ra-list fm2-report-list" aria-label="财报报告列表">
-        <div className="ra-list-caption fm2-report-list-caption">
-          <span>报告</span>
-          {company && <span>{reports.length} 份</span>}
-        </div>
-        <div className="ra-list-scroll" key={company?.[0]}>
-          {reports.map(report => {
-            const { ticker, accession, form, filedAt, reportDate } = report.filing;
-            return (
-              <button type="button" className="ra-report-row fm2-report-row" key={accession}
-                aria-pressed={materialKey(report) === selectedKey}
-                onClick={() => setSelection({ ticker, accession })}>
-                <span className="fm2-report-row-head">
-                  <strong>{form}</strong>
-                  <span className={`fm2-badge ${report.status}`}>{STATUS_LABEL[report.status]}</span>
-                </span>
-                <span className="fm2-report-row-date">{filedAt || reportDate}</span>
-                <code>{accession}</code>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
+    <div className="flex min-w-0 flex-col gap-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <NativeSelect aria-label="选择财报" value={selectedAccession} onChange={e => setSelection({ ticker, accession: e.target.value })}>
+          {!reports.length && <NativeSelectOption value="">暂无财报</NativeSelectOption>}
+          {reports.map(({ filing }) => <NativeSelectOption key={filing.accession} value={filing.accession}>{filing.form} · {filing.filedAt || filing.reportDate} · {filing.accession}</NativeSelectOption>)}
+        </NativeSelect>
+        <Button type="button" variant={blockedOnly ? "secondary" : "ghost"} aria-pressed={blockedOnly} onClick={() => setBlockedOnly(v => !v)}>仅显示阻塞</Button>
+        <Button type="button" variant="ghost" onClick={() => setRefresh(n => n + 1)}>刷新</Button>
+        {layer === "l1" && <Button type="button" variant="outline" disabled={actionBusy} onClick={() => void syncCompany(ticker)}>拉取材料</Button>}
+      </div>
+      {error && <p role="alert">{error}</p>}
       <section className="ra-detail" aria-label="L1/L2 财报材料检查区">
         {!currentMaterial ? (
           <p className="bs-empty">{materials ? "没有符合筛选条件的财报。" : "正在加载财报…"}</p>
@@ -681,11 +610,10 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
               </div>
             </div>
 
-            <nav className="bs-views" aria-label="L1/L2 材料层级切换">
-              <button type="button" aria-pressed={tab === "brief"} onClick={() => setTab("brief")}>L2 事实卡片</button>
-              <button type="button" aria-pressed={tab === "markdown"} onClick={() => setTab("markdown")}>L1 原文 Markdown</button>
-              <button type="button" aria-pressed={tab === "tables"} onClick={() => setTab("tables")}>L1 数据表格{currentSnapshot ? ` (${currentSnapshot.tables.length})` : ""}</button>
-            </nav>
+            {layer === "l1" && <div className="flex flex-wrap gap-2" role="group" aria-label="L1 视图">
+              <Button variant={tab === "markdown" ? "secondary" : "ghost"} aria-pressed={tab === "markdown"} onClick={() => setTab("markdown")}>原文 Markdown</Button>
+              <Button variant={tab === "tables" ? "secondary" : "ghost"} aria-pressed={tab === "tables"} onClick={() => setTab("tables")}>数据表格</Button>
+            </div>}
 
             {actionNote && <div className="fm2-badge ready">{actionNote}</div>}
 
@@ -899,8 +827,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                         </div>
                       </div>
                     )}
-                    <div className="fm2-split">
-                      <aside className="fm2-toc" aria-label="L1 原生目录">
+                    <div className="flex min-w-0 flex-col gap-4">
+                      <details className="min-w-0" aria-label="L1 原生目录"><summary>原文目录</summary>
                         {groupedToc.map(group => (
                           <div key={group.kind}>
                             <div className="fm2-toc-group">{TOC_GROUP_LABEL[group.kind]}</div>
@@ -921,7 +849,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                             ))}
                           </div>
                         ))}
-                      </aside>
+                      </details>
                       <div ref={mdScrollRef} className="fm2-content fm2-report-scroll">
                         {reportPage?.text ? (
                           <Suspense fallback={<p className="bs-empty" role="status">正在加载报告…</p>}>
@@ -950,8 +878,8 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                 {currentMaterial.status !== "ready" ? (
                   renderExtractionTodo(currentMaterial, `当前材料状态为「${STATUS_LABEL[currentMaterial.status]}」，L1 提取完成后将展示结构化数据表格。`)
                 ) : (
-                  <div className="fm2-split">
-                    <aside className="fm2-toc" aria-label="表格列表">
+                  <div className="flex min-w-0 flex-col gap-4">
+                    <details className="min-w-0" aria-label="表格列表" open><summary>表格列表</summary>
                       <form onSubmit={e => { e.preventDefault(); void loadTables(currentMaterial, tableQuery, "", materialRequest.current?.signal); }} style={{ marginBottom: 8 }}>
                         <input
                           aria-label="筛选表格名称"
@@ -972,7 +900,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                           加载更多表格
                         </button>
                       )}
-                    </aside>
+                    </details>
                     <div className="fm2-content">
                       {!tableDetail ? (
                         <p className="bs-empty" role="status">{tablesList.length ? "加载表格内容中…" : "未提取到匹配表格"}</p>
@@ -985,7 +913,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized }: Props) {
                             </div>
                             <div className="fm2-actions">
                               <button type="button" className="fm2-btn" onClick={copyCsv}>
-                                {copiedCsv ? <Check size={14} /> : <Copy size={14} />}
+                                {copiedCsv ? <Check size={18} strokeWidth={1.5} /> : <Copy size={18} strokeWidth={1.5} />}
                                 {copiedCsv ? "已复制 CSV" : "复制 CSV"}
                               </button>
                             </div>

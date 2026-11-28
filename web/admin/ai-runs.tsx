@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
-import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/src/api/admin/types/ai-runs-admin";
+import { useEffect, useRef, useState } from "react";
+import { Refresh as LoaderCircle, Refresh as RefreshCw } from "reicon-react";
+import type { AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/src/api/admin/types/ai-runs-admin";
 import type { BusinessExplainer } from "@/src/domains/business-map/explainer-contract";
 import type { BusinessTree, TreeNode } from "@/src/domains/business-map/tree-contract";
 import type { ValuationPublication } from "@/src/domains/valuation/contract";
 import { adminApi, AdminApiError } from "./admin-api";
-import { CompanyLogo } from "@/web/shared/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
-import { TranslationsPanel } from "./translations";
 import "./ai-runs.css";
 import { useOnReturn, usePageActive } from "./admin-page";
 import { PLANS } from "./run-progress";
@@ -52,59 +50,6 @@ function elapsed(run: AiRun) {
 }
 const count = (value: number) => value.toLocaleString("zh-CN");
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
-function initial(name: "ticker" | "kind") { try { return new URLSearchParams(window.location.search).get(name) ?? ""; } catch { return ""; } }
-
-/** Companies on the left, the chosen kinds of one company on the right. The page keeps `?ticker=&kind=` in its URL. */
-export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = false }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[]; translations?: boolean }) {
-  const kindTabs = KINDS.filter(([k]) => kinds.includes(k));
-  /** The Chinese Spontra Analysis wrote for the company's publications, as a last tab. */
-  const tabs: Array<[ViewKind | "translations", string]> = [...kindTabs, ...translations ? [["translations", "中文译文"] as [ViewKind | "translations", string]] : []];
-  const [list, setList] = useState<AiCompanies | null>(null), [search, setSearch] = useState(""), [listError, setListError] = useState("");
-  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind | "translations">(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);
-  const [refresh, setRefresh] = useState(0);
-  const callbacks = useRef({ onUnauthorized, onAuthenticated });
-  useEffect(() => { callbacks.current = { onUnauthorized, onAuthenticated }; }, [onUnauthorized, onAuthenticated]);
-
-  useEffect(() => {
-    const c = new AbortController();
-    void adminApi<AiCompanies>("ai/companies", { signal: c.signal }).then(r => { if (!c.signal.aborted) { setList(r); setListError(""); callbacks.current.onAuthenticated(); } })
-      .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setListError((e as Error).message); });
-    return () => c.abort();
-  }, [refresh]);
-  const shown = usePageActive();
-  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, 20000); return () => clearInterval(timer); }, [shown]);
-  useOnReturn(() => setRefresh(n => n + 1));
-  useEffect(() => {
-    if (!ticker || !shown.current) return;
-    try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
-  }, [ticker, kind, tabs.length, shown]);
-
-  // Translation follows published content; the other tabs retain their generation-feature lists.
-  const listed = useMemo(() => list?.companies.filter(company => kind === "translations" || kinds.some(task => company.kinds[task].enabled !== false)) ?? [], [list, kind, kinds]);
-  useEffect(() => {
-    if (!list) return;
-    setTicker(current => listed.some(company => company.ticker === current) ? current : listed[0]?.ticker ?? "");
-  }, [list, listed]);
-  const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
-  return <div className="ra-workspace ai-workspace">
-    <section className="ra-list" aria-label="公司">
-      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-      <div className="ra-list-caption"><span>{list ? `${companies.length} 家公司` : "加载中"}</span><button type="button" aria-label="刷新公司" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
-      {listError && <p className="ra-error" role="alert">{listError}</p>}
-      <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kind !== "translations" && kindTabs.map(([k, label]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{label}：{note}</small>; })}
-        </span></button>)}
-        {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
-      </div>
-    </section>
-    <section className="ra-detail ai-detail" aria-label="生成详情">
-      {tabs.length > 1 && <div className="ra-tabbar"><div className="ra-segmented" role="group" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
-      {!ticker ? <p className="ai-empty">未选择公司</p> : kind === "translations" ? <TranslationsPanel key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} />
-        : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
-    </section>
-  </div>;
-}
-
 /** One company's runs and published versions of one kind, polled faster while a run is in progress. */
 export function AiKindPanel({ ticker, kind, onUnauthorized }: { ticker: string; kind: ViewKind; onUnauthorized: () => void }) {
   const [detail, setDetail] = useState<AiCompanyDetail | null>(null), [error, setError] = useState<{ message: string; missing: boolean } | null>(null), [refresh, setRefresh] = useState(0);
@@ -124,7 +69,7 @@ export function AiKindPanel({ ticker, kind, onUnauthorized }: { ticker: string; 
   }, [active, shown]);
   useOnReturn(() => setRefresh(n => n + 1));
   if (error) return error.missing ? <p className="ai-empty">{error.message}</p> : <p className="ra-error ai-pad" role="alert">{error.message}</p>;
-  if (!detail) return <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>;
+  if (!detail) return <p className="ai-empty" role="status"><LoaderCircle size={18} strokeWidth={1.5} className="ra-spin" /> 加载中</p>;
   return <KindDetail detail={detail} onChanged={() => setRefresh(n => n + 1)} onError={fail} />;
 }
 
@@ -150,8 +95,8 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
       <div><h2>{detail.ticker} · {label}</h2>
         <p>{detail.state.current ? `当前版本 ${date(detail.state.current.id)} · ${summaryText(detail.kind, detail.state.current.summary)}` : "未发布"}{" · "}{detail.state.automatic ? "自动生成已开启" : "自动生成未开启"}</p></div>
       <div className="ai-trigger">
-        {!confirming ? <button className="ra-primary" disabled={!!detail.state.blocked || !!running || busy} onClick={() => setConfirming(true)} title={detail.state.blocked ?? undefined}><RefreshCw size={15} />{running ? "运行中" : "重新生成"}</button>
-          : <span className="ai-confirm"><button className="ra-primary" disabled={busy} onClick={() => void start()}>{busy && <LoaderCircle size={15} className="ra-spin" />}确认生成</button><button className="fm-button" disabled={busy} onClick={() => setConfirming(false)}>取消</button></span>}
+        {!confirming ? <button className="ra-primary" disabled={!!detail.state.blocked || !!running || busy} onClick={() => setConfirming(true)} title={detail.state.blocked ?? undefined}><RefreshCw size={18} strokeWidth={1.5} />{running ? "运行中" : "重新生成"}</button>
+          : <span className="ai-confirm"><button className="ra-primary" disabled={busy} onClick={() => void start()}>{busy && <LoaderCircle size={18} strokeWidth={1.5} className="ra-spin" />}确认生成</button><button className="fm-button" disabled={busy} onClick={() => setConfirming(false)}>取消</button></span>}
       </div>
     </header>
     {detail.state.blocked && <p className="ai-hint">{detail.state.blocked}</p>}
@@ -202,7 +147,7 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
   }, [detail.ticker, detail.kind, id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="ai-versions">
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
-    {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
+    {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={18} strokeWidth={1.5} className="ra-spin" /> 加载中</p>
       : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
         {detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "valuation" ? <ValuationView report={version.publication as ValuationPublication} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}

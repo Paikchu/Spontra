@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowsClockwiseIcon as RefreshCw } from "@phosphor-icons/react";
+import { Refresh as RefreshCw } from "reicon-react";
 import type { BusinessMapUsage, CompanyLayerStatus } from '@/src/api/admin/types/business-map-admin';
 import type { Layer } from '@/src/domains/business-map/features-contract';
 import { adminApi, AdminApiError } from './admin-api';
@@ -31,7 +31,7 @@ export function CompanyUsage({ ticker, rows, onUnauthorized }: { ticker: string;
   useOnReturn(() => setRefresh(n => n + 1));
   const data = state.status === 'ready' ? state.data : null;
   return <section className="bm-usage" aria-label={`${ticker} Token 用量`} aria-busy={state.status === 'loading'}>
-    <header><h4>Token 用量</h4><button className="ra-icon-button" type="button" aria-label="刷新 Token 用量" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></header>
+    <header><h4>Token 用量</h4><button className="ra-icon-button" type="button" aria-label="刷新 Token 用量" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={18} strokeWidth={1.5} /></button></header>
     {state.status === 'error' && <p className="ra-error" role="alert">Token 读取失败</p>}
     <div className="bm-usage-scroll" tabIndex={0} role="region" aria-label="各板块 Token 用量">
       <table className="bm-usage-table bm-usage-table--tokens" aria-description="累计已归属该公司的用量，不含缺失的历史记录。"><thead><tr><th scope="col">板块</th><th scope="col">状态</th><th scope="col">输入（含缓存）</th><th scope="col">输出</th><th scope="col">合计</th></tr></thead>

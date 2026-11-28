@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { ArrowsClockwiseIcon as RefreshCw } from "@phosphor-icons/react";
+import { Refresh as RefreshCw } from "reicon-react";
 import type { ReportAdminItem, ReportAdminPage, ReportAdminStatus, ReportRunProcess } from '@/src/api/admin/types/admin';
 import { adminApi, AdminApiError } from './admin-api';
 import { useOnReturn, usePageActive } from './admin-page';
@@ -69,7 +69,7 @@ export function CompanyReports({ ticker, onUnauthorized }: { ticker: string; onU
 
   const reports = state.status === 'ready' ? state.reports : [];
   return <section className="bm-usage" aria-label={`${ticker} SEC 文件分析`} aria-busy={state.status === 'loading'}>
-    <header><h4>SEC 文件分析</h4><button className="ra-icon-button" type="button" aria-label="刷新 SEC 文件分析" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></header>
+    <header><h4>SEC 文件分析</h4><button className="ra-icon-button" type="button" aria-label="刷新 SEC 文件分析" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={18} strokeWidth={1.5} /></button></header>
     {state.status === 'loading' && <p className="bm-empty" role="status">读取文件列表</p>}
     {state.status === 'error' && <p className="ra-error" role="alert">文件列表读取失败</p>}
     {state.status === 'ready' && !reports.length && <p className="bm-empty">无文件</p>}

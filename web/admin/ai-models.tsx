@@ -1,9 +1,12 @@
+import { Button } from "@/web/shared/ui/button";
+import { Input } from "@/web/shared/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/web/shared/ui/table";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowsClockwiseIcon as RefreshCw } from "@phosphor-icons/react";
+import { Refresh as RefreshCw } from "reicon-react";
 import type { AiEffort, AiEndpointInput, AiModel, AiModelSettings, AiToolModelRow, AiToolModelUpdate } from "@/src/api/admin/types/ai-models-admin";
 import { adminApi, AdminApiError } from "./admin-api";
 import { financialDate } from "./financial-update-history";
-import "./ai-models.css";
 
 const MODEL_LABEL: Record<AiModel, string> = {
   "deepseek-flash": "DeepSeek Flash", "deepseek-v4-pro": "DeepSeek V4 Pro",
@@ -50,49 +53,49 @@ export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
   const choices = data ? [...new Set<string>([...data.models, ...data.endpoints.map(endpoint => endpoint.name)])] : [];
   const editingEndpoint = data?.endpoints.some(endpoint => endpoint.name === draft.name);
 
-  return <section className="am-admin" aria-label="模型配置">
-    <header className="am-heading">
-      <h2>模型接入</h2>
-      <button className="ra-icon-button" type="button" onClick={() => setRefresh(n => n + 1)} disabled={!!busy} aria-label="刷新模型配置" title="刷新模型配置"><RefreshCw size={16} aria-hidden="true" /></button>
+  return <section className="flex min-w-0 flex-col gap-6" aria-label="模型配置">
+    <header className="flex items-center justify-between gap-3">
+      <h2 className="text-lg! font-semibold">模型接入</h2>
+      <Button variant="ghost" size="icon" type="button" onClick={() => setRefresh(n => n + 1)} disabled={!!busy} aria-label="刷新模型配置" title="刷新模型配置"><RefreshCw size={18} strokeWidth={1.5} aria-hidden="true" /></Button>
     </header>
-    <form className="am-connect" aria-label="模型接入" aria-busy={busy === "endpoint"} onSubmit={e => void connect(e)}>
-      <label>模型名称<input name="name" value={draft.name} autoComplete="off" required onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} /></label>
-      <label>API 地址<input name="url" type="url" value={draft.url} placeholder="https://" required onChange={e => setDraft(d => ({ ...d, url: e.target.value }))} /></label>
-      <label>API 密钥<input name="apiKey" type="password" value={draft.apiKey} autoComplete="off" required={editingEndpoint === false}
+    <form className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="模型接入" aria-busy={busy === "endpoint"} onSubmit={e => void connect(e)}>
+      <label className="flex min-w-0 flex-col gap-2 text-sm font-medium">模型名称<Input name="name" value={draft.name} autoComplete="off" required onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} /></label>
+      <label className="flex min-w-0 flex-col gap-2 text-sm font-medium">API 地址<Input name="url" type="url" value={draft.url} placeholder="https://" required onChange={e => setDraft(d => ({ ...d, url: e.target.value }))} /></label>
+      <label className="flex min-w-0 flex-col gap-2 text-sm font-medium">API 密钥<Input name="apiKey" type="password" value={draft.apiKey} autoComplete="off" required={editingEndpoint === false}
         aria-describedby={editingEndpoint ? "am-key-hint" : undefined} onChange={e => setDraft(d => ({ ...d, apiKey: e.target.value }))} /></label>
-      <label>推理强度<select name="thinkingLevel" value={draft.thinkingLevel} onChange={e => setDraft(d => ({ ...d, thinkingLevel: e.target.value as AiEffort }))}>
-        {(data?.efforts ?? ["low", "medium", "high", "xhigh", "max"]).map(effort => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
-      </select></label>
-      <button className="fm-button" type="submit" disabled={busy === "endpoint"}>{busy === "endpoint" ? "保存中" : "保存接入配置"}</button>
+      <label className="flex min-w-0 flex-col gap-2 text-sm font-medium">推理强度<NativeSelect name="thinkingLevel" value={draft.thinkingLevel} onChange={e => setDraft(d => ({ ...d, thinkingLevel: e.target.value as AiEffort }))}>
+        {(data?.efforts ?? ["low", "medium", "high", "xhigh", "max"]).map(effort => <NativeSelectOption key={effort} value={effort}>{EFFORT_LABEL[effort]}</NativeSelectOption>)}
+      </NativeSelect></label>
+      <Button variant="outline" type="submit" disabled={busy === "endpoint"}>{busy === "endpoint" ? "保存中" : "保存接入配置"}</Button>
       {editingEndpoint && <small id="am-key-hint">留空可保留已保存的密钥。</small>}
     </form>
-    {data && data.endpoints.length > 0 && <ul className="am-endpoints" aria-label="已接入的模型">{data.endpoints.map(endpoint => <li key={endpoint.name}>
+    {data && data.endpoints.length > 0 && <ul className="flex flex-col gap-2" aria-label="已接入的模型">{data.endpoints.map(endpoint => <li className="flex flex-wrap items-center gap-3 py-2 text-sm" key={endpoint.name}>
       <strong>{endpoint.name}</strong>
-      <span className="am-endpoint-url">{endpoint.url}</span>
+      <span className="break-all text-muted-foreground">{endpoint.url}</span>
       <span>推理强度 {EFFORT_LABEL[endpoint.thinkingLevel]}</span>
       <span>{endpoint.keyHint ? `密钥 …${endpoint.keyHint}` : "已保存密钥"}</span>
-      <button className="fm-button" type="button" disabled={busy === endpoint.name} aria-label={`移除 ${endpoint.name} 接入配置`} onClick={() => void disconnect(endpoint.name)}>移除</button>
+      <Button variant="outline" type="button" disabled={busy === endpoint.name} aria-label={`移除 ${endpoint.name} 接入配置`} onClick={() => void disconnect(endpoint.name)}>移除</Button>
     </li>)}</ul>}
     {error && <p className="ra-error ra-error-banner am-state" role="alert">{error}</p>}
-    <h2 className="am-tool-heading" id="am-tool-heading">各功能的模型配置</h2>
-    {!data && !error && <p className="am-state" role="status">正在加载模型配置…</p>}
-    {data && <div className="bm-admin-table-wrap am-table-scroll" role="region" aria-labelledby="am-tool-heading" tabIndex={0}><table className="bm-admin-table am-table">
-      <thead><tr><th scope="col">功能</th><th scope="col">模型</th><th scope="col">推理强度</th><th scope="col">更新时间</th><th scope="col">操作</th></tr></thead>
-      <tbody>{data.tools.map(row => <tr key={row.tool} aria-busy={busy === row.tool}>
-        <th scope="row"><strong>{row.label}</strong><small>{row.tool}</small></th>
-        <td><select aria-label={`${row.label}的模型`} value={row.model ?? ""} disabled={busy === row.tool}
+    <h2 className="text-lg! font-semibold" id="am-tool-heading">各功能的模型配置</h2>
+    {!data && !error && <p className="text-sm text-muted-foreground" role="status">正在加载模型配置…</p>}
+    {data && <div className="min-w-0" role="region" aria-labelledby="am-tool-heading" tabIndex={0}><Table>
+      <TableHeader><TableRow><TableHead scope="col">功能</TableHead><TableHead scope="col">模型</TableHead><TableHead scope="col">推理强度</TableHead><TableHead scope="col">更新时间</TableHead><TableHead scope="col">操作</TableHead></TableRow></TableHeader>
+      <TableBody>{data.tools.map(row => <TableRow key={row.tool} aria-busy={busy === row.tool}>
+        <TableHead scope="row"><strong>{row.label}</strong></TableHead>
+        <TableCell><NativeSelect aria-label={`${row.label}的模型`} value={row.model ?? ""} disabled={busy === row.tool}
           onChange={e => void save(row, { model: (e.target.value || null) as AiModel | null, effort: row.effort })}>
-          <option value="">默认 · {modelName(row.defaultModel)}</option>
-          {choices.map(m => <option key={m} value={m}>{modelName(m)}</option>)}
-        </select></td>
-        <td><select aria-label={`${row.label}的推理强度`} value={row.effort ?? ""} disabled={busy === row.tool}
+          <NativeSelectOption value="">默认 · {modelName(row.defaultModel)}</NativeSelectOption>
+          {choices.map(m => <NativeSelectOption key={m} value={m}>{modelName(m)}</NativeSelectOption>)}
+        </NativeSelect></TableCell>
+        <TableCell><NativeSelect aria-label={`${row.label}的推理强度`} value={row.effort ?? ""} disabled={busy === row.tool}
           onChange={e => void save(row, { model: row.model, effort: (e.target.value || null) as AiEffort | null })}>
-          <option value="">默认 · {EFFORT_LABEL[row.defaultEffort]}</option>
-          {data.efforts.map(effort => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
-        </select></td>
-        <td className="am-date">{row.updatedAt ? financialDate(row.updatedAt) : "—"}</td>
-        <td>{(row.model || row.effort) && <button className="fm-button" type="button" disabled={busy === row.tool} onClick={() => void save(row, { model: null, effort: null })} aria-label={`恢复默认（${row.label}）`}>恢复默认</button>}</td>
-      </tr>)}</tbody>
-    </table></div>}
+          <NativeSelectOption value="">默认 · {EFFORT_LABEL[row.defaultEffort]}</NativeSelectOption>
+          {data.efforts.map(effort => <NativeSelectOption key={effort} value={effort}>{EFFORT_LABEL[effort]}</NativeSelectOption>)}
+        </NativeSelect></TableCell>
+        <TableCell className="am-date">{row.updatedAt ? financialDate(row.updatedAt) : "—"}</TableCell>
+        <TableCell>{(row.model || row.effort) && <Button variant="outline" type="button" disabled={busy === row.tool} onClick={() => void save(row, { model: null, effort: null })} aria-label={`恢复默认（${row.label}）`}>恢复默认</Button>}</TableCell>
+      </TableRow>)}</TableBody>
+    </Table></div>}
   </section>;
 }

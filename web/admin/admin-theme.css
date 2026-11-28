@@ -144,3 +144,15 @@ html:has(.report-admin) :is(button, select, input, textarea):disabled { opacity:
 .report-admin .bm-usage .bm-usage-table :is(th, td) { font-size: 13px; }
 .report-admin .company-logo { background: var(--logo-surface); border-color: var(--input); }
 .report-admin .company-logo-fallback { color: oklch(0.148 0.004 228.8); }
+
+html:has(.report-admin) {
+  --sans: "Geist Variable", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --foreground: #181818; --muted-foreground: #6a6a6a;
+  --primary: #264ba9; --ring: #264ba9;
+  --radius: .5rem;
+}
+html.dark:has(.report-admin) { --primary: #a1b5ff; --ring: #a1b5ff; }
+html:has(.report-admin) [data-slot=sidebar-menu-button][data-active=true] { font-weight: 600; color: var(--primary); }
+html:has(.report-admin) [data-slot=sidebar-menu-button] > span:first-child:not(:last-child) { overflow: visible; }
+html:has(.report-admin) body { font-family: var(--sans); }
+html:has(.report-admin) [data-slot=sidebar-menu-button][data-active=true] { background: var(--muted); }

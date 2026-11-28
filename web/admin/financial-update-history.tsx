@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CheckIcon as Check, ClockIcon as Clock3, SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, XIcon as X } from "@phosphor-icons/react";
+import { Check, Clock3, Refresh as LoaderCircle, Refresh as RefreshCw, Xmark as X } from "reicon-react";
 import type { FinancialMaintenanceTask } from "@/src/domains/financials/maintenance-contract";
 
 export function financialDate(value: string): string {
@@ -33,12 +33,12 @@ export function FinancialUpdateHistory({ open, onClose, tasks, ticker, busy, has
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close(); }, [open]);
   return <dialog ref={dialog} className="fm-history-dialog" onCancel={onClose} onClose={onClose} aria-labelledby="fm-history-title">
-    <div className="fm-dialog-heading"><div><h2 id="fm-history-title">更新记录</h2><p>{ticker}</p></div><button className="fm-icon-button" aria-label="关闭" onClick={onClose}><X size={20} /></button></div>
+    <div className="fm-dialog-heading"><div><h2 id="fm-history-title">更新记录</h2><p>{ticker}</p></div><button className="fm-icon-button" aria-label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} /></button></div>
     {tasks.length ? <ol className="fm-history-list">{tasks.map(task => {
       const active = activeStatuses.has(task.status);
       const needsAttention = task.status === "failed" || task.status === "partial";
       return <li key={task.id} data-state={active ? "active" : needsAttention ? "attention" : "complete"}>
-        <div className="fm-history-icon">{active ? <LoaderCircle className="ra-spin" size={19} /> : task.status === "succeeded" ? <Check size={19} /> : <Clock3 size={19} />}</div>
+        <div className="fm-history-icon">{active ? <LoaderCircle className="ra-spin" size={18} strokeWidth={1.5} /> : task.status === "succeeded" ? <Check size={18} strokeWidth={1.5} /> : <Clock3 size={18} strokeWidth={1.5} />}</div>
         <div className="fm-history-item"><div className="fm-history-top"><strong>{actionNames[task.action]}</strong><span>{statusLabels[task.status]}</span></div>
           <time dateTime={task.updatedAt}>{financialDate(task.updatedAt)}</time>
           {task.accessionNumber && <p className="fm-history-filing">{task.reread ? `${task.reread.form} · ${task.reread.filedAt} · ` : ""}{task.accessionNumber}</p>}
@@ -46,9 +46,9 @@ export function FinancialUpdateHistory({ open, onClose, tasks, ticker, busy, has
           {active && <p>{stageLabels[task.stage] || "处理中"}</p>}
           {active && task.progress.total > 0 && <progress max={task.progress.total} value={task.progress.completed} aria-label="财报更新进度" />}
           {(task.errorCode || task.issues.length > 0) && <details><summary>采集问题</summary><ul>{[...new Set([...(task.errorCode ? [task.errorCode] : []), ...task.issues])].map(issue => <li key={issue}>{issue}</li>)}</ul></details>}
-          {(task.canRetry || task.canCancel) && <div className="fm-history-actions">{task.canRetry && <button className="fm-button" disabled={busy || hasActiveTask} onClick={() => onRetry(task)}><RefreshCw size={14} />重试</button>}{task.canCancel && <button className="fm-button" disabled={busy} onClick={() => onCancel(task)}>停止更新</button>}</div>}
+          {(task.canRetry || task.canCancel) && <div className="fm-history-actions">{task.canRetry && <button className="fm-button" disabled={busy || hasActiveTask} onClick={() => onRetry(task)}><RefreshCw size={18} strokeWidth={1.5} />重试</button>}{task.canCancel && <button className="fm-button" disabled={busy} onClick={() => onCancel(task)}>停止更新</button>}</div>}
         </div>
       </li>;
-    })}</ol> : <div className="fm-history-empty"><Clock3 size={28} /><h3>无更新记录</h3></div>}
+    })}</ol> : <div className="fm-history-empty"><Clock3 size={18} strokeWidth={1.5} /><h3>无更新记录</h3></div>}
   </dialog>;
 }

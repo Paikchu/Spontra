@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SpinnerGapIcon as LoaderCircle, ArrowsClockwiseIcon as RefreshCw, MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
+import { Refresh as LoaderCircle, Refresh as RefreshCw, Search } from "reicon-react";
 import type { TranslationEntry, TranslationsAdmin, TranslationStarted } from "@/src/api/admin/types/translations-admin";
 import type { TranslatedResource } from "@/src/domains/publishing/translation-runtime";
 import { adminApi, AdminApiError } from "./admin-api";
@@ -49,7 +49,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     && (!search || e.source.toLowerCase().includes(search.toLowerCase()) || (e.text ?? "").includes(search))), [data, filter, resource, search]);
 
   if (error) return <p className="ra-error ai-pad" role="alert">{error}</p>;
-  if (!data) return <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>;
+  if (!data) return <p className="ai-empty" role="status"><LoaderCircle size={18} strokeWidth={1.5} className="ra-spin" /> 加载中</p>;
   const total = data.resources.reduce((n, r) => n + r.total, 0), translated = data.resources.reduce((n, r) => n + r.translated, 0), rejected = data.resources.reduce((n, r) => n + r.rejected, 0);
   const selectedResource = data.resources.find(r => `${r.resource}:${r.scope}` === resource);
   const counts = { all: data.entries.length, ready: 0, rejected: 0, pending: 0 } as Record<Filter, number>;
@@ -61,7 +61,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
           {!data.scheduled ? "定时翻译已暂停" : data.enabled ? "自动翻译已开启" : "自动翻译未开启"} · {data.version}</p></div>
       <div className="ai-trigger">
         <button type="button" className="fm-button" disabled={submitting || !!data.run || !data.enabled} onClick={() => void translate()}>{submitting ? "提交中" : "翻译已发布内容"}</button>
-        <button className="fm-button" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={15} />刷新</button>
+        <button className="fm-button" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={18} strokeWidth={1.5} />刷新</button>
       </div>
     </header>
     {queued && <p className="ai-hint" role="status">翻译任务已加入队列</p>}
@@ -79,7 +79,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
     <div className="tr-filters">
       <div className="ra-segmented" role="group" aria-label="状态">{(["all", "rejected", "pending", "ready"] as Filter[]).map(f => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "all" ? "全部" : STATUS[f][0]}<small>{counts[f]}</small></button>)}</div>
       {selectedResource && <button type="button" className="fm-button" aria-label={`清除资源筛选 ${label(selectedResource.resource, selectedResource.scope)}`} onClick={() => setResource("")}>{label(selectedResource.resource, selectedResource.scope)} ✕</button>}
-      <label className="ra-search"><Search size={17} /><input aria-label="搜索原文或译文" placeholder="搜索原文或译文" value={search} onChange={e => setSearch(e.target.value)} /></label>
+      <label className="ra-search"><Search size={18} strokeWidth={1.5} /><input aria-label="搜索原文或译文" placeholder="搜索原文或译文" value={search} onChange={e => setSearch(e.target.value)} /></label>
     </div>
     {data.truncated && <p className="ai-hint">显示前 {data.entries.length} 条</p>}
     {!entries.length ? <p className="ai-empty">无匹配条目</p> : <ul className="tr-entries">{entries.map((e, i) => <li key={`${e.resource}:${e.scope}:${i}`} data-status={e.status}>
