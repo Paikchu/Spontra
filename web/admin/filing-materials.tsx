@@ -1,6 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/web/shared/ui/table";
 import { Button } from "@/web/shared/ui/button";
-import { NativeSelect, NativeSelectOption } from "@/web/shared/ui/native-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Refresh as LoaderCircle, Xmark as X } from "reicon-react";
 import type {
@@ -90,6 +89,7 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
   const [activeAnchor, setActiveAnchor] = useState<string>("");
   const materialRequest = useRef<AbortController | null>(null);
   const mdScrollRef = useRef<HTMLDivElement | null>(null);
+  const filingListRef = useRef<HTMLUListElement>(null);
 
   const [tableQuery, setTableQuery] = useState("");
   const [tablesList, setTablesList] = useState<MaterialTable[]>([]);
@@ -165,6 +165,18 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
   const selectedTicker = selectedMaterial?.filing.ticker ?? "";
   const selectedAccession = selectedMaterial?.filing.accession ?? "";
   const selectedKey = selectedTicker && selectedAccession ? `${selectedTicker}:${selectedAccession}` : "";
+
+  useEffect(() => {
+    const list = filingListRef.current;
+    const active = list?.querySelector('[aria-current="true"]');
+    if (!list || !active) return;
+    const viewport = list.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.top < viewport.top) list.scrollTop += item.top - viewport.top;
+    else if (item.bottom > viewport.bottom) list.scrollTop += item.bottom - viewport.bottom;
+    if (item.left < viewport.left) list.scrollLeft += item.left - viewport.left;
+    else if (item.right > viewport.right) list.scrollLeft += item.right - viewport.right;
+  }, [selectedAccession]);
 
   const loadBrief = useCallback(async (material: ReadyMaterial, signal?: AbortSignal) => {
     const { ticker, accession } = material.filing;
@@ -583,18 +595,37 @@ export function FilingMaterials({ onAuthenticated, onUnauthorized, ticker, acces
 
   const briefState = briefData?.state ?? null;
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <NativeSelect aria-label="选择财报" value={selectedAccession} onChange={e => setSelection({ ticker, accession: e.target.value })}>
-          {!reports.length && <NativeSelectOption value="">暂无财报</NativeSelectOption>}
-          {reports.map(({ filing }) => <NativeSelectOption key={filing.accession} value={filing.accession}>{filing.form} · {filing.filedAt || filing.reportDate} · {filing.accession}</NativeSelectOption>)}
-        </NativeSelect>
+    <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
+      <nav aria-label="财报文件" className="min-w-0 border-b border-border pb-3 lg:sticky lg:top-6 lg:row-span-2 lg:border-r lg:border-b-0 lg:pr-4 lg:pb-0">
+        <h2 className="px-2 pb-2 text-sm font-semibold">财报文件</h2>
+        <ul ref={filingListRef} className="flex gap-1 overflow-x-auto p-1 lg:max-h-[calc(100dvh-6rem)] lg:flex-col lg:overflow-y-auto">
+          {reports.map(({ filing }) => {
+            const active = filing.accession === selectedAccession;
+            return (
+              <li key={filing.accession} className="shrink-0">
+                <Button
+                  type="button"
+                  variant={active ? "secondary" : "ghost"}
+                  aria-current={active ? "true" : undefined}
+                  onClick={() => setSelection({ ticker, accession: filing.accession })}
+                  className="h-auto min-h-12 w-full flex-col items-start gap-1 px-2 py-2 text-left"
+                >
+                  <span>{filing.form} · {filing.filedAt || filing.reportDate}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{filing.accession}</span>
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+        {!reports.length && <p className="px-2 text-sm text-muted-foreground">{materials ? "暂无财报" : "加载中…"}</p>}
+      </nav>
+      <div className="flex min-w-0 flex-wrap items-center gap-3 lg:col-start-2">
         <Button type="button" variant={blockedOnly ? "secondary" : "ghost"} aria-pressed={blockedOnly} onClick={() => setBlockedOnly(v => !v)}>仅显示阻塞</Button>
         <Button type="button" variant="ghost" onClick={() => setRefresh(n => n + 1)}>刷新</Button>
         {layer === "l1" && <Button type="button" variant="outline" disabled={actionBusy} onClick={() => void syncCompany(ticker)}>拉取材料</Button>}
+        {error && <p className="basis-full" role="alert">{error}</p>}
       </div>
-      {error && <p role="alert">{error}</p>}
-      <section className="ra-detail" aria-label="L1/L2 财报材料检查区">
+      <section className="ra-detail lg:col-start-2" aria-label="L1/L2 财报材料检查区">
         {!currentMaterial ? (
           <p className="bs-empty">{materials ? "没有符合筛选条件的财报。" : "正在加载财报…"}</p>
         ) : (
