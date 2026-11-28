@@ -12,7 +12,7 @@ import { handleMaterialAcceptance } from "./admin/material-acceptance.ts";
 import {handlePipelineAdminRequest} from './admin/pipeline.ts';
 import {flushOutbox} from './pipeline/outbox.ts';
 import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
-import { handleCompanyAnalysisRequest, handleSecAnalysisRequest } from "./core.ts";
+import { handleSecAnalysisRequest } from "./core.ts";
 import { runSecDiscovery } from "./pipeline/discovery.ts";
 import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
@@ -77,7 +77,6 @@ const worker = {
     if (path === "/api/v1" || path.startsWith("/api/v1/")) return new Response("Not found", { status: 404 });
     if (path.startsWith("/sec-financials/refresh/")) return handleBusinessFlowRefresh(request, env);
     if (path.startsWith("/fundamentals/refresh/")) return handleFundamentalsRefreshRequest(request, env);
-    if (path.startsWith("/company-analysis/")) return handleCompanyAnalysisRequest(request, env);
     return handleSecAnalysisRequest(request, env);
   },
 

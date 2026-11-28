@@ -1,19 +1,16 @@
 import { securities } from "../catalog/issuer-directory.ts";
-import { shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
+import { type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { flowForIssuer } from "../financial-data/publication.ts";
 import { historyForIssuer } from "../financial-data/history.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
-import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenueReason } from "../../../../shared/analysis-contract/home.ts";
+import type { HomeCompany, HomeDigest, HomeRevenueReason } from "../../../../shared/analysis-contract/home.ts";
 import type { RevenueHistory } from "../../../../shared/analysis-contract/revenue-history.ts";
 import { checkCompleteFlow, newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { publicFlowSchema } from "../../../../shared/analysis-runtime/financial-data/schema.ts";
 import { readHistory } from "../../../../shared/analysis-runtime/financial-data/history.ts";
 import { canonicalTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { findingLeadsOf, readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
-import { localize, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
 import { fiscalFields, readFiscalFocus } from "./fiscal-periods.ts";
 
 /**
@@ -146,23 +143,6 @@ function prior(points: Point[], latest: Point, targetDays: number, slackDays: nu
   return best && bestDist <= slackDays * 86_400_000 ? best : null;
 }
 
-function findingsOf(raw: unknown, ticker: string, table: TranslationTable | null): FindingsPublication | null {
-  const publication = raw ? readFindingsPublication(raw, ticker) : null;
-  return publication ? localize("findings", publication, table) : null;
-}
-
-function projectFindings(publication: FindingsPublication | null, published: Set<string>): { counts: HomeCompany["findingCounts"]; top: HomeFinding[] } {
-  const counts = { risk: 0, strength: 0, shift: 0, watch: 0 };
-  if (!publication) return { counts, top: [] };
-  const ready = publication.fingerprint ? findingLeadsOf(publication).filter(lead => published.has(`${publication.fingerprint!.slice(0, 16)}.${lead.id}`)) : [];
-  for (const finding of ready) counts[finding.kind] += 1;
-  const top = [...ready]
-    .sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id))
-    .slice(0, 2)
-    .map(finding => ({ id: finding.id, kind: finding.kind, severity: finding.severity, title: finding.title, periodEnd: publication.periodEnd }));
-  return { counts, top };
-}
-
 /** The whitelist as the admin keeps it: the companies switched on, and nothing a deployment lists. */
 function dataTickers(rows: Array<{ ticker: string; enabled: number }>): Set<string> {
   return new Set(rows.filter(row => row.enabled).map(row => canonicalTicker(row.ticker)).filter(ticker => TICKER_PATTERN.test(ticker)));
@@ -172,17 +152,13 @@ function dataTickers(rows: Array<{ ticker: string; enabled: number }>): Set<stri
  * Covered companies for the public homepage, from publications already stored.
  * Read-only: no model call, no SEC fetch, no write.
  */
-export async function readHomeDigest(db: D1Database, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, dossiers, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
+export async function readHomeDigest(db: D1Database, _locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
+  const [publications, histories, issuers, settings, focus, reportFigures, named] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
-    db.prepare(`SELECT substr(cache_key, 13) ticker, payload FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'`).all<{ ticker: string; payload: string }>(),
-    db.prepare("SELECT ticker, subject FROM analysis_artifacts WHERE kind = 'dossier' AND published_version IS NOT NULL").all<{ ticker: string; subject: string }>().catch(() => ({ results: [] as Array<{ ticker: string; subject: string }> })),
     db.prepare(`SELECT substr(cache_key, 24) ticker, payload FROM sec_cache WHERE cache_key >= 'admin:financial-issuer:' AND cache_key < 'admin:financial-issuer;'`).all<{ ticker: string; payload: string }>(),
     db.prepare(`SELECT ticker, enabled FROM financial_company_settings`).all<{ ticker: string; enabled: number }>().catch(() => ({ results: [] as Array<{ ticker: string; enabled: number }> })),
-    locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
-    shownFilter(db, "findings"),
     readFiscalFocus(db),
     // The older quarters assembled behind each publication, only the figures an operating margin needs.
     db.prepare(`SELECT substr(c.cache_key, 20) ticker, json_extract(q.value, '$.periodEnd') periodEnd, json_extract(q.value, '$.currency') currency,
@@ -196,20 +172,7 @@ export async function readHomeDigest(db: D1Database, locale: Locale | null, now 
   for (const row of reportFigures.results) { const ticker = canonicalTicker(row.ticker); marginRows.set(ticker, [...marginRows.get(ticker) ?? [], row]); }
 
   const historyByCik = new Map(histories.results.map(row => [row.cache_key.slice("sec:revenue-history:v1:".length), row.payload]));
-  const findingsByTicker = new Map(findings.results.map(row => [canonicalTicker(row.ticker), jsonRow(row.payload)]));
-  const dossiersByTicker = new Map<string, Set<string>>();
-  for (const row of dossiers.results) { const ticker = canonicalTicker(row.ticker), subjects = dossiersByTicker.get(ticker) ?? new Set<string>(); subjects.add(row.subject); dossiersByTicker.set(ticker, subjects); }
   const issuerByTicker = new Map(issuers.results.map(row => [canonicalTicker(row.ticker), row.payload]));
-  const translationPrefix = locale ? `i18n:v1:${locale}:findings:` : "";
-  const translationByTicker = new Map<string, TranslationTable>();
-  for (const row of translations.results) {
-    const parsed = jsonRow(row.payload) as { strings?: unknown } | null;
-    const strings = parsed?.strings;
-    if (!strings || typeof strings !== "object") continue;
-    const table: Record<string, string> = {};
-    for (const [key, value] of Object.entries(strings)) if (typeof value === "string") table[key] = value;
-    if (Object.keys(table).length) translationByTicker.set(canonicalTicker(row.cache_key.slice(translationPrefix.length)), table);
-  }
 
   const enabled = dataTickers(settings.results);
   const seen = new Set<string>();
@@ -233,9 +196,8 @@ export async function readHomeDigest(db: D1Database, locale: Locale | null, now 
     const periodEnd = flowLatest?.periodEnd ?? latest?.periodEnd ?? null;
     const note = notes[canonical];
     const name = named(canonical)?.name ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
-    const shown = findingsShown(canonical);
-    const publication = shown ? findingsOf(findingsByTicker.get(canonical), canonical, translationByTicker.get(canonical) ?? null) : null;
-    const { counts, top } = projectFindings(publication, dossiersByTicker.get(canonical) ?? new Set());
+    const counts: HomeCompany["findingCounts"] = { risk: 0, strength: 0, shift: 0, watch: 0 };
+    const top: HomeCompany["topFindings"] = [];
     let revenueReason: HomeRevenueReason | null = null;
     let revenue: HomeCompany["revenue"] = null;
     if (latest && periodEnd) {

@@ -5,7 +5,7 @@ import type { Recipe } from "../recipe.ts";
 import { composeTools, openCompose, type ComposeInput, type ComposeState, type Material } from "../compose/tools.ts";
 import { COMPOSER_GUIDE, composerTools, deliverComposer, type ComposerSetup } from "../artifact/compose.ts";
 import { openComposer, registerSource, type ComposerState } from "../artifact/document.ts";
-import { renderTable } from "../analyst/agent.ts";
+import { renderTable } from "../compose/render-table.ts";
 import type { AnyTool } from "../tools/registry.ts";
 import { listFilingMaterials, readMaterialSnapshot } from "../filing-material/index.ts";
 import type { MaterialRef, MaterialSnapshot } from "../../../../shared/analysis-contract/filing-material.ts";

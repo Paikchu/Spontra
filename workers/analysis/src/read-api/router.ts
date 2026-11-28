@@ -1,12 +1,10 @@
 import { companyResearchDependencyStatus } from "../public-research/context.ts";
-import { featureShown, shownLayers, shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
+import { featureShown, shownLayers, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { readMapDerived } from '../financial-data/derived.ts';
 import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
-import { readFindingsResponse, resolvePublishedDossierSubject } from "../findings/read.ts";
-import { enrichFindings } from "../findings/articles.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
@@ -88,14 +86,8 @@ function withoutSummary(filing: PublicSecFiling): PublicSecFiling {
  * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
  * read from what is stored rather than from a list kept in the page.
  */
-async function findingsIndex(request: Request, database: D1Database): Promise<Response> {
-  const [rows, shown] = await Promise.all([
-    database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>(),
-    shownFilter(database, "findings"),
-  ]);
-  // A company whose findings are switched off is left off the home page as well as its own.
-  const tickers = rows.results.map(r => r.ticker).filter(t => TICKER_PATTERN.test(t) && shown(t));
-  return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
+async function findingsIndex(request: Request): Promise<Response> {
+  return dataResponse(request, { schemaVersion: "findings-index.v1", tickers: [] }, "cacheable");
 }
 
 /** Serves one map read. */
@@ -120,7 +112,7 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
-    if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
+    if (route.kind === "findings-index") return await findingsIndex(request);
     if (route.kind === "home") return await home(request, env.DB);
     if (route.kind === "public-research") {
       const allowed = new Set(["type", "industryId", "version"]);
@@ -248,19 +240,9 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (exactEdition && (!artifact || (artifact.sourceHash ?? artifact.hash) !== editionHash)) return errorResponse("FILING_NOT_FOUND", "Filing report edition not found.");
       return dataResponse(request, { ...detail, artifact: artifact && await withFilingImpactTranslations(database, artifact, locale), filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } }, artifact?.filingImpact ? "no-store" : "cacheable");
     }
-    case "artifact": {
-      if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-      const ticker = route.ticker.trim().toUpperCase();
-      const published = await readPublishedArtifact(env as unknown as ArtifactStoreEnv, route.artifactKind, ticker, ticker, locale);
-      return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-    }
-    case "dossier-artifact": {
-      if (await hidden("findings")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-      const ticker = route.ticker.trim().toUpperCase();
-      const subject = await resolvePublishedDossierSubject(database, ticker, route.findingId);
-      const published = subject ? await readPublishedArtifact(env as unknown as ArtifactStoreEnv, "dossier", ticker, subject, locale) : null;
-      return published ? dataResponse(request, { schemaVersion: "artifact-response.v1", artifact: published }) : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-    }
+    case "artifact":
+    case "dossier-artifact":
+      return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       payload.layers = layers!;
@@ -292,12 +274,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       payload.tree = await translated("tree", payload.tree);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
-    case "findings": {
-      const payload = await readFindingsResponse(database, route.ticker, { hidden: await hidden("findings") });
-      const chinese = payload.findings && localize("findings", payload.findings, await readTranslationTable(database, "zh-CN", "findings", ticker));
-      const enriched = await enrichFindings(env as unknown as ArtifactStoreEnv, payload, chinese, locale ?? "en");
-      return dataResponse(request, enriched, "no-store");
-    }
+    case "findings":
+      return dataResponse(request, { schemaVersion: "findings-response.v1", status: "unavailable", findings: null, peers: null, passages: null, dossiers: null }, "no-store");
     case "events": {
       const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("filings") });
       payload.events = await translated("events", payload.events);

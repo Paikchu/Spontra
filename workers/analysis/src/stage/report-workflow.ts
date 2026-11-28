@@ -28,7 +28,7 @@ export async function reportLoader(spec: ReportSpec, env: AnalysisEnv): Promise<
   const { documents, earlierAvailable } = await reportDocuments(env, params.ticker, data.periodEnd);
   const input: ReportInput = { env, data, question: params.question, locale: params.locale, documents, now: spec.now, earlierAvailable, runId: spec.runId };
   return {
-    recipe: reportRecipe(input), input, model: modelFor(env, "analyst"), effort: reasoningFor(env, "analyst"),
+    recipe: reportRecipe(input), input, model: modelFor(env, "filing"), effort: reasoningFor(env, "filing"),
     ledger: { kind: "stage-report", ticker: params.ticker, runId: spec.runId, userHash: spec.userHash, conversationId: params.conversationId },
     reserve: async (_state, now) => await stageAvailable(env, params.ticker)
       && (await reserve(env.DB!, "stage-report-calls", { reader: params.userId, address: params.address }, 1, now)).ok,

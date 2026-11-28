@@ -2,10 +2,9 @@ import type { PeerCompany, PeerPair, PeersPublication, PeerUnit } from "../../..
 import { basisOf } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { exposureOf, unitRevenues } from "../business-tags/input.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
+import { changedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
 import { requireDb } from "../core.ts";
 import { readLinks } from "../business-classification/index.ts";
-import { readServedFindings } from "../findings/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -104,9 +103,6 @@ export async function publishPeers(env: AnalysisEnv, now: Date): Promise<{ compa
   const revised: string[] = [];
   for (const ticker of await scopeTickers(env, "map")) {
     if (pairsOf(before, ticker) !== pairsOf(publication, ticker)) { revised.push(ticker); continue; }
-    if (!changed.size) continue;
-    const findings = await readServedFindings(db, ticker);
-    if ([...citedPeers(findings)].some(t => changed.has(t))) revised.push(ticker);
   }
   const at = now.toISOString();
   await db.batch([

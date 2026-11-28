@@ -7,18 +7,16 @@ import { listFilingAnalyses, readFilingAnalysis } from "../items/library.ts";
 import { blockText } from "../artifact/document.ts";
 import { readArtifactVersion } from "../artifact/store.ts";
 import { readFilingImpact } from "../filing-analysis/impact-publication.ts";
-import { readStoredFindings } from "../findings/read.ts";
 import { businessTreeCacheKey } from "../business-tree/workflow.ts";
 import type { BusinessTree } from "../../../../shared/analysis-contract/business-tree.ts";
 import { nativeSearchSchema, datedHits } from "../web-search/native.ts";
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
-import { findingLeadsOf } from "../../../../shared/analysis-runtime/findings.ts";
 import { VALUATION_HORIZON_MONTHS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusNote, type ConsensusTarget, type DiscountRate, type DiscountRateSources, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, WEIGHT_SUM_TOLERANCE, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
-import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
-import { renderTable } from "../analyst/agent.ts";
+import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../web-search/read-page.ts";
+import { renderTable } from "../compose/render-table.ts";
 import { sha256 } from "../sha256.ts";
 import { materialTools } from "../filing-material/tools.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -529,12 +527,6 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         }
         return `${read.form} filed ${read.filedAt} (report ${read.periodEnd}) — ${read.title}\nconclusion (analysis, not evidence): ${read.judgment}\n\n${out.join("\n\n") || "(no passage quoted)"}`;
       }, observe: (_a, v) => v }),
-    tool({ name: "read_findings", description: "The company's research leads and questions, not established conclusions or evidence. Investigate them independently; read figures with read_financials and source passages with read_filing_analysis.", parameters: z.object({}), concurrencySafe: true,
-      execute: async (_a, ctx) => {
-        const publication = await ctx.stage("findings", () => readStoredFindings(db, ctx.state.input.ticker).catch(() => null));
-        const leads = publication ? findingLeadsOf(publication) : [];
-        return leads.length ? leads.map(lead => `${lead.id} · ${lead.kind} · severity ${lead.severity} · ${lead.title}\nResearch question (not a conclusion): ${lead.question}`).join("\n\n") : "No research leads are published.";
-      }, observe: (_a, v) => v }),
     tool({ name: "read_business_tree", description: "The company's business breakdown: each disclosed business, its lines and products and how they earn money, each anchored by a passage from a researched page or filing. A business's anchors become evidence [e…].", parameters: z.object({ business: z.string().max(120).optional() }),
       execute: async (args, ctx) => {
         const tree = await ctx.stage("tree", async () => (await new D1SecRepository(db).getCache<BusinessTree>(businessTreeCacheKey(ctx.state.input.ticker)).catch(() => null))?.payload ?? null);
@@ -646,7 +638,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 // No web: research the company through the layers below; the business breakdown carries the researched pages.
-export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_published_filing_report", "read_findings", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
+export const RESEARCH_TOOLS = ["read_financials", "read_filing_analyses", "read_filing_analysis", "read_published_filing_report", "read_business_tree", "list_filings", "search_filing_markdown", "read_filing_markdown", "find_filing_tables", "read_filing_table", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
 export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "configure_valuation", ...Object.values(VALUATION_CASE_TOOLS), "calculate_prepared_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 

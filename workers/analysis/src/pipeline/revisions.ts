@@ -12,16 +12,11 @@ const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "map.derived": ["company", "capital"],
   "report.published": ["company", "filings"],
   "filings.indexed": ["filings"],
-  "analysis.published": ["filings"],
   "fundamentals.updated": ["fundamentals"],
   "explainer.published": ["company"],
   "tree.published": ["company"],
   // A feature switched shown or hidden: every resource a feature publishes into, so the reader reloads what changed.
-  "feature.settings": ["company", "filings", "findings", "events", "valuation"],
-  "findings.published": ["findings"],
-  "dossier.published": ["findings"],
-  // Cited peers ride with the findings.
-  "peers.published": ["findings"],
+  "feature.settings": ["company", "filings", "events", "valuation"],
   "events.published": ["events"],
   // A row's analysis is read by the row's id at the events' and filings' revisions.
   "items.published": ["events", "filings"],

@@ -1,11 +1,7 @@
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { BUSINESS_EXPLAINER_VERSION, businessExplainerCacheKey, businessExplainerFingerprint } from "../business-explainer/workflow.ts";
 import { BUSINESS_TREE_VERSION, businessTreeCacheKey, businessTreeFingerprint } from "../business-tree/workflow.ts";
-import { COMPANY_ANALYSIS_PROMPT_VERSION } from "../company-analysis/contracts.ts";
-import { recoverCompanyAnalysis, startCompanyMemory } from "../core.ts";
-import { FINDINGS_VERSION, findingsFingerprint } from "../findings/workflow.ts";
-import { ANALYST_VERSION, analystFingerprint, completedAnalystFingerprint } from "../analyst/workflow.ts";
-import { findingsCacheKey } from "../findings/read.ts";
+import { startCompanyMemory } from "../core.ts";
 import type { AiWorkflowBinding, AnalysisEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -27,7 +23,7 @@ const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
  * (null while there is nothing to write from), compared with what is published. A failed run is retried on the same
  * input after a growing wait, then becomes a dead letter (workflow-task.ts).
  */
-async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" | "tree" | "analyst" | "valuation", kind: AiRunKind | null, ticker: string, { causeId, now, trigger }: TaskContext,
+async function runWhenChanged(env: AnalysisEnv, task: "explainer" | "tree" | "valuation", kind: AiRunKind | null, ticker: string, { causeId, now, trigger }: TaskContext,
   binding: AiWorkflowBinding<{ ticker: string; fingerprint: string }> | undefined, fingerprint: () => Promise<string | null>, published: () => Promise<string | null>): Promise<TaskOutcome> {
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
@@ -35,7 +31,7 @@ async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" |
     // The last run failed on exactly this input: wait for its retry time, or stay until the dead letter is replayed.
     const failed = await failedInputOutcome(env, task, ticker, current, now);
     if (failed) return failed;
-    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : task === "valuation" ? "valuation" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
+    const id = `${task === "tree" ? "business-tree" : task === "valuation" ? "valuation" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     if (kind) await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
     return { id, params: { ticker, fingerprint: current }, fingerprint: current };
   }, { deadLetter: { task, ticker, causeId }, trigger });
@@ -53,7 +49,6 @@ const storedFingerprint = (env: AnalysisEnv, key: string) => async () =>
 const LAYER_TASKS = {
   map: ["collect", "archive", "history", "map-derive", "fundamentals", "events", "presentation"],
   filings: ["business-classification", "business-tags", "filing-analysis", "memory", "extract"],
-  findings: ["company-analysis", "findings", "analyst"],
 } as const;
 /** A run waiting in a lower layer longer than this is stuck, not settling, and no longer holds the layers above. */
 const SETTLING_MS = 6 * 60 * MINUTE;
@@ -67,38 +62,6 @@ async function unsettledBelow(env: AnalysisEnv, ticker: string, layers: Readonly
 const settling = (waiting: string[]): TaskOutcome => ({ status: "later", afterMs: 10 * MINUTE, detail: { waiting: "lower layers", tasks: waiting } });
 
 export const AI_TASKS = {
-  /**
-   * Findings for the newest report, written from the map snapshot, SEC fundamentals and the company analysis.
-   */
-  findings: {
-    version: FINDINGS_VERSION,
-    async run(env, ticker, context): Promise<TaskOutcome> {
-      const { now } = context;
-      if (env.FINDINGS_ENABLED !== "true") return { status: "done", detail: { skipped: "findings disabled" } };
-      const below = await unsettledBelow(env, ticker, ["map", "filings"], now, ["company-analysis"]);
-      // The report memory and the company analysis it starts run as Workflows of their own, outside the due table.
-      const since = new Date(now.getTime() - SETTLING_MS).toISOString();
-      const flight = await env.DB!.prepare(`SELECT 'memory' task FROM sec_memory_jobs WHERE ticker = ?1 AND status IN ('pending', 'running') AND updated_at > ?2
-        UNION ALL SELECT 'company-analysis' FROM company_analysis_runs WHERE ticker = ?1 AND status NOT IN ('ready', 'failed', 'insufficient_data') AND updated_at > ?2 LIMIT 2`)
-        .bind(ticker, since).all<{ task: string }>().then(r => r.results.map(x => x.task)).catch(() => [] as string[]);
-      if (below.length || flight.length) return settling([...below, ...flight]);
-      return runWhenChanged(env, "findings", "findings", ticker, context, env.FINDINGS_WORKFLOW,
-        () => findingsFingerprint(env, ticker), storedFingerprint(env, findingsCacheKey(ticker)));
-    },
-  },
-
-  /** The analyst dossier for the served findings; reruns when the findings, the newest periodic filings or the prompt change. */
-  analyst: {
-    version: ANALYST_VERSION,
-    async run(env, ticker, context): Promise<TaskOutcome> {
-      if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
-      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now, ["findings"]);
-      if (below.length) return settling(below);
-      return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), () => completedAnalystFingerprint(env, ticker));
-    },
-  },
-
-
   /** Explanations of each disclosed business, rewritten when the business list changes. */
   explainer: {
     version: BUSINESS_EXPLAINER_VERSION,
@@ -134,7 +97,7 @@ export const AI_TASKS = {
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.VALUATION_ENABLED === "false") return { status: "done", detail: { skipped: "valuation disabled" } };
       // Valuation reads every layer below it: it writes once they have all settled.
-      const below = await unsettledBelow(env, ticker, ["map", "filings", "findings"], context.now, ["tree", "explainer"]);
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now, ["tree", "explainer"]);
       if (below.length) return settling(below);
       const store = new ValuationStore(env.DB!);
       const input = await buildValuationInput(env, ticker, context.now.toISOString());
@@ -160,21 +123,6 @@ export const AI_TASKS = {
       const result = await startCompanyMemory(env, ticker);
       if (result.started) return { status: "later", afterMs: 15 * MINUTE, detail: result };
       if (result.leasedUntil && Date.parse(result.leasedUntil) > Date.now()) return { status: "later", afterMs: until(result.leasedUntil, new Date()) + MINUTE, detail: result };
-      return { status: "done", detail: result };
-    },
-  },
-
-  /**
-   * Company analysis recovery: settles stopped executions, starts the analysis the company is missing, and checks back
-   * while one runs or until a failed run's back-off has passed.
-   */
-  "company-analysis": {
-    version: COMPANY_ANALYSIS_PROMPT_VERSION,
-    async run(env, ticker, { now }): Promise<TaskOutcome> {
-      const result = await recoverCompanyAnalysis(env, ticker, now.getTime());
-      if (result.running) return { status: "later", afterMs: 15 * MINUTE, detail: result };
-      // A failed run whose back-off has not passed is retried then; one past it with no candidate has nothing left to try.
-      if (result.nextRecoveryAt && Date.parse(result.nextRecoveryAt) > now.getTime()) return { status: "later", afterMs: until(result.nextRecoveryAt, now), detail: result };
       return { status: "done", detail: result };
     },
   },

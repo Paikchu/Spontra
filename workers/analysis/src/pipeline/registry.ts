@@ -11,9 +11,9 @@ export const EVENT_TYPES = [
   "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested", "archive.requested", "archive.unsupported",
   "filing.material.requested", "filing.material.ready",
-  "map.derived", "extract.published", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated",
+  "map.derived", "extract.published", "filings.indexed", "report.published", "fundamentals.updated",
   "task.version_changed",
-  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "items.published",
+  "transcript.stored", "explainer.published", "tree.published", "events.published", "items.published",
   "business.classification.requested", "business.classification.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "content.published", "translations.published",
@@ -27,7 +27,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript", "archive", "filing-material",
   "map-derive", "archive-prune", "archive-prune-scan",
   "fundamentals", "events", "extract",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "filing-analysis",
+  "memory", "explainer", "tree", "filing-analysis",
   "business-classification", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
 ] as const;
@@ -86,16 +86,10 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "extract": { emits: ["extract.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
   "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "filings" },
-  // Recovers company analyses that stopped, failed or are behind the prompt version.
-  "company-analysis": { emits: ["analysis.published", "content.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Model-written explanations of each disclosed business (Workflow).
   "explainer": { emits: ["explainer.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // The ReAct business mind map (Workflow).
   "tree": { emits: ["tree.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
-  // Report findings written from the map snapshot, SEC fundamentals and the company analysis (Workflow).
-  "findings": { emits: ["findings.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
-  // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
-  "analyst": { emits: ["dossier.published", "content.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
   // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
   // Every filing's one path (docs/filing-analysis-design.md); the sessions it starts publish on their own.
@@ -134,7 +128,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.requested": [{ task: "archive" }],
   "filing.material.requested": [{ task: "filing-material" }],
   "filing.material.ready": [{ task: "filing-analysis", when: e => e.detail?.mode !== "shadow-pilot" && (reportedForm(form(e))) }, { task: "collect", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e)) || /^(?:6-K|8-K)/.test(form(e))) },
-    { task: "analyst", when: e => e.detail?.mode !== "shadow-pilot" && (/^10-[QK](?:\/A)?$/.test(form(e))) }, { task: "valuation", when: e => e.detail?.mode !== "shadow-pilot" }, { task: "business-classification", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e))) }],
+    { task: "valuation", when: e => e.detail?.mode !== "shadow-pilot" }, { task: "business-classification", when: e => e.detail?.mode !== "shadow-pilot" && (PERIODIC.test(form(e))) }],
   // A filing the archive gave up on heads no earnings group any more: the report regroups its period's readable sources.
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
@@ -151,18 +145,13 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "report.published": [
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
     { task: "memory", when: e => PERIODIC.test(form(e)) },
-    { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
     { task: "valuation" },
   ],
-  // Findings read layer 2 only: the per-period extract, the filing analyses and the company analysis.
   "map.derived": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
   "fundamentals.updated": [{ task: "extract" }, { task: "peers" }, { task: "valuation" }],
-  "extract.published": [{ task: "findings" }],
-  "analysis.published": [{ task: "findings" }],
-  "findings.published": [{ task: "analyst" }, { task: "valuation" }],
   "tree.published": [{ task: "valuation" }],
   "presentation.unresolved": [{ task: "presentation" }],
-  // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the findings chain starts from the company analysis already published); the map's
+  // A feature switch changed in the admin: the feature's first task checks whether there is something to write; the map's
   // revisions move so shown or hidden content reaches readers at once.
   "feature.settings": [
     // Layer 2 reads the prepared Markdown materials.
@@ -170,8 +159,6 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "extract", when: e => e.detail?.feature === "filings" },
     { task: "filing-analysis", when: e => e.detail?.feature === "filings" },
     { task: "memory", when: e => e.detail?.feature === "filings" },
-    { task: "findings", when: e => e.detail?.feature === "findings" },
-    { task: "company-analysis", when: e => e.detail?.feature === "findings" },
     { task: "explainer", when: e => e.detail?.feature === "tree" },
     { task: "tree", when: e => e.detail?.feature === "tree" },
     { task: "valuation", when: e => e.detail?.feature === "valuation" },

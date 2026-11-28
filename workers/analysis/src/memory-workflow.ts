@@ -1,7 +1,6 @@
 import { featureTickersFor } from "./financial-data/company-policy.ts";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import { D1SecRepository } from "./sec/d1.ts";
-import { hashString } from "./sec/analysis.ts";
 import { normalizeMemoryExtraction } from "./sec/memory.ts";
 import { assertFeatureTicker, requireDb, type SecMemoryWorkflowParams } from "./core.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "./operations.ts";
@@ -45,44 +44,12 @@ export async function executeSecMemoryWorkflow(
     assertFeatureTicker(env, "filings", claim.ticker);
     return { status: "committed" as const, ...await repository.commitMemoryJob(claim, extraction) };
   });
-  let companyAnalysisQueued = false;
-  const reportDate = sourceReportDate(source, claim.periodId);
-  // Memory is layer 2; the company analysis it feeds is layer 3 and starts only where that layer is on.
-  if (env.COMPANY_ANALYSIS_WORKFLOW && featureTickersFor(env, "findings").includes(params.ticker) && Number.isInteger(committed.memoryVersion) && reportDate) {
-    companyAnalysisQueued = await step.do(`company-analysis-enqueue:${params.jobId}`, async () => {
-      const triggerRef = `${params.jobId}:${committed.memoryVersion}`;
-      try {
-        await env.COMPANY_ANALYSIS_WORKFLOW!.create({
-          id: `company-${hashString(triggerRef)}`,
-          params: {
-            ticker: params.ticker,
-            memoryJobId: params.jobId,
-            memoryVersion: committed.memoryVersion,
-            periodId: claim.periodId,
-            reportDate,
-            triggerRef,
-          },
-        });
-        return true;
-      } catch (error) {
-        if (/already exists|duplicate/i.test(String(error))) return true;
-        throw error;
-      }
-    });
-  }
   return {
     status: committed.status,
     jobId: params.jobId,
     noOp: committed.noOp,
     itemCount: committed.itemCount,
-    companyAnalysisQueued,
   };
-}
-
-function sourceReportDate(source: Record<string, unknown>, periodId: string): string {
-  const reportDate = String(record(isFilingReport(source) ? source.filing : record(source.artifact)?.filing)?.reportDate ?? "").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) return reportDate;
-  return periodId.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
 }
 
 function compactMemorySource(source: Record<string, unknown>) {

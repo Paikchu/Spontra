@@ -58,10 +58,6 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** The Pi sessions of the durable run executing this task (durable-runs/runner.ts); absent elsewhere. */
   PI?: import("./pi/runs.ts").PiRuns;
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  ANALYST_ENABLED?: string;
-  ANALYST_DAILY_TURNS?: string;
   /** Model calls per UTC day for judging income statements no calculation or statement row balances (default 60). */
   PRESENTATION_DAILY_CALLS?: string;
   /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
@@ -100,8 +96,6 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TREE_ENABLED?: string;
   /** The four feature lists and global switches after the admin's switches (JSON), set only by `companyPolicyEnvironment`. */
   FEATURE_RESOLVED?: string;
-  /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
-  FINDINGS_ENABLED?: string;
   /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */
   EVENTS_ENABLED?: string;
   /** "false" turns off the IR-site deck search fallback. */

@@ -5,7 +5,7 @@ import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { requireDb } from "../core.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { buildLedger, type Ledger } from "../findings/ledger.ts";
+import { buildLedger, type Ledger } from "./ledger.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import type { AnalysisEnv } from "../operations.ts";

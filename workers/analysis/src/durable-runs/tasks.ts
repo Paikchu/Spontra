@@ -5,25 +5,22 @@ import type { MaterialFiling } from "../../../../shared/analysis-contract/filing
 import { aiToolEnvironment } from "../ai-config.ts";
 import { executePublicResearchRun, type PublicResearchRunSpec } from "../public-research/generation.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
-import { assertFeatureTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams } from "../core.ts";
+import { assertFeatureTicker, type SecMemoryWorkflowParams } from "../core.ts";
 import { SecModelHttpError, type AnalysisEnv } from "../operations.ts";
 import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "../retry-policy.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "../workflow-results.ts";
-import { executeCompanyAnalysisWorkflow } from "../company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "../memory-workflow.ts";
 import { executeReportWorkflow, type ReportParams } from "../stage/report-workflow.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "../business-explainer/workflow.ts";
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "../business-tree/workflow.ts";
 import { executeValuationWorkflow, type ValuationWorkflowParams } from "../valuation/workflow.ts";
 import { executeValuationEvaluation, type ValuationEvaluationParams } from "../valuation/evaluation.ts";
-import { executeFindingsWorkflow, type FindingsWorkflowParams } from "../findings/workflow.ts";
-import { executeAnalystWorkflow, type AnalystWorkflowParams } from "../analyst/workflow.ts";
 import { executeBusinessClassificationWorkflow, type BusinessClassificationParams } from "../business-classification/index.ts";
 import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "../business-tags/workflow.ts";
 import { executeFilingOperatorCompletion } from "../filing-analysis/operator-completion.ts";
 import { executeTranslateWorkflow, type TranslateParams } from "../translation/translate.ts";
-import { trackRun, trackSleep, trackSteps } from "../ai-runs/tracking.ts";
+import { trackRun, trackSteps } from "../ai-runs/tracking.ts";
 import { NonRetryableError, type RunStep, type StepConfig } from "./engine.ts";
 import type { RunKind } from "./binding.ts";
 
@@ -134,28 +131,10 @@ export const RUN_TASKS: Record<RunKind, Task> = {
     const env = await companyPolicyEnvironment(raw);
     return executeBusinessTagsWorkflow(params, durableSteps(step, env, id), env);
   },
-  async ANALYST_WORKFLOW(params: AnalystWorkflowParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    const run = { env, kind: "analyst" as const, ticker: params.ticker, runId: id };
-    // A provider outage makes the run wait (analyst/workflow.ts); a waiting run holds no CPU.
-    const sleep = trackSleep(sleeper(step), run);
-    return trackRun(run, () => executeAnalystWorkflow(params, trackSteps(durableSteps(step, env, id), run), env, { sleep, runId: id }));
-  },
-  async FINDINGS_WORKFLOW(params: FindingsWorkflowParams, { env: raw, step, id }) {
-    const env = await companyPolicyEnvironment(raw);
-    const run = { env, kind: "findings" as const, ticker: params.ticker, runId: id };
-    return trackRun(run, () => executeFindingsWorkflow(params, trackSteps(durableSteps(step, env, id), run), env));
-  },
   async SEC_MEMORY_WORKFLOW(params: SecMemoryWorkflowParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);
-    // Memory is layer 2 (filings); the company analysis it starts checks the findings layer itself.
     assertFeatureTicker(env, "filings", params.ticker);
     return executeSecMemoryWorkflow(params, id, durableSteps(step, env, id), env);
-  },
-  async COMPANY_ANALYSIS_WORKFLOW(params: CompanyAnalysisWorkflowParams, { env: raw, step, id, timestamp }) {
-    const env = await companyPolicyEnvironment(raw);
-    assertFeatureTicker(env, "findings", params.ticker);
-    return executeCompanyAnalysisWorkflow(params, id, timestamp, step, env);
   },
   async REPORT_WORKFLOW(params: ReportParams, { env: raw, step, id }) {
     const env = await companyPolicyEnvironment(raw);

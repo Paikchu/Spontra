@@ -7,8 +7,6 @@ const USAGE_TASK: Record<string, TaskName> = {
   'read-note': 'collect', presentation: 'presentation', translate: 'translate',
   'sec-analysis': 'filing-analysis', 'sec-report': 'filing-analysis', guidance: 'filing-analysis', memory: 'memory', items: 'filing-analysis', filing: 'filing-analysis',
   'business-classification': 'business-classification', 'business-classification-review': 'business-classification', 'business-tags': 'business-tags',
-  business: 'company-analysis', 'company-analysis': 'company-analysis',
-  findings: 'findings', lens: 'findings', analyst: 'analyst', checkup: 'findings',
   tree: 'tree', explainer: 'explainer', valuation: 'valuation', 'valuation-research': 'valuation',
 };
 

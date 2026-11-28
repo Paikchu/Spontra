@@ -15,6 +15,6 @@ export type Layer = typeof LAYERS[number];
 export const FEATURES = ["filings", "findings", "tree", "valuation"] as const;
 export type Feature = typeof FEATURES[number];
 /** The layer each needs on first: the ladder. Opening a layer needs this one on; closing a layer closes every layer above. */
-export const LAYER_REQUIRES: Record<Layer, Layer | null> = { map: null, filings: "map", findings: "filings", tree: "findings", valuation: "tree" };
+export const LAYER_REQUIRES: Record<Layer, Layer | null> = { map: null, filings: "map", findings: "filings", tree: "filings", valuation: "tree" };
 /** A feature's switches as they apply to one company: whether Spontra Analysis runs it and whether the map shows it. */
 export type FeatureSwitches = { generate: boolean; display: boolean };

@@ -387,9 +387,9 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   };
 }
 
-/** What the layers below valuation last published for the company: the findings, the business breakdown and the filing analyses. */
-async function belowFingerprints(db: D1Database, ticker: string): Promise<[string | null, string | null, string | null]> {
+/** What the layers below valuation last published for the company: the business breakdown and the filing analyses. */
+async function belowFingerprints(db: D1Database, ticker: string): Promise<[string | null, string | null]> {
   const repository = new D1SecRepository(db);
   const read = (key: string, field: "fingerprint" | "generatedAt") => repository.getCache<Record<string, unknown>>(key).then(r => typeof r?.payload?.[field] === "string" ? r.payload[field] as string : null).catch(() => null);
-  return Promise.all([read(`findings:v2:${ticker}`, "fingerprint"), read(`business-tree:v1:${ticker}`, "fingerprint"), read(`items:v1:${ticker}`, "fingerprint")]);
+  return Promise.all([read(`business-tree:v1:${ticker}`, "fingerprint"), read(`items:v1:${ticker}`, "fingerprint")]);
 }

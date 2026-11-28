@@ -14,8 +14,9 @@ export type ArtifactSource = {
 };
 
 export async function readArtifactSources(env: ArtifactStoreEnv, ticker: string): Promise<ArtifactSource[]> {
-  const rows = (await env.DB!.prepare("SELECT artifact_id, published_version FROM analysis_artifacts WHERE ticker = ? AND published_version IS NOT NULL AND kind IN (SELECT value FROM json_each(?)) ORDER BY CASE kind WHEN 'filing-report' THEN 0 WHEN 'company-analysis' THEN 1 ELSE 2 END, published_at DESC")
-    .bind(ticker, JSON.stringify(ARTIFACT_KINDS)).all<{ artifact_id: string; published_version: number }>()).results;
+  const activeKinds = ARTIFACT_KINDS.filter(k => k !== "dossier" && k !== "company-analysis");
+  const rows = (await env.DB!.prepare("SELECT artifact_id, published_version FROM analysis_artifacts WHERE ticker = ? AND published_version IS NOT NULL AND kind IN (SELECT value FROM json_each(?)) ORDER BY published_at DESC")
+    .bind(ticker, JSON.stringify(activeKinds)).all<{ artifact_id: string; published_version: number }>()).results;
   const sources: ArtifactSource[] = [];
   for (const row of rows) {
     const stored = await readArtifactVersion(env, row.artifact_id, row.published_version);

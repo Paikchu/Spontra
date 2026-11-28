@@ -1,19 +1,17 @@
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { MapRevisions } from "../../../../shared/analysis-contract/revisions.ts";
-import { verifyFindingLeads, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import type { FindingData, VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
 import { requireDb } from "../core.ts";
-import { readServedFindings } from "../findings/read.ts";
 import { readPeriodExtract } from "../extract/period-extract.ts";
-import type { Ledger } from "../findings/ledger.ts";
-import { seriesCatalogue, type CatalogueRow } from "../findings/catalogue.ts";
+import type { Ledger } from "../extract/ledger.ts";
+import { seriesCatalogue, type CatalogueRow } from "./catalogue.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
-import { featureShown } from "../admin/feature-settings.ts";
 
 /**
  * What a stage turn reads, from layer 2's per-period extract (no SEC fetch, no model call): the
- * company's data, the ledger of every figure the report states, the served findings verified against that data, and
- * the resource revisions the page must hold to draw the same thing. Null when the company has no published report.
+ * company's data, the ledger of every figure the report states, and the resource revisions the page must hold to draw the same thing.
+ * Null when the company has no published report.
  */
 export type StageData = {
   ticker: string;
@@ -26,20 +24,14 @@ export type StageData = {
   basis: MapRevisions;
 };
 
-/** `findings: false` for a layer-2 reader (the filing analyses), which must not read the findings above it. */
-export async function loadStageData(env: AnalysisEnv, ticker: string, options: { findings?: boolean } = {}): Promise<StageData | null> {
+export async function loadStageData(env: AnalysisEnv, ticker: string, _options: { findings?: boolean } = {}): Promise<StageData | null> {
   const db = requireDb(env);
-  const [input, publication, basis] = await Promise.all([
+  const [input, basis] = await Promise.all([
     readPeriodExtract(db, ticker),
-    options.findings === false ? null : featureShown(db, ticker, "findings")
-      .then(shown => shown ? readServedFindings(db, ticker).catch(() => null) : null),
     readRevisions(db, ticker).catch(() => ({})),
   ]);
   if (!input) return null;
   const data: FindingData = { ...input.data, passages: [] };
   const periodEnd = input.ledger.periodEnd;
-  const findings = publication ? verifyFindingLeads(publication, data).verified.map<VerifiedFinding>(lead => ({ ...lead,
-    judgment: { text: "", sourceIds: [] }, lens: { type: "document", document: { rows: [] } }, watchOutcome: null,
-  })) : [];
-  return { ticker, periodEnd, data, ledger: input.ledger, catalogue: seriesCatalogue(input.ledger, data, periodEnd), publication, findings, basis };
+  return { ticker, periodEnd, data, ledger: input.ledger, catalogue: seriesCatalogue(input.ledger, data, periodEnd), publication: null, findings: [], basis };
 }

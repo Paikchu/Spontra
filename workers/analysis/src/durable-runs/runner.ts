@@ -12,10 +12,7 @@ import { filingLoader, type FilingSpec } from "../filing-analysis/recipe.ts";
 import { BUSY_RECHECK_MS, isBusy, lostWake } from "./wakes.ts";
 import { reportLoader } from "../stage/report-workflow.ts";
 import { valuationLoader } from "../valuation/workflow.ts";
-import { analystLoader } from "../analyst/workflow.ts";
 import { treeLoader } from "../business-tree/workflow.ts";
-import { businessLoader } from "../company-analysis-workflow.ts";
-import { companyComposeLoader } from "../company-analysis/compose-agent.ts";
 import { publicResearchStageSchema } from "../public-research/checkpoint.ts";
 
 type RunRow = { kind: RunKind; id: string; params: string; created_at: number; status: RunStatus; error: string | null; output: string | null };
@@ -69,10 +66,7 @@ export class TaskRunner extends Agent<Env, RunView> {
       "public-research": async spec => publicResearchLoader(spec, this.taskEnv()),
       filing: async spec => filingLoader(spec, await env()),
       valuation: async spec => valuationLoader(spec, await env()),
-      analyst: async spec => analystLoader(spec, await env()),
       tree: async spec => treeLoader(spec, await env()),
-      business: async spec => businessLoader(spec, await env()),
-      "company-compose": async spec => companyComposeLoader(spec, await env()),
       report: async spec => reportLoader(spec, await env()),
     };
   }

@@ -20,10 +20,8 @@ export const AI_TOOLS = {
   "business-tags-review": { label: "业务标签复核", reasoning: "high", model: "reasoning" },
   "sec-analysis": { label: "财报摘要", reasoning: "high", model: "analysis" },
   memory: { label: "公司记忆", reasoning: "high", model: "analysis" },
-  "company-analysis": { label: "公司分析", reasoning: "high", model: "reasoning" },
   explainer: { label: "业务解读", reasoning: "high", model: "reasoning" },
   tree: { label: "业务脑图", reasoning: "high", model: "reasoning" },
-  findings: { label: "公司要点", reasoning: "high", model: "reasoning" },
   /** The valuation research loop: reads filings and registers evidence; the harness scores nothing it cannot cite. */
   "valuation-research": { label: "估值研究", reasoning: "medium", model: "reasoning" },
   /** The valuation's assumptions and composition: three coherent scenarios and the written case, over calculated figures. */
@@ -32,8 +30,6 @@ export const AI_TOOLS = {
   filing: { label: "文件分析", reasoning: "high", model: "reasoning" },
   /** The reading pass of a periodic report: every passage read once against the checklist, for notes and leads (filing-analysis/pack.ts). */
   "filing-read": { label: "文件精读", reasoning: "medium", model: "reasoning" },
-  /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
-  analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
   presentation: { label: "报表结构", reasoning: "low", model: "reasoning" },
   /** Where each published line sits in a new filing's tables and which period it reports; the harness reads and reconciles the amounts. */

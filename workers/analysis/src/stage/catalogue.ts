@@ -1,7 +1,7 @@
 import type { FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import { resolveEvidence, rpoBuckets, spanLabel, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
-import type { Ledger } from "./ledger.ts";
+import type { Ledger } from "../extract/ledger.ts";
 
 /** A reference the verifier can resolve, with how much history it has; what a chart or a stage scene may draw. */
 export type CatalogueRow = { ref: FindingRef; label: string; latest: string; quarters: number; fiscalYears: number; yoy: boolean; qoq: boolean };

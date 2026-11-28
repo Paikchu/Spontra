@@ -8,8 +8,8 @@ import { findingRefSchema, lensDocumentIssues, readLensDocument, verifyFindings,
 import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";
 import { compileDocument, verifyLensDocument } from "../../../../shared/analysis-runtime/lens/verify.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
-import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "../analyst/web.ts";
-import { renderTable } from "../analyst/agent.ts";
+import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "../web-search/read-page.ts";
+import { renderTable } from "./render-table.ts";
 import { secFilingTools } from "../sec-archive/tool.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { StageData } from "../stage/data.ts";

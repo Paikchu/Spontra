@@ -1,11 +1,7 @@
 import { featureTickersFor } from "./financial-data/company-policy.ts";
 import type { Feature } from "../../../shared/analysis-contract/business-features.ts";
 import { allowData, aiIsEnabled, dataTickers, normalizeTicker, tickerList } from "../../../shared/analysis-runtime/financial-data/policy.ts";
-import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
-
-import { hashString } from "./sec/analysis.ts";
-import { sha256 } from "./sha256.ts";
 
 export type SecWorkflowBinding<T = SecWorkflowParams> = {
   create(options: { id: string; params: T }): Promise<{ id: string }>;
@@ -28,18 +24,6 @@ export type SecMemoryWorkflowParams = {
   ownerToken?: string;
 };
 
-export type CompanyAnalysisWorkflowParams = {
-  analysisId?: string;
-  recoveryAttempt?: number;
-  expectedUpdatedAt?: string;
-  ticker: string;
-  memoryJobId: string;
-  memoryVersion: number;
-  periodId: string;
-  reportDate: string;
-  triggerRef: string;
-};
-
 export type SecCronEnv = {
   /** This Worker's own copy of the whitelist — nothing here asks another Worker for it. */
   SEC_DATA_TICKERS?: string;
@@ -52,7 +36,6 @@ export type SecCronEnv = {
   /** The same D1 database the Web Worker binds. Optional only so tests can build a partial env. */
   DB?: D1Database;
   SEC_MEMORY_WORKFLOW?: SecWorkflowBinding<SecMemoryWorkflowParams>;
-  COMPANY_ANALYSIS_WORKFLOW?: SecWorkflowBinding<CompanyAnalysisWorkflowParams>;
 };
 
 /**
@@ -99,54 +82,6 @@ export function requireDb(env: Pick<SecCronEnv, "DB">): D1Database {
   return env.DB;
 }
 
-/**
- * One company's analysis recovery, run by the `company-analysis` task: settles executions whose Workflow ended without
- * saying so, then starts the analysis the company is missing (a new memory version, a failed run whose back-off has
- * passed, an older prompt version). Reports a run still in progress and when a failed run may next be retried.
- */
-export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, now = Date.now()): Promise<{ started: string | null; running: boolean; nextRecoveryAt: string | null }> {
-  if (!env.COMPANY_ANALYSIS_WORKFLOW) return { started: null, running: false, nextRecoveryAt: null };
-  const repository = new D1CompanyAnalysisRepository(requireDb(env));
-  if (env.COMPANY_ANALYSIS_WORKFLOW.get) {
-    // Every active run is checked: status() only reports the state and restores a wake the run lost, so asking early is
-    // harmless, and this task is the only caller that polls a run the memory Workflow started.
-    for (const execution of await repository.listActiveExecutions([ticker], new Date(now).toISOString())) {
-      try {
-        const state = (await (await env.COMPANY_ANALYSIS_WORKFLOW.get(execution.workflowInstanceId)).status()).status;
-        if (["errored", "terminated", "complete"].includes(state)) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());
-      } catch (error) {
-        // An instance the platform says does not exist cannot be running; any other unknown state is not permission
-        // to launch a duplicate running Agent.
-        if (/not.?found|does not exist|no such instance/i.test(String(error))) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());
-        else console.warn(JSON.stringify({ event: "company-analysis-status-unavailable", analysisId: execution.analysisId }));
-      }
-    }
-  }
-  const running = Boolean(await requireDb(env).prepare("SELECT 1 FROM company_analysis_runs WHERE ticker = ? AND status IN ('waiting_fundamentals', 'calculating', 'analyzing', 'validating') LIMIT 1").bind(ticker).first());
-  if (running) return { started: null, running: true, nextRecoveryAt: null };
-  const [candidate] = await repository.listBackfillCandidates([ticker], 1, false, now);
-  if (candidate?.triggerRef) {
-    // A terminal run version has exactly one recovery id, even across concurrent runs or an ambiguous create
-    // response. The id changes only after that attempt actually ends.
-    const id = candidate.analysisId
-      ? `company-recovery-${await sha256(`${candidate.analysisId}:${candidate.expectedUpdatedAt}`)}`
-      : `company-${hashString(candidate.triggerRef)}`;
-    try { await env.COMPANY_ANALYSIS_WORKFLOW.create({ id, params: { ...candidate, ticker } }); }
-    catch (error) {
-      if (!/already.?exists|duplicate/i.test(String(error))) throw error;
-      // The id was used before. An instance that ended without moving the run (META's refused the company on 2026-10-22
-      // and was polled every 15 minutes for weeks) spends this attempt; a first run with no row simply stops here.
-      const state = env.COMPANY_ANALYSIS_WORKFLOW.get ? await env.COMPANY_ANALYSIS_WORKFLOW.get(id).then(i => i.status()).then(s => s.status).catch(() => null) : null;
-      if (state && ["errored", "terminated", "complete"].includes(state)) {
-        if (candidate.analysisId) await repository.consumeRecovery(candidate.analysisId, candidate.expectedUpdatedAt!, new Date(now).toISOString());
-        return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
-      }
-    }
-    return { started: id, running: true, nextRecoveryAt: null };
-  }
-  return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
-}
-
 /** Starts report memory for the company's oldest pending (or abandoned) memory job, if there is one. */
 export async function startCompanyMemory(env: SecCronEnv, ticker: string): Promise<{ started: string | null; leasedUntil: string | null }> {
   if (!env.SEC_MEMORY_WORKFLOW) return { started: null, leasedUntil: null };
@@ -188,64 +123,5 @@ export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv
     return Response.json({ status: "queued", ticker, mode, ...result }, { status: 202 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to queue analysis" }, { status: 503 });
-  }
-}
-
-/**
- * Starts one company analysis on demand.
- *
- * The Cron sweep is the only other way this workflow runs, and it skips a company that already has
- * a published run for the current memory version — correctly, or it would re-analyse the watchlist
- * every tick. The cost is that a prompt or model change is invisible until a filing advances memory,
- * which can be a quarter away. This route is how a change gets looked at.
- *
- * Deliberately not folded into `handleSecAnalysisRequest`: that one drives the filing workflow, and
- * a shared handler with a mode flag would put two different workflows one typo apart.
- */
-export async function handleCompanyAnalysisRequest(request: Request, env: SecCronEnv, now = Date.now()): Promise<Response> {
-  if (request.method !== "POST") return new Response("Not found", { status: 404 });
-  if (!env.SEC_REFRESH_KEY || request.headers.get("x-sec-refresh-key") !== env.SEC_REFRESH_KEY) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const match = new URL(request.url).pathname.match(/^\/company-analysis\/([^/]+)$/);
-  let rawTicker = "";
-  try {
-    rawTicker = decodeURIComponent(match?.[1] ?? "");
-  } catch {
-    return Response.json({ error: "Invalid ticker" }, { status: 400 });
-  }
-  const ticker = normalizeTicker(rawTicker);
-  if (!ticker) return Response.json({ error: "Invalid ticker" }, { status: 400 });
-  let trackedTickers: string[];
-  try {
-    trackedTickers = trackedTickersFor(env);
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Unable to read the SEC watchlist" }, { status: 503 });
-  }
-  if (!tracked(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
-  if (!env.COMPANY_ANALYSIS_WORKFLOW || !env.DB) {
-    return Response.json({ error: "Company analysis is not configured" }, { status: 503 });
-  }
-  const trigger = await new D1CompanyAnalysisRepository(env.DB).findAnalysisTrigger(ticker);
-  if (!trigger) {
-    // Company analysis reasons over company memory, which SEC filing analysis produces. Without a
-    // completed memory job there is nothing to analyse, and saying so beats a run that fails later.
-    return Response.json({ error: "No completed company memory for this ticker yet" }, { status: 409 });
-  }
-  try {
-    // A unique id per request, unlike the sweep's `company-<hash of triggerRef>`: that id already
-    // exists for a ticker that has been analysed, which is exactly the case this route serves.
-    const requestId = crypto.randomUUID();
-    const instance = await env.COMPANY_ANALYSIS_WORKFLOW.create({
-      id: `company-manual-${ticker}-${now}-${requestId}`,
-      // trigger_ref is unique in D1: a manual regeneration must not collide with an old ready run.
-      params: { ...trigger, triggerRef: `${trigger.triggerRef.slice(0, 170)}:manual:${now}:${requestId}` },
-    });
-    return Response.json({
-      status: "queued", analysisJobId: instance.id, ticker,
-      periodId: trigger.periodId, memoryVersion: trigger.memoryVersion,
-    }, { status: 202 });
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Unable to queue company analysis" }, { status: 503 });
   }
 }

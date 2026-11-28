@@ -7,7 +7,6 @@ import { modelFor, reasoningFor } from "../ai-config.ts";
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readEventsResponse } from "../events/read.ts";
-import { readFindingsResponse } from "../findings/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { itemsIndexKey, readItemAnalysisResponse, type ItemsIndex } from "../items/read.ts";
@@ -51,8 +50,8 @@ const quiet = async <T>(work: () => Promise<T>): Promise<T | null> => { try { re
 /** Every English string the read API serves for the company, per resource, read the way the routes read them. */
 export async function readSources(db: D1Database, ticker: string, artifacts?: ArtifactStoreEnv): Promise<TranslationSource[]> {
   const repository = new D1SecRepository(db);
-  const [findings, explainer, tree, events, page] = await Promise.all([
-    quiet(() => readFindingsResponse(db, ticker)), quiet(() => readBusinessExplainerResponse(db, ticker)), quiet(() => readBusinessTreeResponse(db, ticker)),
+  const [explainer, tree, events, page] = await Promise.all([
+    quiet(() => readBusinessExplainerResponse(db, ticker)), quiet(() => readBusinessTreeResponse(db, ticker)),
     quiet(() => readEventsResponse(db, ticker)), quiet(() => getPublicFilingPage(repository, ticker, null, "50")),
   ]);
   // The statement as the business-flow route serves it: the published pair and the older quarters assembled beside it.
@@ -60,7 +59,6 @@ export async function readSources(db: D1Database, ticker: string, artifacts?: Ar
   const reports = publication?.flow ? (await quiet(() => readMapDerived(db, publication.flow!)))?.reports ?? null : null;
   const sources: TranslationSource[] = [
     { resource: "flow", scope: "", strings: collectProse("flow", { flow: publication?.flow ?? null, reports }) },
-    { resource: "findings", scope: "", strings: collectProse("findings", findings?.findings ?? null) },
     { resource: "explainer", scope: "", strings: collectProse("explainer", explainer?.explainer ?? null) },
     { resource: "tree", scope: "", strings: collectProse("tree", tree?.tree ?? null) },
     { resource: "events", scope: "", strings: collectProse("events", events?.events ?? null) },

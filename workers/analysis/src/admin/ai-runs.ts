@@ -11,9 +11,6 @@ import { featureEnabled, featureTickersFor } from "../financial-data/company-pol
 const FEATURE_NAME: Record<Feature, string> = { filings: "SEC 文件解析", findings: "关键点", tree: "业务解析", valuation: "估值评估" };
 import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { securities } from "../catalog/issuer-directory.ts";
-import { findingsFingerprint } from "../findings/workflow.ts";
-import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
-import { findingsCacheKey, readStoredFindings } from "../findings/read.ts";
 import type { AiWorkflowBinding, AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { authenticateAdmin } from "./auth.ts";
@@ -36,14 +33,16 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.VALUATION_WORKFLOW) as Binding | undefined;
+  return (kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : undefined) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for. */
 const featureOf = (kind: AiRunKind): Feature => kind === "analyst" ? "findings" : kind === "explainer" ? "tree" : kind;
 function enabled(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
+  if (kind === "findings" || kind === "analyst") return false;
   return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }
 function blocked(env: AnalysisEnv, kind: AiRunKind, ticker: string): string | null {
+  if (kind === "findings" || kind === "analyst") return "该功能已移除。";
   if (!featureEnabled(env, featureOf(kind))) return `${FEATURE_NAME[featureOf(kind)]}生成已全局暂停。`;
   if (!enabled(env, kind, ticker)) return `该公司的${FEATURE_NAME[featureOf(kind)]}生成已关闭。`;
   if (!binding(env, kind)) return "该任务的工作流未配置。";
@@ -52,21 +51,14 @@ function blocked(env: AnalysisEnv, kind: AiRunKind, ticker: string): string | nu
 }
 function automatic(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
   if (!enabled(env, kind, ticker)) return false;
-  return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
-    : kind === "analyst" ? env.ANALYST_ENABLED === "true" && !!env.ANALYST_WORKFLOW
-    : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
+  return kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
     : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && researchSearchConfigured(env)
-    : !!env.VALUATION_WORKFLOW && env.VALUATION_ENABLED !== "false";
+    : kind === "valuation" ? !!env.VALUATION_WORKFLOW && env.VALUATION_ENABLED !== "false"
+    : false;
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
-  if (kind === "analyst") return (await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)))?.payload ?? null;
-  if (kind === "findings") {
-    // The lens agent's trace is stored beside the publication and shown only here.
-    const [publication, stored] = await Promise.all([readStoredFindings(db, ticker), new D1SecRepository(db).getCache<{ lensTrace?: unknown }>(findingsCacheKey(ticker))]);
-    const trace = stored?.payload?.lensTrace;
-    return publication && trace ? { ...publication, lensTrace: trace } : publication;
-  }
+  if (kind === "findings" || kind === "analyst") return null;
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
   return (await readValuationResponse(db, ticker)).report;
@@ -133,8 +125,8 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
   const runId = `${kind}-manual-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${body.requestId}`;
   if (await store.get(kind, ticker, runId)) return json({ runId, reused: true } satisfies AiRunStarted, 202);
 
-  const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : kind === "valuation" ? await valuationFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
-  if (!fingerprint) return json({ error: kind === "analyst" ? "该公司尚无已发布的要点，分析师无从写起。" : "业务地图尚无完整财报，暂时无法生成。" }, 409);
+  const fingerprint = kind === "tree" ? await businessTreeFingerprint(env, ticker) : kind === "valuation" ? await valuationFingerprint(env, ticker) : kind === "explainer" ? await businessExplainerFingerprint(env, ticker) : null;
+  if (!fingerprint) return json({ error: "业务地图尚无完整财报，暂时无法生成。" }, 409);
   const params: Record<string, unknown> = { ticker, fingerprint };
   const runs = await settle(env, store, await store.runs(kind, ticker), now);
   if (runs.some(r => !TERMINAL.has(r.status))) return json({ error: "该公司已有进行中的任务，请等待完成后再触发。" }, 409);
